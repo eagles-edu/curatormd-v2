@@ -1,0 +1,1 @@
+https://github.com/eagles-edu/curatormd-v2.git

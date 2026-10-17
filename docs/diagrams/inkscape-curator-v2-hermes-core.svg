@@ -1,0 +1,1046 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" viewBox="0 0 4925 9129" version="1.1" id="svg917"
+   xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg">
+   <defs id="defs921" />
+   <svg class="d2-1554157028 d2-svg" viewBox="-88 -89 4925 9129" version="1.1" id="svg915">
+      <rect x="-88" y="-89" width="4925" height="9129" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0"
+         id="rect2" />
+      <style type="text/css" id="style4">
+         <![CDATA[
+         .d2-1554157028 .text {
+            font-family: "d2-1554157028-font-regular";
+         }
+
+         @font-face {
+            font-family: d2-1554157028-font-regular;
+            src: url("data:application/font-woff;base64,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");
+         }
+
+         .d2-1554157028 .text-bold {
+            font-family: "d2-1554157028-font-bold";
+         }
+
+         @font-face {
+            font-family: d2-1554157028-font-bold;
+            src: url("data:application/font-woff;base64,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");
+         }
+
+         .d2-1554157028 .text-italic {
+            font-family: "d2-1554157028-font-italic";
+         }
+
+         @font-face {
+            font-family: d2-1554157028-font-italic;
+            src: url("data:application/font-woff;base64,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");
+         }
+         ]]>
+      </style>
+      <style type="text/css" id="style6">
+         <![CDATA[
+         .shape {
+            shape-rendering: geometricPrecision;
+            stroke-linejoin: round;
+         }
+
+         .connection {
+            stroke-linecap: round;
+            stroke-linejoin: round;
+         }
+
+         .blend {
+            mix-blend-mode: multiply;
+            opacity: 0.5;
+         }
+
+         .d2-1554157028 .fill-N1 {
+            fill: #0A0F25;
+         }
+
+         .d2-1554157028 .fill-N2 {
+            fill: #676C7E;
+         }
+
+         .d2-1554157028 .fill-N7 {
+            fill: #FFFFFF;
+         }
+
+         .d2-1554157028 .fill-B1 {
+            fill: #0D32B2;
+         }
+
+         .d2-1554157028 .fill-B2 {
+            fill: #0D32B2;
+         }
+
+         .d2-1554157028 .fill-B4 {
+            fill: #E3E9FD;
+         }
+
+         .d2-1554157028 .fill-B6 {
+            fill: #F7F8FE;
+         }
+
+         .d2-1554157028 .stroke-B1 {
+            stroke: #0D32B2;
+         }
+
+         .d2-1554157028 .stroke-B2 {
+            stroke: #0D32B2;
+         }
+
+         .appendix text.text {
+            fill: #0A0F25
+         }
+
+         .md {
+            --color-fg-default: #0A0F25;
+            --color-fg-muted: #676C7E;
+            --color-fg-subtle: #9499AB;
+            --color-canvas-default: #FFFFFF;
+            --color-canvas-subtle: #EEF1F8;
+            --color-border-default: #0D32B2;
+            --color-border-muted: #0D32B2;
+            --color-neutral-muted: #EEF1F8;
+            --color-accent-fg: #0D32B2;
+            --color-accent-emphasis: #0D32B2;
+            --color-attention-subtle: #676C7E;
+            --color-danger-fg: red;
+         }
+
+         .light-code {
+            display: block
+         }
+
+         .dark-code {
+            display: none
+         }
+         ]]>
+      </style>
+      <g class="dGl0bGU=" id="g14">
+         <g class="shape" id="g10">
+            <rect x="598" y="91" width="618" height="66" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6"
+               style="stroke-width:2;" id="rect8" />
+         </g>
+         <text x="907" y="129.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"
+            id="text12">Proposed · Curator V2 / Hermes Core — bounded ownership and evidence lifecycle</text>
+      </g>
+      <g class="dXNlcg== human" id="g22">
+         <g class="shape" id="g18">
+            <path
+               d="M 1392 204 H 1236 V 203 C 1236 185 1253 169 1280 162 C 1265 155 1256 145 1256 134 C 1256 115 1282 100 1314 100 C 1346 100 1372 115 1372 134 C 1372 145 1363 155 1348 161 C 1375 169 1392 185 1392 202 V 203 H 1392 Z"
+               stroke="#A77900" fill="#FFF6C7" style="stroke-width:2;" id="path16" />
+         </g>
+         <text x="1314" y="230" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text20">User / reviewer</text>
+      </g>
+      <g class="aGVybWVz hermes" id="g34">
+         <g class="shape" id="g26">
+            <rect x="456" y="402" width="1239" height="2552" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect24" />
+         </g>
+         <text x="1075.5" y="428" fill="#111111" class="text" style="text-anchor:middle;font-size:21px" id="text32">
+            <tspan x="1075.5" dy="0" id="tspan28">Hermes Core Account boundary</tspan>
+            <tspan x="1075.5" dy="24" id="tspan30">PROPOSED — host and session operations; no project knowledge writes
+            </tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvcg== curator" id="g46">
+         <g class="shape" id="g38">
+            <rect x="1238" y="3245" width="1029" height="3115" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect36" />
+         </g>
+         <text x="1752.5" y="3271" fill="#111111" class="text" style="text-anchor:middle;font-size:21px" id="text44">
+            <tspan x="1752.5" dy="0" id="tspan40">CuratorMD Global Backend boundary</tspan>
+            <tspan x="1752.5" dy="24" id="tspan42">PROPOSED — cross-project goal, fact, SDE and purge coordination
+            </tspan>
+         </text>
+      </g>
+      <g class="cGx1Z2lu plugin" id="g58">
+         <g class="shape" id="g50">
+            <rect x="205" y="6751" width="2385" height="1564" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect48" />
+         </g>
+         <text x="1397.5" y="6777" fill="#111111" class="text" style="text-anchor:middle;font-size:21px" id="text56">
+            <tspan x="1397.5" dy="0" id="tspan52">Per-project CuratorMD Plugin boundary</tspan>
+            <tspan x="1397.5" dy="24" id="tspan54">PROPOSED — repository-scoped adapter; no global canonical store
+            </tspan>
+         </text>
+      </g>
+      <g class="cmVwbw== repository" id="g70">
+         <g class="shape" id="g62">
+            <rect x="294" y="8606" width="1738" height="333" stroke="#68737D" fill="#F3F5F7" style="stroke-width:2;"
+               id="rect60" />
+         </g>
+         <text x="1163" y="8632" fill="#111111" class="text" style="text-anchor:middle;font-size:21px" id="text68">
+            <tspan x="1163" dy="0" id="tspan64">Repository boundary</tspan>
+            <tspan x="1163" dy="24" id="tspan66">PROPOSED — project-owned files and explicit canonical knowledge</tspan>
+         </text>
+      </g>
+      <g class="bGVnZW5k" id="g78">
+         <g class="shape" id="g74">
+            <rect x="1412" y="12" width="3324" height="224" stroke="#0D32B2" fill="#E3E9FD" class=" stroke-B1 fill-B4"
+               style="stroke-width:2;" id="rect72" />
+         </g>
+         <text x="3074" y="45" fill="#0A0F25" class="text fill-N1" style="text-anchor:middle;font-size:28px"
+            id="text76">Legend</text>
+      </g>
+      <g class="aGVybWVzLnByb2ZpbGVz hermes" id="g90">
+         <g class="shape" id="g82">
+            <rect x="863" y="460" width="411" height="93" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect80" />
+         </g>
+         <text x="1068.5" y="503.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text88">
+            <tspan x="1068.5" dy="0" id="tspan84">Profile registry</tspan>
+            <tspan x="1068.5" dy="24" id="tspan86">identity · permissions · project bindings</tspan>
+         </text>
+      </g>
+      <g class="aGVybWVzLnJ1bnRpbWU= hermes" id="g102">
+         <g class="shape" id="g94">
+            <rect x="1048" y="724" width="287" height="93" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect92" />
+         </g>
+         <text x="1191.5" y="767.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text100">
+            <tspan x="1191.5" dy="0" id="tspan96">Codex app-server runtime</tspan>
+            <tspan x="1191.5" dy="24" id="tspan98">sessions · task lifecycle</tspan>
+         </text>
+      </g>
+      <g class="aGVybWVzLnJvdXRlcg== hermes" id="g114">
+         <g class="shape" id="g106">
+            <rect x="1000" y="978" width="382" height="93" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect104" />
+         </g>
+         <text x="1191" y="1021.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text112">
+            <tspan x="1191" dy="0" id="tspan108">Global event router</tspan>
+            <tspan x="1191" dy="24" id="tspan110">normalizes bounded lifecycle events</tspan>
+         </text>
+      </g>
+      <g class="aGVybWVzLmdhdGV3YXk= hermes" id="g126">
+         <g class="shape" id="g118">
+            <rect x="506" y="2026" width="464" height="93" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect116" />
+         </g>
+         <text x="738" y="2069.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text124">
+            <tspan x="738" dy="0" id="tspan120">Managed MCP gateway</tspan>
+            <tspan x="738" dy="24" id="tspan122">routing · authentication · process supervision</tspan>
+         </text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQ= hermes" id="g138">
+         <g class="shape" id="g130">
+            <rect x="990" y="1242" width="614" height="1662" stroke="#7352B8" fill="#FFE0B2" style="stroke-width:2;"
+               id="rect128" />
+         </g>
+         <text x="1297" y="1268" fill="#111111" class="text" style="text-anchor:middle;font-size:21px" id="text136">
+            <tspan x="1297" dy="0" id="tspan132">Host Steward</tspan>
+            <tspan x="1297" dy="24" id="tspan134">independent host-disk concern; never curates project knowledge</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5yZWdpc3RyeQ== curator" id="g150">
+         <g class="shape" id="g142">
+            <rect x="1309" y="3303" width="451" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect140" />
+         </g>
+         <text x="1534.5" y="3346.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text148">
+            <tspan x="1534.5" dy="0" id="tspan144">Project registry</tspan>
+            <tspan x="1534.5" dy="24" id="tspan146">project IDs · plugin bindings · policy identity</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5pbmdyZXNz curator" id="g158">
+         <g class="shape" id="g154">
+            <rect x="1704" y="3567" width="239" height="72" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect152" />
+         </g>
+         <text x="1823.5" y="3610.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text156">Project event ingress</text>
+      </g>
+      <g class="Y3VyYXRvci5ub3JtYWxpemU= curator" id="g170">
+         <g class="shape" id="g162">
+            <rect x="1558" y="3800" width="531" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect160" />
+         </g>
+         <text x="1823.5" y="3843.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text168">
+            <tspan x="1823.5" dy="0" id="tspan164">Event normalizer</tspan>
+            <tspan x="1823.5" dy="24" id="tspan166">intent · change · verification · open gate · completion</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5nb2Fs curator" id="g182">
+         <g class="shape" id="g174">
+            <rect x="1649" y="3963" width="349" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect172" />
+         </g>
+         <text x="1823.5" y="4006.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text180">
+            <tspan x="1823.5" dy="0" id="tspan176">Goal engine</tspan>
+            <tspan x="1823.5" dy="24" id="tspan178">creates / transitions goal records</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5jcml0ZXJpYQ== curator" id="g190">
+         <g class="shape" id="g186">
+            <rect x="1856" y="4136" width="288" height="72" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect184" />
+         </g>
+         <text x="2000" y="4179.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text188">Success-criteria evaluator</text>
+      </g>
+      <g class="Y3VyYXRvci5ldmlkZW5jZQ== curator" id="g202">
+         <g class="shape" id="g194">
+            <rect x="1840" y="4278" width="320" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect192" />
+         </g>
+         <text x="2000" y="4321.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text200">
+            <tspan x="2000" dy="0" id="tspan196">Evidence gate</tspan>
+            <tspan x="2000" dy="24" id="tspan198">claims are distinct from proof</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5mYWN0cw== durable" id="g216">
+         <g class="shape" id="g208">
+            <path
+               d="M 1817 4465 C 1817 4441 1982 4441 2000 4441 C 2018 4441 2183 4441 2183 4465 V 4562 C 2183 4586 2018 4586 2000 4586 C 1982 4586 1817 4586 1817 4562 V 4465 Z"
+               stroke="#237A43" fill="#E7F8EB" style="stroke-width:2;" id="path204" />
+            <path d="M 1817 4465 C 1817 4489 1982 4489 2000 4489 C 2018 4489 2183 4489 2183 4465" stroke="#237A43"
+               fill="#E7F8EB" style="stroke-width:2;" id="path206" />
+         </g>
+         <text x="2000" y="4522.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text214">
+            <tspan x="2000" dy="0" id="tspan210">Global fact ledger</tspan>
+            <tspan x="2000" dy="24" id="tspan212">compact, deduplicated typed facts</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5zaWduaWZpY2FuY2U= curator" id="g228">
+         <g class="shape" id="g220">
+            <rect x="1821" y="4747" width="358" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect218" />
+         </g>
+         <text x="2000" y="4790.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text226">
+            <tspan x="2000" dy="0" id="tspan222">Significance assessor</tspan>
+            <tspan x="2000" dy="24" id="tspan224">ordinary update vs candidate SDE</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5yZXZpZXc= human" id="g236">
+         <g class="shape" id="g232">
+            <path
+               d="M 1738 5115 C 1736 5115 1734 5115 1733 5115 L 1451 5064 C 1448 5063 1448 5063 1451 5062 L 1733 5011 C 1736 5010 1741 5010 1744 5011 L 2025 5062 C 2028 5063 2028 5063 2025 5064 L 1743 5115 C 1742 5115 1740 5115 1738 5115 Z"
+               stroke="#A77900" fill="#FFF6C7" style="stroke-width:2;" id="path230" />
+         </g>
+         <text x="1738" y="5070.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text234">Human review + confirmation</text>
+      </g>
+      <g class="Y3VyYXRvci5jb21waWxlcg== curator" id="g248">
+         <g class="shape" id="g240">
+            <rect x="1838" y="5296" width="379" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect238" />
+         </g>
+         <text x="2027.5" y="5339.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text246">
+            <tspan x="2027.5" dy="0" id="tspan242">Bullet-record compiler</tspan>
+            <tspan x="2027.5" dy="24" id="tspan244">short facts, not paragraph synthesis</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5yZWNlaXB0 durable" id="g262">
+         <g class="shape" id="g254">
+            <path
+               d="M 1677 5584 C 1677 5560 1875 5560 1898 5560 C 1920 5560 2118 5560 2118 5584 V 5681 C 2118 5705 1920 5705 1898 5705 C 1875 5705 1677 5705 1677 5681 V 5584 Z"
+               stroke="#237A43" fill="#E7F8EB" style="stroke-width:2;" id="path250" />
+            <path d="M 1677 5584 C 1677 5608 1875 5608 1898 5608 C 1920 5608 2118 5608 2118 5584" stroke="#237A43"
+               fill="#E7F8EB" style="stroke-width:2;" id="path252" />
+         </g>
+         <text x="1897.5" y="5641.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text260">
+            <tspan x="1897.5" dy="0" id="tspan256">Audit receipt generator</tspan>
+            <tspan x="1897.5" dy="24" id="tspan258">source IDs · hashes · decision · purge result</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5wdXJnZQ== curator" id="g274">
+         <g class="shape" id="g266">
+            <rect x="1618" y="5876" width="345" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect264" />
+         </g>
+         <text x="1790.5" y="5919.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text272">
+            <tspan x="1790.5" dy="0" id="tspan268">Purge coordinator</tspan>
+            <tspan x="1790.5" dy="24" id="tspan270">retries + purge-pending tracking</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5sZWFybmluZw== curator" id="g286">
+         <g class="shape" id="g278">
+            <rect x="1401" y="5296" width="323" height="93" stroke="#168273" fill="#E7F7F4" style="stroke-width:2;"
+               id="rect276" />
+         </g>
+         <text x="1562.5" y="5339.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text284">
+            <tspan x="1562.5" dy="0" id="tspan280">Human-guided learning</tspan>
+            <tspan x="1562.5" dy="24" id="tspan282">labels and quality signals only</tspan>
+         </text>
+      </g>
+      <g class="Y3VyYXRvci5vcHM= status" id="g298">
+         <g class="shape" id="g290">
+            <path d="M 1389 6200 L 1298 6255 L 1389 6310 L 1570 6310 L 1661 6255 L 1570 6200 Z" stroke="#A83D61"
+               fill="#FCE9EF" style="stroke-width:2;" id="path288" />
+         </g>
+         <text x="1479.5" y="6252" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text296">
+            <tspan x="1479.5" dy="0" id="tspan292">Global operations state</tspan>
+            <tspan x="1479.5" dy="24" id="tspan294">health · metrics · errors</tspan>
+         </text>
+      </g>
+      <g class="cGx1Z2luLmNvbmZpZw== plugin" id="g310">
+         <g class="shape" id="g302">
+            <rect x="255" y="6809" width="546" height="93" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect300" />
+         </g>
+         <text x="528" y="6852.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text308">
+            <tspan x="528" dy="0" id="tspan304">Repository-specific Curator config</tspan>
+            <tspan x="528" dy="24" id="tspan306">scope · persistence targets · checklist bindings · policy</tspan>
+         </text>
+      </g>
+      <g class="cGx1Z2luLmFwaQ== plugin" id="g318">
+         <g class="shape" id="g314">
+            <rect x="513" y="7083" width="317" height="72" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect312" />
+         </g>
+         <text x="671.5" y="7126.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text316">Project plugin API / MCP tools</text>
+      </g>
+      <g class="cGx1Z2luLm1hcHBlcg== plugin" id="g326">
+         <g class="shape" id="g322">
+            <rect x="538" y="7316" width="267" height="72" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect320" />
+         </g>
+         <text x="671.5" y="7359.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text324">Goal + checklist mapper</text>
+      </g>
+      <g class="cGx1Z2luLnJlYWRlcg== plugin" id="g334">
+         <g class="shape" id="g330">
+            <rect x="740" y="7619" width="406" height="72" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect328" />
+         </g>
+         <text x="943" y="7662.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text332">Read-only repository evidence adapter</text>
+      </g>
+      <g class="cGx1Z2luLmNoZWNrbGlzdA== plugin" id="g342">
+         <g class="shape" id="g338">
+            <rect x="419" y="7619" width="301" height="72" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect336" />
+         </g>
+         <text x="569.5" y="7662.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text340">Checklist / task-list adapter</text>
+      </g>
+      <g class="cGx1Z2luLnZlcmlmaWNhdGlvbg== plugin" id="g354">
+         <g class="shape" id="g346">
+            <rect x="871" y="7880" width="368" height="93" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect344" />
+         </g>
+         <text x="1055" y="7923.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text352">
+            <tspan x="1055" dy="0" id="tspan348">Verification adapter</tspan>
+            <tspan x="1055" dy="24" id="tspan350">checks · probes · browser evidence</tspan>
+         </text>
+      </g>
+      <g class="cGx1Z2luLnN0YWdpbmc= ephemeral" id="g366">
+         <g class="shape" id="g358">
+            <path
+               d="M 1541 8249 L 1541 8153 L 1825 8153 L 1825 8249 C 1778 8229 1730 8229 1683 8249 C 1636 8270 1588 8270 1541 8249 Z"
+               stroke="#B56A00" fill="#FFF2DB" style="stroke-width:2;stroke-dasharray:10.000000,9.865639;"
+               id="path356" />
+         </g>
+         <text x="1683" y="8191.426684" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text364">
+            <tspan x="1683" dy="0" id="tspan360">Ephemeral local staging</tspan>
+            <tspan x="1683" dy="24" id="tspan362">bounded; never canonical</tspan>
+         </text>
+      </g>
+      <g class="cGx1Z2luLnBlcnNpc3Q= plugin" id="g374">
+         <g class="shape" id="g370">
+            <rect x="2212" y="7619" width="327" height="72" stroke="#2476B8" fill="#E8F3FF" style="stroke-width:2;"
+               id="rect368" />
+         </g>
+         <text x="2375.5" y="7662.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text372">Canonical persistence adapter</text>
+      </g>
+      <g class="cGx1Z2luLnRydXRo status" id="g386">
+         <g class="shape" id="g378">
+            <path d="M 1477 7872 L 1259 7927 L 1477 7982 L 1913 7982 L 2131 7927 L 1913 7872 Z" stroke="#A83D61"
+               fill="#FCE9EF" style="stroke-width:2;" id="path376" />
+         </g>
+         <text x="1695" y="7924" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text384">
+            <tspan x="1695" dy="0" id="tspan380">Project truth status</tspan>
+            <tspan x="1695" dy="24" id="tspan382">active · complete · open · blocked · deferred · purge-pending</tspan>
+         </text>
+      </g>
+      <g class="cmVwby5zb3VyY2U= repository" id="g394">
+         <g class="shape" id="g390">
+            <rect x="662" y="8744" width="364" height="72" stroke="#68737D" fill="#F3F5F7" style="stroke-width:2;"
+               id="rect388" />
+         </g>
+         <text x="844" y="8787.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text392">Application source + configuration</text>
+      </g>
+      <g class="cmVwby50YXNrcw== repository" id="g402">
+         <g class="shape" id="g398">
+            <rect x="344" y="8744" width="298" height="72" stroke="#68737D" fill="#F3F5F7" style="stroke-width:2;"
+               id="rect396" />
+         </g>
+         <text x="493" y="8787.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text400">Checklist + task documents</text>
+      </g>
+      <g class="cmVwby5jYW5vbmljYWw= durable" id="g416">
+         <g class="shape" id="g408">
+            <path
+               d="M 1587 8768 C 1587 8744 1765 8744 1785 8744 C 1804 8744 1982 8744 1982 8768 V 8865 C 1982 8889 1804 8889 1785 8889 C 1765 8889 1587 8889 1587 8865 V 8768 Z"
+               stroke="#237A43" fill="#E7F8EB" style="stroke-width:2;" id="path404" />
+            <path d="M 1587 8768 C 1587 8792 1765 8792 1785 8792 C 1804 8792 1982 8792 1982 8768" stroke="#237A43"
+               fill="#E7F8EB" style="stroke-width:2;" id="path406" />
+         </g>
+         <text x="1784.5" y="8825.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text414">
+            <tspan x="1784.5" dy="0" id="tspan410">Canonical project Markdown</tspan>
+            <tspan x="1784.5" dy="24" id="tspan412">facts · decisions · procedures · lessons</tspan>
+         </text>
+      </g>
+      <g class="cmVwby50ZW1wb3Jhcnk= ephemeral" id="g428">
+         <g class="shape" id="g420">
+            <path
+               d="M 1046 8840 L 1046 8744 L 1567 8744 L 1567 8840 C 1480 8820 1393 8820 1307 8840 C 1220 8861 1133 8861 1046 8840 Z"
+               stroke="#B56A00" fill="#FFF2DB" style="stroke-width:2;stroke-dasharray:10.000000,9.865639;"
+               id="path418" />
+         </g>
+         <text x="1306.5" y="8782.426684" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text426">
+            <tspan x="1306.5" dy="0" id="tspan422">Ignored temporary project state</tspan>
+            <tspan x="1306.5" dy="24" id="tspan424">raw chats · imports · cues · scratch · source artifacts</tspan>
+         </text>
+      </g>
+      <g class="bGVnZW5kLnByb3Bvc2VkX2l0ZW0= proposed" id="g436">
+         <g class="shape" id="g432">
+            <rect x="2097" y="88" width="510" height="72" stroke="#4867B2" fill="#EAF0FF" style="stroke-width:2;"
+               id="rect430" />
+         </g>
+         <text x="2352" y="131.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text434">Blue / purple / teal: proposed bounded component</text>
+      </g>
+      <g class="bGVnZW5kLmR1cmFibGVfaXRlbQ== durable" id="g446">
+         <g class="shape" id="g442">
+            <path
+               d="M 2627 86 C 2627 62 2817 62 2838 62 C 2859 62 3049 62 3049 86 V 162 C 3049 186 2859 186 2838 186 C 2817 186 2627 186 2627 162 V 86 Z"
+               stroke="#237A43" fill="#E7F8EB" style="stroke-width:2;" id="path438" />
+            <path d="M 2627 86 C 2627 110 2817 110 2838 110 C 2859 110 3049 110 3049 86" stroke="#237A43" fill="#E7F8EB"
+               style="stroke-width:2;" id="path440" />
+         </g>
+         <text x="2838" y="143.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text444">Green cylinder: canonical durable record</text>
+      </g>
+      <g class="bGVnZW5kLmVwaGVtZXJhbF9pdGVt ephemeral" id="g454">
+         <g class="shape" id="g450">
+            <path
+               d="M 1462 154 L 1462 82 L 2077 82 L 2077 154 C 1975 139 1872 139 1770 154 C 1667 170 1565 170 1462 154 Z"
+               stroke="#B56A00" fill="#FFF2DB" style="stroke-width:2;stroke-dasharray:10.000000,9.865639;"
+               id="path448" />
+         </g>
+         <text x="1769.5" y="120.570013" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text452">Orange dashed document: transient; must purge after receipt</text>
+      </g>
+      <g class="bGVnZW5kLmh1bWFuX2l0ZW0= human" id="g462">
+         <g class="shape" id="g458">
+            <path
+               d="M 3535 176 C 3531 176 3529 176 3527 176 L 3073 125 C 3068 124 3068 124 3073 123 L 3527 72 C 3532 71 3539 71 3544 72 L 3998 123 C 4003 124 4003 124 3998 125 L 3543 176 C 3541 176 3539 176 3535 176 Z"
+               stroke="#A77900" fill="#FFF6C7" style="stroke-width:2;" id="path456" />
+         </g>
+         <text x="3535" y="131.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text460">Yellow diamond: human decision / approval gate</text>
+      </g>
+      <g class="bGVnZW5kLnN0YXR1c19pdGVt status" id="g470">
+         <g class="shape" id="g466">
+            <path d="M 4187 85 L 4021 124 L 4187 163 L 4520 163 L 4686 124 L 4520 85 Z" stroke="#A83D61" fill="#FCE9EF"
+               style="stroke-width:2;" id="path464" />
+         </g>
+         <text x="4353.5" y="131.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text468">Pink hexagon: truthful lifecycle / health state</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuaW52ZW50b3J5 hermes" id="g478">
+         <g class="shape" id="g474">
+            <rect x="1135" y="1300" width="325" height="72" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect472" />
+         </g>
+         <text x="1297.5" y="1343.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text476">Filesystem + service inventory</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuZ3Jvd3Ro hermes" id="g486">
+         <g class="shape" id="g482">
+            <rect x="1097" y="1533" width="401" height="72" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect480" />
+         </g>
+         <text x="1297.5" y="1576.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text484">Growth attribution + policy evaluation</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQucHJvcG9zYWw= hermes" id="g494">
+         <g class="shape" id="g490">
+            <rect x="1162" y="1766" width="270" height="72" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect488" />
+         </g>
+         <text x="1297" y="1809.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text492">Cleanup proposal queue</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuYXBwcm92YWw= human" id="g502">
+         <g class="shape" id="g498">
+            <path
+               d="M 1297 2103 C 1295 2103 1294 2103 1292 2103 L 1047 2052 C 1044 2051 1044 2051 1047 2050 L 1292 1999 C 1295 1998 1299 1998 1301 1999 L 1546 2050 C 1549 2051 1549 2051 1546 2052 L 1302 2103 C 1300 2103 1299 2103 1297 2103 Z"
+               stroke="#A77900" fill="#FFF6C7" style="stroke-width:2;" id="path496" />
+         </g>
+         <text x="1297" y="2058.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text500">Human approval required</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuZXhlY3V0ZQ== hermes" id="g510">
+         <g class="shape" id="g506">
+            <rect x="1150" y="2264" width="294" height="72" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect504" />
+         </g>
+         <text x="1297" y="2307.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text508">Managed cleanup executor</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQudmVyaWZ5 hermes" id="g518">
+         <g class="shape" id="g514">
+            <rect x="1112" y="2497" width="371" height="72" stroke="#7352B8" fill="#FFE4E4" style="stroke-width:2;"
+               id="rect512" />
+         </g>
+         <text x="1297.5" y="2540.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text516">Free-space + service-health verifier</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQucmVjZWlwdHM= durable" id="g528">
+         <g class="shape" id="g524">
+            <path
+               d="M 1175 2754 C 1175 2730 1285 2730 1298 2730 C 1310 2730 1420 2730 1420 2754 V 2830 C 1420 2854 1310 2854 1298 2854 C 1285 2854 1175 2854 1175 2830 V 2754 Z"
+               stroke="#237A43" fill="#E7F8EB" style="stroke-width:2;" id="path520" />
+            <path d="M 1175 2754 C 1175 2778 1285 2778 1298 2778 C 1310 2778 1420 2778 1420 2754" stroke="#237A43"
+               fill="#E7F8EB" style="stroke-width:2;" id="path522" />
+         </g>
+         <text x="1297.5" y="2811.5" fill="#111111" class="text-bold" style="text-anchor:middle;font-size:21px"
+            id="text526">Host cleanup receipts</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuKGludmVudG9yeSAtJmd0OyBncm93dGgpWzBd" id="g537">
+         <marker id="mk-d2-1554157028-3488378134" markerWidth="10" markerHeight="12" refX="7" refY="6"
+            viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse">
+            <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2"
+               id="polygon530" />
+         </marker>
+         <path d="M 1297.865967 1374 L 1297.865967 1529" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path533" />
+         <text x="1297.5" y="1458" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text535">measured usage</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuKGdyb3d0aCAtJmd0OyBwcm9wb3NhbClbMF0=" id="g543">
+         <path d="M 1297.865967 1607 L 1297.865967 1762" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path539" />
+         <text x="1298" y="1691" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text541">attributable candidates</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuKHByb3Bvc2FsIC0mZ3Q7IGFwcHJvdmFsKVswXQ==" id="g549">
+         <path d="M 1297.867642 1839.999999 L 1297.996649 1994.000001" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path545" />
+         <text x="1298" y="1924" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text547">proposed deletion only</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuKGFwcHJvdmFsIC0mZ3Q7IGV4ZWN1dGUpWzBd" id="g555">
+         <path d="M 1298 2105 L 1298 2260" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path551" />
+         <text x="1298" y="2189" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text553">explicit approval</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuKGV4ZWN1dGUgLSZndDsgdmVyaWZ5KVswXQ==" id="g561">
+         <path d="M 1297.865967 2338 L 1297.865967 2493" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path557" />
+         <text x="1298" y="2422" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text559">managed action</text>
+      </g>
+      <g class="aGVybWVzLnN0ZXdhcmQuKHZlcmlmeSAtJmd0OyByZWNlaXB0cylbMF0=" id="g567">
+         <path d="M 1297.867632 2570.999999 L 1297.99667 2726.000001" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path563" />
+         <text x="1298" y="2655" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text565">result + evidence</text>
+      </g>
+      <g class="aGVybWVzLihwcm9maWxlcyAtJmd0OyBydW50aW1lKVswXQ==" id="g573">
+         <path d="M 1144.032959 555 L 1144.032959 720" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path569" />
+         <text x="1144.5" y="644" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text571">selected profile</text>
+      </g>
+      <g class="aGVybWVzLihydW50aW1lIC0mZ3Q7IHJvdXRlcilbMF0=" id="g579">
+         <path d="M 1191.865967 819 L 1191.865967 974" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path575" />
+         <text x="1191.5" y="903" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text577">task lifecycle events</text>
+      </g>
+      <g class="aGVybWVzLihyb3V0ZXIgLSZndDsgZ2F0ZXdheSlbMF0=" id="g585">
+         <path
+            d="M 1128.198975 1073 L 1128.198975 1101 S 1128.198975 1111 1118.198975 1111 L 748.866028 1111 S 738.866028 1111 738.866028 1121 L 738.866028 2023"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path581" />
+         <text x="738.5" y="1360" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text583">normalized event / call</text>
+      </g>
+      <g class="Y3VyYXRvci4ocmVnaXN0cnkgLSZndDsgaW5ncmVzcylbMF0=" id="g591">
+         <path
+            d="M 1534.633057 3398 L 1534.633057 3517 S 1534.633057 3527 1544.633057 3527 L 1742.333008 3527 S 1752.333008 3527 1752.333008 3537 L 1752.333008 3563"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path587" />
+         <text x="1597.5" y="3533" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text589">scoped identity + policy</text>
+      </g>
+      <g class="Y3VyYXRvci4oaW5ncmVzcyAtJmd0OyBub3JtYWxpemUpWzBd" id="g597">
+         <path d="M 1824.032959 3641 L 1824.032959 3796" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path593" />
+         <text x="1824" y="3725" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text595">bounded project event</text>
+      </g>
+      <g class="Y3VyYXRvci4obm9ybWFsaXplIC0mZ3Q7IGdvYWwpWzBd" id="g601">
+         <path d="M 1824.032959 3895 L 1824.032959 3959" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path599" />
+      </g>
+      <g class="Y3VyYXRvci4oZ29hbCAtJmd0OyBjcml0ZXJpYSlbMF0=" id="g605">
+         <path d="M 1882.198975 4058 L 1882.198975 4132" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path603" />
+      </g>
+      <g class="Y3VyYXRvci4oY3JpdGVyaWEgLSZndDsgZXZpZGVuY2UpWzBd" id="g609">
+         <path d="M 2000.083008 4210 L 2000.083008 4274" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path607" />
+      </g>
+      <g class="Y3VyYXRvci4oZXZpZGVuY2UgLSZndDsgZmFjdHMpWzBd" id="g613">
+         <path d="M 2000.080636 4372.999999 L 2000.004743 4437.000003" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path611" />
+      </g>
+      <g class="Y3VyYXRvci4oZmFjdHMgLSZndDsgc2lnbmlmaWNhbmNlKVswXQ==" id="g619">
+         <path d="M 2000 4588 L 2000 4743" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path615" />
+         <text x="2000.5" y="4672" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text617">deduplicated evidence-backed facts</text>
+      </g>
+      <g class="Y3VyYXRvci4oc2lnbmlmaWNhbmNlIC0mZ3Q7IGNvbXBpbGVyKVswXQ==" id="g625">
+         <path d="M 2106.016113 4842 L 2106.016113 5292" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path621" />
+         <text x="2106" y="5074" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text623">ordinary goal fact</text>
+      </g>
+      <g class="Y3VyYXRvci4oc2lnbmlmaWNhbmNlIC0mZ3Q7IHJldmlldylbMF0=" id="g631">
+         <path d="M 1940.411996 4841.999996 L 1940.008039 5043.000008" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path627" />
+         <text x="1940.5" y="4949" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text629">candidate SDE</text>
+      </g>
+      <g class="Y3VyYXRvci4ocmV2aWV3IC0mZ3Q7IGNvbXBpbGVyKVswXQ==" id="g637">
+         <path d="M 1891.999356 5090 L 1891.934272 5292" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path633" />
+         <text x="1892" y="5198" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text635">approved selected facts</text>
+      </g>
+      <g class="Y3VyYXRvci4ocmV2aWV3IC0mZ3Q7IGxlYXJuaW5nKVswXQ==" id="g643">
+         <path d="M 1563.003302 5085.999997 L 1563.343372 5292.000005" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path639" />
+         <text x="1563" y="5196" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text641">human label / QA signal</text>
+      </g>
+      <g class="Y3VyYXRvci4oY29tcGlsZXIgLSZndDsgcmVjZWlwdClbMF0=" id="g649">
+         <path d="M 1897.521652 5390.999992 L 1897.988678 5556.000016" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path645" />
+         <text x="1897.5" y="5480" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text647">committed bullet record</text>
+      </g>
+      <g class="Y3VyYXRvci4ocmVjZWlwdCAtJmd0OyBwdXJnZSlbMF0=" id="g655">
+         <path d="M 1791.003075 5704.999998 L 1791.259841 5872.000005" stroke="#0D32B2" fill="none"
+            class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)"
+            mask="url(#d2-1554157028)" id="path651" />
+         <text x="1791" y="5795" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text653">purge instruction + receipt</text>
+      </g>
+      <g class="Y3VyYXRvci4oZ29hbCAtJmd0OyBvcHMpWzBd" id="g661">
+         <path
+            d="M 1765.865967 4058 L 1765.865967 4086 S 1765.865967 4096 1755.865967 4096 L 1343.265991 4096 S 1333.265991 4096 1333.264747 4106 L 1333.000498 6230"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path657" />
+         <text x="1333" y="4934" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text659">lifecycle state</text>
+      </g>
+      <g class="Y3VyYXRvci4ocHVyZ2UgLSZndDsgb3BzKVswXQ==" id="g667">
+         <path
+            d="M 1674.599976 5971 L 1674.599976 6150 S 1674.599976 6160 1664.599976 6160 L 1580.640991 6160 S 1570.640991 6160 1570.73074 6169.999597 L 1570.964101 6196.000161"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path663" />
+         <text x="1675" y="6142" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text665">purge / retry state</text>
+      </g>
+      <g class="Y3VyYXRvci4obGVhcm5pbmcgLSZndDsgb3BzKVswXQ==" id="g673">
+         <path d="M 1479.89126 5391 L 1479.999462 6196" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path669" />
+         <text x="1480" y="5800" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text671">quality metrics</text>
+      </g>
+      <g class="cGx1Z2luLihjb25maWcgLSZndDsgYXBpKVswXQ==" id="g679">
+         <path d="M 619 6904 L 619 7079" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path675" />
+         <text x="619.5" y="6998" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text677">local scope + policy</text>
+      </g>
+      <g class="cGx1Z2luLihhcGkgLSZndDsgbWFwcGVyKVswXQ==" id="g685">
+         <path d="M 671.833008 7157 L 671.833008 7312" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path681" />
+         <text x="671.5" y="7241" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text683">scoped task command</text>
+      </g>
+      <g class="cGx1Z2luLihtYXBwZXIgLSZndDsgY2hlY2tsaXN0KVswXQ==" id="g691">
+         <path d="M 645.132996 7390 L 645.132996 7615" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path687" />
+         <text x="645.5" y="7509" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text689">linked checklist item</text>
+      </g>
+      <g class="cGx1Z2luLihtYXBwZXIgLSZndDsgcmVhZGVyKVswXQ==" id="g697">
+         <path
+            d="M 751.932983 7390 L 751.932983 7418 S 751.932983 7428 761.932983 7428 L 933.450012 7428 S 943.450012 7428 943.450012 7438 L 943.450012 7615"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path693" />
+         <text x="923" y="7434" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text695">evidence references</text>
+      </g>
+      <g class="cGx1Z2luLihyZWFkZXIgLSZndDsgdmVyaWZpY2F0aW9uKVswXQ==" id="g703">
+         <path d="M 1055.949951 7693 L 1055.949951 7877" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path699" />
+         <text x="1056" y="7792" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text701">candidate evidence</text>
+      </g>
+      <g class="cGx1Z2luLih2ZXJpZmljYXRpb24gLSZndDsgc3RhZ2luZylbMF0=" id="g709">
+         <path
+            d="M 1055.949951 7975 L 1055.949951 8103 S 1055.949951 8113 1065.949951 8113 L 1625.666016 8113 S 1635.666016 8113 1635.749509 8122.999651 L 1635.966603 8149.000139"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path705" />
+         <text x="1295.5" y="8119" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text707">bounded temporary references</text>
+      </g>
+      <g class="cGx1Z2luLihtYXBwZXIgLSZndDsgcGVyc2lzdClbMF0=" id="g715">
+         <path
+            d="M 698.53302 7390 L 698.53302 7569 S 698.53302 7579 708.53302 7579 L 2284.699951 7579 S 2294.699951 7579 2294.699951 7589 L 2294.699951 7615"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path711" />
+         <text x="1421.5" y="7585" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text713">approved compact record only</text>
+      </g>
+      <g class="cGx1Z2luLihwZXJzaXN0IC0mZ3Q7IHRydXRoKVswXQ==" id="g721">
+         <path
+            d="M 2321.949951 7693 L 2321.949951 7822 S 2321.949951 7832 2311.949951 7832 L 1851.282959 7832 S 1841.282959 7832 1841.212221 7841.99975 L 1841.028295 7868.0001"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path717" />
+         <text x="2132" y="7838" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text719">project state</text>
+      </g>
+      <g class="KHVzZXIgLSZndDsgaGVybWVzLnJ1bnRpbWUpWzBd" id="g727">
+         <path d="M 1314.615967 238 L 1314.615967 720" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path723" />
+         <text x="1314.5" y="486" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text725">request · checklist choice · acceptance decision</text>
+      </g>
+      <g class="KGhlcm1lcy5yb3V0ZXIgLSZndDsgY3VyYXRvci5pbmdyZXNzKVswXQ==" id="g733">
+         <path
+            d="M 1255.532959 1073 L 1255.532959 1101 S 1255.532959 1111 1265.532959 1111 L 1808.008057 1111 S 1818.008057 1111 1818.008057 1121 L 1818.008057 3563"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path729" />
+         <text x="1818.5" y="2043" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text731">scoped project event</text>
+      </g>
+      <g class="KGhlcm1lcy5nYXRld2F5IC0mZ3Q7IHBsdWdpbi5hcGkpWzBd" id="g739">
+         <path
+            d="M 738.866028 2121 L 738.866028 2989 S 738.866028 2999 728.866028 2999 L 80.999001 2999 S 70.999001 2999 70.999001 3009 L 70.999001 6596 S 70.999001 6606 80.999001 6606 L 830.999023 6606 S 840.999023 6606 840.999046 6616 L 840.999978 7033 S 841 7043 831 7043 L 734.666016 7043 S 724.666016 7043 724.666016 7053 L 724.666016 7079"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path735" />
+         <text x="71" y="4716" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text737">call project plugin</text>
+      </g>
+      <g class="KHBsdWdpbi5jb25maWcgLSZndDsgY3VyYXRvci5yZWdpc3RyeSlbMF0=" id="g745">
+         <path
+            d="M 364.632996 6904 L 364.632996 8350 S 364.632996 8360 354.632996 8360 L 175 8360 S 165 8360 165 8350 L 165 6716 S 165 6706 175 6706 L 503.333008 6706 S 513.333008 6706 513.333008 6696 L 513.333008 3210 S 513.333008 3200 523.333008 3200 L 1524.633057 3200 S 1534.633057 3200 1534.633057 3210 L 1534.633057 3299"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path741" />
+         <text x="513" y="6226" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text743">project identity + policy</text>
+      </g>
+      <g class="KHBsdWdpbi5tYXBwZXIgLSZndDsgY3VyYXRvci5pbmdyZXNzKVswXQ==" id="g751">
+         <path
+            d="M 591.732971 7390 L 591.732971 7418 S 591.732971 7428 581.732971 7428 L 388.450012 7428 S 378.450012 7428 378.450012 7438 L 378.450012 8400 S 378.450012 8410 388.450012 8410 L 2958.032959 8410 S 2968.032959 8410 2968.032959 8400 L 2968.032959 3160 S 2968.032959 3150 2958.032959 3150 L 1857.932983 3150 S 1847.932983 3150 1847.932983 3160 L 1847.932983 3563"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path747" />
+         <text x="2968" y="6929" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text749">goal context + references</text>
+      </g>
+      <g class="KHBsdWdpbi5zdGFnaW5nIC0mZ3Q7IGN1cmF0b3IuaW5ncmVzcylbMF0=" id="g757">
+         <path
+            d="M 1730.005371 8237.999993 L 1730.306152 8350.000036 S 1730.333008 8360 1740.333008 8360 L 2754.532959 8360 S 2764.532959 8360 2764.532959 8350 L 2764.532959 3210 S 2764.532959 3200 2754.532959 3200 L 1905.733032 3200 S 1895.733032 3200 1895.733032 3210 L 1895.733032 3563"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path753" />
+         <text x="2764.5" y="5747" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text755">bounded evidence references only</text>
+      </g>
+      <g class="KGN1cmF0b3IuY29tcGlsZXIgLSZndDsgcGx1Z2luLnBlcnNpc3QpWzBd" id="g763">
+         <path
+            d="M 2158.016113 5391 L 2158.016113 6395 S 2158.016113 6405 2168.016113 6405 L 2522.532959 6405 S 2532.532959 6405 2532.532959 6415 L 2532.532959 6596 S 2532.532959 6606 2522.532959 6606 L 2468.199951 6606 S 2458.199951 6606 2458.199951 6616 L 2458.199951 7615"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path759" />
+         <text x="2481.5" y="6411" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text761">approved compact bullet record</text>
+      </g>
+      <g class="KGN1cmF0b3IucmVjZWlwdCAtJmd0OyBwbHVnaW4ucGVyc2lzdClbMF0=" id="g769">
+         <path
+            d="M 2003.999378 5705 L 2003.769103 6445 S 2003.765991 6455 2013.765991 6455 L 2328.532959 6455 S 2338.532959 6455 2338.532959 6465 L 2338.532959 7615"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path765" />
+         <text x="2338.5" y="6499" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text767">decision + purge receipt</text>
+      </g>
+      <g class="KGN1cmF0b3IucHVyZ2UgLSZndDsgcGx1Z2luLnN0YWdpbmcpWzBd" id="g775">
+         <path
+            d="M 1877.515991 5971 L 1877.515991 6596 S 1877.515991 6606 1887.515991 6606 L 2161.949951 6606 S 2171.949951 6606 2171.949951 6616 L 2171.949951 8103 S 2171.949951 8113 2161.949951 8113 L 1740.333008 8113 S 1730.333008 8113 1730.249759 8122.999653 L 1730.0333 8149.000139"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path771" />
+         <text x="2172" y="7140" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text773">delete transient artifacts</text>
+      </g>
+      <g class="KGN1cmF0b3IucHVyZ2UgLSZndDsgcGx1Z2luLnRydXRoKVswXQ==" id="g781">
+         <path d="M 1717.39058 5971 L 1717.000822 7868" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path777" />
+         <text x="1717" y="6926" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text779">purge state / retry</text>
+      </g>
+      <g class="KHBsdWdpbi5yZWFkZXIgLSZndDsgcmVwby5zb3VyY2UpWzBd" id="g787">
+         <path
+            d="M 830.950012 7693 L 830.950012 8450 S 830.950012 8460 840.950012 8460 L 1022.390991 8460 S 1032.390991 8460 1032.390991 8470 L 1032.390991 8551 S 1032.390991 8561 1022.390991 8561 L 914.75 8561 S 904.75 8561 904.75 8571 L 904.75 8740"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path783" />
+         <text x="830.5" y="8388" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text785">read-only evidence</text>
+      </g>
+      <g class="KHBsdWdpbi5jaGVja2xpc3QgLSZndDsgcmVwby50YXNrcylbMF0=" id="g793">
+         <path d="M 534.583008 7693 L 534.583008 8740" stroke="#0D32B2" fill="none" class="connection stroke-B1"
+            style="stroke-width:2;" marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)"
+            id="path789" />
+         <text x="535" y="8223" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text791">checklist source</text>
+      </g>
+      <g class="KHBsdWdpbi5wZXJzaXN0IC0mZ3Q7IHJlcG8uY2Fub25pY2FsKVswXQ==" id="g799">
+         <path
+            d="M 2430.949951 7693 L 2430.949951 8450 S 2430.949951 8460 2420.949951 8460 L 1932.807983 8460 S 1922.807983 8460 1922.814605 8469.999998 L 1922.997351 8746.000001"
+            stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;"
+            marker-end="url(#mk-d2-1554157028-3488378134)" mask="url(#d2-1554157028)" id="path795" />
+         <text x="2416.5" y="8466" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text797">canonical write</text>
+      </g>
+      <g class="KHBsdWdpbi5zdGFnaW5nIC0mZ3Q7IHJlcG8udGVtcG9yYXJ5KVswXQ==" id="g808">
+         <marker id="mk-d2-1554157028-2177206569" markerWidth="10" markerHeight="12" refX="7" refY="6"
+            viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse">
+            <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B2" stroke-width="2"
+               id="polygon801" />
+         </marker>
+         <path
+            d="M 1635.996609 8264.999997 L 1635.682969 8450.000014 S 1635.666016 8460 1625.666016 8460 L 1316.583008 8460 S 1306.583008 8460 1306.597691 8469.999989 L 1306.994127 8740.000004"
+            stroke="#0D32B2" fill="none" class="connection stroke-B2"
+            style="stroke-width:2;stroke-dasharray:10.000000,9.865639;" marker-end="url(#mk-d2-1554157028-2177206569)"
+            mask="url(#d2-1554157028)" id="path804" />
+         <text x="1427.5" y="8466" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text806">temporary only</text>
+      </g>
+      <g class="KGhlcm1lcy5zdGV3YXJkIC0mZ3Q7IHJlcG8uc291cmNlKVswXQ==" id="g814">
+         <path
+            d="M 1195.532959 2906 L 1195.532959 3039 S 1195.532959 3049 1185.532959 3049 L 365.333008 3049 S 355.333008 3049 355.333008 3059 L 355.333008 6646 S 355.333008 6656 345.333008 6656 L 90.499001 6656 S 80.499001 6656 80.499001 6666 L 80.499001 8694 S 80.499001 8704 90.499001 8704 L 773.416016 8704 S 783.416016 8704 783.416016 8714 L 783.416016 8740"
+            stroke="#0D32B2" fill="none" class="connection stroke-B2"
+            style="stroke-width:2;stroke-dasharray:10.000000,9.865639;" marker-end="url(#mk-d2-1554157028-2177206569)"
+            mask="url(#d2-1554157028)" id="path810" />
+         <text x="355" y="5898" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text812">host observation only</text>
+      </g>
+      <g class="KGhlcm1lcy5zdGV3YXJkIC0mZ3Q7IGN1cmF0b3IpWzBd" id="g820">
+         <path
+            d="M 1400.198975 2906 L 1400.198975 3039 S 1400.198975 3049 1410.198975 3049 L 1601.42395 3049 S 1611.42395 3049 1611.42395 3059 L 1611.42395 3241"
+            stroke="#0D32B2" fill="none" class="connection stroke-B2"
+            style="stroke-width:2;stroke-dasharray:10.000000,9.865639;" marker-end="url(#mk-d2-1554157028-2177206569)"
+            mask="url(#d2-1554157028)" id="path816" />
+         <text x="1531" y="3055" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px"
+            id="text818">no project-knowledge write</text>
+      </g>
+      <mask id="d2-1554157028" maskUnits="userSpaceOnUse" x="-88" y="-89" width="4925" height="9129">
+         <rect x="-88" y="-89" width="4925" height="9129" fill="white" id="rect822" />
+         <rect x="1241" y="1442" width="113" height="21" fill="black" id="rect824" />
+         <rect x="1218" y="1675" width="160" height="21" fill="black" id="rect826" />
+         <rect x="1220" y="1908" width="156" height="21" fill="black" id="rect828" />
+         <rect x="1241" y="2173" width="114" height="21" fill="black" id="rect830" />
+         <rect x="1242" y="2406" width="112" height="21" fill="black" id="rect832" />
+         <rect x="1241" y="2639" width="114" height="21" fill="black" id="rect834" />
+         <rect x="1092" y="628" width="105" height="21" fill="black" id="rect836" />
+         <rect x="1124" y="887" width="135" height="21" fill="black" id="rect838" />
+         <rect x="662" y="1344" width="153" height="21" fill="black" id="rect840" />
+         <rect x="1518" y="3517" width="159" height="21" fill="black" id="rect842" />
+         <rect x="1748" y="3709" width="152" height="21" fill="black" id="rect844" />
+         <rect x="1880" y="4656" width="241" height="21" fill="black" id="rect846" />
+         <rect x="2045" y="5058" width="122" height="21" fill="black" id="rect848" />
+         <rect x="1890" y="4933" width="101" height="21" fill="black" id="rect850" />
+         <rect x="1812" y="5182" width="160" height="21" fill="black" id="rect852" />
+         <rect x="1483" y="5180" width="160" height="21" fill="black" id="rect854" />
+         <rect x="1816" y="5464" width="163" height="21" fill="black" id="rect856" />
+         <rect x="1702" y="5779" width="178" height="21" fill="black" id="rect858" />
+         <rect x="1286" y="4918" width="94" height="21" fill="black" id="rect860" />
+         <rect x="1613" y="6126" width="124" height="21" fill="black" id="rect862" />
+         <rect x="1429" y="5784" width="102" height="21" fill="black" id="rect864" />
+         <rect x="554" y="6982" width="131" height="21" fill="black" id="rect866" />
+         <rect x="595" y="7225" width="153" height="21" fill="black" id="rect868" />
+         <rect x="577" y="7493" width="137" height="21" fill="black" id="rect870" />
+         <rect x="856" y="7418" width="134" height="21" fill="black" id="rect872" />
+         <rect x="990" y="7776" width="132" height="21" fill="black" id="rect874" />
+         <rect x="1192" y="8103" width="207" height="21" fill="black" id="rect876" />
+         <rect x="1319" y="7569" width="205" height="21" fill="black" id="rect878" />
+         <rect x="2088" y="7822" width="88" height="21" fill="black" id="rect880" />
+         <rect x="1160" y="470" width="309" height="21" fill="black" id="rect882" />
+         <rect x="1748" y="2027" width="141" height="21" fill="black" id="rect884" />
+         <rect x="10" y="4700" width="122" height="21" fill="black" id="rect886" />
+         <rect x="434" y="6210" width="158" height="21" fill="black" id="rect888" />
+         <rect x="2884" y="6913" width="168" height="21" fill="black" id="rect890" />
+         <rect x="2651" y="5731" width="227" height="21" fill="black" id="rect892" />
+         <rect x="2374" y="6395" width="215" height="21" fill="black" id="rect894" />
+         <rect x="2258" y="6483" width="161" height="21" fill="black" id="rect896" />
+         <rect x="2089" y="7124" width="166" height="21" fill="black" id="rect898" />
+         <rect x="1655" y="6910" width="124" height="21" fill="black" id="rect900" />
+         <rect x="766" y="8372" width="129" height="21" fill="black" id="rect902" />
+         <rect x="481" y="8207" width="108" height="21" fill="black" id="rect904" />
+         <rect x="2364" y="8450" width="105" height="21" fill="black" id="rect906" />
+         <rect x="1375" y="8450" width="105" height="21" fill="black" id="rect908" />
+         <rect x="282" y="5882" width="146" height="21" fill="black" id="rect910" />
+         <rect x="1439" y="3039" width="184" height="21" fill="black" id="rect912" />
+      </mask>
+   </svg>
+</svg>
