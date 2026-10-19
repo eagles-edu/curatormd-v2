@@ -1,0 +1,157 @@
+"""One-shot maintenance entrypoint opt-in and alert behavior."""
+
+from __future__ import annotations
+
+from io import StringIO
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
+import unittest
+from unittest.mock import Mock, patch
+
+from curatormd_v2.maintenance_cli import main
+from curatormd_v2.models import PurgeStatus
+
+
+class MaintenanceCliTests(unittest.TestCase):
+    """Keep scheduled retries explicit, bounded, and content-free."""
+
+    def test_execution_requires_explicit_opt_in_before_opening_project(self) -> None:
+        errors = StringIO()
+        with patch("curatormd_v2.maintenance_cli.ProjectConfig.load") as load:
+            result = main(
+                ["--project-root", "/repo", "--database", "/state/curator.sqlite"],
+                stderr=errors,
+            )
+
+        self.assertEqual(result, 2)
+        self.assertIn("--execute-due-purges", errors.getvalue())
+        load.assert_not_called()
+
+    def test_due_retry_counts_are_bounded_and_pending_returns_alert_code(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "curator.sqlite"
+            store = Mock()
+            plugin = SimpleNamespace(
+                retry_due_purges=Mock(
+                    return_value=(
+                        SimpleNamespace(purge_status=PurgeStatus.COMPLETE),
+                        SimpleNamespace(purge_status=PurgeStatus.PURGE_PENDING),
+                    )
+                )
+            )
+            output = StringIO()
+            errors = StringIO()
+            with (
+                patch(
+                    "curatormd_v2.maintenance_cli.ProjectConfig.load",
+                    return_value=SimpleNamespace(project_id="project-a"),
+                ),
+                patch(
+                    "curatormd_v2.maintenance_cli.CuratorStore",
+                    return_value=store,
+                ),
+                patch(
+                    "curatormd_v2.maintenance_cli.ProjectPlugin.bind",
+                    return_value=plugin,
+                ),
+            ):
+                result = main(
+                    [
+                        "--project-root",
+                        "/repo",
+                        "--database",
+                        str(database),
+                        "--batch-limit",
+                        "7",
+                        "--execute-due-purges",
+                    ],
+                    stdout=output,
+                    stderr=errors,
+                )
+
+        self.assertEqual(result, 1)
+        plugin.retry_due_purges.assert_called_once_with(7)
+        store.close.assert_called_once_with()
+        self.assertEqual(
+            output.getvalue(),
+            '{"complete":1,"pending":1,"processed":2,"project_id":"project-a"}\n',
+        )
+        self.assertEqual(errors.getvalue(), "")
+        self.assertNotIn("receipt", output.getvalue())
+        self.assertNotIn("path", output.getvalue())
+
+    def test_clean_batch_returns_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Mock()
+            plugin = SimpleNamespace(retry_due_purges=Mock(return_value=()))
+            output = StringIO()
+            with (
+                patch(
+                    "curatormd_v2.maintenance_cli.ProjectConfig.load",
+                    return_value=SimpleNamespace(project_id="project-a"),
+                ),
+                patch(
+                    "curatormd_v2.maintenance_cli.CuratorStore",
+                    return_value=store,
+                ),
+                patch(
+                    "curatormd_v2.maintenance_cli.ProjectPlugin.bind",
+                    return_value=plugin,
+                ),
+            ):
+                result = main(
+                    [
+                        "--project-root",
+                        "/repo",
+                        "--database",
+                        str(Path(temporary) / "curator.sqlite"),
+                        "--execute-due-purges",
+                    ],
+                    stdout=output,
+                )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            output.getvalue(),
+            '{"complete":0,"pending":0,"processed":0,"project_id":"project-a"}\n',
+        )
+        store.close.assert_called_once_with()
+
+    def test_runtime_error_is_sanitized_and_store_is_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Mock()
+            errors = StringIO()
+            with (
+                patch(
+                    "curatormd_v2.maintenance_cli.ProjectConfig.load",
+                    return_value=SimpleNamespace(project_id="project-a"),
+                ),
+                patch(
+                    "curatormd_v2.maintenance_cli.CuratorStore",
+                    return_value=store,
+                ),
+                patch(
+                    "curatormd_v2.maintenance_cli.ProjectPlugin.bind",
+                    side_effect=OSError("/private/repo/staging"),
+                ),
+            ):
+                result = main(
+                    [
+                        "--project-root",
+                        "/repo",
+                        "--database",
+                        str(Path(temporary) / "curator.sqlite"),
+                        "--execute-due-purges",
+                    ],
+                    stderr=errors,
+                )
+
+        self.assertEqual(result, 2)
+        self.assertIn("maintenance failed", errors.getvalue())
+        self.assertNotIn("/private/repo/staging", errors.getvalue())
+        store.close.assert_called_once_with()
+
+
+if __name__ == "__main__":
+    unittest.main()

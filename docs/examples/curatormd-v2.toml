@@ -1,0 +1,28 @@
+# Copy into a consuming repository as .curatormd-v2.toml and replace every
+# example path/identity with paths that exist in that repository.
+schema_version = 1
+backend_api_version = 1
+project_id = "example-project"
+
+[scope]
+read_paths = ["src", "tests", "docs"]
+
+[checklists]
+implementation = "docs/implementation-checklist.md"
+
+[evidence]
+adapters = []
+
+[actions]
+adapters = []
+
+[staging]
+# Temporary artifacts for one goal belong under root/<goal-id>/.
+root = ".curatormd-v2/staging"
+# Optional consumer-owned project budgets (unset means no project-wide cap).
+# Reaching either budget blocks new staging; it never deletes existing files.
+# max_project_bytes = 1073741824
+# max_project_files = 10000
+
+[persistence]
+targets = ["persistence/HISTORY.md", "persistence/LESSONS-LEARNED.md"]

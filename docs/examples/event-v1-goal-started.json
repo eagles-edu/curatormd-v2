@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "event_id": "evt-gptmd-readyz-001",
+  "project_id": "gptmd",
+  "source_id": "gptmd-coding",
+  "source_sequence": 1,
+  "occurred_at": "2026-10-18T12:00:00+00:00",
+  "event_type": "goal.started",
+  "payload": {
+    "goal_id": "goal-readyz-001",
+    "problem": "Add the readiness route",
+    "success_criteria": [
+      {
+        "criterion_id": "readyz-response",
+        "description": "The readiness endpoint returns ready only when required dependencies are healthy"
+      }
+    ],
+    "initial_status": "planned",
+    "next_action": "Inspect the readiness implementation and its required probes",
+    "owner": "gptmd-coding",
+    "checklist_id": "api-readiness",
+    "checklist_version": "sha256:f2749f1783aa645ce29ca7570df39f3a7ec226be136253e88b472085a1e2b6f3",
+    "checklist_source_text": "- [ ] Add readiness endpoint",
+    "parent_goal_id": "goal-api-modernization",
+    "depends_on_goal_ids": ["goal-health-contract"]
+  }
+}

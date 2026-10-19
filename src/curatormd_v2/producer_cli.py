@@ -1,0 +1,82 @@
+"""Bounded stdin adapter for repository-local Curator V2 artifact staging."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sys
+from typing import BinaryIO, TextIO
+
+from .project_config import ProjectConfig
+from .project_plugin import ProjectPlugin
+from .store import CuratorStore
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="curatormd-v2-stage",
+        description=(
+            "Stream one temporary artifact from stdin into the configured "
+            "project and goal staging scope."
+        ),
+    )
+    parser.add_argument("--project-root", required=True, type=Path)
+    parser.add_argument("--database", required=True, type=Path)
+    parser.add_argument("--goal-id", required=True)
+    parser.add_argument(
+        "--artifact-class",
+        required=True,
+        choices=("raw-chat", "cue", "import", "scratch", "generated", "duplicate"),
+    )
+    parser.add_argument("--artifact-id", required=True)
+    return parser
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    stdin: BinaryIO | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    """Stage only bytes piped to stdin; never read arbitrary source paths."""
+
+    arguments = _parser().parse_args(argv)
+    output = stdout or sys.stdout
+    errors = stderr or sys.stderr
+    database = arguments.database.expanduser()
+    if not database.is_absolute():
+        print("Curator V2 staging failed (invalid request or producer error).", file=errors)
+        return 2
+
+    store: CuratorStore | None = None
+    try:
+        config = ProjectConfig.load(arguments.project_root)
+        store = CuratorStore(database)
+        plugin = ProjectPlugin.bind(config, store)
+        artifact = plugin.stage_artifact(
+            arguments.goal_id,
+            arguments.artifact_class,
+            arguments.artifact_id,
+            stdin or sys.stdin.buffer,
+        )
+        output.write(
+            json.dumps(
+                {"path": artifact.path, "sha256": artifact.sha256},
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return 0
+    except Exception:  # never echo producer input or internal exception details
+        print("Curator V2 staging failed (invalid request or producer error).", file=errors)
+        return 2
+    finally:
+        if store is not None:
+            store.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

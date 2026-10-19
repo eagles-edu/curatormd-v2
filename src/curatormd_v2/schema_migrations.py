@@ -1,0 +1,376 @@
+"""Sequential, transactional SQLite schema migrations for Curator V2."""
+
+from __future__ import annotations
+
+import sqlite3
+
+SQLITE_SCHEMA_VERSION = 13
+
+
+def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
+    """Add durable event attempts, source ordering, and operator retry audit."""
+
+    event_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(event_inbox)").fetchall()
+    }
+    for column, declaration in (
+        ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("source_id", "TEXT NOT NULL DEFAULT 'unspecified'"),
+        ("source_sequence", "INTEGER"),
+    ):
+        if column not in event_columns:
+            connection.execute(
+                f"ALTER TABLE event_inbox ADD COLUMN {column} {declaration}"
+            )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS event_retry_audit (
+               retry_id INTEGER PRIMARY KEY,
+               project_id TEXT NOT NULL,
+               event_id TEXT NOT NULL,
+               actor_id TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               FOREIGN KEY(project_id, event_id)
+                   REFERENCES event_inbox(project_id, event_id)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_retry_audit_event "
+        "ON event_retry_audit(project_id, event_id, retry_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_inbox_source_order "
+        "ON event_inbox(project_id, source_id, source_sequence, status)"
+    )
+    connection.execute("PRAGMA user_version = 2")
+
+
+def migrate_purge_observability_v3(connection: sqlite3.Connection) -> None:
+    """Add artifact queue timestamps for age reporting and operator recovery."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+    }
+    if "created_at" not in columns:
+        connection.execute(
+            "ALTER TABLE purge_targets ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
+        )
+    if "last_attempt_at" not in columns:
+        connection.execute("ALTER TABLE purge_targets ADD COLUMN last_attempt_at TEXT")
+    connection.execute(
+        """UPDATE purge_targets SET created_at = COALESCE(
+               (SELECT created_at FROM audit_receipts
+                WHERE audit_receipts.receipt_id = purge_targets.receipt_id), ''
+           ) WHERE created_at = ''"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS purge_targets_queue_age "
+        "ON purge_targets(status, created_at, receipt_id)"
+    )
+    connection.execute("PRAGMA user_version = 3")
+
+
+def migrate_event_retry_backoff_v4(connection: sqlite3.Connection) -> None:
+    """Persist event retry deadlines without delaying legacy failed rows."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(event_inbox)").fetchall()
+    }
+    if "next_attempt_at" not in columns:
+        connection.execute("ALTER TABLE event_inbox ADD COLUMN next_attempt_at TEXT")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_inbox_retry_due "
+        "ON event_inbox(status, next_attempt_at, received_at, event_id)"
+    )
+    connection.execute("PRAGMA user_version = 4")
+
+
+def migrate_event_claim_leases_v5(connection: sqlite3.Connection) -> None:
+    """Add expiring claims so concurrent router workers cannot double-send."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(event_inbox)").fetchall()
+    }
+    if "lease_owner" not in columns:
+        connection.execute("ALTER TABLE event_inbox ADD COLUMN lease_owner TEXT")
+    if "lease_expires_at" not in columns:
+        connection.execute(
+            "ALTER TABLE event_inbox ADD COLUMN lease_expires_at TEXT"
+        )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_inbox_claim_expiry "
+        "ON event_inbox(status, lease_expires_at, received_at, event_id)"
+    )
+    connection.execute("PRAGMA user_version = 5")
+
+
+def migrate_purge_retry_backoff_v6(connection: sqlite3.Connection) -> None:
+    """Add due times for bounded automatic retries of failed artifact purges."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+    }
+    if "next_attempt_at" not in columns:
+        connection.execute("ALTER TABLE purge_targets ADD COLUMN next_attempt_at TEXT")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS purge_targets_retry_due "
+        "ON purge_targets(status, next_attempt_at, created_at, receipt_id)"
+    )
+    connection.execute("PRAGMA user_version = 6")
+
+
+def migrate_goal_intake_provenance_v7(connection: sqlite3.Connection) -> None:
+    """Retain compact origin IDs and initial state for user-facing reports."""
+
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(goals)").fetchall()
+    }
+    if "initial_status" not in columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN initial_status TEXT")
+    if "source_event_id" not in columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN source_event_id TEXT")
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS goals_project_source_event "
+        "ON goals(project_id, source_event_id) WHERE source_event_id IS NOT NULL"
+    )
+    connection.execute("PRAGMA user_version = 7")
+
+
+def migrate_verification_attestations_v8(connection: sqlite3.Connection) -> None:
+    """Persist compact trusted provenance beside each immutable fact."""
+
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(facts)").fetchall()
+    }
+    if "verification_attestations_json" not in columns:
+        connection.execute(
+            "ALTER TABLE facts ADD COLUMN verification_attestations_json "
+            "TEXT NOT NULL DEFAULT '[]'"
+        )
+    connection.execute("PRAGMA user_version = 8")
+
+
+def migrate_artifact_retention_holds_v9(connection: sqlite3.Connection) -> None:
+    """Persist explicit legal/operational holds on exact purge targets."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+    }
+    if "retention_hold" not in columns:
+        connection.execute("ALTER TABLE purge_targets ADD COLUMN retention_hold TEXT")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS purge_targets_hold_status "
+        "ON purge_targets(status, retention_hold, receipt_id)"
+    )
+    connection.execute("PRAGMA user_version = 9")
+
+
+def migrate_artifact_hold_release_audit_v10(connection: sqlite3.Connection) -> None:
+    """Persist attributable hold placement and explicit authorized release."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+    }
+    for column in (
+        ("hold_created_at", "TEXT"),
+        ("hold_created_by", "TEXT"),
+        ("hold_released_at", "TEXT"),
+        ("hold_released_by", "TEXT"),
+        ("hold_release_rationale", "TEXT"),
+    ):
+        if column[0] not in columns:
+            connection.execute(
+                f"ALTER TABLE purge_targets ADD COLUMN {column[0]} {column[1]}"
+            )
+    connection.execute(
+        "DROP INDEX IF EXISTS purge_targets_hold_status"
+    )
+    connection.execute(
+        "CREATE INDEX purge_targets_hold_status "
+        "ON purge_targets(status, retention_hold, hold_released_at, receipt_id)"
+    )
+    connection.execute("PRAGMA user_version = 10")
+
+
+def migrate_durable_project_access_v11(connection: sqlite3.Connection) -> None:
+    """Add an auditable project registry and exact, revocable access grants."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS project_registry (
+               project_id TEXT PRIMARY KEY,
+               repository_fingerprint TEXT NOT NULL UNIQUE,
+               config_sha256 TEXT NOT NULL,
+               backend_api_version INTEGER NOT NULL,
+               status TEXT NOT NULL CHECK(status IN ('active', 'suspended')),
+               registered_by TEXT NOT NULL,
+               registered_at TEXT NOT NULL,
+               updated_by TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS project_registry_audit (
+               audit_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL REFERENCES project_registry(project_id),
+               actor_id TEXT NOT NULL,
+               action TEXT NOT NULL CHECK(action IN (
+                   'registered', 'updated', 'suspended', 'reactivated'
+               )),
+               repository_fingerprint TEXT NOT NULL,
+               config_sha256 TEXT NOT NULL,
+               backend_api_version INTEGER NOT NULL,
+               rationale TEXT NOT NULL,
+               created_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS project_registry_audit_project "
+        "ON project_registry_audit(project_id, created_at, audit_id)"
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS project_grants (
+               grant_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL REFERENCES project_registry(project_id),
+               subject_id TEXT NOT NULL,
+               action TEXT NOT NULL CHECK(action IN (
+                   'read', 'write', 'review', 'purge_retry',
+                   'retention_hold_release', 'event_retry'
+               )),
+               granted_by TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               granted_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS project_grant_revocations (
+               grant_id TEXT PRIMARY KEY REFERENCES project_grants(grant_id),
+               revoked_by TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               revoked_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS project_grants_scope "
+        "ON project_grants(project_id, subject_id, action, granted_at, grant_id)"
+    )
+    connection.execute("PRAGMA user_version = 11")
+
+
+def migrate_sde_quality_feedback_v12(connection: sqlite3.Connection) -> None:
+    """Add append-only, reviewer-attributed SDE quality feedback records."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS sde_quality_feedback (
+               feedback_id TEXT PRIMARY KEY,
+               candidate_id TEXT NOT NULL REFERENCES sde_candidates(candidate_id),
+               reviewer_id TEXT NOT NULL,
+               label TEXT NOT NULL CHECK(label IN (
+                   'useful', 'not_useful', 'inaccurate', 'duplicate'
+               )),
+               rationale TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               UNIQUE(candidate_id, reviewer_id)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS sde_quality_feedback_candidate "
+        "ON sde_quality_feedback(candidate_id, created_at, feedback_id)"
+    )
+    connection.execute("PRAGMA user_version = 12")
+
+
+def migrate_shared_request_limiter_v13(connection: sqlite3.Connection) -> None:
+    """Add bounded, cross-process subject/project token-bucket state."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS request_rate_buckets (
+               subject_id TEXT NOT NULL,
+               project_id TEXT NOT NULL,
+               tokens REAL NOT NULL CHECK(tokens >= 0),
+               updated_at REAL NOT NULL,
+               touched_at REAL NOT NULL,
+               PRIMARY KEY(subject_id, project_id)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS request_rate_buckets_touched "
+        "ON request_rate_buckets(touched_at)"
+    )
+    connection.execute("PRAGMA user_version = 13")
+
+
+def apply_schema_migrations(
+    connection: sqlite3.Connection,
+    schema_version: int,
+) -> None:
+    """Advance a legacy schema to the current version inside caller's transaction."""
+
+    if schema_version > SQLITE_SCHEMA_VERSION:
+        raise RuntimeError(
+            "database schema version "
+            f"{schema_version} is newer than supported version "
+            f"{SQLITE_SCHEMA_VERSION}"
+        )
+    if schema_version == SQLITE_SCHEMA_VERSION:
+        return
+    if schema_version == 1:
+        migrate_event_router_v2(connection)
+        schema_version = 2
+    if schema_version == 2:
+        migrate_purge_observability_v3(connection)
+        schema_version = 3
+    if schema_version == 3:
+        migrate_event_retry_backoff_v4(connection)
+        schema_version = 4
+    if schema_version == 4:
+        migrate_event_claim_leases_v5(connection)
+        schema_version = 5
+    if schema_version == 5:
+        migrate_purge_retry_backoff_v6(connection)
+        schema_version = 6
+    if schema_version == 6:
+        migrate_goal_intake_provenance_v7(connection)
+        schema_version = 7
+    if schema_version == 7:
+        migrate_verification_attestations_v8(connection)
+        schema_version = 8
+    if schema_version == 8:
+        migrate_artifact_retention_holds_v9(connection)
+        schema_version = 9
+    if schema_version == 9:
+        migrate_artifact_hold_release_audit_v10(connection)
+        schema_version = 10
+    if schema_version == 10:
+        migrate_durable_project_access_v11(connection)
+        schema_version = 11
+    if schema_version == 11:
+        migrate_sde_quality_feedback_v12(connection)
+        schema_version = 12
+    if schema_version == 12:
+        migrate_shared_request_limiter_v13(connection)
+        return
+    if schema_version != 0:
+        raise RuntimeError(f"no migration path from database schema version {schema_version}")
+
+
+def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
+    """Apply ordered upgrades after the unversioned legacy schema reaches v1."""
+
+    migrate_event_router_v2(connection)
+    migrate_purge_observability_v3(connection)
+    migrate_event_retry_backoff_v4(connection)
+    migrate_event_claim_leases_v5(connection)
+    migrate_purge_retry_backoff_v6(connection)
+    migrate_goal_intake_provenance_v7(connection)
+    migrate_verification_attestations_v8(connection)
+    migrate_artifact_retention_holds_v9(connection)
+    migrate_artifact_hold_release_audit_v10(connection)
+    migrate_durable_project_access_v11(connection)
+    migrate_sde_quality_feedback_v12(connection)
+    migrate_shared_request_limiter_v13(connection)

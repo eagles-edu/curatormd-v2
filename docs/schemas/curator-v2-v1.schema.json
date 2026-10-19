@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://curatormd.invalid/schemas/curator-v2-v1.schema.json",
+  "title": "CuratorMD V2 local contracts, version 1",
+  "$defs": {
+    "successCriterion": {
+      "type": "object",
+      "required": ["criterion_id", "description"],
+      "properties": {
+        "criterion_id": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "^[^\\r\\n]+$"}
+      },
+      "additionalProperties": false
+    },
+    "evidenceRef": {
+      "type": "object",
+      "required": ["evidence_kind", "locator", "sha256", "outcome"],
+      "properties": {
+        "evidence_kind": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\r\\n]+$"},
+        "locator": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "outcome": {"enum": ["passed", "failed", "observed"]}
+      },
+      "additionalProperties": false
+    },
+    "evidenceAttestation": {
+      "description": "Compact host-authenticated provenance retained with a verification fact.",
+      "type": "object",
+      "required": ["evidence_kind", "evidence_sha256", "project_id", "goal_id", "criterion_id", "adapter_id", "authenticated_subject", "source_revision", "observed_at", "verified_at", "valid_until", "revocation_checked_at"],
+      "properties": {
+        "evidence_kind": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\r\\n]+$"},
+        "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "project_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\r\\n]+$"},
+        "goal_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\r\\n]+$"},
+        "criterion_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\r\\n]+$"},
+        "adapter_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\r\\n]+$"},
+        "authenticated_subject": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\r\\n]+$"},
+        "source_revision": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\r\\n]+$"},
+        "observed_at": {"type": "string", "minLength": 1, "maxLength": 64},
+        "verified_at": {"type": "string", "minLength": 1, "maxLength": 64},
+        "valid_until": {"type": "string", "minLength": 1, "maxLength": 64},
+        "revocation_checked_at": {"type": "string", "minLength": 1, "maxLength": 64}
+      },
+      "additionalProperties": false
+    },
+    "goalCard": {
+      "description": "Canonical JSON-compatible shape of curatormd_v2.models.GoalCard.",
+      "type": "object",
+      "required": ["goal_id", "problem", "success_criteria", "owner", "checklist_id", "checklist_version", "checklist_source_text", "parent_goal_id", "depends_on_goal_ids", "project_id", "status", "next_action", "created_at", "updated_at", "criteria_revision", "lifecycle_revision", "superseded_by_goal_id"],
+      "properties": {
+        "goal_id": {"type": "string", "minLength": 1},
+        "problem": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^[^\\r\\n]+$"},
+        "success_criteria": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/successCriterion"}},
+        "owner": {"type": ["string", "null"]},
+        "checklist_id": {"type": ["string", "null"]},
+        "checklist_version": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "checklist_source_text": {"type": ["string", "null"], "maxLength": 4000},
+        "parent_goal_id": {"type": ["string", "null"]},
+        "depends_on_goal_ids": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "project_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "status": {"enum": ["planned", "active", "complete", "open", "blocked", "deferred", "cancelled", "superseded"]},
+        "next_action": {"type": ["string", "null"], "maxLength": 1000},
+        "created_at": {"type": "string"},
+        "updated_at": {"type": "string"},
+        "criteria_revision": {"type": "integer", "minimum": 1},
+        "lifecycle_revision": {"type": "integer", "minimum": 1},
+        "superseded_by_goal_id": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "superseded"}}},
+          "then": {"properties": {"superseded_by_goal_id": {"type": "string", "minLength": 1}}},
+          "else": {"properties": {"superseded_by_goal_id": {"type": "null"}}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "fact": {
+      "description": "Canonical JSON-compatible shape of curatormd_v2.models.Fact.",
+      "type": "object",
+      "required": ["goal_id", "kind", "bullet", "fact_id", "criterion_id", "evidence", "created_at"],
+      "properties": {
+        "goal_id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["intent", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome", "reopened", "criteria_amended", "cancelled", "superseded"]},
+        "bullet": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
+        "fact_id": {"type": "string", "minLength": 1},
+        "criterion_id": {"type": ["string", "null"]},
+        "evidence": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceRef"}},
+        "verification_attestations": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceAttestation"}},
+        "created_at": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "verification"}}},
+          "then": {
+            "required": ["criterion_id"],
+            "properties": {"criterion_id": {"type": "string", "minLength": 1}, "evidence": {"minItems": 1}}
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "sdeCandidate": {
+      "description": "Canonical JSON-compatible shape of curatormd_v2.models.SDECandidate.",
+      "type": "object",
+      "required": ["goal_id", "materiality", "rationale", "fact_ids", "candidate_id", "status", "created_at"],
+      "properties": {
+        "goal_id": {"type": "string", "minLength": 1},
+        "materiality": {"enum": ["implementation", "decision", "recovery", "verified_lesson"]},
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
+        "fact_ids": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "candidate_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pending_review", "approved", "rejected"]},
+        "created_at": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "sdeReviewDetail": {
+      "description": "Selected SDE review facts and linked project goal; not an approval decision.",
+      "type": "object",
+      "required": ["candidate", "goal", "facts", "receipt", "corrections"],
+      "properties": {
+        "candidate": {"$ref": "#/$defs/sdeCandidate"},
+        "goal": {"$ref": "#/$defs/goalCard"},
+        "facts": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/fact"}},
+        "receipt": {"anyOf": [{"$ref": "#/$defs/auditReceipt"}, {"type": "null"}]},
+        "corrections": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/sdeCorrection"}}
+      },
+      "additionalProperties": false
+    },
+    "stagingUsage": {
+      "description": "Content-free bounded scan totals; incomplete scans are not purge approval.",
+      "type": "object",
+      "required": ["entries_scanned", "regular_file_count", "observed_file_bytes", "directory_count", "symlink_count", "special_file_count", "inventory_complete", "error_code", "classes"],
+      "properties": {
+        "entries_scanned": {"type": "integer", "minimum": 0},
+        "regular_file_count": {"type": "integer", "minimum": 0},
+        "observed_file_bytes": {"type": "integer", "minimum": 0},
+        "directory_count": {"type": "integer", "minimum": 0},
+        "symlink_count": {"type": "integer", "minimum": 0},
+        "special_file_count": {"type": "integer", "minimum": 0},
+        "inventory_complete": {"type": "boolean"},
+        "error_code": {"type": ["string", "null"], "maxLength": 128},
+        "classes": {"type": "array", "maxItems": 7, "items": {"$ref": "#/$defs/stagingClassUsage"}}
+      },
+      "additionalProperties": false
+    },
+    "stagingClassUsage": {
+      "description": "Content-free counts and bytes grouped by a fixed temporary artifact class.",
+      "type": "object",
+      "required": ["artifact_class", "regular_file_count", "observed_file_bytes"],
+      "properties": {
+        "artifact_class": {"enum": ["raw-chat", "cue", "import", "scratch", "generated", "duplicate", "other"]},
+        "regular_file_count": {"type": "integer", "minimum": 0},
+        "observed_file_bytes": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "stagingArtifactInventory": {
+      "description": "Point-in-time bounded staging manifest for one goal; decision-time verification is still required.",
+      "type": "object",
+      "required": ["artifacts", "usage", "manifest_sha256", "scope_goal_id"],
+      "properties": {
+        "artifacts": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/artifactRef"}},
+        "usage": {"$ref": "#/$defs/stagingUsage"},
+        "manifest_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "scope_goal_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"}
+      },
+      "additionalProperties": false
+    },
+    "sdeReviewPacket": {
+      "description": "Review-scoped composition of selected SDE facts and current artifact inventory.",
+      "type": "object",
+      "required": ["detail", "artifact_inventory"],
+      "properties": {
+        "detail": {"$ref": "#/$defs/sdeReviewDetail"},
+        "artifact_inventory": {"$ref": "#/$defs/stagingArtifactInventory"}
+      },
+      "additionalProperties": false
+    },
+    "sdeCorrection": {
+      "description": "Canonical JSON-compatible shape of curatormd_v2.models.SDECorrection.",
+      "type": "object",
+      "required": ["correction_id", "candidate_id", "correction", "rationale", "reviewer_id", "created_at"],
+      "properties": {
+        "correction_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "candidate_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "correction": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
+        "reviewer_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "created_at": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "sdeQualityFeedback": {
+      "description": "Append-only human quality label after a durable SDE disposition; not model output or ground truth.",
+      "type": "object",
+      "required": ["feedback_id", "candidate_id", "reviewer_id", "label", "rationale", "created_at"],
+      "properties": {
+        "feedback_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "candidate_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "reviewer_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "label": {"enum": ["useful", "not_useful", "inaccurate", "duplicate"]},
+        "rationale": {"type": "string", "maxLength": 500, "pattern": "^[^\\r\\n]*$"},
+        "created_at": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "sdeQualityFeedbackSummary": {
+      "description": "Project-scoped aggregate feedback labels; contains no reviewer identities or rationale.",
+      "type": "object",
+      "required": ["project_id", "counts", "total"],
+      "properties": {
+        "project_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "counts": {"type": "array", "items": {"type": "array", "prefixItems": [{"enum": ["useful", "not_useful", "inaccurate", "duplicate"]}, {"type": "integer", "minimum": 0}], "minItems": 2, "maxItems": 2}},
+        "total": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\r\\n]+$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "retention_hold": {"enum": ["legal", "operational", null]}
+      },
+      "additionalProperties": false
+    },
+    "auditReceipt": {
+      "description": "Canonical JSON-compatible shape of curatormd_v2.models.AuditReceipt.",
+      "type": "object",
+      "required": ["candidate_id", "decision", "facts_sha256", "artifacts", "artifact_inventory_complete", "reviewer_id", "review_rationale", "canonical_persisted", "canonical_target", "canonical_sha256", "canonical_persisted_at", "receipt_id", "purge_status", "created_at", "updated_at"],
+      "properties": {
+        "candidate_id": {"type": "string", "minLength": 1},
+        "decision": {"enum": ["approved", "rejected"]},
+        "facts_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "artifacts": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/artifactRef"}},
+        "artifact_inventory_complete": {"type": "boolean"},
+        "reviewer_id": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "review_rationale": {"type": ["string", "null"], "maxLength": 1000},
+        "canonical_persisted": {"type": "boolean"},
+        "canonical_target": {"type": ["string", "null"], "maxLength": 2000},
+        "canonical_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "canonical_persisted_at": {"type": ["string", "null"]},
+        "receipt_id": {"type": "string", "minLength": 1},
+        "purge_status": {"enum": ["purge_pending", "complete"]},
+        "created_at": {"type": "string"},
+        "updated_at": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"canonical_persisted": {"const": true}}},
+          "then": {"properties": {"canonical_target": {"type": "string", "minLength": 1}, "canonical_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "canonical_persisted_at": {"type": "string", "minLength": 1}}},
+          "else": {"properties": {"canonical_target": {"type": "null"}, "canonical_sha256": {"type": "null"}, "canonical_persisted_at": {"type": "null"}}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "purgeTargetStatus": {
+      "description": "Canonical JSON-compatible shape of curatormd_v2.service.PurgeTargetStatus, including explicit hold-release audit fields.",
+      "type": "object",
+      "required": ["artifact", "status", "attempts", "error", "created_at", "last_attempt_at", "next_attempt_at", "next_attempt_in_seconds", "age_seconds", "last_attempt_age_seconds", "safe_recovery_action", "hold_created_at", "hold_created_by", "hold_released_at", "hold_released_by", "hold_release_rationale"],
+      "properties": {
+        "artifact": {"$ref": "#/$defs/artifactRef"},
+        "status": {"enum": ["pending", "purged", "failed", "held"]},
+        "attempts": {"type": "integer", "minimum": 0},
+        "error": {"type": ["string", "null"], "maxLength": 500},
+        "created_at": {"type": "string", "minLength": 1},
+        "last_attempt_at": {"type": ["string", "null"]},
+        "next_attempt_at": {"type": ["string", "null"]},
+        "next_attempt_in_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "age_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "last_attempt_age_seconds": {"type": ["integer", "null"], "minimum": 0},
+        "safe_recovery_action": {"enum": ["artifact_inventory_complete", "goal_persist", "retry_pending_purges", "release_artifact_hold", "none"]},
+        "hold_created_at": {"type": ["string", "null"]},
+        "hold_created_by": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "hold_released_at": {"type": ["string", "null"]},
+        "hold_released_by": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "hold_release_rationale": {"type": ["string", "null"], "maxLength": 500, "pattern": "^[^\\r\\n]+$"}
+      },
+      "additionalProperties": false
+    },
+    "projectConfig": {
+      "description": "JSON object equivalent of the repository-owned .curatormd-v2.toml file.",
+      "type": "object",
+      "required": ["schema_version", "backend_api_version", "project_id", "scope", "checklists", "evidence", "staging", "persistence"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "backend_api_version": {"const": 1},
+        "project_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "scope": {"type": "object", "required": ["read_paths"], "properties": {"read_paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false},
+        "checklists": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+        "evidence": {"type": "object", "required": ["adapters"], "properties": {"adapters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"}}}, "additionalProperties": false},
+        "actions": {"type": "object", "required": ["adapters"], "properties": {"adapters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"}}}, "additionalProperties": false},
+        "staging": {"type": "object", "required": ["root"], "properties": {"root": {"type": "string", "minLength": 1}, "max_project_bytes": {"type": "integer", "minimum": 1, "maximum": 1099511627776}, "max_project_files": {"type": "integer", "minimum": 1, "maximum": 1000000}}, "additionalProperties": false},
+        "persistence": {"type": "object", "required": ["targets"], "properties": {"targets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
+    "apiError": {
+      "type": "object",
+      "required": ["schema_version", "code", "message"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "code": {"enum": ["invalid_request", "forbidden", "not_found", "conflict", "capacity_exceeded", "rate_limited", "internal_error"]},
+        "message": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "eventEnvelope": {
+      "type": "object",
+      "required": ["schema_version", "event_id", "project_id", "occurred_at", "event_type", "payload"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "event_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "project_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "source_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "source_sequence": {"type": ["integer", "null"], "minimum": 1},
+        "occurred_at": {"type": "string", "format": "date-time"},
+        "event_type": {"enum": ["goal.started", "goal.activated", "fact.recorded", "goal.finish_requested", "goal.deferred", "goal.blocked", "goal.reopened", "goal.criteria_amended", "goal.cancelled", "goal.superseded"]},
+        "payload": {"type": "object"}
+      },
+      "oneOf": [
+        {"properties": {"event_type": {"const": "goal.started"}, "payload": {"$ref": "#/$defs/goalStartedPayload"}}},
+        {"properties": {"event_type": {"const": "goal.activated"}, "payload": {"$ref": "#/$defs/goalActivatedPayload"}}},
+        {"properties": {"event_type": {"const": "fact.recorded"}, "payload": {"$ref": "#/$defs/factRecordedPayload"}}},
+        {"properties": {"event_type": {"const": "goal.finish_requested"}, "payload": {"$ref": "#/$defs/goalFinishPayload"}}},
+        {"properties": {"event_type": {"const": "goal.deferred"}, "payload": {"$ref": "#/$defs/goalDeferredPayload"}}},
+        {"properties": {"event_type": {"const": "goal.blocked"}, "payload": {"$ref": "#/$defs/goalBlockedPayload"}}},
+        {"properties": {"event_type": {"const": "goal.reopened"}, "payload": {"$ref": "#/$defs/goalDeferredPayload"}}},
+        {"properties": {"event_type": {"const": "goal.criteria_amended"}, "payload": {"$ref": "#/$defs/goalCriteriaAmendedPayload"}}},
+        {"properties": {"event_type": {"const": "goal.cancelled"}, "payload": {"$ref": "#/$defs/goalCancelledPayload"}}},
+        {"properties": {"event_type": {"const": "goal.superseded"}, "payload": {"$ref": "#/$defs/goalSupersededPayload"}}}
+      ],
+      "additionalProperties": false
+    },
+    "goalStartedPayload": {
+      "type": "object",
+      "required": ["goal_id", "problem", "success_criteria"],
+      "properties": {
+        "goal_id": {"type": "string", "minLength": 1},
+        "problem": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "success_criteria": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/successCriterion"}},
+        "owner": {"type": ["string", "null"]},
+        "checklist_id": {"type": ["string", "null"]},
+        "checklist_version": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "checklist_source_text": {"type": ["string", "null"], "maxLength": 4000},
+        "parent_goal_id": {"type": ["string", "null"]},
+        "depends_on_goal_ids": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "initial_status": {"enum": ["planned", "active"]},
+        "next_action": {"type": ["string", "null"], "minLength": 1, "maxLength": 1000}
+      },
+      "additionalProperties": false
+    },
+    "goalActivatedPayload": {"type": "object", "required": ["goal_id", "reason", "expected_lifecycle_revision"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}, "expected_lifecycle_revision": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    "factRecordedPayload": {"type": "object", "required": ["goal_id", "fact_id", "kind", "bullet", "evidence"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "fact_id": {"type": "string", "minLength": 1}, "kind": {"enum": ["intent", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome"]}, "bullet": {"type": "string", "minLength": 1, "maxLength": 1000}, "criterion_id": {"type": ["string", "null"]}, "evidence": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceRef"}}}, "additionalProperties": false},
+    "goalFinishPayload": {"type": "object", "required": ["goal_id", "completion_claim"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "completion_claim": {"type": "string", "minLength": 1, "maxLength": 980}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
+    "goalDeferredPayload": {"type": "object", "required": ["goal_id", "reason", "next_action"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1}, "next_action": {"type": "string", "minLength": 1, "maxLength": 1000}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
+    "goalBlockedPayload": {"type": "object", "required": ["goal_id", "dependency", "recovery"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "dependency": {"type": "string", "minLength": 1}, "recovery": {"type": "string", "minLength": 1}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
+    "goalCriteriaAmendedPayload": {"type": "object", "required": ["goal_id", "expected_revision", "success_criteria", "reason", "next_action"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "expected_revision": {"type": "integer", "minimum": 1}, "success_criteria": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/successCriterion"}}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}, "next_action": {"type": "string", "minLength": 1, "maxLength": 500}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
+    "goalCancelledPayload": {"type": "object", "required": ["goal_id", "reason"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}}, "additionalProperties": false},
+    "goalSupersededPayload": {"type": "object", "required": ["goal_id", "replacement_goal_id", "reason"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "replacement_goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}}, "additionalProperties": false}
+  }
+}
