@@ -970,6 +970,13 @@ consumer plugin, Hermes integration, or production deployment.
       change is not installed or enabled in the live account; no service-growth
       automatic owner attribution, service inventory, and live inventory have
       not been verified. The item remains open.
+      Progress (2026-10-20): the bounded Host Steward prototype is commit
+      `621d6facb6` on the upstream-based Hermes feature branch and is published
+      to `eagles-edu/hermes-agent`. Six Host Steward tests pass in the combined
+      97-test batch; Ruff and `git diff --check` pass. No PR or hosted CI run is
+      claimed. This remains observational inventory/proposal behavior: no
+      human approval, managed cleanup, post-cleanup verification, or receipt
+      exists, and nothing is installed or enabled in the live Hermes account.
 - [ ] Host Steward generates a bounded proposal with exact targets, expected
       reclaimed space, service impact, and recovery path.
 - [ ] Host cleanup requires a distinct human approval; the proposal generator
@@ -1068,8 +1075,18 @@ consumer plugin, Hermes integration, or production deployment.
       adds explicit applied/suppressed event dispositions and fact source-event
       provenance; Hermes terminal
       activity is tested through the local MCP path, and a 59-test focused
-      Hermes regression set passes. The local delta is still uncommitted and
-      has not run in hosted CI.
+      Hermes regression set passes. The local delta was uncommitted and had
+      not run in hosted CI at that checkpoint. Progress (2026-10-20): the
+      integration is now five commits on
+      `codex/curator-v2-hermes-integration-upstream`, based on current upstream
+      `main` and published to the user's fork `eagles-edu/hermes-agent`. The
+      combined six-file Hermes batch passes 97 tests; Ruff and `git diff
+      --check` pass. Two test fixtures explicitly suppress an unrelated read
+      of the neighboring live Hermes install manifest because this checkout
+      itself lives under `~/.hermes`. No PR or hosted CI run is claimed. The
+      profile remains an operator assertion, not authenticated identity; live
+      hook installation, production routing, deployment verification, and
+      Host Steward approval/execution remain open.
       Structural complexity/interface findings and broad catches at fail-closed
       host/MCP boundaries remain; this gate remains open. A later
       2026-10-19 observability slice adds fixed-category current event-failure
