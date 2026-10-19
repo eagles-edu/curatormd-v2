@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
+import signal
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 from curatormd_v2 import (
     ArtifactPurger,
+    backup_database,
     CuratorService,
     CuratorStore,
     DurableEventRouter,
@@ -19,6 +25,7 @@ from curatormd_v2 import (
     GoalActivated,
     GoalStarted,
     GoalStatus,
+    restore_database,
     SuccessCriterion,
 )
 
@@ -118,6 +125,114 @@ class DurableEventRouterTests(unittest.TestCase):
         self.assertEqual(
             [fact.fact_id for fact in self.service.goal_status("restart-goal").facts],
             ["restart-fact-1"],
+        )
+
+    def test_expired_claim_recovers_after_router_process_is_killed(self) -> None:
+        """A crashed process cannot strand a durable event claim forever."""
+
+        event = EventEnvelope(
+            "crashed-worker-event",
+            "project-a",
+            GoalStarted(
+                "crashed-worker-goal",
+                "Recover an event after its worker process exits abruptly",
+                (SuccessCriterion("received", "The event reaches the goal ledger"),),
+                initial_status=GoalStatus.ACTIVE,
+            ),
+        )
+        self.store.ingest_event(event)
+        child_code = """\
+import os
+import signal
+import sys
+
+from curatormd_v2 import CuratorStore
+
+store = CuratorStore(sys.argv[1])
+claimed = store.claim_pending_events("crashed-worker", lease_seconds=1)
+if len(claimed) != 1 or claimed[0].event_id != "crashed-worker-event":
+    os._exit(71)
+os.kill(os.getpid(), signal.SIGKILL)
+"""
+        crashed = subprocess.run(
+            [sys.executable, "-c", child_code, str(self.database)],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(crashed.returncode, -signal.SIGKILL, crashed.stderr)
+
+        deadline = time.monotonic() + 3
+        while self.store.event_queue_status("project-a").expired_claim_count == 0:
+            if time.monotonic() >= deadline:
+                self.fail("crashed worker's event lease did not expire")
+            time.sleep(0.05)
+
+        recovery_code = """\
+import json
+import sys
+from pathlib import Path
+
+from curatormd_v2 import ArtifactPurger, CuratorService, CuratorStore, DurableEventRouter
+
+store = CuratorStore(sys.argv[1])
+try:
+    service = CuratorService(
+        store, ArtifactPurger(Path(sys.argv[2])), project_id="project-a"
+    )
+    router = DurableEventRouter(store, {"project-a": service})
+    result = router.route_once()
+    print(json.dumps({"processed": result.processed_count, "failed": result.failed_count}))
+finally:
+    store.close()
+"""
+        recovered = subprocess.run(
+            [sys.executable, "-c", recovery_code, str(self.database), str(self.stage)],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(
+            json.loads(recovered.stdout), {"processed": 1, "failed": 0}
+        )
+        receipt = self.store.event_receipt("project-a", event.event_id)
+        self.assertEqual(receipt.status, EventInboxStatus.PROCESSED)
+        self.assertEqual(
+            self.service.goal_status("crashed-worker-goal").goal.status,
+            GoalStatus.ACTIVE,
+        )
+
+        backup_path = Path(self.temporary) / "post-recovery.sqlite3"
+        restored_path = Path(self.temporary) / "post-recovery-restored.sqlite3"
+        backup_database(self.database, backup_path)
+        restore_database(backup_path, restored_path)
+        restored_store = CuratorStore(restored_path)
+        try:
+            restored_service = CuratorService(
+                restored_store,
+                ArtifactPurger(self.stage),
+                project_id="project-a",
+            )
+            self.assertEqual(
+                restored_store.event_receipt("project-a", event.event_id).status,
+                EventInboxStatus.PROCESSED,
+            )
+            self.assertEqual(
+                restored_service.goal_status("crashed-worker-goal").goal.status,
+                GoalStatus.ACTIVE,
+            )
+        finally:
+            restored_store.close()
+        self.assertEqual(
+            self.store.event_queue_status("project-a").expired_claim_count, 0
+        )
+        replayed, inserted_again = self.store.ingest_event(event)
+        self.assertFalse(inserted_again)
+        self.assertEqual(replayed.status, EventInboxStatus.PROCESSED)
+        self.assertEqual(
+            self.service.goal_status("crashed-worker-goal").goal.status,
+            GoalStatus.ACTIVE,
         )
 
     def test_failed_event_is_quarantined_and_operator_retry_is_audited(self) -> None:

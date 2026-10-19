@@ -157,7 +157,8 @@ class HostedMcpTests(unittest.TestCase):
         def fail_with_sensitive_detail() -> None:
             raise RuntimeError("private database path and SQL fragment")
 
-        result = safe_tool_handler(fail_with_sensitive_detail)()
+        with self.assertLogs("curatormd_v2.mcp_server", level="WARNING") as logs:
+            result = safe_tool_handler(fail_with_sensitive_detail)()
         self.assertTrue(result.is_error)
         content = result.content[0]
         assert isinstance(content, TextContent)
@@ -165,6 +166,11 @@ class HostedMcpTests(unittest.TestCase):
         self.assertEqual(public_error["code"], "internal_error")
         self.assertNotIn("private database path", content.text)
         self.assertNotIn("Traceback", content.text)
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("code=internal_error", logs.output[0])
+        self.assertIn("exception_type=RuntimeError", logs.output[0])
+        self.assertNotIn("private database path", logs.output[0])
+        self.assertNotIn("SQL fragment", logs.output[0])
 
     def test_launcher_startup_failure_does_not_echo_exception_detail(self) -> None:
         """Do not copy arbitrary startup exception text into process logs."""

@@ -36,8 +36,10 @@ or project records.
   category and selected passing verification evidence; approve/reject
   decisions are explicit and immutable. The review-authorizer boundary fails
   closed by default, and receipts retain its authenticated reviewer identity;
-  the in-process review queue exposes selected evidence by project. The Hermes
-  Core auth binding and review UI/MCP API remain unimplemented.
+  the in-process review queue exposes selected evidence by project. A
+  project-scoped review API/MCP surface exists, but its reviewer authorizer
+  is deliberately fail-closed until Hermes Core supplies verified identity;
+  a reviewer UI and production identity binding remain unimplemented.
 - Post-review purge records its decision and artifact hashes before deletion.
   Purge is restricted to exact regular files under a configured staging root;
   hash mismatches, symlinks, directories, and outside paths are retained and

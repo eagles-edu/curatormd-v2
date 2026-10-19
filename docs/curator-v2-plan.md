@@ -375,9 +375,16 @@ consumer plugin, Hermes integration, or production deployment.
       see `docs/sde-review-policy-v1.md`.
 - [x] Provide a bounded, project-scoped in-process review queue and candidate
       detail containing the goal and selected supporting facts/evidence.
-- [ ] Implement the authenticated review UI/MCP API, bind it to Hermes Core's
-      user/project permissions, and verify reviewer identity, rationale, timestamp,
-      and conflict handling end to end.
+- [x] Expose project-scope-authorized SDE review queue, detail, packet, and
+      decision operations through the API/MCP surface. Decision calls also
+      require a separately injected fail-closed reviewer authorizer; API/MCP
+      tests cover permission denial, both dispositions, immutable receipts,
+      rationale, timestamp, and conflicting retries.
+- [ ] Bind review decisions to verified Hermes Core user/project permissions
+      and exercise authenticated reviewer identity end to end. The current
+      local profile ID is an operator assertion, and synthetic test authorizers
+      do not satisfy this production identity gate; a reviewer UI also remains
+      unimplemented.
 - [x] Make an SDE decision and its artifact manifest immutable after the first
       durable receipt; repeated requests with changed decision or targets conflict.
 - [x] Record bounded, idempotent corrections as linked append-only follow-up
@@ -680,6 +687,14 @@ consumer plugin, Hermes integration, or production deployment.
       cover retries/quarantine, cross-connection claim fencing, backup restore,
       and two repository plugins sharing one store without sharing goals. The
       full deployment-like load/restart/locking/disk-growth matrix remains open.
+      Additional progress (2026-10-19): a subprocess regression now kills a
+      worker with `SIGKILL` immediately after it durably claims an event, waits
+      for the one-second lease to expire, then routes the event from a second
+      process and verifies the goal mutation/receipt exactly once. This proves
+      local crash-lease recovery. The same test then takes a consistent SQLite
+      snapshot, restores it to a new file, and verifies both the processed
+      receipt and goal state survived. Production worker topology, load, and
+      power-loss durability remain unverified.
 
 ### 6. Per-project plugin and repository boundary
 
@@ -954,7 +969,11 @@ consumer plugin, Hermes integration, or production deployment.
       serialized source envelope is absent from the SQLite snapshot while its
       digest receipt restores. This is bounded local evidence only: failed or
       quarantined events intentionally retain payloads for retry, and full
-      logging/WAL/trace/upstream data-flow review remains open.
+      logging/WAL/trace/upstream data-flow review remains open. Additional
+      progress (2026-10-19): an MCP failure regression now captures the emitted
+      warning and verifies it contains only the sanitized public error code and
+      exception type, not the sensitive exception detail. Full cross-boundary
+      log/trace and user-facing renderer verification remains open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
@@ -989,10 +1008,15 @@ consumer plugin, Hermes integration, or production deployment.
       type checks, a needless return, and missing test docstrings; added
       regressions for exact booleans and retention-hold impostors; and added
       the proposed content-free Hermes turn mapping contract. The 2026-10-19
-      full Pylint inventory reports 253 non-blocking findings, mostly refactor,
+      full Pylint inventory reports 258 non-blocking findings, mostly refactor,
       duplicate-code, and design diagnostics. A focused cleanup removed eight
       line-length, missing-test-docstring, and import-style findings without
-      weakening behavior; errors-only Pylint remains clean.
+      weakening behavior; errors-only Pylint remains clean. Additional
+      verification (2026-10-19): after adding process-kill lease recovery
+      coverage, the full suite passes 288 tests on Python 3.13.15 and Pyright
+      reports 0 diagnostics. A fresh full Pylint inventory has 258 findings,
+      all below the configured blocking error/fatal gate; the structural
+      cleanup remains open.
       Structural complexity/interface findings and broad catches at fail-closed
       host/MCP boundaries remain; this gate remains open. A later
       2026-10-19 observability slice adds fixed-category current event-failure
