@@ -431,7 +431,6 @@ class MarkdownPersistenceAdapter:
         )
         if goal.next_action:
             lines.append(f"- Next: {_markdown_text(goal.next_action)}")
-        lines.append("- Facts:")
         lines.extend(_render_facts(facts))
         lines.extend(_render_candidates(candidates))
         lines.extend(_render_receipts(receipts, self.store, self.project_id))

@@ -988,6 +988,12 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertIn("- Source event: `source-request-17`", report)
         self.assertIn("- Checklist: `release-gate-3`", report)
         self.assertIn("revision `aaaaaaaaaaaa`", report)
+        self.assertIn(
+            "- Checklist item (captured): - \\[ \\] Verify report provenance",
+            report,
+        )
+        self.assertIn("## Current open gates", report)
+        self.assertIn("Required criterion remains unverified", report)
         self.assertIn("Re-run the proof against the regression", report)
 
     def test_all_success_criteria_need_independently_verified_passing_evidence(self) -> None:

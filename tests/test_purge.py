@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 from io import StringIO
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from purge_fixtures import FlakyPurger, TestReviewAuthorizer, TestVerifier
 
@@ -637,6 +639,44 @@ targets = ["persistence/HISTORY.md"]
         _, targets = self.service.artifact_purge_status(receipt.receipt_id)
         self.assertEqual(targets[0].status, ArtifactStatus.FAILED)
         self.assertIn("hash does not match", targets[0].error or "")
+
+    def test_replacement_after_hash_verification_is_not_unlinked(self) -> None:
+        """Leave an unapproved in-root replacement intact and report pending."""
+
+        candidate_id = self.candidate("path replacement race")
+        path, artifact = self.artifact("replacement-race.json")
+        original_stat = path.stat()
+        receipt = self.service.sde_confirm(
+            candidate_id,
+            ReviewDecision.REJECTED,
+            (artifact,),
+            artifact_inventory_complete=True,
+        )
+        real_fstat = os.fstat
+        matching_fstats = 0
+
+        def replace_after_hash(file_descriptor: int) -> os.stat_result:
+            nonlocal matching_fstats
+            metadata = real_fstat(file_descriptor)
+            if (metadata.st_dev, metadata.st_ino) == (
+                original_stat.st_dev,
+                original_stat.st_ino,
+            ):
+                matching_fstats += 1
+                if matching_fstats == 2:
+                    path.unlink()
+                    path.write_bytes(b"unapproved replacement")
+            return metadata
+
+        with patch("curatormd_v2.purge.os.fstat", side_effect=replace_after_hash):
+            persisted = self.persist_canonical(receipt)
+
+        self.assertEqual(matching_fstats, 2)
+        self.assertEqual(path.read_bytes(), b"unapproved replacement")
+        self.assertEqual(persisted.purge_status, PurgeStatus.PURGE_PENDING)
+        _, targets = self.service.artifact_purge_status(receipt.receipt_id)
+        self.assertEqual(targets[0].status, ArtifactStatus.FAILED)
+        self.assertIn("path changed", targets[0].error or "")
 
     def test_artifact_outside_root_is_not_deleted(self) -> None:
         candidate_id = self.candidate()

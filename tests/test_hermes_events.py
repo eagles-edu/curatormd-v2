@@ -14,7 +14,7 @@ from curatormd_v2 import (
     DurableEventRouter,
     EventEnvelope,
     FactKind,
-    FactRecorded,
+    GoalActivityObserved,
     GoalStarted,
     GoalStatus,
     SuccessCriterion,
@@ -53,10 +53,10 @@ class HermesCodexEventTests(unittest.TestCase):
         self.assertEqual(event.source_id, "hermes.gptmd-coding")
         self.assertEqual(event.source_sequence, 1)
         self.assertRegex(event.event_id, r"^hermes-[0-9a-f]{64}$")
-        assert isinstance(event.payload, FactRecorded)
+        assert isinstance(event.payload, GoalActivityObserved)
         self.assertEqual(
             event.payload,
-            FactRecorded(
+            GoalActivityObserved(
                 goal_id="goal-1",
                 fact_id=event.payload.fact_id,
                 kind=FactKind.INTENT,
@@ -102,8 +102,8 @@ class HermesCodexEventTests(unittest.TestCase):
             occurred_at="2026-10-19T00:01:00+00:00",
         )
 
-        self.assertEqual(event.event_kind.value, "fact.recorded")
-        assert isinstance(event.payload, FactRecorded)
+        self.assertEqual(event.event_kind.value, "goal.activity_observed")
+        assert isinstance(event.payload, GoalActivityObserved)
         self.assertEqual(event.payload.kind, FactKind.CHANGE)
         self.assertIn("no success criterion was verified", event.payload.bullet)
         self.assertNotIn("turn-1", event.to_json())
@@ -124,7 +124,7 @@ class HermesCodexEventTests(unittest.TestCase):
                     source_sequence=3,
                     occurred_at="2026-10-19T00:02:00+00:00",
                 )
-                assert isinstance(event.payload, FactRecorded)
+                assert isinstance(event.payload, GoalActivityObserved)
                 self.assertEqual(event.payload.kind, FactKind.OPEN_GATE)
                 self.assertIn(outcome, event.payload.bullet)
                 self.assertNotIn("exception", event.to_json())

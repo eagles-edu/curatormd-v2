@@ -341,7 +341,9 @@ consumer plugin, Hermes integration, or production deployment.
       Child, pending-SDE, and receipt details are also paged (32/16/16 per
       report) with exact SQL aggregate totals; the report never hydrates their
       full histories to render a bounded page. Tests reject the former unpaged
-      service calls and verify child totals and offsets.
+      service calls and verify child totals and offsets. The report also shows
+      the exact captured checklist item and a separate bounded list of current
+      open gates, distinct from historical gate facts and TODO actions.
 - [x] Keep `goal_status` and its bullet projection bounded as well: facts are
       capped per goal, criteria history is capped by lifecycle policy, and SDE
       candidates/purge-pending receipts are returned in 32/16-record pages with
@@ -591,9 +593,7 @@ consumer plugin, Hermes integration, or production deployment.
       supported upgrade/rollback procedures. Local non-overwriting SQLite
       backup/restore helpers and integrity tests now exist; production drills,
       migration/rollback drills for deployment data, and supported upgrade/
-      rollback policy remain open. Local v0-to-v13, v1-to-v13, v2-to-v13,
-      v3-to-v13, v4-to-v13, v5-to-v13, v6-to-v13, v7-to-v13, v8-to-v13,
-      v9-to-v13, v10-to-v13, v11-to-v13, and v12-to-v13 migration paths are covered; the v0-to-v1 step has an
+      rollback policy remain open. Local migration paths through v15 are covered; the v0-to-v1 step has an
       injected-rollback fixture, v1-to-v2 preserves existing inbox receipts,
       v2-to-v3 backfills purge-target age, and v3-to-v4 adds persisted retry
       scheduling without delaying legacy failed events; v4-to-v5 adds expiring
@@ -870,12 +870,20 @@ consumer plugin, Hermes integration, or production deployment.
 
 ### 7. Hermes Core integration (including separate Host Steward)
 
-- [ ] Define the Hermes event envelope and map Codex app-server task/session
+- [x] Define the Hermes event envelope and map Codex app-server task/session
       lifecycle to Curator goal events without retaining raw session transcripts.
       Progress (2026-10-19): the Hermes Core source checkout now exposes
       profile-scoped `codex:turn:start` and `codex:turn:end` Gateway hook events
-      with bounded runtime metadata only. This is a generic producer surface,
-      not a Curator event-envelope mapping. Curator V2 also now provides a
+      with bounded runtime metadata only. Curator V2 now defines
+      `goal.activity_observed` for compact Hermes activity. Facts apply only
+      to active goals; non-active events receive a durable suppression receipt
+      and advance the source cursor atomically, preventing a delayed event from
+      wedging the producer queue. Exact replay stays suppressed after goal
+      reopening, and the next ordered event is accepted. MCP-to-backend and
+      lifecycle tests verify active write, terminal suppression, replay, and
+      reopen/order recovery. This completes the local contract and mapping, not
+      live gateway activation or authenticated profile/project identity.
+      Curator V2 also now provides a
       local stdio launcher that pins one profile assertion to the project ID in
       that repository's config, defaults to read-only, and limits optional
       writes to that project. A `gptmd-coding` Hermes profile now registers
@@ -889,16 +897,16 @@ consumer plugin, Hermes integration, or production deployment.
       gateway had already cached the old V1 hook registry before this edit and
       currently has 10 active sessions, so that in-memory hook freeze is not
       yet runtime-verified. The profile ID remains an operator assertion, not
-      authentication; Codex turn events are not mapped into Curator goal events,
-      and no deployment occurred. The checklist item remains open.
+      authentication, and no deployment occurred; these remain separate open
+      gates.
       Progress (2026-10-19): [`event-contract-v1.md`](event-contract-v1.md#proposed-hermes-codex-turn-mapping)
       now specifies the safe translation semantics: turn start is intent,
       normal turn end is a non-verifying change fact, and interrupted/failed
       turns are open-gate facts. It requires an authenticated profile/project/
       session/goal binding, stable source sequencing, exact-envelope retries,
       and no raw prompt/runtime metadata in durable facts. This is a contract
-      only; host binding, producer outbox, and live delivery remain
-      unimplemented. Progress (2026-10-19): the backend now has a tested
+      only; host binding and live Curator delivery remain unimplemented.
+      Progress (2026-10-19): the backend now has a tested
       reference translator from those bounded hooks to compact
       `intent`, non-verifying `change`, or `open_gate` fact events. It requires
       an exact session match against an explicit host-supplied goal binding,
@@ -907,9 +915,41 @@ consumer plugin, Hermes integration, or production deployment.
       transient model/provider/cwd/turn/session IDs and failure details are not
       copied into facts. A local acceptance test routes mapped start/end events
       through the SQLite inbox/router into the bound goal ledger and confirms
-      normal turn completion cannot satisfy criteria. Hermes identity
-      resolution, durable producer outbox, hook invocation, delivery/retry, and
-      live lifecycle acceptance remain open.
+      normal turn completion cannot satisfy criteria. Additional progress
+      (2026-10-19): Hermes Core source now supports profile-pinned Codex hook
+      registries and an opt-in, per-profile SQLite outbox. It commits a bounded
+      event envelope, stable event ID, source ID/sequence, and timestamp before
+      dispatch; only literal `True` acknowledges delivery, and pending records
+      retry after gateway startup or the next event. Outbox storage excludes
+      prompt/response/tool content, model/provider/cwd, and exception messages.
+      Hermes hook and profile A→B→A tests pass locally. This is source/unit-test
+      evidence only: the Curator consumer is not yet wired to the durable hook,
+      no current session-to-goal binding is resolved, and no live lifecycle
+      event has traversed the router. Hermes identity authentication, binding,
+      consumer delivery, end-to-end privacy/replay proof, and runtime acceptance
+      remain open.
+      Progress (2026-10-20): Hermes now binds a session to the configured
+      project and active goal only after Curator's `hermes_goal_bind` validates
+      that exact goal; the profile-local SQLite outbox refuses unbound
+      sessions. The shared opaque source ID is derived identically by Hermes
+      and Curator, and session IDs are bounded before they enter the binding.
+      The Curator adapter now routes the exact outbox envelope through the
+      trusted MCP event tool and acknowledges only a processed/duplicate
+      receipt. A new in-memory acceptance test exercises adapter → trusted MCP
+      metadata → translator → project authorization → durable goal fact; a
+      matching Hermes regression verifies successful activation is persisted
+      and an unbound session is not queued. A later grouped local run passed 86
+      Hermes tests across six Codex-hook, profile-scope, MCP-trust, migration,
+      and Host Steward files; Ruff passes on the changed Hermes Python files.
+      This proves source-level
+      local integration only. The profile ID remains a local assertion, the
+      durable hook is not installed in an active profile, and no running
+      gateway/session, authenticated identity, production router, or deployed
+      event was exercised; those gates remain open. Terminal Hermes activity
+      now produces a durable `suppressed_nonactive_goal` disposition, advances
+      the per-source cursor atomically, and remains suppressed on replay after
+      goal reopening; the next sequence is accepted. Live hook activation stays
+      gated on the independent deployment and identity requirements.
 - [ ] Integrate profiles, runtime, global router, managed MCP gateway, and
       project-scoped plugin bindings under the Hermes Core account boundary.
 - [ ] Verify that profile/project selection and permission checks are explicit
@@ -949,8 +989,13 @@ consumer plugin, Hermes integration, or production deployment.
 - [x] Create SQLite database files with owner-only permissions and ignore
       runtime database files in Git.
 - [x] Hash-check staged artifacts and confine deletion to a configured root.
-- [ ] Threat-model untrusted prompts, malicious repository content, forged
-      evidence, symlink/path races, compromised plugins, and replay attacks.
+- [x] Threat-model untrusted prompts, malicious repository content, forged
+      evidence, symlink/path races, compromised plugins, and replay attacks;
+      [`threat-model-v1.md`](threat-model-v1.md) records local controls and
+      residual risks. A deterministic purge regression now replaces a staged
+      leaf after descriptor hashing and proves the replacement is not removed.
+      The model remains proposed and does not close owner approval, same-user
+      filesystem races, or deployment-specific adversarial testing.
 - [ ] Apply least-privilege identities, encrypted transport/storage where
       appropriate, secret rotation, audit access, and project-level authorization.
 - [x] Establish explicit maximum event sizes and stream large sources; add
@@ -1017,6 +1062,14 @@ consumer plugin, Hermes integration, or production deployment.
       reports 0 diagnostics. A fresh full Pylint inventory has 258 findings,
       all below the configured blocking error/fatal gate; the structural
       cleanup remains open.
+      Additional verification (2026-10-20): the full suite now passes 294 tests;
+      strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+      `git diff --check` pass. The schema/migration slice through SQLite v15
+      adds explicit applied/suppressed event dispositions and fact source-event
+      provenance; Hermes terminal
+      activity is tested through the local MCP path, and a 59-test focused
+      Hermes regression set passes. The local delta is still uncommitted and
+      has not run in hosted CI.
       Structural complexity/interface findings and broad catches at fail-closed
       host/MCP boundaries remain; this gate remains open. A later
       2026-10-19 observability slice adds fixed-category current event-failure
@@ -1256,6 +1309,14 @@ Final report: completed facts, open items, recovery path, next action
       references. Record changed files/components, commands or probes run, exact
       pass/fail result, and any side effects without copying full chats or large
       outputs into canonical records.
+      Progress (2026-10-20): SQLite v15 links event-created fact bullets to
+      their first durable source event while preserving unknown provenance on
+      legacy/local facts. Bounded goal reports and canonical Markdown render the
+      source ID; approval-gated compaction preserves it in the hash-verified
+      archive. Event, migration, schema, compaction, and Markdown regressions
+      cover replay, legacy nulls, archive retrieval, and rendered bullets. This
+      does not yet automatically record changed-file lists or exact command
+      results from live development sessions; that remains open.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer
@@ -1305,7 +1366,7 @@ substitute for evidence at a later integration boundary.
       policy; add executable contract fixtures.
 - [ ] **B. Harden the local domain slice:** finish bounds, schema/privacy
       validation, concurrency/replay behavior, correction/supersession semantics,
-      property tests, and the local v0-to-v13 migration fixtures; attach
+      property tests, and the local v0-to-v15 migration fixtures; attach
       test evidence. Full transition/privacy coverage and production migration
       support remain open.
 - [ ] **C. Complete storage and projection recovery:** define the authoritative

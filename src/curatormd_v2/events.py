@@ -42,6 +42,7 @@ class EventKind(StrEnum):
     GOAL_STARTED = "goal.started"
     GOAL_ACTIVATED = "goal.activated"
     FACT_RECORDED = "fact.recorded"
+    GOAL_ACTIVITY_OBSERVED = "goal.activity_observed"
     GOAL_FINISH_REQUESTED = "goal.finish_requested"
     GOAL_DEFERRED = "goal.deferred"
     GOAL_BLOCKED = "goal.blocked"
@@ -60,6 +61,13 @@ class EventInboxStatus(StrEnum):
     PROCESSED = "processed"
 
 
+class EventDisposition(StrEnum):
+    """Durable outcome for an event accepted into the project ledger."""
+
+    APPLIED = "applied"
+    SUPPRESSED_NONACTIVE_GOAL = "suppressed_nonactive_goal"
+
+
 @dataclass(frozen=True, slots=True)
 class EventInboxReceipt:
     """Compact durable acceptance/processing receipt for one project event."""
@@ -73,6 +81,7 @@ class EventInboxReceipt:
     last_error_code: str | None = None
     attempts: int = 0
     next_attempt_at: str | None = None
+    disposition: EventDisposition | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +258,27 @@ class FactRecorded:
 
 
 @dataclass(frozen=True, slots=True)
+class GoalActivityObserved:
+    """Status-independent Hermes activity; the processor decides whether to append it."""
+
+    goal_id: str
+    fact_id: str
+    kind: FactKind
+    bullet: str
+
+    def __post_init__(self) -> None:
+        validate_safe_text(self.bullet, "goal_activity_observed.bullet")
+        if not self.goal_id.strip() or not self.fact_id.strip():
+            raise ValueError("goal_id and fact_id must not be empty")
+        if self.kind not in {FactKind.INTENT, FactKind.CHANGE, FactKind.OPEN_GATE}:
+            raise ValueError("goal activity may only record intent, change, or open_gate")
+        if not self.bullet.strip() or len(self.bullet) > 1000:
+            raise ValueError("activity bullet must contain 1-1000 characters")
+        if "\n" in self.bullet or "\r" in self.bullet:
+            raise ValueError("activity bullet must be a single compact line")
+
+
+@dataclass(frozen=True, slots=True)
 class GoalFinishRequested:
     """A request to evaluate completion, not proof of completion."""
 
@@ -399,6 +429,7 @@ EventPayload: TypeAlias = (
     GoalStarted
     | GoalActivated
     | FactRecorded
+    | GoalActivityObserved
     | GoalFinishRequested
     | GoalDeferred
     | GoalBlocked
@@ -413,6 +444,7 @@ _EVENT_TYPES: dict[type[object], EventKind] = {
     GoalStarted: EventKind.GOAL_STARTED,
     GoalActivated: EventKind.GOAL_ACTIVATED,
     FactRecorded: EventKind.FACT_RECORDED,
+    GoalActivityObserved: EventKind.GOAL_ACTIVITY_OBSERVED,
     GoalFinishRequested: EventKind.GOAL_FINISH_REQUESTED,
     GoalDeferred: EventKind.GOAL_DEFERRED,
     GoalBlocked: EventKind.GOAL_BLOCKED,
@@ -591,6 +623,13 @@ def _payload_to_dict(payload: EventPayload) -> dict[str, object]:
                 for item in payload.evidence
             ],
         }
+    if isinstance(payload, GoalActivityObserved):
+        return {
+            "goal_id": payload.goal_id,
+            "fact_id": payload.fact_id,
+            "kind": payload.kind.value,
+            "bullet": payload.bullet,
+        }
     if isinstance(payload, GoalFinishRequested):
         return {
             "goal_id": payload.goal_id,
@@ -755,6 +794,20 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
     )
 
 
+def _goal_activity_from_dict(value: dict[str, object]) -> GoalActivityObserved:
+    _require_fields(value, {"goal_id", "fact_id", "kind", "bullet"})
+    try:
+        kind = FactKind(_string(value["kind"], "kind"))
+    except ValueError as exc:
+        raise ValueError("unknown activity fact kind") from exc
+    return GoalActivityObserved(
+        goal_id=_string(value["goal_id"], "goal_id") or "",
+        fact_id=_string(value["fact_id"], "fact_id") or "",
+        kind=kind,
+        bullet=_string(value["bullet"], "bullet") or "",
+    )
+
+
 def _criteria_amended_from_dict(value: dict[str, object]) -> GoalCriteriaAmended:
     """Parse a criteria-amendment event with exact integer semantics."""
 
@@ -795,6 +848,8 @@ def _payload_from_dict(kind: EventKind, value: dict[str, object]) -> EventPayloa
         )
     if kind is EventKind.FACT_RECORDED:
         return _fact_recorded_from_dict(value)
+    if kind is EventKind.GOAL_ACTIVITY_OBSERVED:
+        return _goal_activity_from_dict(value)
     if kind is EventKind.GOAL_FINISH_REQUESTED:
         _require_fields(
             value,

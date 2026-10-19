@@ -20,6 +20,7 @@ from evidence_fixtures import attest_test_evidence
 from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
+    CodexGoalBinding,
     CuratorStore,
     EvidenceOutcome,
     EvidenceRef,
@@ -33,6 +34,7 @@ from curatormd_v2 import (
     ReviewDecision,
     SuccessCriterion,
     build_mcp_server,
+    codex_hook_to_event,
 )
 
 
@@ -130,6 +132,198 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
 
 class McpServerTests(unittest.TestCase):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""
+
+    def test_hermes_goal_binding_requires_trusted_context_and_active_project_goal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            (root / ".git").mkdir()
+            (root / "src").mkdir()
+            (root / "docs").mkdir()
+            (root / "persistence").mkdir()
+            (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+            (root / "docs" / "tasks.md").write_text("- [ ] Bind current goal\n")
+            (root / "persistence" / "HISTORY.md").write_text("# History\n")
+            (root / ".curatormd-v2.toml").write_text(
+                """\
+                schema_version = 1
+                backend_api_version = 1
+                project_id = "mcp-project"
+
+                [scope]
+                read_paths = ["src", "docs"]
+
+                [checklists]
+                tasks = "docs/tasks.md"
+
+                [evidence]
+                adapters = []
+
+                [staging]
+                root = ".curatormd-v2/staging"
+
+                [persistence]
+                targets = ["persistence/HISTORY.md"]
+                """
+            )
+            (root / ".curatormd-v2.toml").chmod(0o600)
+            store = CuratorStore(Path(temporary) / "global.sqlite3")
+            try:
+                plugin = ProjectPlugin.bind(ProjectConfig.load(root), store)
+                caller = AuthenticatedCaller("host-subject")
+                api = AuthenticatedCuratorAPI(
+                    {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
+                )
+                server = build_mcp_server(api, caller, "mcp-project", "mcp-bind-test")
+
+                async def exercise() -> None:
+                    async with Client(server, raise_exceptions=True) as client:
+                        tools = await client.list_tools()
+                        binding_tool = next(tool for tool in tools.tools if tool.name == "hermes_goal_bind")
+                        self.assertNotIn("ctx", binding_tool.input_schema["properties"])
+
+                        started = await client.call_tool(
+                            "goal_start",
+                            {
+                                "event_id": "bind-goal-start",
+                                "goal_id": "bind-goal",
+                                "problem": "Bind an active goal to this Hermes session",
+                                "success_criteria": [
+                                    {"criterion_id": "c1", "description": "Binding is scoped"}
+                                ],
+                                "source_sequence": 1,
+                            },
+                        )
+                        self.assertFalse(started.is_error)
+                        planned_bind = await client.call_tool(
+                            "hermes_goal_bind",
+                            {"goal_id": "bind-goal"},
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertTrue(planned_bind.is_error)
+
+                        activated = await client.call_tool(
+                            "goal_activate",
+                            {
+                                "event_id": "bind-goal-activate",
+                                "goal_id": "bind-goal",
+                                "reason": "Accepted for work",
+                                "expected_lifecycle_revision": 1,
+                                "source_sequence": 2,
+                            },
+                        )
+                        self.assertFalse(activated.is_error)
+                        valid = await client.call_tool(
+                            "hermes_goal_bind",
+                            {"goal_id": "bind-goal"},
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                            },
+                        )
+                        self.assertFalse(valid.is_error)
+                        valid_text = valid.content[0]
+                        assert isinstance(valid_text, TextContent)
+                        valid_payload = json.loads(valid_text.text)
+                        self.assertEqual(valid_payload["binding"], "validated")
+                        self.assertEqual(valid_payload["goal_id"], "bind-goal")
+
+                        lifecycle_context = {
+                            "attempt_id": "attempt-1",
+                            "session_id": "session-1",
+                        }
+                        lifecycle_event = codex_hook_to_event(
+                            "codex:turn:start",
+                            lifecycle_context,
+                            CodexGoalBinding(
+                                profile_id="host-subject",
+                                project_id="mcp-project",
+                                session_id="session-1",
+                                goal_id="bind-goal",
+                                source_id="hermes-" + hashlib.sha256(
+                                    b"host-subject\0mcp-project"
+                                ).hexdigest(),
+                            ),
+                            source_sequence=1,
+                            occurred_at="2026-10-19T00:00:00+00:00",
+                        )
+                        accepted = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": lifecycle_event.event_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:00:00+00:00",
+                                "context": lifecycle_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertFalse(accepted.is_error)
+                        accepted_text = accepted.content[0]
+                        assert isinstance(accepted_text, TextContent)
+                        accepted_receipt = json.loads(accepted_text.text)
+                        self.assertEqual(accepted_receipt["status"], "processed")
+
+                        replay = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": lifecycle_event.event_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:00:00+00:00",
+                                "context": lifecycle_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertFalse(replay.is_error)
+                        replay_text = replay.content[0]
+                        assert isinstance(replay_text, TextContent)
+                        self.assertEqual(json.loads(replay_text.text)["status"], "processed")
+
+                        forged = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": lifecycle_event.event_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:00:00+00:00",
+                                "context": lifecycle_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                            },
+                        )
+                        self.assertTrue(forged.is_error)
+
+                        mismatched = await client.call_tool(
+                            "hermes_goal_bind",
+                            {"goal_id": "bind-goal"},
+                            meta={
+                                "hermes/profile_id": "another-profile",
+                                "hermes/session_id": "session-1",
+                            },
+                        )
+                        self.assertTrue(mismatched.is_error)
+
+                asyncio.run(exercise())
+            finally:
+                store.close()
 
     def test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

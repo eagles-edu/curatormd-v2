@@ -18,7 +18,9 @@ from curatormd_v2.events import (
     EVENT_SCHEMA_VERSION,
     MAX_EVENT_BYTES,
     EventEnvelope,
+    EventDisposition,
     FactRecorded,
+    GoalActivityObserved,
     GoalActivated,
     GoalBlocked,
     GoalCancelled,
@@ -599,6 +601,89 @@ class EventInboxTests(unittest.TestCase):
         )
         self.assertEqual(self.service.process_event(delayed).status.value, "processed")
 
+    def test_terminal_activity_is_suppressed_once_and_reopen_resumes_source_order(self) -> None:
+        """A durable suppressed activity advances ordering and stays suppressed on replay."""
+
+        class TestVerifier:
+            def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
+                return attest_test_evidence(evidence, context)
+
+        verified_service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            project_id="project-a",
+        )
+        verified_service.process_event(self.event)
+        proof = EvidenceRef(
+            "test", "suite://terminal-reopen", "e" * 64, EvidenceOutcome.PASSED
+        )
+        verified_service.process_event(
+            EventEnvelope(
+                "terminal-proof",
+                "project-a",
+                FactRecorded(
+                    "goal-1", "terminal-proof-fact", FactKind.VERIFICATION,
+                    "Completion criterion verified", "recorded", (proof,),
+                ),
+            )
+        )
+        verified_service.process_event(
+            EventEnvelope(
+                "terminal-finish", "project-a",
+                GoalFinishRequested("goal-1", "Verified task is complete"),
+            )
+        )
+        self.assertEqual(
+            verified_service.goal_status("goal-1").goal.status, GoalStatus.COMPLETE
+        )
+
+        activity = EventEnvelope(
+            "late-hermes-activity",
+            "project-a",
+            GoalActivityObserved(
+                "goal-1", "late-hermes-fact", FactKind.CHANGE,
+                "A turn completed after the goal was closed.",
+            ),
+            source_id="hermes-profile-project",
+            source_sequence=1,
+        )
+        suppressed = verified_service.process_event(activity)
+        self.assertEqual(suppressed.status.value, "processed")
+        self.assertEqual(
+            suppressed.disposition, EventDisposition.SUPPRESSED_NONACTIVE_GOAL
+        )
+        before_reopen = verified_service.goal_status("goal-1").facts
+        self.assertNotIn("late-hermes-fact", {fact.fact_id for fact in before_reopen})
+        self.assertEqual(verified_service.process_event(activity), suppressed)
+
+        reopened = EventEnvelope(
+            "reopen-goal",
+            "project-a",
+            GoalReopened("goal-1", "Follow-up needed", "Rerun the task", 2),
+            source_id="hermes-profile-project",
+            source_sequence=2,
+        )
+        reopened_receipt = verified_service.process_event(reopened)
+        self.assertEqual(reopened_receipt.disposition, EventDisposition.APPLIED)
+
+        after_reopen = EventEnvelope(
+            "post-reopen-hermes-activity",
+            "project-a",
+            GoalActivityObserved(
+                "goal-1", "post-reopen-fact", FactKind.CHANGE,
+                "A turn completed after reopening.",
+            ),
+            source_id="hermes-profile-project",
+            source_sequence=3,
+        )
+        applied = verified_service.process_event(after_reopen)
+        self.assertEqual(applied.disposition, EventDisposition.APPLIED)
+        self.assertEqual(
+            verified_service.store.get_fact("post-reopen-fact", "project-a").bullet,
+            "A turn completed after reopening.",
+        )
+
     def test_failure_receipt_rejects_unbounded_or_free_form_error_text(self) -> None:
         """Keep raw exception or user-provided text out of the event ledger."""
 
@@ -734,6 +819,13 @@ class EventInboxTests(unittest.TestCase):
         self.assertEqual(
             self.service.goal_status("goal-later").facts[0].fact_id,
             "fact-later",
+        )
+        recorded = self.store.get_fact("fact-later", "project-a")
+        self.assertEqual(recorded.source_event_id, fact_event.event_id)
+        self.assertIn("source event: orphan-fact", recorded.as_bullet())
+        self.assertIn(
+            "source event `orphan-fact`",
+            self.service.goal_report("goal-later"),
         )
 
     def test_storage_usage_attributes_failed_payloads_to_project_and_event_class(self) -> None:

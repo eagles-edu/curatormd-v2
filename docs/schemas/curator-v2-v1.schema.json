@@ -78,7 +78,7 @@
     "fact": {
       "description": "Canonical JSON-compatible shape of curatormd_v2.models.Fact.",
       "type": "object",
-      "required": ["goal_id", "kind", "bullet", "fact_id", "criterion_id", "evidence", "created_at"],
+      "required": ["goal_id", "kind", "bullet", "fact_id", "criterion_id", "evidence", "source_event_id", "created_at"],
       "properties": {
         "goal_id": {"type": "string", "minLength": 1},
         "kind": {"enum": ["intent", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome", "reopened", "criteria_amended", "cancelled", "superseded"]},
@@ -87,6 +87,7 @@
         "criterion_id": {"type": ["string", "null"]},
         "evidence": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceRef"}},
         "verification_attestations": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceAttestation"}},
+        "source_event_id": {"type": ["string", "null"], "maxLength": 128, "pattern": "^[^\\r\\n]+$"},
         "created_at": {"type": "string"}
       },
       "allOf": [
@@ -318,13 +319,14 @@
         "source_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
         "source_sequence": {"type": ["integer", "null"], "minimum": 1},
         "occurred_at": {"type": "string", "format": "date-time"},
-        "event_type": {"enum": ["goal.started", "goal.activated", "fact.recorded", "goal.finish_requested", "goal.deferred", "goal.blocked", "goal.reopened", "goal.criteria_amended", "goal.cancelled", "goal.superseded"]},
+        "event_type": {"enum": ["goal.started", "goal.activated", "fact.recorded", "goal.activity_observed", "goal.finish_requested", "goal.deferred", "goal.blocked", "goal.reopened", "goal.criteria_amended", "goal.cancelled", "goal.superseded"]},
         "payload": {"type": "object"}
       },
       "oneOf": [
         {"properties": {"event_type": {"const": "goal.started"}, "payload": {"$ref": "#/$defs/goalStartedPayload"}}},
         {"properties": {"event_type": {"const": "goal.activated"}, "payload": {"$ref": "#/$defs/goalActivatedPayload"}}},
         {"properties": {"event_type": {"const": "fact.recorded"}, "payload": {"$ref": "#/$defs/factRecordedPayload"}}},
+        {"properties": {"event_type": {"const": "goal.activity_observed"}, "payload": {"$ref": "#/$defs/goalActivityPayload"}}},
         {"properties": {"event_type": {"const": "goal.finish_requested"}, "payload": {"$ref": "#/$defs/goalFinishPayload"}}},
         {"properties": {"event_type": {"const": "goal.deferred"}, "payload": {"$ref": "#/$defs/goalDeferredPayload"}}},
         {"properties": {"event_type": {"const": "goal.blocked"}, "payload": {"$ref": "#/$defs/goalBlockedPayload"}}},
@@ -333,6 +335,23 @@
         {"properties": {"event_type": {"const": "goal.cancelled"}, "payload": {"$ref": "#/$defs/goalCancelledPayload"}}},
         {"properties": {"event_type": {"const": "goal.superseded"}, "payload": {"$ref": "#/$defs/goalSupersededPayload"}}}
       ],
+      "additionalProperties": false
+    },
+    "eventInboxReceipt": {
+      "type": "object",
+      "required": ["project_id", "event_id", "payload_sha256", "status", "received_at", "processed_at", "last_error_code", "attempts", "next_attempt_at", "disposition"],
+      "properties": {
+        "project_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "event_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "status": {"enum": ["received", "failed", "quarantined", "processed"]},
+        "received_at": {"type": "string", "format": "date-time"},
+        "processed_at": {"type": ["string", "null"], "format": "date-time"},
+        "last_error_code": {"type": ["string", "null"], "maxLength": 128},
+        "attempts": {"type": "integer", "minimum": 0},
+        "next_attempt_at": {"type": ["string", "null"], "format": "date-time"},
+        "disposition": {"enum": ["applied", "suppressed_nonactive_goal", null]}
+      },
       "additionalProperties": false
     },
     "goalStartedPayload": {
@@ -355,6 +374,7 @@
     },
     "goalActivatedPayload": {"type": "object", "required": ["goal_id", "reason", "expected_lifecycle_revision"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}, "expected_lifecycle_revision": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
     "factRecordedPayload": {"type": "object", "required": ["goal_id", "fact_id", "kind", "bullet", "evidence"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "fact_id": {"type": "string", "minLength": 1}, "kind": {"enum": ["intent", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome"]}, "bullet": {"type": "string", "minLength": 1, "maxLength": 1000}, "criterion_id": {"type": ["string", "null"]}, "evidence": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceRef"}}}, "additionalProperties": false},
+    "goalActivityPayload": {"type": "object", "required": ["goal_id", "fact_id", "kind", "bullet"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "fact_id": {"type": "string", "minLength": 1}, "kind": {"enum": ["intent", "change", "open_gate"]}, "bullet": {"type": "string", "minLength": 1, "maxLength": 1000}}, "additionalProperties": false},
     "goalFinishPayload": {"type": "object", "required": ["goal_id", "completion_claim"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "completion_claim": {"type": "string", "minLength": 1, "maxLength": 980}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
     "goalDeferredPayload": {"type": "object", "required": ["goal_id", "reason", "next_action"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1}, "next_action": {"type": "string", "minLength": 1, "maxLength": 1000}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
     "goalBlockedPayload": {"type": "object", "required": ["goal_id", "dependency", "recovery"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "dependency": {"type": "string", "minLength": 1}, "recovery": {"type": "string", "minLength": 1}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},

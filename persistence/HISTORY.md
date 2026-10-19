@@ -409,3 +409,35 @@
 **Impact:** Connects crash recovery to the tested non-overwriting backup/restore path without claiming production power-loss durability.
 
 <!-- curatormd:record_id=8ea2c9fc3b49e39a14f5af683488e64f;content_sha256=8ea2c9fc3b49e39a14f5af683488e64fdef244ceaa8eeea93a66a69381cf1f0f -->
+
+## 2026-10-19 — Hermes Codex lifecycle outbox prototype
+
+**Decision:** - 2026-10-19: Hermes Core source adds opt-in, profile-local SQLite delivery for Codex lifecycle hooks; bounded source envelopes are committed before dispatch, assigned stable IDs/sequences/timestamps, and retried in order until durable consumers explicitly return `True`.
+- Hermes local verification: focused Codex lifecycle/MCP/profile-isolation checks passed; A→B→A tests verify separate outboxes. Curator translator tests passed independently.
+- Scope remains local source/test evidence only: no Curator durable hook consumer, authenticated identity, session-to-goal binding, live lifecycle delivery, deployment, or end-to-end privacy/replay acceptance is verified.
+
+**Rationale:** Keep source/test evidence distinct from live deployment and avoid overstating Hermes-to-Curator integration.
+
+**Impact:** Records implemented Hermes producer-side progress and preserves remaining Curator integration gates.
+
+<!-- curatormd:record_id=62226707849a04f55378ff6163975c87;content_sha256=62226707849a04f55378ff6163975c876805f710f9954fbc7799f4bc01b2e42b -->
+
+## 2026-10-20 — 2026-10-20 Curator V2 fact source provenance
+
+**Decision:** - 2026-10-20: Local Curator V2 SQLite v15 now retains the first durable source-event ID on event-created facts. Reports and canonical Markdown render the ID; reviewer-approved compaction preserves it through hash-verified archive retrieval. Legacy/local facts remain null rather than receiving inferred provenance. Event, migration, schema, compaction, and Markdown regressions pass; the full local suite previously passed 296 tests. This is local test evidence, not deployed Hermes integration.
+
+**Rationale:** Record only verified implementation and test evidence while preserving the explicit deployment boundary.
+
+**Impact:** Improves fact auditability across event intake, canonical projection, and approved archival.
+
+<!-- curatormd:record_id=fb13e239970b2c113b4119cd8e2a20fb;content_sha256=fb13e239970b2c113b4119cd8e2a20fb5fe8f10b54d7cf32b9ca0d5709601b53 -->
+
+## 2026-10-20 — 2026-10-20 Hermes Core integration regression batch
+
+**Decision:** - 2026-10-20: The dirty Hermes development checkout at `/home/eaglesvn/.hermes/hermes-agent` passed its repository test runner for six affected files (86 tests, 0 failures) covering Codex app-server hooks, profile scope, MCP trust, runtime migration, and Host Steward. Pinned Ruff 0.15.10 passed on the changed Python files. Curator V2's full local suite passed 296 tests; the event, archive, and Markdown regression batch passed 59 tests. All are local source/test evidence only; no live gateway event or deployment was exercised.
+
+**Rationale:** Update the implementation evidence to the actual Hermes development checkout and the current grouped regression results.
+
+**Impact:** Keeps the Hermes integration gate evidence accurate without implying runtime deployment.
+
+<!-- curatormd:record_id=acaeac718ec274237a9c99ae903dc997;content_sha256=acaeac718ec274237a9c99ae903dc997638880d3e4328265bd7ffd0a4f0a89c1 -->

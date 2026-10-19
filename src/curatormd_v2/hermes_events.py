@@ -14,7 +14,7 @@ import hashlib
 import re
 from typing import Mapping, cast
 
-from .events import EventEnvelope, FactRecorded
+from .events import EventEnvelope, GoalActivityObserved
 from .models import FactKind
 from .validation import is_exact_int
 
@@ -121,7 +121,7 @@ def codex_hook_to_event(
         source_id=binding.source_id,
         source_sequence=source_sequence,
         occurred_at=occurred_at,
-        payload=FactRecorded(
+        payload=GoalActivityObserved(
             goal_id=binding.goal_id,
             fact_id=fact_id,
             kind=kind,

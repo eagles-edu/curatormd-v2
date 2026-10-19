@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from functools import wraps
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -12,6 +13,7 @@ import re
 from typing import Any, NotRequired, TypedDict
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.context import Context as MCPContext
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI
@@ -29,6 +31,7 @@ from .events import (
     GoalStarted,
 )
 from .errors import to_api_error
+from .hermes_events import CodexGoalBinding, codex_hook_to_event
 from .models import (
     ArtifactRef,
     EvidenceOutcome,
@@ -43,13 +46,16 @@ from .models import (
 )
 
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+_HERMES_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$")
 logger = logging.getLogger(__name__)
 SERVER_INSTRUCTIONS = """\
 Curator V2 work protocol:
 1. At intake, bind the exact user request or configured checklist item to this
    project. Before implementation, call goal_start with a concise problem and
    observable success criteria; use planned status until the work is accepted.
-   Do not invent criteria or silently rewrite the source item.
+   Do not invent criteria or silently rewrite the source item. Once an existing
+   goal is active, call hermes_goal_bind to validate an explicit current-session
+   association; Hermes persists the host binding only after this succeeds.
 2. At meaningful checkpoints, record deduplicated compact fact bullets with
    fact_record: distinguish research, advice, intent, change, verification,
    open gates, and outcomes. Verification needs evidence; claims, session end,
@@ -234,6 +240,78 @@ def build_mcp_server(
                 GoalActivated(goal_id, reason, expected_lifecycle_revision),
                 source_sequence,
             )
+        )
+
+    @_safe_tool()
+    def hermes_goal_bind(goal_id: str, ctx: MCPContext) -> str:
+        """Validate an active goal for the host-owned current Hermes session binding."""
+        metadata = ctx.request_context.meta
+        profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
+        session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
+        if not isinstance(profile_id, str) or profile_id != caller.subject_id:
+            raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
+        if (
+            not isinstance(session_id, str)
+            or not session_id
+            or len(session_id) > 256
+            or "\n" in session_id
+            or "\r" in session_id
+        ):
+            raise PermissionError("trusted Hermes session context is unavailable")
+        snapshot = api.goal_status(caller, project_id, goal_id)
+        if snapshot.goal.status is not GoalStatus.ACTIVE:
+            raise ValueError("only an active project goal can be bound to a Hermes session")
+        return _json_result(
+            {
+                "binding": "validated",
+                "project_id": project_id,
+                "goal_id": goal_id,
+                "profile_id": profile_id,
+            }
+        )
+
+    @_safe_tool()
+    def hermes_codex_event(
+        event_type: str,
+        goal_id: str,
+        event_id: str,
+        source_sequence: int,
+        occurred_at: str,
+        context: dict[str, str],
+        ctx: MCPContext,
+    ) -> str:
+        """Translate and ingest one exact host-outbox event for this active session goal."""
+        metadata = ctx.request_context.meta
+        profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
+        session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
+        durable_event = metadata.get("hermes/durable_event") if isinstance(metadata, dict) else None
+        if not isinstance(profile_id, str) or profile_id != caller.subject_id:
+            raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
+        if durable_event is not True:
+            raise PermissionError("Codex lifecycle ingestion requires a host-dispatched durable event")
+        if not isinstance(session_id, str) or not _HERMES_SESSION_ID_RE.fullmatch(session_id):
+            raise PermissionError("trusted Hermes session context is unavailable")
+        source_id = "hermes-" + hashlib.sha256(
+            f"{profile_id}\0{project_id}".encode("utf-8")
+        ).hexdigest()
+        binding = CodexGoalBinding(
+            profile_id=profile_id,
+            project_id=project_id,
+            session_id=session_id,
+            goal_id=goal_id,
+            source_id=source_id,
+        )
+        event = codex_hook_to_event(
+            event_type,
+            context,
+            binding,
+            source_sequence=source_sequence,
+            occurred_at=occurred_at,
+        )
+        if event.event_id != event_id or event.source_id != source_id:
+            raise ValueError("durable Hermes event identity does not match its bound source")
+        return _json_result(
+            api.process_event_json(caller, project_id, event.to_json())
         )
 
     @_safe_tool()

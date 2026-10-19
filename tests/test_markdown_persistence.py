@@ -14,9 +14,11 @@ from curatormd_v2 import (
     ArtifactPurger,
     ArtifactRef,
     CuratorStore,
+    EventEnvelope,
     EvidenceOutcome,
     EvidenceRef,
     EvidenceVerificationContext,
+    FactRecorded,
     FactKind,
     MarkdownPersistenceAdapter,
     MarkdownPersistenceError,
@@ -179,11 +181,17 @@ class MarkdownPersistenceTests(unittest.TestCase):
         self.plugin.goal_activate(
             self.goal.goal_id, "Test accepts the implementation", 1
         )
-        self.plugin.service.goal_fact(
-            self.goal.goal_id,
-            FactKind.CHANGE,
-            "Added deterministic Markdown projection",
+        event = EventEnvelope(
+            "event-markdown-projection",
+            "consumer-a",
+            FactRecorded(
+                self.goal.goal_id,
+                "fact-markdown-projection",
+                FactKind.CHANGE,
+                "Added deterministic Markdown projection",
+            ),
         )
+        self.plugin.service.process_event(event)
         self.plugin.service.goal_fact(
             self.goal.goal_id,
             FactKind.VERIFICATION,
@@ -205,6 +213,10 @@ class MarkdownPersistenceTests(unittest.TestCase):
         self.assertIn("# Existing project history", content)
         self.assertIn("Keep this text.", content)
         self.assertIn("- Change: Added deterministic Markdown projection", content)
+        self.assertIn(
+            "source event: event\\-markdown\\-projection", content
+        )
+        self.assertEqual(content.count("- Facts:"), 1)
         self.assertIn("- Checklist: `tasks`", content)
         self.assertIn("- Lifecycle revision: `2`", content)
         self.assertIn(

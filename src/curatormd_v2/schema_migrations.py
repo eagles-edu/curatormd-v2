@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SQLITE_SCHEMA_VERSION = 13
+SQLITE_SCHEMA_VERSION = 15
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -305,6 +305,32 @@ def migrate_shared_request_limiter_v13(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 13")
 
 
+def migrate_event_dispositions_v14(connection: sqlite3.Connection) -> None:
+    """Persist an explicit applied/suppressed disposition on processed events."""
+
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(event_inbox)").fetchall()
+    }
+    if "disposition" not in columns:
+        connection.execute("ALTER TABLE event_inbox ADD COLUMN disposition TEXT")
+    connection.execute("PRAGMA user_version = 14")
+
+
+def migrate_fact_source_events_v15(connection: sqlite3.Connection) -> None:
+    """Link newly observed facts to their first durable source event."""
+
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(facts)").fetchall()
+    }
+    if "source_event_id" not in columns:
+        connection.execute("ALTER TABLE facts ADD COLUMN source_event_id TEXT")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS facts_source_event "
+        "ON facts(source_event_id) WHERE source_event_id IS NOT NULL"
+    )
+    connection.execute("PRAGMA user_version = 15")
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -354,6 +380,12 @@ def apply_schema_migrations(
         schema_version = 12
     if schema_version == 12:
         migrate_shared_request_limiter_v13(connection)
+        schema_version = 13
+    if schema_version == 13:
+        migrate_event_dispositions_v14(connection)
+        schema_version = 14
+    if schema_version == 14:
+        migrate_fact_source_events_v15(connection)
         return
     if schema_version != 0:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
@@ -374,3 +406,5 @@ def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     migrate_durable_project_access_v11(connection)
     migrate_sde_quality_feedback_v12(connection)
     migrate_shared_request_limiter_v13(connection)
+    migrate_event_dispositions_v14(connection)
+    migrate_fact_source_events_v15(connection)

@@ -46,7 +46,13 @@ class ArtifactPurger:
 
         no_follow = getattr(os, "O_NOFOLLOW", None)
         directory = getattr(os, "O_DIRECTORY", None)
-        if no_follow is None or directory is None or os.open not in os.supports_dir_fd:
+        if (
+            no_follow is None
+            or directory is None
+            or os.open not in os.supports_dir_fd
+            or os.stat not in os.supports_dir_fd
+            or os.stat not in os.supports_follow_symlinks
+        ):
             raise PurgeError("platform lacks safe descriptor-relative purge support")
 
         root_fd = -1
@@ -96,6 +102,11 @@ class ArtifactPurger:
                     raise PurgeError("artifact changed while its hash was being verified")
                 if digest.hexdigest() != artifact.sha256:
                     raise PurgeError("artifact hash does not match the approved reference")
+                named = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+                if (named.st_dev, named.st_ino) != (after.st_dev, after.st_ino):
+                    raise PurgeError(
+                        "artifact path changed while its hash was being verified"
+                    )
                 os.unlink(filename, dir_fd=parent_fd)
             except OSError as exc:
                 raise PurgeError(f"cannot safely inspect or remove artifact: {exc}") from exc

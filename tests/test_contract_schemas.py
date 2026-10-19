@@ -20,9 +20,13 @@ from curatormd_v2 import (
     EvidenceOutcome,
     EvidenceRef,
     EventEnvelope,
+    EventDisposition,
+    EventInboxReceipt,
+    EventInboxStatus,
     Fact,
     FactKind,
     FactRecorded,
+    GoalActivityObserved,
     GoalCard,
     GoalActivated,
     GoalBlocked,
@@ -68,6 +72,7 @@ def _json_record(
         | SDEQualityFeedbackSummary
         | SDEReviewPacket
         | AuditReceipt
+        | EventInboxReceipt
         | EvidenceAttestation
         | PurgeTargetStatus
     ),
@@ -135,6 +140,10 @@ class ContractSchemaTests(unittest.TestCase):
                 criterion_id=criterion.criterion_id,
                 evidence=(evidence,),
             ),
+            GoalActivityObserved(
+                "goal-events", "activity-events", FactKind.OPEN_GATE,
+                "A runtime interruption was observed.",
+            ),
             GoalFinishRequested("goal-events", "All declared criteria are proven", 1),
             GoalDeferred("goal-events", "Wait for the reviewer", "Resume review", 1),
             GoalBlocked(
@@ -168,6 +177,26 @@ class ContractSchemaTests(unittest.TestCase):
             )
             with self.subTest(event_type=event.event_kind.value):
                 self.validate_contract("eventEnvelope", event.to_dict())
+
+    def test_processed_event_receipts_validate_with_both_dispositions(self) -> None:
+        for disposition in (
+            EventDisposition.APPLIED,
+            EventDisposition.SUPPRESSED_NONACTIVE_GOAL,
+        ):
+            receipt = EventInboxReceipt(
+                project_id="gptmd",
+                event_id="hermes-event-1",
+                payload_sha256="a" * 64,
+                status=EventInboxStatus.PROCESSED,
+                received_at="2026-10-20T00:00:00+00:00",
+                processed_at="2026-10-20T00:00:01+00:00",
+                last_error_code=None,
+                attempts=1,
+                next_attempt_at=None,
+                disposition=disposition,
+            )
+            with self.subTest(disposition=disposition.value):
+                self.validate_contract("eventInboxReceipt", _json_record(receipt))
 
     def test_goal_fact_sde_correction_and_receipt_records_match_schemas(self) -> None:
         goal = GoalCard(
@@ -204,6 +233,7 @@ class ContractSchemaTests(unittest.TestCase):
             criterion_id="schema-valid",
             evidence=(evidence,),
             verification_attestations=(attestation,),
+            source_event_id="evt-contract-schema",
         )
         candidate = SDECandidate(
             goal_id=goal.goal_id,

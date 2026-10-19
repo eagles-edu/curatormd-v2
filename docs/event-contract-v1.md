@@ -3,7 +3,9 @@
 This document describes the typed envelope implemented in
 `curatormd_v2.events`. It is a serialization contract, not a production
 HTTP/MCP ingress, authentication mechanism, broker, or claim that Hermes is
-wired to CuratorMD. The SQLite store provides a durable inbox: it deduplicates
+deployed with CuratorMD. Hermes source now has an opt-in project-scoped local
+hook adapter to the Curator MCP event tool; this does not establish live
+deployment or authenticated host identity. The SQLite store provides a durable inbox: it deduplicates
 `(project_id, event_id)`, rejects ID reuse with different content, exposes
 bounded received/failed events, tracks delivery attempts, and discards payload
 text after processing while retaining its digest receipt. `CuratorService.process_event` applies
@@ -124,6 +126,7 @@ present, both and `checklist_id` are required.
 | `goal.started` | Stable goal ID, problem, non-empty unique success criteria; optional initial status, next action, owner, checklist ID/revision/source line, parent goal ID, and dependency goal IDs | Starts a scoped goal while preserving caller criteria, optional next action, and lineage; new MCP/plugin intake defaults to planned. |
 | `goal.activated` | Goal ID, explicit acceptance reason, expected lifecycle revision | Moves only a planned goal to active, records an intent fact and advances lifecycle revision atomically. |
 | `fact.recorded` | Goal ID, stable fact ID, fact kind, one-line bullet; optional criterion ID; evidence array | Adds one compact lifecycle fact. Verification facts require evidence references and a criterion. |
+| `goal.activity_observed` | Goal ID, stable fact ID, one of `intent`, `change`, or `open_gate`, and one-line bullet | Status-independent Hermes activity envelope. In one transaction, active goals receive the fact; non-active goals receive a processed receipt with `suppressed_nonactive_goal`, no fact, and an advanced source cursor. Exact replay preserves that disposition even after reopening. |
 | `goal.finish_requested` | Goal ID, completion claim, expected lifecycle revision | Requests evaluation; the claim is not proof and cannot itself close the goal. |
 | `goal.deferred` | Goal ID, reason, next action, expected lifecycle revision | Records an explicit deferred state and follow-up. |
 | `goal.blocked` | Goal ID, dependency, recovery, expected lifecycle revision | Records the dependency and recovery path for a blocked state. |
@@ -137,21 +140,26 @@ present, both and `checklist_id` are required.
 The current Hermes Core hook producer emits `codex:turn:start` and
 `codex:turn:end` with bounded runtime metadata only. The translation in the
 table is implemented by `curatormd_v2.hermes_events.codex_hook_to_event` and
-covered by tests. It is a reference adapter, not a live Hermes integration: the
-caller must supply a current host-verified profile/project/session/goal
-binding and source sequence/timestamp from a durable producer outbox. Event and
-fact IDs are stable opaque hashes derived from the bound source, hook kind, and
-attempt ID. A local acceptance test routes projected start/end events through
-the SQLite inbox and router into the goal ledger. The adapter does not resolve
-or authenticate the binding, allocate or durably retain sequence/timestamp
-metadata, persist/retry the envelope, or deliver events from the live Hermes
-hook path.
+covered by tests. Hermes source now includes a project-config-bound adapter to
+the local Curator MCP event tool. It validates host-supplied profile/session
+metadata and a previously accepted session-to-goal binding, derives the same opaque source ID as the producer,
+and acknowledges only a durable processed/duplicate receipt. The profile-local
+SQLite outbox assigns stable event IDs, source sequence/timestamp, persists
+before dispatch, and retries until a durable consumer returns literal `True`.
+A local in-memory MCP acceptance test exercises the adapter, event translation,
+project authorization, and durable fact write; terminal activity suppression,
+source advancement, retry replay, and reopening are covered by lifecycle tests.
+Hermes tests cover outbox replay,
+profile isolation, and activation-bound sessions. The local profile ID is still
+an operator assertion, not authenticated identity. No active profile hook,
+running gateway event, production scheduler/router, or deployed integration has
+been verified.
 
 | Hermes hook | Curator fact | Required meaning and guard |
 | --- | --- | --- |
-| `codex:turn:start` | `fact.recorded`, kind `intent` | Record only that a bound goal received a Codex turn. Do not infer a new goal from the user's prompt or copy the prompt, model, provider, or working directory into the fact. |
-| `codex:turn:end`, outcome `completed` | `fact.recorded`, kind `change` | Record only that the runtime turn returned normally. This is not criterion evidence and must not emit `goal.finish_requested` or `goal.completed`. |
-| `codex:turn:end`, outcome `interrupted` or `failed` | `fact.recorded`, kind `open_gate` | Record a bounded interruption/failure fact without exception text; the goal remains in its existing nonterminal status. |
+| `codex:turn:start` | `goal.activity_observed`, kind `intent` | Record only that a bound goal received a Codex turn. Do not infer a new goal from the user's prompt or copy the prompt, model, provider, or working directory into the fact. |
+| `codex:turn:end`, outcome `completed` | `goal.activity_observed`, kind `change` | Record only that the runtime turn returned normally. This is not criterion evidence and must not emit `goal.finish_requested` or `goal.completed`. |
+| `codex:turn:end`, outcome `interrupted` or `failed` | `goal.activity_observed`, kind `open_gate` | Record a bounded interruption/failure fact without exception text; the goal remains in its existing nonterminal status. |
 
 Before translating either hook, the Hermes producer must resolve an explicit,
 current `(authenticated profile, project, session, goal)` binding. Project ID
@@ -160,6 +168,13 @@ host, never from a hook or MCP argument. Missing, stale, ambiguous, or
 cross-project binding means no event is sent. Goal creation remains an
 explicit intake operation requiring the user-approved problem and named
 success criteria; hooks alone cannot supply that contract.
+
+For any non-active goal, the event is acknowledged only after Curator stores a
+`suppressed_nonactive_goal` receipt and advances the source cursor in the same
+transaction. It appends no activity fact. Exact replay retains the original
+disposition after reopening, and the next sequence can be applied to the active
+goal. This prevents a late turn event from blocking the ordered Hermes outbox
+without writing activity against a retired goal.
 
 The producer must assign a stable event/fact ID, source ID, per-source sequence,
 and occurrence timestamp before queueing the event, then retry the exact

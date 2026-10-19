@@ -48,7 +48,9 @@ from .events import (
     EventEnvelope,
     EventInboxReceipt,
     EventInboxStatus,
+    EventDisposition,
     FactRecorded,
+    GoalActivityObserved,
     GoalActivated,
     GoalCancelled,
     GoalDeferred,
@@ -1576,10 +1578,21 @@ class CuratorService:
                     self.project_id, event.event_id, lease_owner
                 )
             payload = event.payload
+            prior_fact_ids: set[str] = (
+                set()
+                if isinstance(payload, GoalStarted)
+                else {
+                    fact.fact_id
+                    for fact in self.store.list_facts(
+                        payload.goal_id, self.project_id
+                    )
+                }
+            )
             verified_goal_snapshot: GoalCard | None = None
             prepared_fact: Fact | None = None
             finish_snapshot: tuple[GoalCard, tuple[Fact, ...], set[str]] | None = None
             expected_finish_revision: int | None = None
+            disposition = EventDisposition.APPLIED
             if isinstance(payload, FactRecorded) and payload.kind is FactKind.VERIFICATION:
                 verified_goal_snapshot = self.store.get_goal(
                     payload.goal_id, self.project_id
@@ -1677,6 +1690,19 @@ class CuratorService:
                             evidence=payload.evidence,
                             fact_id=payload.fact_id,
                         )
+                elif isinstance(payload, GoalActivityObserved):
+                    goal = self.store.get_goal(payload.goal_id, self.project_id)
+                    if goal.status is GoalStatus.ACTIVE:
+                        self._append_preverified_fact(
+                            Fact(
+                                goal_id=payload.goal_id,
+                                kind=payload.kind,
+                                bullet=payload.bullet,
+                                fact_id=payload.fact_id,
+                            )
+                        )
+                    else:
+                        disposition = EventDisposition.SUPPRESSED_NONACTIVE_GOAL
                 elif isinstance(payload, GoalFinishRequested):
                     if finish_snapshot is None:
                         raise ConflictError(
@@ -1743,9 +1769,36 @@ class CuratorService:
                         payload.recovery,
                         payload.expected_lifecycle_revision or 1,
                     )
+                new_fact_ids = tuple(
+                    fact.fact_id
+                    for fact in self.store.list_facts(
+                        payload.goal_id, self.project_id
+                    )
+                    if fact.fact_id not in prior_fact_ids
+                )
+                if isinstance(payload, (FactRecorded, GoalActivityObserved)) and (
+                    disposition is EventDisposition.APPLIED
+                ):
+                    try:
+                        referenced_fact = self.store.get_fact(
+                            payload.fact_id, self.project_id
+                        )
+                    except LookupError:
+                        pass
+                    else:
+                        if referenced_fact.source_event_id is None:
+                            new_fact_ids += (referenced_fact.fact_id,)
+                self.store.attach_fact_source_event(
+                    tuple(dict.fromkeys(new_fact_ids)),
+                    event.event_id,
+                    self.project_id,
+                )
                 self.store.advance_source_sequence(event)
                 return self.store.mark_event_processed(
-                    self.project_id, event.event_id, lease_owner=lease_owner
+                    self.project_id,
+                    event.event_id,
+                    lease_owner=lease_owner,
+                    disposition=disposition,
                 )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             # Any dispatch failure must trigger retryable receipt handling.

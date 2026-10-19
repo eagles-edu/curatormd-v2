@@ -132,6 +132,11 @@ def render_goal_report(
             if intake is not None and intake.checklist_id is not None
             else "- Checklist: none"
         ),
+        (
+            f"- Checklist item (captured): {_inline(goal.checklist_source_text, 4000)}"
+            if goal.checklist_source_text is not None
+            else "- Checklist item: not recorded"
+        ),
         "",
         "## Success criteria",
     ]
@@ -185,10 +190,15 @@ def render_goal_report(
                 if fact.evidence
                 else ""
             )
+            source = (
+                f"; source event `{_inline(fact.source_event_id, 128)}`"
+                if fact.source_event_id is not None
+                else ""
+            )
             lines.append(
                 f"- `{_inline(fact.fact_id, 256)}` — "
                 f"{fact.kind.value.replace('_', ' ')}: {_inline(fact.bullet, 1000)}"
-                f"{criterion}{evidence}"
+                f"{criterion}{evidence}{source}"
             )
     if page_end < len(snapshot.facts):
         lines.append(
@@ -197,6 +207,17 @@ def render_goal_report(
         )
     elif selected_facts:
         lines.append("- Full evidence locators and hashes are available from `goal_status`.")
+
+    current_open_gates = tuple(
+        bullet.text
+        for bullet in projection.bullets
+        if bullet.category is GoalBulletCategory.OPEN
+    )
+    lines.extend(["", "## Current open gates"])
+    if current_open_gates:
+        lines.extend(f"- {_inline(gate)}" for gate in current_open_gates)
+    else:
+        lines.append("- None recorded.")
 
     lines.extend(["", "## Open TODOs"])
     todos: list[str] = []

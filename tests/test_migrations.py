@@ -166,6 +166,108 @@ class SchemaMigrationTests(unittest.TestCase):
             finally:
                 migrated.close()
 
+    def test_v13_database_adds_event_disposition_without_losing_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v13.sqlite3"
+            store = CuratorStore(database_path)
+            receipt, inserted = store.ingest_event(
+                EventEnvelope(
+                    "event-before-disposition",
+                    "migration-project",
+                    GoalStarted(
+                        "migration-goal", "Keep prior event receipts",
+                        (SuccessCriterion("done", "Receipt remains available"),),
+                    ),
+                )
+            )
+            self.assertTrue(inserted)
+            self.assertEqual(receipt.status.value, "received")
+            processed = store.mark_event_processed(
+                "migration-project", "event-before-disposition"
+            )
+            self.assertEqual(processed.status.value, "processed")
+            store.close()
+
+            connection = sqlite3.connect(database_path)
+            connection.execute("ALTER TABLE event_inbox DROP COLUMN disposition")
+            connection.execute("PRAGMA user_version = 13")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    columns = {
+                        row["name"]
+                        for row in connection.execute(
+                            "PRAGMA table_info(event_inbox)"
+                        ).fetchall()
+                    }
+                    self.assertIn("disposition", columns)
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+                preserved = migrated.event_receipt(
+                    "migration-project", "event-before-disposition"
+                )
+                self.assertEqual(preserved.status.value, "processed")
+                self.assertIsNone(preserved.disposition)
+            finally:
+                migrated.close()
+
+    def test_v14_database_adds_nullable_fact_source_event(self) -> None:
+        """Add source provenance without guessing it for existing facts."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v14.sqlite3"
+            staging_root = Path(temporary) / "staging"
+            staging_root.mkdir()
+            store = CuratorStore(database_path)
+            service = CuratorService(
+                store,
+                ArtifactPurger(staging_root),
+                MigrationEvidenceVerifier(),
+                MigrationReviewAuthorizer(),
+                project_id="migration-project",
+            )
+            goal = service.goal_start(
+                "Preserve fact history through v15",
+                (SuccessCriterion("done", "Existing fact remains readable"),),
+            )
+            fact, _ = service.goal_fact(
+                goal.goal_id, FactKind.CHANGE, "Legacy fact has unknown origin"
+            )
+            store.close()
+
+            connection = sqlite3.connect(database_path)
+            connection.row_factory = sqlite3.Row
+            connection.execute("DROP INDEX facts_source_event")
+            connection.execute("ALTER TABLE facts DROP COLUMN source_event_id")
+            connection.execute("PRAGMA user_version = 14")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                self.assertIsNone(migrated.get_fact(fact.fact_id).source_event_id)
+                with migrated.transaction() as connection:
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+                    self.assertIn(
+                        "source_event_id",
+                        {
+                            row["name"]
+                            for row in connection.execute(
+                                "PRAGMA table_info(facts)"
+                            ).fetchall()
+                        },
+                    )
+            finally:
+                migrated.close()
+
     def test_v12_rate_limiter_migration_rolls_back_on_incompatible_table(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database_path = Path(temporary) / "v12-failed.sqlite3"

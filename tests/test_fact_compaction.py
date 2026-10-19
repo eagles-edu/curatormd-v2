@@ -97,6 +97,11 @@ class FactCompactionTests(unittest.TestCase):
             FactKind.RESEARCH,
             "Inspected the stable persistence boundary and its bounded archive recovery path",
         )
+        self.store.attach_fact_source_event(
+            (research.fact_id,), "event-source-archive", "archive-project"
+        )
+        research = self.store.get_fact(research.fact_id, "archive-project")
+        self.assertEqual(research.source_event_id, "event-source-archive")
         advice = self.add_fact(
             FactKind.ADVICE,
             "Keep operator review explicit before routine history is compacted",
@@ -139,6 +144,11 @@ class FactCompactionTests(unittest.TestCase):
             ),
         )
         self.assertEqual(self.store.get_fact(research.fact_id), research)
+        self.assertIn(
+            "source event: event-source-archive", self.store.get_fact(
+                research.fact_id, "archive-project"
+            ).as_bullet()
+        )
         self.assertEqual(self.service.goal_status(self.goal.goal_id).goal.status, GoalStatus.ACTIVE)
         usage = self.store.project_storage_usage("archive-project")
         self.assertEqual(usage.fact_count, 2)

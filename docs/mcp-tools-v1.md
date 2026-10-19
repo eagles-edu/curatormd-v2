@@ -54,10 +54,13 @@ mcp_servers:
       - --profile-id
       - consumer-coding
       - --allow-write
+    hermes_context: true
+    hermes_project_id: <project_id-from-.curatormd-v2.toml>
     transport: stdio
 ```
 
 Replace every path and the profile ID with the exact operator-managed values;
+set `hermes_project_id` to the exact ID in this repository's `.curatormd-v2.toml`;
 use a private database path owned by the Hermes account. `--profile-id` is an
 operator assertion, not authentication. This launcher is only for a trusted
 local orchestrator that owns the MCP subprocess configuration; it must not be
@@ -77,12 +80,53 @@ Remote authentication, applying durable grants to the launcher, shared rate
 limits, review identity, operator scheduling, and deployment probes remain
 open gates.
 
+### Hermes durable Codex hook adapter
+
+For each project enabled under a Hermes profile, configure `hermes_context: true`
+and `hermes_project_id` as above, then install a profile-local gateway hook:
+
+```yaml
+# <Hermes profile home>/hooks/curator-v2/HOOK.yaml
+name: curator-v2
+events: [codex:turn:start, codex:turn:end]
+durable_events: [codex:turn:start, codex:turn:end]
+```
+
+```python
+# <Hermes profile home>/hooks/curator-v2/handler.py
+from curatormd_v2.hermes_hook import build_hermes_hook_handler
+
+handle = build_hermes_hook_handler(
+    "/path/to/consumer-repository",
+    "curatormd_v2",
+)
+```
+
+The adapter reads the repository-owned `.curatormd-v2.toml`, ignores events
+bound to other project IDs, and calls the already-connected local MCP server's
+`hermes_codex_event` tool. Hermes host metadata supplies the current profile and
+session; a separate host-only `_meta` marker distinguishes durable dispatch
+from a model-authored call. `hermes_goal_bind` validates an explicit active
+goal, while successful goal activation can bind the goal automatically in the
+profile-local outbox. The Codex event tool accepts only that host-dispatched
+marker and verifies deterministic event identity. Curator atomically records
+an activity bullet only while the bound goal is active; for a non-active goal
+it stores a `suppressed_nonactive_goal` receipt without adding a fact, allowing
+the ordered outbox to advance. Neither a turn end nor a successful event
+receipt completes the goal.
+
+The Curator package must be importable by the Hermes gateway interpreter and
+the hook files/configuration must be installed by the operator; this document
+does not claim a live install. Hermes profile IDs remain operator assertions,
+and the host profile-to-project permission and deployment gates remain open.
+
 ## Tool inventory
 
 | Tool | Function |
 | --- | --- |
 | `goal_start` | Capture a goal with caller-supplied criteria, optional next action/checklist snapshot/parent/dependencies, and `planned` status by default. `initial_status=active` is for already accepted work. Requires stable event ID. |
 | `goal_activate` | Explicitly accept a planned goal for execution with a reason and expected lifecycle revision; records the intent and atomically changes status to active. |
+| `hermes_goal_bind` | Validate that an explicit goal is active in this configured project and that trusted MCP request metadata names the fixed caller profile plus current session. Hermes records the returned binding in its profile-local host outbox; profile/session values are never tool arguments. |
 | `fact_record` | Add one typed fact; verification facts require criterion and evidence references. |
 | `goal_finish` | Evaluate claim against verified criteria, children, and dependencies; unsupported completion stays open; requires the observed lifecycle revision. |
 | `goal_defer` | Set deferred state with reason and next action; requires the observed lifecycle revision. |

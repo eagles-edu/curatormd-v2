@@ -19,6 +19,7 @@ import zlib
 from .events import (
     EventEnvelope,
     EventInboxReceipt,
+    EventDisposition,
     EventInboxStatus,
     EventQueueStatus,
 )
@@ -846,6 +847,7 @@ class CuratorStore:
             criterion_id TEXT,
             evidence_json TEXT NOT NULL,
             verification_attestations_json TEXT NOT NULL DEFAULT '[]',
+            source_event_id TEXT,
             dedupe_key TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL
         );
@@ -946,6 +948,7 @@ class CuratorStore:
             next_attempt_at TEXT,
             lease_owner TEXT,
             lease_expires_at TEXT,
+            disposition TEXT,
             PRIMARY KEY(project_id, event_id)
         );
         CREATE INDEX IF NOT EXISTS event_inbox_pending
@@ -1423,6 +1426,7 @@ class CuratorStore:
                 evidence_json,
                 attestations_json,
                 dedupe_key,
+                fact.source_event_id or "",
                 fact.created_at,
             )
         )
@@ -1492,6 +1496,7 @@ class CuratorStore:
                  COALESCE(length(CAST(f.criterion_id AS BLOB)), 0) +
                  length(CAST(f.evidence_json AS BLOB)) +
                  length(CAST(f.verification_attestations_json AS BLOB)) +
+                 COALESCE(length(CAST(f.source_event_id AS BLOB)), 0) +
                  length(CAST(f.dedupe_key AS BLOB)) +
                  length(CAST(f.created_at AS BLOB))
                ), 0) AS bytes FROM facts AS f
@@ -1506,6 +1511,7 @@ class CuratorStore:
                  COALESCE(length(CAST(criterion_id AS BLOB)), 0) +
                  length(CAST(evidence_json AS BLOB)) +
                  length(CAST(verification_attestations_json AS BLOB)) +
+                 COALESCE(length(CAST(source_event_id AS BLOB)), 0) +
                  length(CAST(dedupe_key AS BLOB)) +
                  length(CAST(created_at AS BLOB))
                ), 0) AS bytes FROM facts WHERE goal_id = ?""",
@@ -1528,8 +1534,8 @@ class CuratorStore:
         connection.execute(
             """INSERT INTO facts
                (fact_id, goal_id, kind, bullet, criterion_id, evidence_json,
-                verification_attestations_json, dedupe_key, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                verification_attestations_json, source_event_id, dedupe_key, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 fact.fact_id,
                 fact.goal_id,
@@ -1538,6 +1544,7 @@ class CuratorStore:
                 fact.criterion_id,
                 evidence_json,
                 attestations_json,
+                fact.source_event_id,
                 dedupe_key,
                 fact.created_at,
             )
@@ -1566,6 +1573,7 @@ class CuratorStore:
                      COALESCE(length(CAST(criterion_id AS BLOB)), 0) +
                      length(CAST(evidence_json AS BLOB)) +
                      length(CAST(verification_attestations_json AS BLOB)) +
+                     COALESCE(length(CAST(source_event_id AS BLOB)), 0) +
                      length(CAST(dedupe_key AS BLOB)) + length(CAST(created_at AS BLOB))
                    ), 0) AS bytes FROM facts WHERE goal_id = ?""",
                 (goal_id,),
@@ -1577,6 +1585,7 @@ class CuratorStore:
                      COALESCE(length(CAST(f.criterion_id AS BLOB)), 0) +
                      length(CAST(f.evidence_json AS BLOB)) +
                      length(CAST(f.verification_attestations_json AS BLOB)) +
+                     COALESCE(length(CAST(f.source_event_id AS BLOB)), 0) +
                      length(CAST(f.dedupe_key AS BLOB)) + length(CAST(f.created_at AS BLOB))
                    ), 0) AS bytes FROM facts AS f
                    JOIN goals AS g ON g.goal_id = f.goal_id WHERE g.project_id = ?""",
@@ -2053,6 +2062,7 @@ class CuratorStore:
             criterion_id=row["criterion_id"],
             evidence=evidence,
             verification_attestations=tuple(attestations),
+            source_event_id=row["source_event_id"],
             created_at=row["created_at"],
         )
 
@@ -2071,6 +2081,7 @@ class CuratorStore:
                 _attestation_to_dict(item)
                 for item in fact.verification_attestations
             ],
+            "source_event_id": fact.source_event_id,
             "created_at": fact.created_at,
         }
 
@@ -2088,7 +2099,8 @@ class CuratorStore:
         if not isinstance(value, dict):
             raise FactArchiveIntegrityError("fact archive record schema is invalid")
         record = cast(dict[str, object], value)
-        if set(record) not in (required, required | {"verification_attestations"}):
+        optional = {"verification_attestations", "source_event_id"}
+        if not required.issubset(record) or not set(record).issubset(required | optional):
             raise FactArchiveIntegrityError("fact archive record schema is invalid")
         if not isinstance(record["evidence"], list):
             raise FactArchiveIntegrityError("fact archive evidence schema is invalid")
@@ -2185,6 +2197,11 @@ class CuratorStore:
                 raise FactArchiveIntegrityError(
                     "fact archive criterion_id must be a string or null"
                 )
+            source_event_id = record.get("source_event_id")
+            if source_event_id is not None and not isinstance(source_event_id, str):
+                raise FactArchiveIntegrityError(
+                    "fact archive source_event_id must be a string or null"
+                )
             return Fact(
                 goal_id=goal_id,
                 kind=FactKind(kind_value),
@@ -2193,6 +2210,7 @@ class CuratorStore:
                 criterion_id=criterion_id,
                 evidence=tuple(evidence),
                 verification_attestations=tuple(attestations),
+                source_event_id=source_event_id,
                 created_at=created_at,
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -2588,6 +2606,32 @@ class CuratorStore:
             if fact.fact_id == fact_id:
                 return fact
         raise FactArchiveIntegrityError("archive index references a missing fact")
+
+    def attach_fact_source_event(
+        self,
+        fact_ids: tuple[str, ...],
+        source_event_id: str,
+        project_id: str,
+    ) -> None:
+        """Attach the first processed event to new facts without rewriting origin."""
+
+        if not fact_ids:
+            return
+        if len(fact_ids) > MAX_FACTS_PER_GOAL:
+            raise ValueError("source event cannot be attached to an unbounded fact set")
+        if not source_event_id.strip() or len(source_event_id) > 128:
+            raise ValueError("source_event_id must be a bounded identifier")
+        validate_safe_text(source_event_id, "source_event_id")
+        with self._transaction() as connection:
+            connection.execute(
+                """UPDATE facts SET source_event_id = ?
+                    WHERE fact_id IN (SELECT value FROM json_each(?))
+                      AND source_event_id IS NULL
+                      AND goal_id IN (
+                        SELECT goal_id FROM goals WHERE project_id = ?
+                      )""",
+                (source_event_id, json.dumps(fact_ids), project_id),
+            )
 
     def list_facts(
         self, goal_id: str, project_id: str | None = None
@@ -4289,6 +4333,10 @@ class CuratorStore:
             last_error_code=row["last_error"],
             attempts=row["attempts"],
             next_attempt_at=row["next_attempt_at"],
+            disposition=(
+                EventDisposition(row["disposition"])
+                if row["disposition"] is not None else None
+            ),
         )
 
     def pending_events(
@@ -4622,6 +4670,7 @@ class CuratorStore:
                      COALESCE(length(CAST(f.criterion_id AS BLOB)), 0) +
                      length(CAST(f.evidence_json AS BLOB)) +
                      length(CAST(f.verification_attestations_json AS BLOB)) +
+                     COALESCE(length(CAST(f.source_event_id AS BLOB)), 0) +
                      length(CAST(f.dedupe_key AS BLOB)) +
                      length(CAST(f.created_at AS BLOB))
                    ), 0) AS bytes
@@ -4981,6 +5030,7 @@ class CuratorStore:
         event_id: str,
         *,
         lease_owner: str | None = None,
+        disposition: EventDisposition = EventDisposition.APPLIED,
     ) -> EventInboxReceipt:
         """Finalize an event and discard its payload, retaining its digest receipt."""
 
@@ -4988,6 +5038,7 @@ class CuratorStore:
             cursor = connection.execute(
                 """UPDATE event_inbox SET status = ?, payload_json = NULL,
                    processed_at = ?, last_error = NULL, next_attempt_at = NULL,
+                   disposition = ?,
                    attempts = attempts + 1,
                    lease_owner = NULL, lease_expires_at = NULL
                    WHERE project_id = ? AND event_id = ? AND status IN (?, ?)
@@ -4997,6 +5048,7 @@ class CuratorStore:
                 (
                     EventInboxStatus.PROCESSED.value,
                     utc_now(),
+                    disposition.value,
                     project_id,
                     event_id,
                     EventInboxStatus.RECEIVED.value,

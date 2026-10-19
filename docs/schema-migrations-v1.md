@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `13`.
+`SQLITE_SCHEMA_VERSION` and is `15`.
 
 ## Version 1 migration
 
@@ -12,7 +12,7 @@ with `CuratorStore` runs the legacy table/column creation, column additions,
 criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
-v7, v8, v9, v10, v11, v12, and v13 migrations below before the store is
+v7, v8, v9, v10, v11, v12, v13, v14, and v15 migrations below before the store is
 exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
@@ -197,3 +197,18 @@ tests verify v12 upgrade and rollback when an incompatible table prevents index
 creation. The table is used by the local stdio `SQLiteTokenBucket` to coordinate
 requests across processes sharing one SQLite file. This is same-host local
 coordination only; it is not a distributed limiter or a production quota policy.
+
+## Version 14 migration
+
+Version 14 adds a nullable applied/suppressed disposition to processed event
+receipts. Existing receipts remain readable with an unknown disposition; the
+migration does not reconstruct it from discarded payloads.
+
+## Version 15 migration
+
+Version 15 adds nullable `facts.source_event_id` and a partial lookup index.
+New facts created while processing a durable event retain that first event ID;
+semantic duplicates do not rewrite their original source. Existing facts and
+facts created outside the event router remain null rather than receiving
+inferred provenance. The v14-to-v15 regression preserves an existing fact and
+checks its unknown source remains null.

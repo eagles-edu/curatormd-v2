@@ -470,6 +470,7 @@ class Fact:
     criterion_id: str | None = None
     evidence: tuple[EvidenceRef, ...] = ()
     verification_attestations: tuple[EvidenceAttestation, ...] = ()
+    source_event_id: str | None = None
     created_at: str = field(default_factory=utc_now)
 
     def __post_init__(self) -> None:
@@ -481,6 +482,15 @@ class Fact:
             raise ValueError("fact must be one compact bullet, not a paragraph")
         if len(normalized) > 1000:
             raise ValueError("fact bullet exceeds 1000 characters")
+        if self.source_event_id is not None:
+            validate_safe_text(self.source_event_id, "fact.source_event_id")
+            if (
+                not self.source_event_id.strip()
+                or len(self.source_event_id) > 128
+                or "\n" in self.source_event_id
+                or "\r" in self.source_event_id
+            ):
+                raise ValueError("source_event_id must be a bounded single-line identifier")
         if self.kind is FactKind.VERIFICATION and not self.evidence:
             raise ValueError("verification facts require evidence references")
         if len(self.evidence) > MAX_EVIDENCE_REFERENCES:
@@ -509,7 +519,12 @@ class Fact:
         """Render one fact as the short bullet form used in project records."""
 
         label = self.kind.value.replace("_", " ").capitalize()
-        return f"- {label}: {self.bullet.strip()}"
+        source = (
+            f" (source event: {self.source_event_id})"
+            if self.source_event_id is not None
+            else ""
+        )
+        return f"- {label}: {self.bullet.strip()}{source}"
 
 
 @dataclass(frozen=True, slots=True)
