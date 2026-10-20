@@ -795,3 +795,27 @@
 **Impact:** Improves adapter compatibility with Hermes' documented gateway hook surface while retaining default-deny MCP grants and host-derived profile metadata.
 
 <!-- curatormd:record_id=06ed8fb52610c2f5925d5a62e1bda8f2;content_sha256=06ed8fb52610c2f5925d5a62e1bda8f2df60191fd5eef3a17dfeef3f82038e99 -->
+
+## 2026-10-20 — Hermes hook context preserves host-derived profile metadata
+
+**Decision:** - Changed: Added a Hermes trust-gate regression that invokes the gateway hook's public `HookContext.call_mcp` through the managed MCP handler.
+- Verified: The MCP request contains only the tool event arguments plus Hermes-derived profile ID, supplied host session ID, and literal durable-event marker in request metadata; the focused trust-gate suite passes 24 tests.
+- Open: The test uses a synthetic profile and fake MCP transport. Authenticated identity and live profile/gateway delivery remain unverified.
+
+**Rationale:** The context capability and the trust gate had previously been tested separately; an integrated regression now verifies their joined request behavior.
+
+**Impact:** Proves the public gateway hook call path carries the exact trusted metadata required by the Curator adapter without exposing profile selection to hook arguments.
+
+<!-- curatormd:record_id=6609f68cdea50bce026284db5b88ba77;content_sha256=6609f68cdea50bce026284db5b88ba77ecc8a8a3e7af94d56fb723761d21d741 -->
+
+## 2026-10-20 — Keep Curator lifecycle MCP context on the gateway hook API
+
+**Decision:** - Changed: Removed the optional PluginContext.call_mcp extension after Hermes `scripts/check` correctly rejected growth in an already-over-target facade; the method is back at its prior behavior and baseline length. The supported Curator integration uses the profile gateway hook's public `HookContext.call_mcp` with its per-hook default-deny allowlist.
+- Verified: Hermes `scripts/check` passes all 12 checks after the removal. The final grouped gateway hook, plugin MCP, and MCP trust suites pass 46 tests; Ruff and `git diff --check` pass.
+- Open: Profile identity remains synthetic in tests; authenticated identity, live gateway delivery, and deployment remain unverified.
+
+**Rationale:** The first implementation pass extended PluginContext.call_mcp, but Hermes' actual durable lifecycle transport uses profile gateway hooks. The hook-specific public context is the required API.
+
+**Impact:** Keeps the integration's final ownership and API boundary accurate while preserving Hermes Core's file-size health constraint.
+
+<!-- curatormd:record_id=f296f36d3531cec1ce1b13fc49866365;content_sha256=f296f36d3531cec1ce1b13fc49866365a221c8fa550ddc72b754527a15024718 -->

@@ -1053,9 +1053,13 @@ consumer plugin, Hermes integration, or production deployment.
       this public capability and no longer imports Hermes private internals.
       Its separate-process acceptance test uses the public call shape to send
       an event through Curator stdio MCP, retries it, and verifies one durable
-      fact/receipt. The Curator suite passes 304 tests, Pyright reports zero
+      fact/receipt. A Hermes regression now exercises `HookContext.call_mcp`
+      through the managed MCP handler and verifies the final request metadata
+      contains only the Hermes-derived profile, host session, and literal
+      durable marker. The Curator suite passes 304 tests, Pyright reports zero
       diagnostics, and Bandit, errors-only Pylint, and `git diff --check` pass.
-      Hermes' 52 focused tests, Ruff, `scripts/check` (12 checks), and
+      Hermes' expanded 24-test trust-gate suite and the final 46-test grouped
+      hook/MCP/trust run pass; Ruff, `scripts/check` (12 checks), and
       `git diff --check` pass. These are local source/process checks using
       synthetic test identity; full profile/project authorization, a running
       Hermes outbox-to-Curator route, and deployment remain open.
