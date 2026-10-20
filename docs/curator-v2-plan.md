@@ -2,6 +2,12 @@
 
 ## Summary
 
+Curator V2 is a standalone rewrite. It does not import V1 runtime code, state,
+or raw artifacts. References to `*-v1` contracts and schemas in this repository
+mean the first version of a V2-owned interface; they do not imply V1 runtime
+compatibility. The separate V1 cutover section is an owner-operated rollout
+gate, not a V2 implementation dependency.
+
 The missing primary object is a **goal**, created from a user request, a checklist item, or an explicit agent subtask. V2 continuously records compact, evidence-backed lifecycle facts against that goal. A real SDE is a derived durable outcome—not the unit of capture.
 
 ```mermaid
@@ -1230,7 +1236,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       status, review, purge, and capacity-gate sections. Regressions verify
       pending-review/purge pagination links and the visible fact-capacity gate;
       all 301 tests pass and strict Pyright is clean. Full repository warning-
-      level Pylint cleanup remains open.
+      level Pylint cleanup remains open. Additional progress (2026-10-20): the
+      attended access CLI now centralizes operation policy and confirmation
+      identity; its focused Pylint run reports 10.00/10, its two CLI tests pass,
+      and strict Pyright reports 0 diagnostics. Repository-wide Pylint remains
+      open: the full run exits 28 at 9.77/10 with non-blocking design,
+      duplication, and warning findings.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

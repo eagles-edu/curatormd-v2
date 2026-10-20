@@ -606,3 +606,16 @@
 **Impact:** Makes the local recovery boundaries reviewable while preserving owner-specific production gates.
 
 <!-- curatormd:record_id=6f93bc18cf9affa3e92667f6e7db422a;content_sha256=6f93bc18cf9affa3e92667f6e7db422aa6c0198a2847a284fe6843cb6609fb46 -->
+
+## 2026-10-20 — Curator V2 boundary clarity and access CLI lint cleanup
+
+- Decision: Clarified that Curator V2 is a standalone rewrite; `*-v1` names
+  version 1 of V2-owned interfaces, while any V1 cutover remains an independent
+  owner-operated gate. Renamed recovery and consumer-operation document titles
+  to identify them as Curator V2 guidance.
+- Changed: Centralized the attended access CLI operation map and confirmation
+  caller construction; documented its single-method authorization protocol.
+- Verified: The access CLI test module passes 2 tests, its focused Pylint score
+  is 10.00/10, and strict Pyright reports 0 diagnostics.
+- Open: Repository-wide Pylint exits 28 at 9.77/10 with non-blocking findings;
+  deployment, identity, retention, and live-runtime gates are unchanged.

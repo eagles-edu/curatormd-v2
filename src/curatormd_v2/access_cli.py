@@ -23,9 +23,22 @@ from .project_access import (
 from .project_config import ProjectConfig
 from .store import CuratorStore
 
+_OPERATION_ACTIONS = {
+    "register": ProjectAdministrationAction.REGISTER,
+    "update": ProjectAdministrationAction.UPDATE,
+    "suspend": ProjectAdministrationAction.SUSPEND,
+    "reactivate": ProjectAdministrationAction.REACTIVATE,
+    "grant": ProjectAdministrationAction.GRANT,
+    "revoke": ProjectAdministrationAction.REVOKE,
+    "view": ProjectAdministrationAction.VIEW,
+}
+
 
 class _SingleOperationPolicy:
     """Allow one confirmed operation for one local-UID administrator."""
+
+    # This class implements exactly one authorization protocol method.
+    # pylint: disable=too-few-public-methods
 
     def __init__(
         self,
@@ -43,6 +56,7 @@ class _SingleOperationPolicy:
         project_id: str,
         action: ProjectAdministrationAction,
     ) -> bool:
+        """Allow only the confirmed actor, project, and action tuple."""
         return (
             caller.subject_id == self.actor_id
             and project_id == self.project_id
@@ -59,16 +73,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     commands = parser.add_subparsers(dest="operation", required=True)
-    specifications = (
-        ("register", ProjectAdministrationAction.REGISTER),
-        ("update", ProjectAdministrationAction.UPDATE),
-        ("suspend", ProjectAdministrationAction.SUSPEND),
-        ("reactivate", ProjectAdministrationAction.REACTIVATE),
-        ("grant", ProjectAdministrationAction.GRANT),
-        ("revoke", ProjectAdministrationAction.REVOKE),
-        ("view", ProjectAdministrationAction.VIEW),
-    )
-    for name, _ in specifications:
+    for name in _OPERATION_ACTIONS:
         command = commands.add_parser(name)
         command.add_argument("--project-root", required=True, type=Path)
         command.add_argument("--database", required=True, type=Path)
@@ -95,6 +100,8 @@ def _actor_id() -> str:
 
 
 def _confirmation_phrase(operation: str, project_id: str, arguments: argparse.Namespace) -> str:
+    """Return the exact confirmation text for the selected operation."""
+
     if operation in {"grant", "revoke"}:
         return f"{operation.upper()} {arguments.action} {project_id} {arguments.subject_id}"
     if operation == "view":
@@ -112,6 +119,21 @@ def _confirm(phrase: str, input_stream: TextIO, errors: TextIO) -> bool:
         return input_stream.readline(512).rstrip("\r\n") == phrase
     except (OSError, ValueError):
         return False
+
+
+def _confirmed_caller(
+    arguments: argparse.Namespace,
+    config: ProjectConfig,
+    input_stream: TextIO,
+    errors: TextIO,
+) -> AuthenticatedCaller | None:
+    """Return the local actor only after the operation phrase is confirmed."""
+
+    actor_id = _actor_id()
+    phrase = _confirmation_phrase(arguments.operation, config.project_id, arguments)
+    if not _confirm(phrase, input_stream, errors):
+        return None
+    return AuthenticatedCaller(actor_id)
 
 
 def _perform(
@@ -198,30 +220,18 @@ def main(
     store: CuratorStore | None = None
     try:
         config = ProjectConfig.load(arguments.project_root)
-        actor_id = _actor_id()
-        caller = AuthenticatedCaller(actor_id)
-        phrase = _confirmation_phrase(arguments.operation, config.project_id, arguments)
-        if not _confirm(phrase, input_stream, errors):
+        caller = _confirmed_caller(arguments, config, input_stream, errors)
+        if caller is None:
             return 2
         store = CuratorStore(database)
-        policy = _SingleOperationPolicy(
-            actor_id,
-            config.project_id,
-            next(
-                action
-                for operation, action in (
-                    ("register", ProjectAdministrationAction.REGISTER),
-                    ("update", ProjectAdministrationAction.UPDATE),
-                    ("suspend", ProjectAdministrationAction.SUSPEND),
-                    ("reactivate", ProjectAdministrationAction.REACTIVATE),
-                    ("grant", ProjectAdministrationAction.GRANT),
-                    ("revoke", ProjectAdministrationAction.REVOKE),
-                    ("view", ProjectAdministrationAction.VIEW),
-                )
-                if operation == arguments.operation
+        manager = ProjectAccessManager(
+            store,
+            _SingleOperationPolicy(
+                caller.subject_id,
+                config.project_id,
+                _OPERATION_ACTIONS[arguments.operation],
             ),
         )
-        manager = ProjectAccessManager(store, policy)
         result = _perform(arguments, config, manager, caller)
         output.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
         return 0

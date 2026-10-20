@@ -1,4 +1,4 @@
-# Consumer repository operations, version 1
+# Curator V2 consumer repository operations, version 1
 
 Status: operator guidance for the local reference plugin and stdio launcher.
 This is not a production deployment runbook or proof that a Hermes profile is

@@ -1,4 +1,4 @@
-# Local SQLite recovery procedure, version 1
+# Curator V2 local SQLite recovery procedure, version 1
 
 **Status: local-library procedure only.** This is not an approved production
 runbook. It does not reconcile SQLite with canonical project Markdown or
