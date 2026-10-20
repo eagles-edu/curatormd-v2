@@ -831,3 +831,13 @@
 **Impact:** Strengthens evidence that local operational health cannot report green while required reviewer or purge work remains.
 
 <!-- curatormd:record_id=ee92b8c406aa726f1014af8a245454af;content_sha256=ee92b8c406aa726f1014af8a245454afd42768a47cfeb96cf6768ed5bc3b3512 -->
+
+## 2026-10-20 — V2 event input exceptions no longer retain raw source
+
+**Decision:** Curator V2 event JSON decoding and API UTF-8 validation now raise sanitized errors without retaining request text through exception cause/context; duplicate JSON keys produce a generic error without echoing the key. Regression checks cover the event decoder and API boundary. Focused tests passed (69), the full suite passed (308), and strict Pyright, errors-only Pylint, Bandit, and git diff --check passed. Broader privacy review across archives, logs, traces, backups, and upstream data flow remains open.
+
+**Rationale:** JSONDecodeError and UnicodeEncodeError retain the full input in exception fields, while duplicate-key error text previously echoed caller-controlled field names.
+
+**Impact:** Closes a bounded raw-source retention path in V2 event-input exceptions while keeping the broader privacy checklist open.
+
+<!-- curatormd:record_id=53aa3d19c379dbb8a6c2d37c7e0f077c;content_sha256=53aa3d19c379dbb8a6c2d37c7e0f077c986fa5affc70430aa973516ebfb71730 -->

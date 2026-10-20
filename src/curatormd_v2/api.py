@@ -449,10 +449,15 @@ class AuthenticatedCuratorAPI:
     ) -> EventInboxReceipt:
         """Validate bounded event JSON, authorize scope, then process atomically."""
 
+        invalid_utf8 = False
         try:
             encoded_size = len(serialized.encode("utf-8"))
-        except UnicodeEncodeError as exc:
-            raise ValueError("event must be valid UTF-8") from exc
+        except UnicodeEncodeError:
+            # UnicodeEncodeError retains the complete request in its ``object`` field.
+            invalid_utf8 = True
+            encoded_size = 0
+        if invalid_utf8:
+            raise ValueError("event must be valid UTF-8")
         if encoded_size > MAX_EVENT_BYTES:
             raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
         plugin = self._authorized_plugin(caller, project_id, ProjectAction.WRITE)

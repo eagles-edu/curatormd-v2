@@ -1215,6 +1215,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       canonical Markdown target for the marker. The focused API suite and full
       303-test suite pass. This covers one rejected-event path only; logs,
       traces, other artifact classes, and cross-boundary flow remain open.
+      Additional progress (2026-10-20): malformed event JSON and invalid UTF-8
+      no longer retain request source through chained decoder exceptions, and
+      duplicate-key errors no longer echo attacker-controlled field names.
+      Regression tests inspect both exception cause/context and public text at
+      the event decoder and API boundary. The focused 69-test run and full
+      308-test suite pass; Pyright, errors-only Pylint, Bandit, and diff checks
+      pass. This covers event-input exceptions only; the wider log, trace,
+      archive, backup, and upstream data-flow review remains open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with

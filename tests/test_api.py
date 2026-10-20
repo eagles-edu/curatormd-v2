@@ -211,6 +211,18 @@ class ApiFacadeTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.goal_list(self.caller, "project-a")
 
+    def test_invalid_utf8_request_does_not_retain_raw_source_in_exception(self) -> None:
+        """The API boundary must not chain an encoder error containing input."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        with self.assertRaisesRegex(ValueError, "valid UTF-8") as raised:
+            api.process_event_json(
+                self.caller, "project-a", "PRIVATE_EVENT_CANARY\ud800"
+            )
+        self.assertNotIn("PRIVATE_EVENT_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def test_project_grants_are_exact_and_action_scoped(self) -> None:
         grants = [("hermes-user-1", "project-a", ProjectAction.READ)]
         authorizer = ProjectGrantAuthorizer(grants)

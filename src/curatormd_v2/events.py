@@ -528,10 +528,15 @@ class EventEnvelope:
 
         if _utf8_length(serialized) > MAX_EVENT_BYTES:
             raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
+        decode_failed = False
+        value: object = None
         try:
             value = json.loads(serialized, object_pairs_hook=_reject_duplicate_keys)
-        except json.JSONDecodeError as exc:
-            raise ValueError("event must be valid UTF-8 JSON") from exc
+        except json.JSONDecodeError:
+            # JSONDecodeError retains the complete source in its ``doc`` field.
+            decode_failed = True
+        if decode_failed:
+            raise ValueError("event must be valid UTF-8 JSON")
         envelope = _envelope_from_dict(value)
         # Keep encoder and decoder limits identical, including normalized JSON.
         envelope.to_json()
@@ -542,7 +547,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate JSON field: {key}")
+            raise ValueError("event contains a duplicate JSON field")
         result[key] = value
     return result
 
@@ -953,7 +958,13 @@ def _optional_positive_integer(value: object, name: str) -> int | None:
 
 
 def _utf8_length(value: str) -> int:
+    invalid_utf8 = False
     try:
-        return len(value.encode("utf-8"))
-    except UnicodeEncodeError as exc:
-        raise ValueError("event contains text that is not valid UTF-8") from exc
+        length = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        # UnicodeEncodeError retains the complete source in its ``object`` field.
+        invalid_utf8 = True
+        length = 0
+    if invalid_utf8:
+        raise ValueError("event contains text that is not valid UTF-8")
+    return length

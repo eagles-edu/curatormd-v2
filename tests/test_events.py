@@ -260,12 +260,36 @@ class EventContractTests(unittest.TestCase):
         extra["unexpected"] = True
         with self.assertRaisesRegex(ValueError, "invalid fields"):
             EventEnvelope.from_json(json.dumps(extra))
-        with self.assertRaisesRegex(ValueError, "duplicate JSON field"):
+        duplicate_field = "PRIVATE_EVENT_CANARY"
+        with self.assertRaisesRegex(ValueError, "duplicate JSON field") as raised:
             EventEnvelope.from_json(
-                '{"schema_version":1,"schema_version":1,"event_id":"e",'
+                '{"schema_version":1,"PRIVATE_EVENT_CANARY":1,"PRIVATE_EVENT_CANARY":1,"event_id":"e",'
                 '"project_id":"p","occurred_at":"2026-10-18T00:00:00+00:00",'
                 '"event_type":"goal.started","payload":{}}'
             )
+        self.assertNotIn(duplicate_field, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_invalid_event_json_does_not_retain_raw_source_in_exception(self) -> None:
+        """Sanitized decoder errors must not retain raw JSON through chaining."""
+
+        source = '{"problem":"PRIVATE_EVENT_CANARY", invalid'
+        with self.assertRaisesRegex(ValueError, "valid UTF-8 JSON") as raised:
+            EventEnvelope.from_json(source)
+        self.assertNotIn("PRIVATE_EVENT_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_invalid_utf8_does_not_retain_raw_source_in_exception(self) -> None:
+        """Sanitized size errors must not retain the invalid source string."""
+
+        source = "PRIVATE_EVENT_CANARY\ud800"
+        with self.assertRaisesRegex(ValueError, "valid UTF-8") as raised:
+            EventEnvelope.from_json(source)
+        self.assertNotIn("PRIVATE_EVENT_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
 
     def test_rejects_invalid_project_id_version_and_naive_timestamp(self) -> None:
         """Require bounded project IDs, supported versions, and timezone."""
