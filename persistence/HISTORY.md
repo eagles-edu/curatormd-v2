@@ -1038,3 +1038,13 @@
 **Impact:** This verifies an installed package workflow against the real consumer config in a separate test database. Hermes metadata is synthetic, writes use explicit test-only access, and no Vhost Manager application source changed. The real producer workflow, authenticated identity, live profile delivery, retention policy, and deployed runtime remain open. Hosted CI for the new migration regression is pending.
 
 <!-- curatormd:record_id=a1d735d3c7fd21051deb3c1cfb45f3ce;content_sha256=a1d735d3c7fd21051deb3c1cfb45f3cee5ba6fe473a47bf2c1003d7b6c40fafd -->
+
+## 2026-10-20 — Pass hosted verification for Vhost lifecycle and v16 retry migration
+
+**Decision:** GitHub Actions run `39392957765` passed on Curator V2 commit `0e98bf0`, including the Python 3.12/3.13/3.14 suite, blocking type/lint/security/audit jobs, and clean-wheel consumer launcher acceptance.
+
+**Rationale:** The hosted run covers the conservative processed-v16-receipt regression and the updated alpha release evidence after the local 324-test verification.
+
+**Impact:** The latest Curator V2 migration test commit is pushed and hosted checks pass. Vhost Manager application integration, authenticated identity, live profile delivery, retention policy, and deployment gates remain open.
+
+<!-- curatormd:record_id=270c81348deb1e2f8cca5b6075876c2e;content_sha256=270c81348deb1e2f8cca5b6075876c2efc761a325c1b36b61d85893b5b81b751 -->

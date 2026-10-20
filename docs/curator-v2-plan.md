@@ -907,6 +907,10 @@ consumer plugin, Hermes integration, or production deployment.
       [39392148597](https://github.com/eagles-edu/curatormd-v2/actions/runs/39392148597)
       passed on source commit `3ce95b9`, including the Python 3.12/3.13/3.14
       matrix, blocking quality/security checks, and clean-wheel consumer launcher.
+      The subsequent conservative v16 processed-receipt migration regression
+      passed in GitHub Actions run
+      [39392957765](https://github.com/eagles-edu/curatormd-v2/actions/runs/39392957765)
+      on Curator source commit `0e98bf0`.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
