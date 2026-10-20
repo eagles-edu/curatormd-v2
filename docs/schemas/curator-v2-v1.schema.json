@@ -259,14 +259,14 @@
       "additionalProperties": false
     },
     "purgeTargetStatus": {
-      "description": "Canonical JSON-compatible shape of curatormd_v2.service.PurgeTargetStatus, including explicit hold-release audit fields.",
+      "description": "Canonical JSON-compatible shape of curatormd_v2.service.PurgeTargetStatus. The error field is null or a fixed content-free code, never exception text.",
       "type": "object",
       "required": ["artifact", "status", "attempts", "error", "created_at", "last_attempt_at", "next_attempt_at", "next_attempt_in_seconds", "age_seconds", "last_attempt_age_seconds", "safe_recovery_action", "hold_created_at", "hold_created_by", "hold_released_at", "hold_released_by", "hold_release_rationale"],
       "properties": {
         "artifact": {"$ref": "#/$defs/artifactRef"},
         "status": {"enum": ["pending", "purged", "failed", "held"]},
         "attempts": {"type": "integer", "minimum": 0},
-        "error": {"type": ["string", "null"], "maxLength": 500},
+        "error": {"type": ["string", "null"], "enum": ["retention_hold", "invalid_path", "outside_staging_root", "staging_root", "unsupported_platform", "not_regular_file", "artifact_changed", "hash_mismatch", "path_changed", "filesystem_error", "invalid_artifact", "legacy_failure_detail_redacted", null]},
         "created_at": {"type": "string", "minLength": 1},
         "last_attempt_at": {"type": ["string", "null"]},
         "next_attempt_at": {"type": ["string", "null"]},

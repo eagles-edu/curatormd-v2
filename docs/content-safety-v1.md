@@ -23,6 +23,9 @@ unknown-field rejection, event byte caps, and typed domain models provide the
 structural validation layer. API JSON ingress parses and validates the complete
 event before an inbox receipt is written. Regression tests assert sensitive
 payloads are absent from both event inbox and goal tables after rejection.
+Purge failures store only a fixed failure code, not raw exception text. The
+SQLite v16 migration replaces prior failed-target exception strings with
+`legacy_failure_detail_redacted` while retaining the failed/retryable state.
 
 ## Limits and operator rule
 

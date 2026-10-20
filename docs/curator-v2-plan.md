@@ -431,6 +431,12 @@ consumer plugin, Hermes integration, or production deployment.
 - [x] Test approval and rejection, incomplete and partial inventories, empty
       complete inventory, hash mismatch, path escape, symlink/directory, retry,
       crash-after-delete recovery, replayed decisions, and durable receipts.
+      Additional progress (2026-10-20): the MCP SDE lifecycle acceptance test
+      now includes both a held and an unheld transient artifact. After canonical
+      persistence, the unheld file is purged in the same operation while the
+      held file remains pending; a unique transient-content canary is absent
+      from canonical Markdown. This is local end-to-end test evidence, not a
+      live consumer or production purge scheduler.
 - [ ] Implement inventory discovery in each staging adapter and prove it
       accounts for every temporary artifact class (raw chat, cue, import, scratch,
       generated intermediate, and duplicate). Progress (2026-10-18): the
@@ -542,6 +548,27 @@ consumer plugin, Hermes integration, or production deployment.
       cleanup, clock rollback, and fail-closed registry bounds. Verified Hermes
       identity, production quota policy/configuration, distributed limiting, and
       real Hermes transport remain open.
+      Progress (2026-10-20): the local profile-bound launcher now rejects every
+      MCP tool call unless Hermes-injected profile and session metadata are
+      present and the profile exactly matches the operator-pinned launcher
+      identity. In-memory and real stdio regression tests cover missing,
+      mismatched, and valid context; all 298 Curator tests, strict Pyright,
+      errors-only Pylint, and Bandit pass. This is fail-closed local
+      host-context binding, not cryptographic authentication or proof of a live
+      Hermes transport; those and production
+      limiter policy remain open.
+      Progress (2026-10-20): the launcher now also requires an active durable
+      project registration matching the canonical repository-root fingerprint,
+      exact config-file hash, and backend API version, and reads exact grants
+      from SQLite on every request. A separate attended `curatormd-v2-access`
+      command can provision and audit local grants outside MCP; its operator
+      identity is only the local OS UID. Progress (2026-10-20): 300 full-suite
+      tests pass on Python 3.13.15, strict Pyright, errors-only Pylint, Bandit,
+      lock audit, and diff check pass, including attended registration, exact
+      grants, launcher enforcement, and noninteractive/wrong-confirmation
+      denial. Verified Hermes identity, authenticated administrator identity,
+      and live Hermes transport remain open; profile metadata is not
+      cryptographic authentication.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted
       retries, capped persisted exponential retry due times, source-sequence
@@ -675,10 +702,22 @@ consumer plugin, Hermes integration, or production deployment.
       authorized storage read, and never delete artifacts. The bounded scan is
       an observation, not a retention policy or delete authorization. Backend-
       wide budgets, retention thresholds, age policy, and alerts remain open.
-      Provider/model token usage is not collected; it belongs to Hermes Core's
-      Host Steward/operations boundary, not Curator. Event-receipt retention,
-      backend-wide budget policy, retention thresholds, alert delivery, and
-      age-based cleanup approval remain open before broad capture.
+      Provider/model token usage is not collected by Curator. It belongs to
+      Hermes Core's local project-usage accounting; Host Steward remains a
+      separate root-account host-disk concern and must not own project token
+      records. Hermes source now records reported Codex app-server token counts
+      locally only when a durable project binding exists, excludes counts from
+      hook/Curator event payloads, and distinguishes missing usage from zero.
+      This covers Codex app-server turns only; cross-provider aggregation and
+      usage budgets remain open. Progress (2026-10-20): the Hermes Core fork now
+      includes an opt-in, read-only `project_usage` profile plugin pinned to one
+      configured project ID. It reports Codex-only totals and provider/model
+      groups, distinguishes unknown usage from zero, and does not expose
+      goal/session/event IDs or create a missing ledger. Its focused tests and
+      Hermes lint/health checks pass; enabling and verifying it in a real
+      project profile remains open. Event-receipt retention, backend-wide
+      budget policy, retention thresholds, alert delivery, and age-based
+      cleanup approval remain open before broad capture.
 - [ ] Verify restart recovery, duplicate delivery, delayed ordering, load,
       database locking, backup restore, and multi-project isolation. Local unit
       coverage now explicitly closes/reopens SQLite with a sequence-gap event
@@ -694,7 +733,12 @@ consumer plugin, Hermes integration, or production deployment.
       local crash-lease recovery. The same test then takes a consistent SQLite
       snapshot, restores it to a new file, and verifies both the processed
       receipt and goal state survived. Production worker topology, load, and
-      power-loss durability remain unverified.
+      power-loss durability remain unverified. Hermes Core's project-usage
+      ledger also has a local close/reopen/replay regression: persisted
+      provider/model counts survive reopening, and replaying the same
+      turn-end event leaves counts unchanged. Cross-process Hermes delivery,
+      full end-to-end integration, and production restart/load behavior remain
+      open.
 
 ### 6. Per-project plugin and repository boundary
 
@@ -806,9 +850,18 @@ consumer plugin, Hermes integration, or production deployment.
       exact scoped grants, and append-only revocation records. The SQLite
       authorizer denies unregistered/suspended projects; host-admin operations
       require a separate injected policy and are not exposed through MCP. The
-      API still defaults to deny. Trusted Hermes identity/fingerprint binding,
-      consumer activation through this store, and deployment denial tests
-      remain open.
+      API still defaults to deny. Trusted Hermes identity, authorized registry
+      provisioning, and deployment denial tests remain open. Progress
+      (2026-10-20): repository config loading now derives
+      a root-path fingerprint and SHA-256 of the exact validated config bytes.
+      The local launcher is wired to the durable registry/grants: it requires
+      an active fingerprint/version match plus exact `read` and optional
+      `write` grants, rechecks registration and revocation on every API action,
+      and never self-registers or grants access. Cross-project stdio isolation,
+      missing registration, config drift, and live suspension denial are
+      covered. Trusted Hermes authentication and authenticated host-admin
+      provisioning remain open; injected request metadata is not cryptographic
+      identity, and deployment denial tests remain open.
 - [x] Implement reference-plugin checklist mapping that records the configured
       source ID, exact selected source line, and SHA-256 file revision; source edits
       do not mutate an existing goal snapshot. Format-specific consumer adapters
@@ -950,6 +1003,13 @@ consumer plugin, Hermes integration, or production deployment.
       the per-source cursor atomically, and remains suppressed on replay after
       goal reopening; the next sequence is accepted. Live hook activation stays
       gated on the independent deployment and identity requirements.
+      Additional progress (2026-10-20): the durable queue now retries after
+      both process-level `gateway:startup` and profile-scoped `agent:start`, so
+      a recovered profile drains pending deliveries at its next run even when
+      no new lifecycle callback has arrived. A registry-restart regression
+      proves ordered delivery and acknowledgment through `agent:start`; 14
+      hook and multiplex-scope tests passed, as did Hermes Ruff/health checks.
+      Real gateway restart and deployed-profile delivery remain unverified.
 - [ ] Integrate profiles, runtime, global router, managed MCP gateway, and
       project-scoped plugin bindings under the Hermes Core account boundary.
 - [ ] Verify that profile/project selection and permission checks are explicit
@@ -972,22 +1032,65 @@ consumer plugin, Hermes integration, or production deployment.
       not been verified. The item remains open.
       Progress (2026-10-20): the bounded Host Steward prototype is commit
       `621d6facb6` on the upstream-based Hermes feature branch and is published
-      to `eagles-edu/hermes-agent`. Six Host Steward tests pass in the combined
-      97-test batch; Ruff and `git diff --check` pass. No PR or hosted CI run is
-      claimed. This remains observational inventory/proposal behavior: no
-      human approval, managed cleanup, post-cleanup verification, or receipt
-      exists, and nothing is installed or enabled in the live Hermes account.
-- [ ] Host Steward generates a bounded proposal with exact targets, expected
+      to `eagles-edu/hermes-agent`. At that point six Host Steward tests passed
+      in the combined 97-test batch; Ruff and `git diff --check` passed. No PR
+      or hosted CI run was claimed. The branch was then observational only:
+      human approval, managed cleanup, post-cleanup verification, and receipts
+      had not yet been implemented; nothing was installed or enabled in the
+      live Hermes account.
+- [x] Host Steward generates a bounded proposal with exact targets, expected
       reclaimed space, service impact, and recovery path.
-- [ ] Host cleanup requires a distinct human approval; the proposal generator
+- [x] Host cleanup requires a distinct human approval; the proposal generator
       cannot approve or execute its own proposal.
-- [ ] Host Steward uses managed cleanup interfaces, verifies free space and
+- [x] Host Steward uses managed cleanup interfaces, verifies free space and
       service health afterward, and records an auditable cleanup receipt.
-- [ ] Test that host inventory is observational, no deletion occurs without
+- [x] Test that host inventory is observational, no deletion occurs without
       approval, Curator cannot invoke arbitrary host deletion, and host cleanup
       never writes project knowledge.
-- [ ] Document independent failure and recovery paths for Hermes Core,
-      CuratorMD backend, project plugins, and Host Steward.
+      Progress (2026-10-20): the Hermes Core plugin now registers only the
+      fixed `empty_configured_cache` action; unknown action IDs are rejected,
+      cleanup accepts a proposal ID (never a model-supplied path/command), and
+      the standard Hermes pre-tool approval gate is bound to the proposal and
+      exact inventory-manifest digest. A separate plugin receipt is required
+      for a `once` choice, so yolo/off-mode bypasses and remembered
+      session/permanent approvals cannot authorize cleanup. Approval tokens
+      expire and are consumed atomically. The action rescans the target and
+      uses bounded no-follow directory-descriptor operations to remove only
+      unchanged regular files/directories. It checks free-space and configured
+      systemd service health, and persists bounded decision/execution receipts
+      in Hermes plugin state. Missing service probes, failed checks, partial
+      cleanup, and approval identity unavailable from Hermes are reported as
+      incomplete/failed rather than green. Ten Host Steward tests cover
+      review-only inventory, approval bypass, once versus always, exact target
+      revalidation, cleanup, receipt reads, and project-profile isolation; the
+      grouped Hermes regression run passed 101 tests, Ruff, and
+      `git diff --check`. These are local source/unit-test results only: cleanup was
+      exercised against disposable test directories, disk/service verification
+      used test doubles, and no real-host cleanup, live account install, hosted
+      CI, authenticated reviewer identity, or deployment recovery drill was
+      performed. Additional progress (2026-10-20): corrected the Hermes plugin's
+      top-level ownership description and added regressions for symlink
+      substitution after approval, unhealthy-service refusal, unconfigured
+      service verification (`verification_incomplete`), and sanitized partial-
+cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
+      reports all 12 checks passing, with 0 blocking/advisory
+      findings. These remain local disposable-host tests; approval identity,
+      live account install, host-level attribution, and deployment recovery
+      remain open. Additional progress (2026-10-20): the Hermes Core fork now
+      exposes explicit receipt reconciliation after operator-confirmed process
+      stop. A simulated interruption after deletion leaves the durable receipt
+      `running`; reconciliation preserves the receipt, marks it
+      `interrupted_requires_review`, requires fresh inventory/verification, and
+      does not retry deletion. All 15 focused Host Steward tests pass, and
+      Hermes `python scripts/check` passes all 12 checks. This proves local
+      recovery behavior only; cross-process supervision, authenticated
+      approver identity, real host attribution, live installation, and
+      deployment recovery drills remain open.
+- [x] Document independent failure and recovery paths for Hermes Core,
+      CuratorMD backend, project plugins, and Host Steward in
+      [`component-failure-recovery-v2.md`](component-failure-recovery-v2.md).
+      This is local implementation guidance; production authority, identity,
+      retention, backup, deployment, and recovery drills remain open.
 
 ### 8. Security, privacy, token, and disk controls
 
@@ -1026,6 +1129,21 @@ consumer plugin, Hermes integration, or production deployment.
       warning and verifies it contains only the sanitized public error code and
       exception type, not the sensitive exception detail. Full cross-boundary
       log/trace and user-facing renderer verification remains open.
+      Progress (2026-10-20): purge exception strings, including filesystem
+      paths, are no longer persisted in artifact status; the store accepts only
+      fixed failure codes, a regression injects a sensitive marker and checks
+      it is absent from status, and SQLite v16 redacts legacy failed-target
+      details while preserving retry state. This closes only the purge-status
+      boundary; raw content may still remain in retry/quarantine payloads and
+      full logs, WAL, backup, trace, upstream, and canonical data-flow review
+      remains open.
+      Progress (2026-10-20): a recognized credential-like event is rejected
+      before inbox/goal writes; a regression checks the marker is absent from
+      the public exception, project metrics, and a SQLite backup. Existing
+      independent regressions cover sanitized MCP error/log output and
+      successful-event backup receipts. This does not close failed/quarantined
+      retry payload, full WAL/trace/upstream, or universal sensitive-data
+      detection review.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
@@ -1091,7 +1209,28 @@ consumer plugin, Hermes integration, or production deployment.
       host/MCP boundaries remain; this gate remains open. A later
       2026-10-19 observability slice adds fixed-category current event-failure
       metrics and raises the fully passing Python matrix to 244 tests; deployed
-      scrape, dashboards, and alerts remain open.
+      scrape, dashboards, and alerts remain open. Progress (2026-10-20): the
+      project-health snapshot aggregator was decomposed into local queue/staging
+      evaluation and required dependency-probe evaluation, removing the single
+      77-statement health method's branch/local/statement-limit findings without
+      changing its fail-closed status rules. All 30 API tests and four MCP server
+      tests pass, strict Pyright reports 0 diagnostics, repository errors-only
+      Pylint passes, and targeted API Pylint no longer reports complexity on
+      the snapshot aggregator. A fresh full Pylint run still reports structural,
+      interface, duplicate-code, and broad-catch findings across the backend;
+      this checklist item remains open. Additional progress (2026-10-20):
+      decomposed `CuratorService.process_event` into explicit inbox claim,
+      evidence preparation, transactional dispatch, source-fact attribution,
+      and retryable-failure phases. Event behavior remains covered by the full
+      301-test suite; strict Pyright reports 0 diagnostics, errors-only Pylint
+      passes, and `git diff --check` is clean. Focused full Pylint no longer
+      reports dispatcher complexity/size findings. The full warning-level
+      inventory and broader structural cleanup remain open. Further progress
+      (2026-10-20): decomposed the goal bullet projection into criterion, fact,
+      status, review, purge, and capacity-gate sections. Regressions verify
+      pending-review/purge pagination links and the visible fact-capacity gate;
+      all 301 tests pass and strict Pyright is clean. Full repository warning-
+      level Pylint cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.
@@ -1383,7 +1522,7 @@ substitute for evidence at a later integration boundary.
       policy; add executable contract fixtures.
 - [ ] **B. Harden the local domain slice:** finish bounds, schema/privacy
       validation, concurrency/replay behavior, correction/supersession semantics,
-      property tests, and the local v0-to-v15 migration fixtures; attach
+      property tests, and the local v0-to-v16 migration fixtures; attach
       test evidence. Full transition/privacy coverage and production migration
       support remain open.
 - [ ] **C. Complete storage and projection recovery:** define the authoritative

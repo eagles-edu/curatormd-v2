@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from functools import wraps
 import hashlib
 import json
 import logging
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any, NotRequired, TypedDict
 
 from mcp.server import MCPServer
+from mcp.server.context import ServerRequestContext
 from mcp.server.mcpserver.context import Context as MCPContext
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
@@ -100,6 +102,59 @@ def safe_tool_handler(handler: Any) -> Any:
     return invoke
 
 
+def _hermes_identity_middleware(expected_profile_id: str):
+    """Require the local Hermes host context on every tool call.
+
+    The profile is pinned by the local launcher and must match the identity
+    Hermes injects into request metadata. This is a host-context binding for a
+    private stdio process, not cryptographic authentication for remote clients.
+    """
+
+    async def enforce_profile(
+        ctx: ServerRequestContext[Any, Any], call_next: Any
+    ) -> Any:
+        if ctx.method != "tools/call":
+            return await call_next(ctx)
+
+        metadata = ctx.meta
+        profile_id = (
+            metadata.get("hermes/profile_id")
+            if isinstance(metadata, Mapping)
+            else None
+        )
+        session_id = (
+            metadata.get("hermes/session_id")
+            if isinstance(metadata, Mapping)
+            else None
+        )
+        valid_session = (
+            isinstance(session_id, str)
+            and 1 <= len(session_id) <= 256
+            and "\n" not in session_id
+            and "\r" not in session_id
+        )
+        if profile_id != expected_profile_id or not valid_session:
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "schema_version": 1,
+                                "code": "unauthenticated",
+                                "message": "Trusted Hermes profile context is required.",
+                            },
+                            sort_keys=True,
+                        ),
+                    )
+                ],
+                is_error=True,
+            )
+        return await call_next(ctx)
+
+    return enforce_profile
+
+
 class ArtifactInput(TypedDict):
     """MCP artifact manifest entry with an optional explicit retention hold."""
 
@@ -113,6 +168,8 @@ def build_mcp_server(
     caller: AuthenticatedCaller,
     project_id: str,
     source_id: str,
+    *,
+    require_hermes_context: bool = False,
 ) -> MCPServer:
     """Build tools with trusted caller/project captured outside tool arguments.
 
@@ -123,10 +180,16 @@ def build_mcp_server(
 
     if not _SOURCE_ID_RE.fullmatch(source_id):
         raise ValueError("source_id must be a bounded opaque producer identifier")
+    middleware = (
+        [_hermes_identity_middleware(caller.subject_id)]
+        if require_hermes_context
+        else None
+    )
     server = MCPServer(
         "CuratorMD V2",
         version="0.1.0",
         instructions=SERVER_INSTRUCTIONS,
+        middleware=middleware,
     )
 
     register_tool = server.tool

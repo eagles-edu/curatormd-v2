@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
@@ -31,6 +32,9 @@ from curatormd_v2 import (
     ProjectAction,
     ProjectConfig,
     ProjectPlugin,
+    PurgeError,
+    PurgeFailureCode,
+    ArtifactPurger,
     ReviewDecision,
     SuccessCriterion,
     build_mcp_server,
@@ -394,6 +398,13 @@ class McpServerTests(unittest.TestCase):
                     / "import"
                     / "session-evidence.bin"
                 )
+                unheld_staged = (
+                    staging
+                    / "mcp-sde-goal"
+                    / "scratch"
+                    / "reviewed-transient-canary.txt"
+                )
+                unheld_payload = b"TRANSIENT_CANARY_PURGE_AFTER_CANONICAL_WRITE"
 
                 async def exercise() -> tuple[str, str]:
                     async with Client(server, raise_exceptions=True) as client:
@@ -457,6 +468,8 @@ class McpServerTests(unittest.TestCase):
                             hashlib.sha256(producer_payload).hexdigest(),
                         )
                         self.assertEqual(staged.read_bytes(), producer_payload)
+                        unheld_staged.parent.mkdir(parents=True)
+                        unheld_staged.write_bytes(unheld_payload)
                         await call_json(
                             "fact_record",
                             {
@@ -553,7 +566,7 @@ class McpServerTests(unittest.TestCase):
 
                         self.assertTrue(inventory["usage"]["inventory_complete"])
                         manifest = inventory["artifacts"]
-                        self.assertEqual(len(manifest), 1)
+                        self.assertEqual(len(manifest), 2)
                         receipt = await call_json(
                             "sde_confirm",
                             {
@@ -583,22 +596,24 @@ class McpServerTests(unittest.TestCase):
                             {
                                 "receipt_id": receipt["receipt_id"],
                                 "artifacts": [
-                                    {
-                                        **manifest[0],
+                                    ({
+                                        **artifact,
                                         "retention_hold": "operational",
-                                    }
+                                    } if Path(artifact["path"]) == staged else artifact)
+                                    for artifact in manifest
                                 ],
                             },
                         )
                         self.assertTrue(inventory_receipt["artifact_inventory_complete"])
                         self.assertFalse(inventory_receipt["canonical_persisted"])
                         self.assertTrue(staged.exists())
+                        self.assertTrue(unheld_staged.exists())
                         inventory_health = await call_json("project_health", {})
                         self.assertEqual(
                             inventory_health["operational_counts"][
                                 "pending_purge_artifact_count"
                             ],
-                            1,
+                            2,
                         )
 
                         await call_json(
@@ -609,8 +624,10 @@ class McpServerTests(unittest.TestCase):
                             },
                         )
                         self.assertTrue(staged.exists())
+                        self.assertFalse(unheld_staged.exists())
                         self.assertIn("Added the reviewed SDE assessment path", history.read_text())
                         self.assertIn(receipt["receipt_id"], history.read_text())
+                        self.assertNotIn(unheld_payload.decode(), history.read_text())
 
                         purge_result = await call_json(
                             "artifact_purge_status",
@@ -618,25 +635,31 @@ class McpServerTests(unittest.TestCase):
                         )
                         self.assertEqual(purge_result[0]["purge_status"], "purge_pending")
                         self.assertTrue(purge_result[0]["canonical_persisted"])
-                        self.assertEqual(purge_result[1][0]["status"], "held")
+                        held_artifact_status = next(
+                            item for item in purge_result[1] if item["status"] == "held"
+                        )
                         self.assertEqual(
-                            purge_result[1][0]["artifact"]["retention_hold"],
+                            held_artifact_status["artifact"]["retention_hold"],
                             "operational",
                         )
-                        self.assertEqual(purge_result[1][0]["attempts"], 0)
-                        self.assertIsNotNone(purge_result[1][0]["created_at"])
-                        self.assertGreaterEqual(purge_result[1][0]["age_seconds"], 0)
-                        self.assertIsNone(purge_result[1][0]["last_attempt_at"])
-                        self.assertIsNone(purge_result[1][0]["next_attempt_at"])
+                        self.assertEqual(held_artifact_status["attempts"], 0)
+                        self.assertIsNotNone(held_artifact_status["created_at"])
+                        self.assertGreaterEqual(held_artifact_status["age_seconds"], 0)
+                        self.assertIsNone(held_artifact_status["last_attempt_at"])
+                        self.assertIsNone(held_artifact_status["next_attempt_at"])
                         self.assertIsNone(
-                            purge_result[1][0]["next_attempt_in_seconds"]
+                            held_artifact_status["next_attempt_in_seconds"]
                         )
                         self.assertIsNone(
-                            purge_result[1][0]["last_attempt_age_seconds"]
+                            held_artifact_status["last_attempt_age_seconds"]
                         )
                         self.assertEqual(
-                            purge_result[1][0]["safe_recovery_action"],
+                            held_artifact_status["safe_recovery_action"],
                             "release_artifact_hold",
+                        )
+                        self.assertEqual(
+                            {item["status"] for item in purge_result[1]},
+                            {"held", "purged"},
                         )
                         final_status = await call_json(
                             "goal_status",
@@ -664,16 +687,42 @@ class McpServerTests(unittest.TestCase):
                         self.assertIn("purge `purge_pending`", report_content.text)
 
                         release_rationale = "Retention owner approved release"
-                        released_receipt = await call_json(
-                            "release_artifact_hold",
-                            {
-                                "receipt_id": receipt["receipt_id"],
-                                "path": str(staged),
-                                "rationale": release_rationale,
-                            },
+                        private_error_marker = "SENSITIVE_PURGE_EXCEPTION_SENTINEL"
+                        with patch.object(
+                            plugin.service.purger,
+                            "purge",
+                            side_effect=PurgeError(
+                                PurgeFailureCode.FILESYSTEM_ERROR,
+                                f"private path detail: {private_error_marker}",
+                            ),
+                        ):
+                            failed_receipt = await call_json(
+                                "release_artifact_hold",
+                                {
+                                    "receipt_id": receipt["receipt_id"],
+                                    "path": str(staged),
+                                    "rationale": release_rationale,
+                                },
+                            )
+                        self.assertEqual(
+                            failed_receipt["purge_status"], "purge_pending"
+                        )
+                        self.assertTrue(staged.exists())
+                        failed_purge_status = await call_json(
+                            "artifact_purge_status",
+                            {"receipt_id": receipt["receipt_id"]},
                         )
                         self.assertEqual(
-                            released_receipt["purge_status"], "complete"
+                            failed_purge_status[1][0]["error"],
+                            "filesystem_error",
+                        )
+                        self.assertNotIn(
+                            private_error_marker, json.dumps(failed_purge_status)
+                        )
+                        plugin.service.purger = ArtifactPurger(staging)
+                        self.assertEqual(
+                            plugin.service.retry_pending_purges()[0].purge_status.value,
+                            "complete",
                         )
                         self.assertFalse(staged.exists())
                         release_replay = await call_json(

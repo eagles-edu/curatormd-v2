@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `15`.
+`SQLITE_SCHEMA_VERSION` and is `16`.
 
 ## Version 1 migration
 
@@ -12,7 +12,7 @@ with `CuratorStore` runs the legacy table/column creation, column additions,
 criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
-v7, v8, v9, v10, v11, v12, v13, v14, and v15 migrations below before the store is
+v7, v8, v9, v10, v11, v12, v13, v14, v15, and v16 migrations below before the store is
 exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
@@ -212,3 +212,18 @@ semantic duplicates do not rewrite their original source. Existing facts and
 facts created outside the event router remain null rather than receiving
 inferred provenance. The v14-to-v15 regression preserves an existing fact and
 checks its unknown source remains null.
+
+## Version 16 migration
+
+Version 16 replaces the free-form exception detail on already-failed purge
+targets with the fixed `legacy_failure_detail_redacted` code. It preserves the
+target path, retry state, attempt timestamps, holds, and receipt; the target
+remains visibly failed and retryable. New purge failures persist only a
+recognized content-free code. The migration is transactional with the schema
+version update and prevents old filesystem paths or exception text from
+continuing to appear in status responses and future backups. Take a verified
+backup before any production database upgrade; production upgrade/rollback is
+not approved by this local migration evidence. The v15-to-v16 regression
+injects an update-trigger failure, verifies both the legacy detail and version
+stamp are unchanged, then retries after removing the trigger and checks that
+only the failure detail changed.

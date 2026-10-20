@@ -423,7 +423,16 @@ targets = ["persistence/HISTORY.md"]
         _, targets = service.artifact_purge_status(receipt.receipt_id)
         self.assertEqual(targets[0].status, ArtifactStatus.FAILED)
         self.assertEqual(targets[0].attempts, 1)
-        self.assertIn("simulated interruption", targets[0].error or "")
+        self.assertEqual(targets[0].error, "filesystem_error")
+        self.assertNotIn("SENSITIVE_PURGE_PATH_SENTINEL", repr(targets[0]))
+        with self.assertRaisesRegex(ValueError, "content-free error code"):
+            self.store.record_purge_result(
+                receipt.receipt_id,
+                str(artifact_path),
+                ArtifactStatus.FAILED,
+                "SENSITIVE_PURGE_PATH_SENTINEL",
+                self.service.project_id,
+            )
         self.assertIsNotNone(targets[0].last_attempt_at)
         self.assertIsNotNone(targets[0].next_attempt_at)
         self.assertIsNotNone(targets[0].next_attempt_in_seconds)
@@ -638,7 +647,7 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
         _, targets = self.service.artifact_purge_status(receipt.receipt_id)
         self.assertEqual(targets[0].status, ArtifactStatus.FAILED)
-        self.assertIn("hash does not match", targets[0].error or "")
+        self.assertEqual(targets[0].error, "hash_mismatch")
 
     def test_replacement_after_hash_verification_is_not_unlinked(self) -> None:
         """Leave an unapproved in-root replacement intact and report pending."""
@@ -676,7 +685,7 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(persisted.purge_status, PurgeStatus.PURGE_PENDING)
         _, targets = self.service.artifact_purge_status(receipt.receipt_id)
         self.assertEqual(targets[0].status, ArtifactStatus.FAILED)
-        self.assertIn("path changed", targets[0].error or "")
+        self.assertEqual(targets[0].error, "path_changed")
 
     def test_artifact_outside_root_is_not_deleted(self) -> None:
         candidate_id = self.candidate()
@@ -695,7 +704,7 @@ targets = ["persistence/HISTORY.md"]
         self.assertTrue(outside.exists())
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
         _, targets = self.service.artifact_purge_status(receipt.receipt_id)
-        self.assertIn("outside", targets[0].error or "")
+        self.assertEqual(targets[0].error, "outside_staging_root")
 
     def test_directories_and_symlinks_are_never_purged(self) -> None:
         nested = self.stage / "nested"

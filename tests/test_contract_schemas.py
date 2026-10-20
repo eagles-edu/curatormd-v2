@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 from pathlib import Path
 import tomllib
@@ -346,6 +346,19 @@ class ContractSchemaTests(unittest.TestCase):
         ):
             with self.subTest(contract=name):
                 self.validate_contract(name, _json_record(record))
+
+        failed_target = replace(
+            purge_target,
+            status=ArtifactStatus.FAILED,
+            error="filesystem_error",
+            safe_recovery_action="retry_pending_purges",
+        )
+        self.validate_contract("purgeTargetStatus", _json_record(failed_target))
+        with self.assertRaises(ValidationError):
+            self.validate_contract(
+                "purgeTargetStatus",
+                _json_record(replace(failed_target, error="private path detail")),
+            )
 
     def test_schemas_reject_contradictory_goal_fact_and_receipt_states(self) -> None:
         goal = _json_record(

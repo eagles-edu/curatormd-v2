@@ -45,6 +45,8 @@ class ProjectConfig:
     project_root: Path
     backend_api_version: int
     project_id: str
+    repository_fingerprint: str
+    config_sha256: str
     readable_paths: tuple[Path, ...]
     checklist_bindings: tuple[tuple[str, Path], ...]
     evidence_adapters: tuple[str, ...]
@@ -64,7 +66,7 @@ class ProjectConfig:
     ) -> ProjectConfig:
         """Load and validate `.curatormd-v2.toml` without executing config."""
 
-        root, root_table = _read_project_document(project_root)
+        root, root_table, config_sha256 = _read_project_document(project_root)
         backend_api_version = root_table["backend_api_version"]
         if (
             not isinstance(backend_api_version, int)
@@ -84,6 +86,10 @@ class ProjectConfig:
             project_root=root,
             backend_api_version=backend_api_version,
             project_id=project_id,
+            repository_fingerprint=hashlib.sha256(
+                b"curatormd-v2-project-root-v1\0" + str(root).encode("utf-8")
+            ).hexdigest(),
+            config_sha256=config_sha256,
             readable_paths=readable_paths,
             checklist_bindings=checklist_bindings,
             evidence_adapters=_load_evidence_adapters(
@@ -200,7 +206,9 @@ def _load_readable_paths(root: Path, value: object) -> tuple[Path, ...]:
     return paths
 
 
-def _read_project_document(project_root: str | Path) -> tuple[Path, dict[str, object]]:
+def _read_project_document(
+    project_root: str | Path,
+) -> tuple[Path, dict[str, object], str]:
     supplied_root = Path(project_root).expanduser()
     if supplied_root.is_symlink() or not supplied_root.is_dir():
         raise ProjectConfigError("project_root must be a real existing directory")
@@ -239,7 +247,7 @@ def _read_project_document(project_root: str | Path) -> tuple[Path, dict[str, ob
     version = root_table["schema_version"]
     if not isinstance(version, int) or isinstance(version, bool) or version != 1:
         raise ProjectConfigError("schema_version must be integer 1")
-    return root, root_table
+    return root, root_table, hashlib.sha256(encoded).hexdigest()
 
 
 def _validate_config_values(value: object) -> None:

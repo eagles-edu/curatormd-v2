@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SQLITE_SCHEMA_VERSION = 15
+SQLITE_SCHEMA_VERSION = 16
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -331,6 +331,17 @@ def migrate_fact_source_events_v15(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 15")
 
 
+def migrate_content_free_purge_errors_v16(connection: sqlite3.Connection) -> None:
+    """Replace legacy exception text with a safe code in failed purge rows."""
+
+    connection.execute(
+        """UPDATE purge_targets
+           SET error = 'legacy_failure_detail_redacted'
+           WHERE status = 'failed' AND error IS NOT NULL"""
+    )
+    connection.execute("PRAGMA user_version = 16")
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -386,6 +397,9 @@ def apply_schema_migrations(
         schema_version = 14
     if schema_version == 14:
         migrate_fact_source_events_v15(connection)
+        schema_version = 15
+    if schema_version == 15:
+        migrate_content_free_purge_errors_v16(connection)
         return
     if schema_version != 0:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
@@ -408,3 +422,4 @@ def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     migrate_shared_request_limiter_v13(connection)
     migrate_event_dispositions_v14(connection)
     migrate_fact_source_events_v15(connection)
+    migrate_content_free_purge_errors_v16(connection)

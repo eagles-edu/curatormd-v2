@@ -16,8 +16,10 @@ from .models import (
     EvidenceOutcome,
     EvidenceRef,
     Fact,
+    FactCapacity,
     FactArchiveReceipt,
     FactKind,
+    PurgeFailureCode,
     FactCompactionProposal,
     GoalBullet,
     GoalBulletCategory,
@@ -49,9 +51,11 @@ from .events import (
     EventInboxReceipt,
     EventInboxStatus,
     EventDisposition,
+    EventPayload,
     FactRecorded,
     GoalActivityObserved,
     GoalActivated,
+    GoalBlocked,
     GoalCancelled,
     GoalDeferred,
     GoalFinishRequested,
@@ -113,6 +117,17 @@ class PurgeTargetStatus:
     hold_released_at: str | None
     hold_released_by: str | None
     hold_release_rationale: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedEvent:
+    """Evidence and fact context gathered before the event commit transaction."""
+
+    prior_fact_ids: frozenset[str]
+    verified_goal_snapshot: GoalCard | None = None
+    prepared_fact: Fact | None = None
+    finish_snapshot: tuple[GoalCard, tuple[Fact, ...], set[str]] | None = None
+    expected_finish_revision: int | None = None
 
 
 def _timestamp_age_seconds(
@@ -988,12 +1003,39 @@ class CuratorService:
         bullets: list[GoalBullet] = [
             GoalBullet(GoalBulletCategory.PROBLEM, snapshot.goal.problem)
         ]
-        for criterion in snapshot.criteria:
-            status_text = criterion.status.value
+        bullets.extend(self._criterion_bullets(snapshot.criteria))
+        bullets.extend(
+            self._fact_bullet(fact, verified_fact_ids) for fact in snapshot.facts
+        )
+        bullets.extend(self._goal_state_bullets(snapshot.goal))
+        bullets.extend(self._pending_review_bullets(snapshot))
+        bullets.extend(self._pending_purge_bullets(snapshot))
+        if snapshot.fact_capacity is not None:
+            bullets.extend(self._fact_capacity_bullets(snapshot.fact_capacity))
+        if snapshot.goal.next_action:
+            bullets.append(
+                GoalBullet(GoalBulletCategory.NEXT, snapshot.goal.next_action)
+            )
+        return GoalBulletProjection(
+            goal_id=snapshot.goal.goal_id,
+            problem=snapshot.goal.problem,
+            status=snapshot.goal.status,
+            criteria=snapshot.criteria,
+            bullets=tuple(bullets),
+            next_action=snapshot.goal.next_action,
+        )
+
+    @staticmethod
+    def _criterion_bullets(
+        criteria: tuple[CriterionProgress, ...],
+    ) -> list[GoalBullet]:
+        bullets: list[GoalBullet] = []
+        for criterion in criteria:
             bullets.append(
                 GoalBullet(
                     GoalBulletCategory.CRITERION,
-                    f"{criterion.criterion_id}: {status_text} — {criterion.description}",
+                    f"{criterion.criterion_id}: {criterion.status.value} — "
+                    f"{criterion.description}",
                     criterion_id=criterion.criterion_id,
                 )
             )
@@ -1001,62 +1043,69 @@ class CuratorService:
                 bullets.append(
                     GoalBullet(
                         GoalBulletCategory.OPEN,
-                        f"Required criterion remains unverified: "
+                        "Required criterion remains unverified: "
                         f"{criterion.criterion_id} — {criterion.description}",
                         criterion_id=criterion.criterion_id,
                     )
                 )
-        for fact in snapshot.facts:
-            text = f"{fact.kind.value.replace('_', ' ').capitalize()}: {fact.bullet}"
-            if fact.kind is FactKind.OPEN_GATE:
-                category = GoalBulletCategory.RECORDED
-                text = f"Prior gate fact: {fact.bullet}"
-            elif fact.kind is FactKind.COMPLETION_CLAIM:
-                category = GoalBulletCategory.UNVERIFIED
-            elif fact.kind is FactKind.VERIFICATION:
-                category = (
-                    GoalBulletCategory.VERIFIED
-                    if fact.fact_id in verified_fact_ids
-                    else GoalBulletCategory.UNVERIFIED
-                )
-            else:
-                category = GoalBulletCategory.RECORDED
-            bullets.append(
-                GoalBullet(
-                    category,
-                    text,
-                    fact_id=fact.fact_id,
-                    criterion_id=fact.criterion_id,
-                    evidence=fact.evidence,
-                )
+        return bullets
+
+    @staticmethod
+    def _fact_bullet(
+        fact: Fact, verified_fact_ids: set[str]
+    ) -> GoalBullet:
+        text = f"{fact.kind.value.replace('_', ' ').capitalize()}: {fact.bullet}"
+        if fact.kind is FactKind.OPEN_GATE:
+            category = GoalBulletCategory.RECORDED
+            text = f"Prior gate fact: {fact.bullet}"
+        elif fact.kind is FactKind.COMPLETION_CLAIM:
+            category = GoalBulletCategory.UNVERIFIED
+        elif fact.kind is FactKind.VERIFICATION:
+            category = (
+                GoalBulletCategory.VERIFIED
+                if fact.fact_id in verified_fact_ids
+                else GoalBulletCategory.UNVERIFIED
             )
-        if snapshot.goal.status in (
+        else:
+            category = GoalBulletCategory.RECORDED
+        return GoalBullet(
+            category,
+            text,
+            fact_id=fact.fact_id,
+            criterion_id=fact.criterion_id,
+            evidence=fact.evidence,
+        )
+
+    @staticmethod
+    def _goal_state_bullets(goal: GoalCard) -> list[GoalBullet]:
+        if goal.status not in (
             GoalStatus.OPEN,
             GoalStatus.BLOCKED,
             GoalStatus.DEFERRED,
         ):
-            status_gate = snapshot.goal.status.value
-            if snapshot.goal.next_action:
-                status_gate += f"; next action: {snapshot.goal.next_action}"
-            bullets.append(GoalBullet(GoalBulletCategory.OPEN, status_gate))
-        for candidate in snapshot.sde_candidates:
-            if candidate.status is SDEStatus.PENDING_REVIEW:
-                bullets.append(
-                    GoalBullet(
-                        GoalBulletCategory.OPEN,
-                        f"SDE candidate {candidate.candidate_id} awaits human review",
-                    )
-                )
-        pending_sde_total = sum(
+            return []
+        status_gate = goal.status.value
+        if goal.next_action:
+            status_gate += f"; next action: {goal.next_action}"
+        return [GoalBullet(GoalBulletCategory.OPEN, status_gate)]
+
+    @staticmethod
+    def _pending_review_bullets(snapshot: GoalSnapshot) -> list[GoalBullet]:
+        bullets = [
+            GoalBullet(
+                GoalBulletCategory.OPEN,
+                f"SDE candidate {candidate.candidate_id} awaits human review",
+            )
+            for candidate in snapshot.sde_candidates
+            if candidate.status is SDEStatus.PENDING_REVIEW
+        ]
+        pending_total = sum(
             count
             for status, count in snapshot.sde_candidate_status_counts
             if status == SDEStatus.PENDING_REVIEW.value
         )
-        visible_pending_sdes = sum(
-            candidate.status is SDEStatus.PENDING_REVIEW
-            for candidate in snapshot.sde_candidates
-        )
-        if pending_sde_total > visible_pending_sdes:
+        visible_total = len(bullets)
+        if pending_total > visible_total:
             continuation = (
                 f"; next page: goal_status(sde_offset={snapshot.sde_candidate_next_offset})"
                 if snapshot.sde_candidate_next_offset is not None
@@ -1065,19 +1114,24 @@ class CuratorService:
             bullets.append(
                 GoalBullet(
                     GoalBulletCategory.OPEN,
-                    f"{pending_sde_total} SDE candidate(s) await review overall; "
-                    f"this page shows {visible_pending_sdes}{continuation}",
+                    f"{pending_total} SDE candidate(s) await review overall; "
+                    f"this page shows {visible_total}{continuation}",
                 )
             )
-        for receipt in snapshot.pending_purges:
-            bullets.append(
-                GoalBullet(
-                    GoalBulletCategory.OPEN,
-                    f"Purge receipt {receipt.receipt_id} remains pending",
-                )
+        return bullets
+
+    @staticmethod
+    def _pending_purge_bullets(snapshot: GoalSnapshot) -> list[GoalBullet]:
+        bullets = [
+            GoalBullet(
+                GoalBulletCategory.OPEN,
+                f"Purge receipt {receipt.receipt_id} remains pending",
             )
-        if snapshot.pending_purge_total is not None and (
-            snapshot.pending_purge_total > len(snapshot.pending_purges)
+            for receipt in snapshot.pending_purges
+        ]
+        if (
+            snapshot.pending_purge_total is not None
+            and snapshot.pending_purge_total > len(snapshot.pending_purges)
         ):
             continuation = (
                 f"; next page: goal_status(purge_offset={snapshot.pending_purge_next_offset})"
@@ -1091,26 +1145,19 @@ class CuratorService:
                     f"this page shows {len(snapshot.pending_purges)}{continuation}",
                 )
             )
-        if snapshot.fact_capacity is not None and not snapshot.fact_capacity.append_available:
-            bullets.append(
-                GoalBullet(
-                    GoalBulletCategory.OPEN,
-                    snapshot.fact_capacity.open_gate
-                    or "Fact capacity reached; new facts are not being accepted",
-                )
+        return bullets
+
+    @staticmethod
+    def _fact_capacity_bullets(capacity: FactCapacity) -> list[GoalBullet]:
+        if capacity.append_available:
+            return []
+        return [
+            GoalBullet(
+                GoalBulletCategory.OPEN,
+                capacity.open_gate
+                or "Fact capacity reached; new facts are not being accepted",
             )
-        if snapshot.goal.next_action:
-            bullets.append(
-                GoalBullet(GoalBulletCategory.NEXT, snapshot.goal.next_action)
-            )
-        return GoalBulletProjection(
-            goal_id=snapshot.goal.goal_id,
-            problem=snapshot.goal.problem,
-            status=snapshot.goal.status,
-            criteria=snapshot.criteria,
-            bullets=tuple(bullets),
-            next_action=snapshot.goal.next_action,
-        )
+        ]
 
     @staticmethod
     def _evidence_epoch_cutoff(facts: tuple[Fact, ...]) -> str | None:
@@ -1464,11 +1511,17 @@ class CuratorService:
                 # on the receipt, but pass a purgeable reference to the adapter.
                 self.purger.purge(ArtifactRef(artifact.path, artifact.sha256))
             except (OSError, PurgeError, ValueError) as exc:
+                if isinstance(exc, PurgeError):
+                    error_code = exc.code.value
+                elif isinstance(exc, OSError):
+                    error_code = PurgeFailureCode.FILESYSTEM_ERROR.value
+                else:
+                    error_code = PurgeFailureCode.INVALID_ARTIFACT.value
                 self.store.record_purge_result(
                     receipt_id,
                     artifact.path,
                     ArtifactStatus.FAILED,
-                    str(exc)[:500],
+                    error_code,
                     self.project_id,
                 )
             else:
@@ -1546,6 +1599,295 @@ class CuratorService:
             refreshed.append(self._process_purge(receipt.receipt_id, due_only=True))
         return tuple(refreshed)
 
+    def _claim_event(
+        self, event: EventEnvelope, lease_owner: str | None
+    ) -> EventInboxReceipt | None:
+        """Claim an accepted event, returning its receipt when it needs no work."""
+
+        # Keep this transaction short; evidence adapters may perform source I/O.
+        with self.store.transaction():
+            accepted, _inserted = self.store.ingest_event(event)
+            if accepted.status is EventInboxStatus.PROCESSED:
+                return accepted
+            if accepted.status is EventInboxStatus.FAILED and accepted.next_attempt_at:
+                if not self._event_retry_is_due(accepted.next_attempt_at):
+                    return accepted
+            self.store.assert_event_claim(self.project_id, event.event_id, lease_owner)
+        return None
+
+    @staticmethod
+    def _event_retry_is_due(next_attempt_at: str) -> bool:
+        """Fail closed when a failed event's retry timestamp is invalid or future."""
+
+        try:
+            retry_time = datetime.fromisoformat(next_attempt_at.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return retry_time.tzinfo is not None and retry_time <= datetime.now(UTC)
+
+    def _prepare_event(self, event: EventEnvelope) -> _PreparedEvent:
+        """Gather snapshots and independently attest evidence outside write locks."""
+
+        payload = event.payload
+        prior_fact_ids: frozenset[str] = (
+            frozenset(
+                fact.fact_id
+                for fact in self.store.list_facts(payload.goal_id, self.project_id)
+            )
+            if not isinstance(payload, GoalStarted)
+            else frozenset()
+        )
+        prepared = _PreparedEvent(prior_fact_ids=prior_fact_ids)
+        if isinstance(payload, FactRecorded) and payload.kind is FactKind.VERIFICATION:
+            return self._prepare_verified_fact(payload, prepared)
+        if isinstance(payload, GoalFinishRequested):
+            return self._prepare_goal_finish(payload, prepared)
+        return prepared
+
+    def _prepare_verified_fact(
+        self, payload: FactRecorded, prepared: _PreparedEvent
+    ) -> _PreparedEvent:
+        goal = self.store.get_goal(payload.goal_id, self.project_id)
+        criterion_ids = {item.criterion_id for item in goal.success_criteria}
+        if payload.criterion_id is None or payload.criterion_id not in criterion_ids:
+            raise ValueError("verification must reference a current criterion")
+        attestations = self._attest_evidence(goal, payload.criterion_id, payload.evidence)
+        if (
+            not payload.evidence
+            or any(item.outcome is not EvidenceOutcome.PASSED for item in payload.evidence)
+            or len(attestations) != len(payload.evidence)
+        ):
+            raise EvidenceGateError(
+                "verification requires independently verified passing evidence"
+            )
+        fact = Fact(
+            goal_id=payload.goal_id,
+            kind=payload.kind,
+            bullet=payload.bullet,
+            fact_id=payload.fact_id,
+            criterion_id=payload.criterion_id,
+            evidence=payload.evidence,
+            verification_attestations=attestations,
+        )
+        return _PreparedEvent(
+            prior_fact_ids=prepared.prior_fact_ids,
+            verified_goal_snapshot=goal,
+            prepared_fact=fact,
+        )
+
+    def _prepare_goal_finish(
+        self, payload: GoalFinishRequested, prepared: _PreparedEvent
+    ) -> _PreparedEvent:
+        goal = self.store.get_goal(payload.goal_id, self.project_id)
+        expected_revision = (
+            goal.lifecycle_revision
+            if payload.expected_lifecycle_revision is None
+            else payload.expected_lifecycle_revision
+        )
+        if goal.lifecycle_revision != expected_revision:
+            raise ConflictError("goal lifecycle revision changed; reload before finishing")
+        facts = self.store.list_facts(payload.goal_id, self.project_id)
+        verified_criteria = self._verified_criterion_ids(goal, facts)
+        return _PreparedEvent(
+            prior_fact_ids=prepared.prior_fact_ids,
+            finish_snapshot=(goal, facts, verified_criteria),
+            expected_finish_revision=expected_revision,
+        )
+
+    def _apply_event_payload(
+        self, payload: EventPayload, prepared: _PreparedEvent, event_id: str
+    ) -> EventDisposition:
+        """Apply one typed event payload inside the caller's transaction."""
+
+        if isinstance(payload, GoalStarted):
+            self.goal_start(
+                payload.problem,
+                payload.success_criteria,
+                owner=payload.owner,
+                checklist_id=payload.checklist_id,
+                checklist_version=payload.checklist_version,
+                checklist_source_text=payload.checklist_source_text,
+                parent_goal_id=payload.parent_goal_id,
+                depends_on_goal_ids=payload.depends_on_goal_ids,
+                goal_id=payload.goal_id,
+                initial_status=payload.initial_status,
+                next_action=payload.next_action,
+                source_event_id=event_id,
+            )
+        elif isinstance(payload, GoalActivated):
+            self.goal_activate(
+                payload.goal_id, payload.reason, payload.expected_lifecycle_revision
+            )
+        elif isinstance(payload, FactRecorded):
+            self._apply_fact_recorded(payload, prepared)
+        elif isinstance(payload, GoalActivityObserved):
+            return self._apply_activity_observed(payload)
+        elif isinstance(payload, GoalFinishRequested):
+            self._apply_goal_finish(payload, prepared)
+        else:
+            self._apply_goal_status_event(payload)
+        return EventDisposition.APPLIED
+
+    def _apply_fact_recorded(
+        self, payload: FactRecorded, prepared: _PreparedEvent
+    ) -> None:
+        if prepared.prepared_fact is None:
+            self.goal_fact(
+                payload.goal_id,
+                payload.kind,
+                payload.bullet,
+                criterion_id=payload.criterion_id,
+                evidence=payload.evidence,
+                fact_id=payload.fact_id,
+            )
+            return
+        if prepared.verified_goal_snapshot is None:
+            raise ConflictError("verified fact lost its goal snapshot before commit")
+        self._append_preverified_fact(prepared.prepared_fact, prepared.verified_goal_snapshot)
+
+    def _apply_activity_observed(
+        self, payload: GoalActivityObserved
+    ) -> EventDisposition:
+        goal = self.store.get_goal(payload.goal_id, self.project_id)
+        if goal.status is not GoalStatus.ACTIVE:
+            return EventDisposition.SUPPRESSED_NONACTIVE_GOAL
+        self._append_preverified_fact(
+            Fact(
+                goal_id=payload.goal_id,
+                kind=payload.kind,
+                bullet=payload.bullet,
+                fact_id=payload.fact_id,
+            )
+        )
+        return EventDisposition.APPLIED
+
+    def _apply_goal_finish(
+        self, payload: GoalFinishRequested, prepared: _PreparedEvent
+    ) -> None:
+        if prepared.finish_snapshot is None:
+            raise ConflictError("finish evidence snapshot is unavailable before commit")
+        goal, facts, verified_criteria = prepared.finish_snapshot
+        current_goal = self.store.get_goal(payload.goal_id, self.project_id)
+        current_facts = self.store.list_facts(payload.goal_id, self.project_id)
+        if (
+            current_goal.lifecycle_revision != goal.lifecycle_revision
+            or current_goal.criteria_revision != goal.criteria_revision
+            or tuple(fact.fact_id for fact in current_facts)
+            != tuple(fact.fact_id for fact in facts)
+        ):
+            raise ConflictError("goal or facts changed during evidence verification; retry finish")
+        self._goal_finish_in_transaction(
+            payload.goal_id,
+            payload.completion_claim,
+            prepared.expected_finish_revision,
+            verified_criteria,
+        )
+
+    def _apply_goal_status_event(self, payload: EventPayload) -> None:
+        if isinstance(payload, GoalDeferred):
+            self.goal_defer(
+                payload.goal_id,
+                payload.reason,
+                payload.next_action,
+                payload.expected_lifecycle_revision or 1,
+            )
+        elif isinstance(payload, GoalReopened):
+            self.goal_reopen(
+                payload.goal_id,
+                payload.reason,
+                payload.next_action,
+                payload.expected_lifecycle_revision or 1,
+            )
+        elif isinstance(payload, GoalCriteriaAmended):
+            self.goal_amend_criteria(
+                payload.goal_id,
+                payload.expected_revision,
+                payload.success_criteria,
+                payload.reason,
+                payload.next_action,
+                payload.expected_lifecycle_revision or 1,
+            )
+        elif isinstance(payload, GoalCancelled):
+            self.goal_cancel(payload.goal_id, payload.reason)
+        elif isinstance(payload, GoalSuperseded):
+            self.goal_supersede(
+                payload.goal_id, payload.replacement_goal_id, payload.reason
+            )
+        elif isinstance(payload, GoalBlocked):
+            self.goal_block(
+                payload.goal_id,
+                payload.dependency,
+                payload.recovery,
+                payload.expected_lifecycle_revision or 1,
+            )
+        else:
+            raise TypeError(f"unsupported event payload: {type(payload).__name__}")
+
+    def _attach_event_facts(
+        self,
+        payload: EventPayload,
+        prepared: _PreparedEvent,
+        event_id: str,
+        disposition: EventDisposition,
+    ) -> None:
+        new_fact_ids = tuple(
+            fact.fact_id
+            for fact in self.store.list_facts(payload.goal_id, self.project_id)
+            if fact.fact_id not in prepared.prior_fact_ids
+        )
+        if isinstance(payload, (FactRecorded, GoalActivityObserved)) and (
+            disposition is EventDisposition.APPLIED
+        ):
+            try:
+                referenced_fact = self.store.get_fact(payload.fact_id, self.project_id)
+            except LookupError:
+                pass
+            else:
+                if referenced_fact.source_event_id is None:
+                    new_fact_ids += (referenced_fact.fact_id,)
+        self.store.attach_fact_source_event(
+            tuple(dict.fromkeys(new_fact_ids)), event_id, self.project_id
+        )
+
+    def _commit_event(
+        self, event: EventEnvelope, prepared: _PreparedEvent, lease_owner: str | None
+    ) -> EventInboxReceipt:
+        with self.store.transaction():
+            current_receipt = self.store.event_receipt(self.project_id, event.event_id)
+            if current_receipt.status is EventInboxStatus.PROCESSED:
+                return current_receipt
+            self.store.assert_event_claim(self.project_id, event.event_id, lease_owner)
+            disposition = self._apply_event_payload(
+                event.payload, prepared, event.event_id
+            )
+            self._attach_event_facts(event.payload, prepared, event.event_id, disposition)
+            self.store.advance_source_sequence(event)
+            return self.store.mark_event_processed(
+                self.project_id,
+                event.event_id,
+                lease_owner=lease_owner,
+                disposition=disposition,
+            )
+
+    def _mark_event_failure(
+        self, event: EventEnvelope, exc: Exception, lease_owner: str | None
+    ) -> EventInboxReceipt:
+        if isinstance(exc, (EventClaimError, EventInboxCapacityError)):
+            raise exc
+        # Persist only a bounded exception type code; payload details can be private.
+        error_code = re.sub(r"[^a-zA-Z0-9_.:-]", "_", type(exc).__name__)[:128]
+        with self.store.transaction():
+            accepted, _inserted = self.store.ingest_event(event)
+            if accepted.status is EventInboxStatus.PROCESSED:
+                return accepted
+            return self.store.mark_event_failed(
+                self.project_id,
+                event.event_id,
+                error_code,
+                discard_payload=isinstance(exc, FactCapacityError),
+                lease_owner=lease_owner,
+            )
+
     def process_event(
         self, event: EventEnvelope, *, lease_owner: str | None = None
     ) -> EventInboxReceipt:
@@ -1559,266 +1901,11 @@ class CuratorService:
         if event.project_id != self.project_id:
             raise PermissionError("event project does not match authorized service scope")
         try:
-            # Record/claim the event in a short transaction, then perform any
-            # source I/O without holding SQLite's write lock or connection lock.
-            with self.store.transaction():
-                accepted, _inserted = self.store.ingest_event(event)
-                if accepted.status is EventInboxStatus.PROCESSED:
-                    return accepted
-                if accepted.status is EventInboxStatus.FAILED and accepted.next_attempt_at:
-                    try:
-                        retry_time = datetime.fromisoformat(
-                            accepted.next_attempt_at.replace("Z", "+00:00")
-                        )
-                    except ValueError:
-                        return accepted
-                    if retry_time.tzinfo is None or retry_time > datetime.now(UTC):
-                        return accepted
-                self.store.assert_event_claim(
-                    self.project_id, event.event_id, lease_owner
-                )
-            payload = event.payload
-            prior_fact_ids: set[str] = (
-                set()
-                if isinstance(payload, GoalStarted)
-                else {
-                    fact.fact_id
-                    for fact in self.store.list_facts(
-                        payload.goal_id, self.project_id
-                    )
-                }
-            )
-            verified_goal_snapshot: GoalCard | None = None
-            prepared_fact: Fact | None = None
-            finish_snapshot: tuple[GoalCard, tuple[Fact, ...], set[str]] | None = None
-            expected_finish_revision: int | None = None
-            disposition = EventDisposition.APPLIED
-            if isinstance(payload, FactRecorded) and payload.kind is FactKind.VERIFICATION:
-                verified_goal_snapshot = self.store.get_goal(
-                    payload.goal_id, self.project_id
-                )
-                if payload.criterion_id is None or payload.criterion_id not in {
-                    criterion.criterion_id
-                    for criterion in verified_goal_snapshot.success_criteria
-                }:
-                    raise ValueError("verification must reference a current criterion")
-                attestations = self._attest_evidence(
-                    verified_goal_snapshot, payload.criterion_id, payload.evidence
-                )
-                if (
-                    not payload.evidence
-                    or any(
-                        item.outcome is not EvidenceOutcome.PASSED
-                        for item in payload.evidence
-                    )
-                    or len(attestations) != len(payload.evidence)
-                ):
-                    raise EvidenceGateError(
-                        "verification requires independently verified passing evidence"
-                    )
-                prepared_fact = Fact(
-                    goal_id=payload.goal_id,
-                    kind=payload.kind,
-                    bullet=payload.bullet,
-                    fact_id=payload.fact_id,
-                    criterion_id=payload.criterion_id,
-                    evidence=payload.evidence,
-                    verification_attestations=attestations,
-                )
-            elif isinstance(payload, GoalFinishRequested):
-                finish_goal = self.store.get_goal(payload.goal_id, self.project_id)
-                expected_finish_revision = (
-                    finish_goal.lifecycle_revision
-                    if payload.expected_lifecycle_revision is None
-                    else payload.expected_lifecycle_revision
-                )
-                if finish_goal.lifecycle_revision != expected_finish_revision:
-                    raise ConflictError(
-                        "goal lifecycle revision changed; reload before finishing"
-                    )
-                finish_facts = self.store.list_facts(payload.goal_id, self.project_id)
-                verified_criteria = self._verified_criterion_ids(
-                    finish_goal, finish_facts
-                )
-                finish_snapshot = (finish_goal, finish_facts, verified_criteria)
-
-            with self.store.transaction():
-                current_receipt = self.store.event_receipt(
-                    self.project_id, event.event_id
-                )
-                if current_receipt.status is EventInboxStatus.PROCESSED:
-                    return current_receipt
-                self.store.assert_event_claim(
-                    self.project_id, event.event_id, lease_owner
-                )
-                if isinstance(payload, GoalStarted):
-                    self.goal_start(
-                        payload.problem,
-                        payload.success_criteria,
-                        owner=payload.owner,
-                        checklist_id=payload.checklist_id,
-                        checklist_version=payload.checklist_version,
-                        checklist_source_text=payload.checklist_source_text,
-                        parent_goal_id=payload.parent_goal_id,
-                        depends_on_goal_ids=payload.depends_on_goal_ids,
-                        goal_id=payload.goal_id,
-                        initial_status=payload.initial_status,
-                        next_action=payload.next_action,
-                        source_event_id=event.event_id,
-                    )
-                elif isinstance(payload, GoalActivated):
-                    self.goal_activate(
-                        payload.goal_id,
-                        payload.reason,
-                        payload.expected_lifecycle_revision,
-                    )
-                elif isinstance(payload, FactRecorded):
-                    if prepared_fact is not None:
-                        if verified_goal_snapshot is None:
-                            raise ConflictError(
-                                "verified fact lost its goal snapshot before commit"
-                            )
-                        self._append_preverified_fact(
-                            prepared_fact, verified_goal_snapshot
-                        )
-                    else:
-                        self.goal_fact(
-                            payload.goal_id,
-                            payload.kind,
-                            payload.bullet,
-                            criterion_id=payload.criterion_id,
-                            evidence=payload.evidence,
-                            fact_id=payload.fact_id,
-                        )
-                elif isinstance(payload, GoalActivityObserved):
-                    goal = self.store.get_goal(payload.goal_id, self.project_id)
-                    if goal.status is GoalStatus.ACTIVE:
-                        self._append_preverified_fact(
-                            Fact(
-                                goal_id=payload.goal_id,
-                                kind=payload.kind,
-                                bullet=payload.bullet,
-                                fact_id=payload.fact_id,
-                            )
-                        )
-                    else:
-                        disposition = EventDisposition.SUPPRESSED_NONACTIVE_GOAL
-                elif isinstance(payload, GoalFinishRequested):
-                    if finish_snapshot is None:
-                        raise ConflictError(
-                            "finish evidence snapshot is unavailable before commit"
-                        )
-                    finish_goal, finish_facts, verified_criteria = finish_snapshot
-                    current_goal = self.store.get_goal(
-                        payload.goal_id, self.project_id
-                    )
-                    current_facts = self.store.list_facts(
-                        payload.goal_id, self.project_id
-                    )
-                    if (
-                        current_goal.lifecycle_revision
-                        != finish_goal.lifecycle_revision
-                        or current_goal.criteria_revision != finish_goal.criteria_revision
-                        or tuple(fact.fact_id for fact in current_facts)
-                        != tuple(fact.fact_id for fact in finish_facts)
-                    ):
-                        raise ConflictError(
-                            "goal or facts changed during evidence verification; retry finish"
-                        )
-                    self._goal_finish_in_transaction(
-                        payload.goal_id,
-                        payload.completion_claim,
-                        expected_finish_revision,
-                        verified_criteria,
-                    )
-                elif isinstance(payload, GoalDeferred):
-                    self.goal_defer(
-                        payload.goal_id,
-                        payload.reason,
-                        payload.next_action,
-                        payload.expected_lifecycle_revision or 1,
-                    )
-                elif isinstance(payload, GoalReopened):
-                    self.goal_reopen(
-                        payload.goal_id,
-                        payload.reason,
-                        payload.next_action,
-                        payload.expected_lifecycle_revision or 1,
-                    )
-                elif isinstance(payload, GoalCriteriaAmended):
-                    self.goal_amend_criteria(
-                        payload.goal_id,
-                        payload.expected_revision,
-                        payload.success_criteria,
-                        payload.reason,
-                        payload.next_action,
-                        payload.expected_lifecycle_revision or 1,
-                    )
-                elif isinstance(payload, GoalCancelled):
-                    self.goal_cancel(payload.goal_id, payload.reason)
-                elif isinstance(payload, GoalSuperseded):
-                    self.goal_supersede(
-                        payload.goal_id,
-                        payload.replacement_goal_id,
-                        payload.reason,
-                    )
-                else:
-                    self.goal_block(
-                        payload.goal_id,
-                        payload.dependency,
-                        payload.recovery,
-                        payload.expected_lifecycle_revision or 1,
-                    )
-                new_fact_ids = tuple(
-                    fact.fact_id
-                    for fact in self.store.list_facts(
-                        payload.goal_id, self.project_id
-                    )
-                    if fact.fact_id not in prior_fact_ids
-                )
-                if isinstance(payload, (FactRecorded, GoalActivityObserved)) and (
-                    disposition is EventDisposition.APPLIED
-                ):
-                    try:
-                        referenced_fact = self.store.get_fact(
-                            payload.fact_id, self.project_id
-                        )
-                    except LookupError:
-                        pass
-                    else:
-                        if referenced_fact.source_event_id is None:
-                            new_fact_ids += (referenced_fact.fact_id,)
-                self.store.attach_fact_source_event(
-                    tuple(dict.fromkeys(new_fact_ids)),
-                    event.event_id,
-                    self.project_id,
-                )
-                self.store.advance_source_sequence(event)
-                return self.store.mark_event_processed(
-                    self.project_id,
-                    event.event_id,
-                    lease_owner=lease_owner,
-                    disposition=disposition,
-                )
+            accepted = self._claim_event(event, lease_owner)
+            if accepted is not None:
+                return accepted
+            return self._commit_event(event, self._prepare_event(event), lease_owner)
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            # Any dispatch failure must trigger retryable receipt handling.
-            if isinstance(exc, EventClaimError):
-                raise
-            if isinstance(exc, EventInboxCapacityError):
-                # Capacity rejection happens before an inbox receipt is created;
-                # do not retry the same insertion while writing a failure receipt.
-                raise
-            # Mutations and the acceptance receipt rolled back together. Save a
-            # retryable receipt using only a safe exception-type code.
-            error_code = re.sub(r"[^a-zA-Z0-9_.:-]", "_", type(exc).__name__)[:128]
-            with self.store.transaction():
-                accepted, _inserted = self.store.ingest_event(event)
-                if accepted.status is EventInboxStatus.PROCESSED:
-                    return accepted
-                return self.store.mark_event_failed(
-                    self.project_id,
-                    event.event_id,
-                    error_code,
-                    discard_payload=isinstance(exc, FactCapacityError),
-                    lease_owner=lease_owner,
-                )
+            # Failed mutations roll back with the processing receipt; retry state is
+            # saved separately so transport retries remain idempotent.
+            return self._mark_event_failure(event, exc, lease_owner)

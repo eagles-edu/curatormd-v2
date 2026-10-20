@@ -28,6 +28,7 @@ from .models import (
     GoalStatus,
     Materiality,
     ProjectActivitySnapshot,
+    ProjectOperationalCounts,
     ProjectStorageUsage,
     ProjectHealthSnapshot,
     OperationalHealth,
@@ -181,6 +182,27 @@ MAX_DEPENDENCY_PROBE_AGE_SECONDS = 60
 MAX_DEPENDENCY_CLOCK_SKEW_SECONDS = 5
 
 
+@dataclass(frozen=True, slots=True)
+class _HealthEvaluation:
+    """Internal health decision fragments combined into one public snapshot."""
+
+    gates: tuple[str, ...] = ()
+    degraded: bool = False
+    unknown: bool = False
+    dependencies: tuple[DependencyHealth, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _DependencyEvaluation:
+    """One dependency result plus its fail-closed gate effects."""
+
+    health: DependencyHealth
+    gates: tuple[str, ...]
+    degraded: bool
+    unknown: bool
+    probe_failed: bool
+
+
 def _parse_fresh_probe_time(value: object) -> datetime | None:
     """Parse a bounded timezone-aware ISO timestamp without trusting raw input."""
 
@@ -193,6 +215,143 @@ def _parse_fresh_probe_time(value: object) -> datetime | None:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
     return parsed.astimezone(UTC)
+
+
+def _evaluate_local_health(
+    queue: EventQueueStatus,
+    counts: ProjectOperationalCounts,
+    usage: ProjectStorageUsage,
+) -> _HealthEvaluation:
+    """Turn local queue, review, purge, capacity, and staging state into gates."""
+    gates: list[str] = []
+    degraded = False
+    unknown = False
+    conditions = (
+        (queue.received_count > 0, "event_backlog"),
+        (queue.failed_count > 0, "event_failures"),
+        (queue.quarantined_count > 0, "event_quarantine"),
+        (queue.expired_claim_count > 0, "expired_event_claims"),
+        (counts.pending_review_count > 0, "review_backlog"),
+        (counts.pending_purge_receipt_count > 0, "purge_pending"),
+        (counts.pending_purge_artifact_count > 0, "purge_artifacts_pending"),
+        (not usage.global_event_inbox.can_accept_new_event, "event_capacity_exhausted"),
+        (usage.fact_capacity_reached, "fact_capacity_exhausted"),
+    )
+    for condition, code in conditions:
+        if condition:
+            gates.append(code)
+            degraded = True
+
+    staging = usage.staging
+    staging_complete = staging.inventory_complete if staging is not None else None
+    staging_count = staging.regular_file_count if staging is not None else None
+    if staging_complete is False:
+        gates.append("staging_inventory_incomplete")
+        degraded = True
+    elif staging_complete is None:
+        gates.append("staging_inventory_unavailable")
+        unknown = True
+    if staging_count is not None and staging_count > 0:
+        gates.append("staged_artifacts_present")
+        degraded = True
+    return _HealthEvaluation(tuple(gates), degraded, unknown)
+
+
+def _evaluate_dependency(
+    name: str,
+    readiness: Mapping[str, object],
+    probe_failed: bool,
+    now: datetime,
+) -> _DependencyEvaluation:
+    """Interpret one timestamped readiness result without turning bad data green."""
+    observation: DependencyProbeObservation | None = None
+    age_seconds: int | None = None
+    gates: list[str] = []
+    degraded = False
+    unknown = False
+    state = OperationalHealth.UNKNOWN
+
+    if not probe_failed:
+        try:
+            raw = readiness.get(name)
+        except Exception:  # noqa: BLE001 - malformed host data is not readiness
+            probe_failed = True
+            raw = None
+        if raw is None:
+            state = OperationalHealth.UNKNOWN
+        elif not isinstance(raw, DependencyProbeObservation):
+            gates.append(f"dependency_probe_invalid:{name}")
+            unknown = True
+        else:
+            observation = raw
+            checked_at = _parse_fresh_probe_time(raw.observed_at)
+            if checked_at is None:
+                gates.append(f"dependency_probe_time_invalid:{name}")
+                unknown = True
+            else:
+                age = (now - checked_at).total_seconds()
+                age_seconds = max(0, int(age))
+                if (
+                    age > MAX_DEPENDENCY_PROBE_AGE_SECONDS
+                    or age < -MAX_DEPENDENCY_CLOCK_SKEW_SECONDS
+                ):
+                    gates.append(f"dependency_probe_stale:{name}")
+                    unknown = True
+                elif raw.ready is True:
+                    state = OperationalHealth.HEALTHY
+                elif raw.ready is False:
+                    state = OperationalHealth.DEGRADED
+                else:
+                    unknown = True
+
+    if state is OperationalHealth.DEGRADED:
+        gates.append(f"dependency_unavailable:{name}")
+        degraded = True
+    elif state is OperationalHealth.UNKNOWN:
+        gates.append(f"dependency_unknown:{name}")
+        unknown = True
+    dependency = DependencyHealth(
+        name=name,
+        status=state,
+        observed_at=observation.observed_at if observation else None,
+        age_seconds=age_seconds,
+    )
+    return _DependencyEvaluation(
+        dependency, tuple(gates), degraded, unknown, probe_failed
+    )
+
+
+def _evaluate_dependencies(
+    readiness_provider: ProjectDependencyReadiness | None,
+    project_id: str,
+    now: datetime,
+) -> _HealthEvaluation:
+    """Read required host probes and aggregate unknown/degraded results."""
+    readiness: Mapping[str, object] = {}
+    probe_failed = False
+    if readiness_provider is not None:
+        try:
+            readiness = readiness_provider.readiness(project_id)
+        except Exception:  # noqa: BLE001 - health must degrade to unknown, not green
+            probe_failed = True
+
+    dependencies: list[DependencyHealth] = []
+    gates: list[str] = []
+    degraded = False
+    unknown = False
+    for name in REQUIRED_HEALTH_DEPENDENCIES:
+        result = _evaluate_dependency(name, readiness, probe_failed, now)
+        probe_failed = result.probe_failed
+        dependencies.append(result.health)
+        gates.extend(result.gates)
+        degraded = degraded or result.degraded
+        unknown = unknown or result.unknown
+    if probe_failed:
+        gates.append("dependency_probe_failed")
+        unknown = True
+    return _HealthEvaluation(
+        tuple(gates), degraded, unknown, tuple(dependencies)
+    )
 
 
 @dataclass(slots=True)
@@ -342,115 +501,19 @@ class AuthenticatedCuratorAPI:
         self, plugin: ProjectPlugin, project_id: str
     ) -> tuple[ProjectHealthSnapshot, ProjectStorageUsage]:
         """Build health and storage observations from one project plugin read."""
-
         queue, counts, usage = plugin.operational_health_inputs()
-        staging_complete = (
-            usage.staging.inventory_complete if usage.staging is not None else None
+        local = _evaluate_local_health(queue, counts, usage)
+        dependencies = _evaluate_dependencies(
+            self.dependency_readiness, project_id, datetime.now(UTC)
         )
-        staging_file_count = (
-            usage.staging.regular_file_count if usage.staging is not None else None
-        )
-        gates: list[str] = []
-        degraded = False
-        unknown = False
-
-        local_conditions = (
-            (queue.received_count > 0, "event_backlog"),
-            (queue.failed_count > 0, "event_failures"),
-            (queue.quarantined_count > 0, "event_quarantine"),
-            (queue.expired_claim_count > 0, "expired_event_claims"),
-            (counts.pending_review_count > 0, "review_backlog"),
-            (counts.pending_purge_receipt_count > 0, "purge_pending"),
-            (counts.pending_purge_artifact_count > 0, "purge_artifacts_pending"),
-            (not usage.global_event_inbox.can_accept_new_event, "event_capacity_exhausted"),
-            (usage.fact_capacity_reached, "fact_capacity_exhausted"),
-        )
-        for condition, code in local_conditions:
-            if condition:
-                gates.append(code)
-                degraded = True
-        if staging_complete is False:
-            gates.append("staging_inventory_incomplete")
-            degraded = True
-        elif staging_complete is None:
-            gates.append("staging_inventory_unavailable")
-            unknown = True
-        if staging_file_count is not None and staging_file_count > 0:
-            gates.append("staged_artifacts_present")
-            degraded = True
-
-        readiness: Mapping[str, object] = {}
-        probe_failed = False
-        if self.dependency_readiness is not None:
-            try:
-                readiness = self.dependency_readiness.readiness(project_id)
-            except Exception:  # noqa: BLE001 - health must degrade to unknown, not green
-                probe_failed = True
-        dependencies: list[DependencyHealth] = []
-        for name in REQUIRED_HEALTH_DEPENDENCIES:
-            observation: DependencyProbeObservation | None = None
-            observation_age: int | None = None
-            if probe_failed:
-                state = OperationalHealth.UNKNOWN
-            else:
-                try:
-                    raw_observation = readiness.get(name)
-                except Exception:  # noqa: BLE001 - malformed host data is not readiness
-                    probe_failed = True
-                    raw_observation = None
-                if raw_observation is None:
-                    state = OperationalHealth.UNKNOWN
-                elif not isinstance(raw_observation, DependencyProbeObservation):
-                    state = OperationalHealth.UNKNOWN
-                    gates.append(f"dependency_probe_invalid:{name}")
-                    unknown = True
-                else:
-                    observation = raw_observation
-                    checked_at = _parse_fresh_probe_time(observation.observed_at)
-                    if checked_at is None:
-                        state = OperationalHealth.UNKNOWN
-                        gates.append(f"dependency_probe_time_invalid:{name}")
-                        unknown = True
-                    else:
-                        age = (datetime.now(UTC) - checked_at).total_seconds()
-                        observation_age = max(0, int(age))
-                        if (
-                            age > MAX_DEPENDENCY_PROBE_AGE_SECONDS
-                            or age < -MAX_DEPENDENCY_CLOCK_SKEW_SECONDS
-                        ):
-                            state = OperationalHealth.UNKNOWN
-                            gates.append(f"dependency_probe_stale:{name}")
-                            unknown = True
-                        elif observation.ready is True:
-                            state = OperationalHealth.HEALTHY
-                        elif observation.ready is False:
-                            state = OperationalHealth.DEGRADED
-                        else:
-                            state = OperationalHealth.UNKNOWN
-                            unknown = True
-            dependencies.append(
-                DependencyHealth(
-                    name=name,
-                    status=state,
-                    observed_at=observation.observed_at if observation else None,
-                    age_seconds=observation_age,
-                )
-            )
-            if state is OperationalHealth.DEGRADED:
-                gates.append(f"dependency_unavailable:{name}")
-                degraded = True
-            elif state is OperationalHealth.UNKNOWN:
-                gates.append(f"dependency_unknown:{name}")
-                unknown = True
-        if probe_failed:
-            gates.append("dependency_probe_failed")
-            unknown = True
-
+        gates = local.gates + dependencies.gates
+        staging_complete = usage.staging.inventory_complete if usage.staging else None
+        staging_file_count = usage.staging.regular_file_count if usage.staging else None
         status = (
             OperationalHealth.DEGRADED
-            if degraded
+            if local.degraded or dependencies.degraded
             else OperationalHealth.UNKNOWN
-            if unknown
+            if local.unknown or dependencies.unknown
             else OperationalHealth.HEALTHY
         )
         snapshot = ProjectHealthSnapshot(
@@ -468,8 +531,8 @@ class AuthenticatedCuratorAPI:
             event_capacity_available=usage.global_event_inbox.can_accept_new_event,
             staging_inventory_complete=staging_complete,
             staging_regular_file_count=staging_file_count,
-            dependencies=tuple(dependencies),
-            gate_codes=tuple(gates),
+            dependencies=dependencies.dependencies,
+            gate_codes=gates,
         )
         return snapshot, usage
 

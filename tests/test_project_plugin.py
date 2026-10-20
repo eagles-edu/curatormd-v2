@@ -116,6 +116,13 @@ class ProjectPluginTests(unittest.TestCase):
 
         self.assertEqual(config.backend_api_version, PROJECT_PLUGIN_API_VERSION)
         self.assertEqual(config.project_id, "consumer-a")
+        self.assertEqual(
+            config.config_sha256,
+            hashlib.sha256(
+                (self.root / CONFIG_FILENAME).read_bytes()
+            ).hexdigest(),
+        )
+        self.assertEqual(len(config.repository_fingerprint), 64)
         self.assertEqual(config.checklist_path("tasks"), self.root / "docs/tasks.md")
         self.assertEqual(config.staging_root, self.stage)
         self.assertEqual(

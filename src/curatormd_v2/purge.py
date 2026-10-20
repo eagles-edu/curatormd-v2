@@ -7,11 +7,17 @@ import os
 from pathlib import Path
 import stat
 
-from .models import ArtifactRef
+from .models import ArtifactRef, PurgeFailureCode
 
 
 class PurgeError(RuntimeError):
     """An artifact was not removed because its safety checks failed."""
+
+    def __init__(self, code: PurgeFailureCode, message: str) -> None:
+        """Keep an internal diagnostic while exposing a stable safe code."""
+
+        super().__init__(message)
+        self.code = code
 
 
 class ArtifactPurger:
@@ -31,18 +37,27 @@ class ArtifactPurger:
         """
 
         if artifact.retention_hold is not None:
-            raise PurgeError("artifact retention hold prevents purge")
+            raise PurgeError(
+                PurgeFailureCode.RETENTION_HOLD,
+                "artifact retention hold prevents purge",
+            )
 
         supplied = Path(artifact.path)
         if not supplied.is_absolute():
-            raise PurgeError("artifact path must be absolute")
+            raise PurgeError(PurgeFailureCode.INVALID_PATH, "artifact path must be absolute")
         target = Path(os.path.abspath(supplied))
         try:
             relative = target.relative_to(self.staging_root)
         except ValueError as exc:
-            raise PurgeError("artifact is outside the configured staging root") from exc
+            raise PurgeError(
+                PurgeFailureCode.OUTSIDE_STAGING_ROOT,
+                "artifact is outside the configured staging root",
+            ) from exc
         if not relative.parts:
-            raise PurgeError("staging root itself cannot be purged")
+            raise PurgeError(
+                PurgeFailureCode.STAGING_ROOT,
+                "staging root itself cannot be purged",
+            )
 
         no_follow = getattr(os, "O_NOFOLLOW", None)
         directory = getattr(os, "O_DIRECTORY", None)
@@ -53,7 +68,10 @@ class ArtifactPurger:
             or os.stat not in os.supports_dir_fd
             or os.stat not in os.supports_follow_symlinks
         ):
-            raise PurgeError("platform lacks safe descriptor-relative purge support")
+            raise PurgeError(
+                PurgeFailureCode.UNSUPPORTED_PLATFORM,
+                "platform lacks safe descriptor-relative purge support",
+            )
 
         root_fd = -1
         opened_directories: list[int] = []
@@ -87,7 +105,10 @@ class ArtifactPurger:
                     return True
                 before = os.fstat(file_fd)
                 if not stat.S_ISREG(before.st_mode):
-                    raise PurgeError("only regular files are eligible for purge")
+                    raise PurgeError(
+                        PurgeFailureCode.NOT_REGULAR_FILE,
+                        "only regular files are eligible for purge",
+                    )
                 digest = hashlib.sha256()
                 with os.fdopen(os.dup(file_fd), "rb") as source:
                     for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -99,17 +120,27 @@ class ArtifactPurger:
                     after.st_size,
                     after.st_mtime_ns,
                 ):
-                    raise PurgeError("artifact changed while its hash was being verified")
+                    raise PurgeError(
+                        PurgeFailureCode.ARTIFACT_CHANGED,
+                        "artifact changed while its hash was being verified",
+                    )
                 if digest.hexdigest() != artifact.sha256:
-                    raise PurgeError("artifact hash does not match the approved reference")
+                    raise PurgeError(
+                        PurgeFailureCode.HASH_MISMATCH,
+                        "artifact hash does not match the approved reference",
+                    )
                 named = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
                 if (named.st_dev, named.st_ino) != (after.st_dev, after.st_ino):
                     raise PurgeError(
+                        PurgeFailureCode.PATH_CHANGED,
                         "artifact path changed while its hash was being verified"
                     )
                 os.unlink(filename, dir_fd=parent_fd)
             except OSError as exc:
-                raise PurgeError(f"cannot safely inspect or remove artifact: {exc}") from exc
+                raise PurgeError(
+                    PurgeFailureCode.FILESYSTEM_ERROR,
+                    "cannot safely inspect or remove artifact",
+                ) from exc
         finally:
             if file_fd >= 0:
                 os.close(file_fd)

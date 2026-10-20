@@ -25,6 +25,9 @@ an HTTP or MCP server, and it does not authenticate credentials.
   injected host-administration policy. Neither component authenticates
   subjects; the manager is not exposed through MCP and must not be constructed
   from caller-controlled identity, project config, or project ID.
+  `FingerprintBoundSQLiteProjectGrantAuthorizer` additionally checks the
+  current active registration against the repository path fingerprint, exact
+  config digest, and backend API version on every authorization decision.
 - The API registry maps project IDs to independently configured plugins. A
   project ID is routing context only; it grants no access.
 - Review decisions pass the verified subject ID into the plugin's

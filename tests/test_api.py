@@ -14,6 +14,7 @@ from evidence_fixtures import attest_test_evidence
 from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
+    backup_database,
     ConflictError,
     CuratorStore,
     EvidenceGateError,
@@ -1114,22 +1115,30 @@ class ApiFacadeTests(unittest.TestCase):
         api = AuthenticatedCuratorAPI(
             {"project-a": self.plugin}, self.authorizer
         )
+        secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
         payload = (
             '{"schema_version":1,"event_id":"sensitive-event-1",'
             '"project_id":"project-a","source_id":"api-test",'
             '"source_sequence":1,"occurred_at":"2026-10-18T00:00:00Z",'
             '"event_type":"goal.started","payload":{"goal_id":"sensitive-goal",'
-            '"problem":"api_key=sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",'
+            f'"problem":"api_key={secret}",'
             '"success_criteria":[{"criterion_id":"done",'
             '"description":"The task is complete"}]}}'
         )
         with self.assertRaises(SensitiveContentError) as caught:
             api.process_event_json(self.caller, "project-a", payload)
-        self.assertNotIn("sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", str(caught.exception))
+        self.assertNotIn(secret, str(caught.exception))
         with self.assertRaises(NotFoundError):
             self.store.event_receipt("project-a", "sensitive-event-1")
         with self.assertRaises(NotFoundError):
             self.store.get_goal("sensitive-goal", "project-a")
+
+        metrics = api.project_prometheus_metrics(self.caller, "project-a")
+        self.assertNotIn(secret, metrics)
+
+        backup_path = self.root.parent / "sensitive-rejection-backup.sqlite3"
+        backup_database(self.store.database, backup_path)
+        self.assertNotIn(secret.encode("utf-8"), backup_path.read_bytes())
 
     def test_event_project_mismatch_and_unknown_projects_are_denied(self) -> None:
         api = AuthenticatedCuratorAPI(

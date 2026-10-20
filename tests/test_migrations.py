@@ -95,6 +95,74 @@ class MigrationReviewAuthorizer:
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
 
+    def test_v15_migration_redacts_legacy_purge_failure_details(self) -> None:
+        """Remove potentially sensitive exception text without clearing retry state."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v15.sqlite3"
+            store = CuratorStore(database_path)
+            store.close()
+            connection = sqlite3.connect(database_path)
+            connection.execute("PRAGMA foreign_keys = OFF")
+            connection.execute(
+                """INSERT INTO purge_targets (
+                       receipt_id, path, sha256, status, attempts, error, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    "legacy-receipt",
+                    "/private/SENSITIVE_PURGE_PATH_SENTINEL",
+                    "0" * 64,
+                    "failed",
+                    3,
+                    "cannot safely remove /private/SENSITIVE_PURGE_PATH_SENTINEL",
+                    "2026-10-20T00:00:00+00:00",
+                ),
+            )
+            connection.execute(
+                """CREATE TRIGGER block_legacy_error_redaction
+                   BEFORE UPDATE OF error ON purge_targets
+                   BEGIN SELECT RAISE(ABORT, 'injected redaction failure'); END"""
+            )
+            connection.execute("PRAGMA user_version = 15")
+            connection.commit()
+            connection.close()
+
+            with self.assertRaises(sqlite3.IntegrityError):
+                CuratorStore(database_path)
+            connection = sqlite3.connect(database_path)
+            try:
+                self.assertEqual(
+                    connection.execute("PRAGMA user_version").fetchone()[0], 15
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT error FROM purge_targets WHERE receipt_id = ?",
+                        ("legacy-receipt",),
+                    ).fetchone()[0],
+                    "cannot safely remove /private/SENSITIVE_PURGE_PATH_SENTINEL",
+                )
+                connection.execute("DROP TRIGGER block_legacy_error_redaction")
+                connection.commit()
+            finally:
+                connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    row = connection.execute(
+                        """SELECT status, attempts, error
+                           FROM purge_targets WHERE receipt_id = ?""",
+                        ("legacy-receipt",),
+                    ).fetchone()
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                self.assertEqual(version, 16)
+                self.assertEqual(row["status"], "failed")
+                self.assertEqual(row["attempts"], 3)
+                self.assertEqual(row["error"], "legacy_failure_detail_redacted")
+                self.assertNotIn("SENSITIVE_PURGE_PATH_SENTINEL", row["error"])
+            finally:
+                migrated.close()
+
     def test_v11_database_migrates_to_current_schema_without_feedback_labels(
         self,
     ) -> None:

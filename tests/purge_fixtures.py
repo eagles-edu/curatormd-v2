@@ -10,6 +10,7 @@ from curatormd_v2 import (
     EvidenceRef,
     EvidenceVerificationContext,
     PurgeError,
+    PurgeFailureCode,
     ReviewDecision,
 )
 
@@ -90,5 +91,8 @@ class FlakyPurger(ArtifactPurger):  # pylint: disable=too-few-public-methods
 
         self.calls += 1
         if self.calls == 1:
-            raise PurgeError("simulated interruption before deletion")
+            raise PurgeError(
+                PurgeFailureCode.FILESYSTEM_ERROR,
+                "simulated interruption before deletion: SENSITIVE_PURGE_PATH_SENTINEL",
+            )
         return super().purge(artifact)

@@ -68,6 +68,7 @@ from .models import (
     ProjectStorageUsage,
     ProjectActivitySnapshot,
     ProjectOperationalCounts,
+    PurgeFailureCode,
     PurgeTargetRecord,
     PurgeStatus,
     ReviewDecision,
@@ -3867,6 +3868,16 @@ class CuratorStore:
 
         if status not in (ArtifactStatus.FAILED, ArtifactStatus.PURGED):
             raise ValueError("a purge result must be failed or purged")
+        if status is ArtifactStatus.FAILED:
+            allowed_errors = {
+                code.value
+                for code in PurgeFailureCode
+                if code is not PurgeFailureCode.LEGACY_FAILURE_DETAIL_REDACTED
+            }
+            if error not in allowed_errors:
+                raise ValueError("purge failure requires a known content-free error code")
+        elif error is not None:
+            raise ValueError("successful purge results cannot include an error")
 
         with self._transaction() as connection:
             if project_id is not None and connection.execute(

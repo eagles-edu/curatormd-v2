@@ -94,6 +94,7 @@ from .models import (
     EventFailureCategory,
     EventFailureCategoryUsage,
     ProjectStorageUsage,
+    PurgeFailureCode,
     ProjectActivitySnapshot,
     ProjectHealthSnapshot,
     ProjectOperationalCounts,
@@ -139,6 +140,7 @@ from .project_config import (
 from .project_plugin import ProjectPlugin
 from .rate_limiter import MAX_TRACKED_BUCKETS, SQLiteTokenBucket
 from .project_access import (
+    FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAccessManager,
     ProjectAdministrationAction,
     ProjectAdministrationAuthorizer,
@@ -276,6 +278,7 @@ __all__ = [
     "ProjectConfig",
     "ProjectConfigError",
     "ProjectAccessManager",
+    "FingerprintBoundSQLiteProjectGrantAuthorizer",
     "ProjectAdministrationAction",
     "ProjectAdministrationAuthorizer",
     "ProjectAction",
@@ -298,6 +301,7 @@ __all__ = [
     "DependencyHealth",
     "DependencyProbeObservation",
     "OperationalHealth",
+    "PurgeFailureCode",
     "PurgeTargetRecord",
     "StagingArtifactClass",
     "StagingArtifactInventory",

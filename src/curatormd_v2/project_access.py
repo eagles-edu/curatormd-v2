@@ -1,8 +1,9 @@
 """Durable project registration and exact grant administration primitives.
 
-This module is deliberately not wired to MCP. A trusted host must authenticate
-the caller and provide the project-administration policy before constructing
-``ProjectAccessManager`` or using ``SQLiteProjectGrantAuthorizer``.
+The SQLite grant authorizers may guard MCP/API operations. Project
+administration remains outside MCP: a trusted host must authenticate the
+administrator and provide its policy before constructing
+``ProjectAccessManager``.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from .store import (
     ProjectGrantRecord,
     ProjectRegistrationRecord,
     ProjectRegistryAuditRecord,
+    NotFoundError,
 )
 
 
@@ -78,6 +80,62 @@ class SQLiteProjectGrantAuthorizer:
         """Allow only an exact, active persisted project grant."""
 
         if not _is_project_action(action):
+            return False
+        return self._store.has_project_grant(
+            caller.subject_id, project_id, action.value
+        )
+
+
+class FingerprintBoundSQLiteProjectGrantAuthorizer:
+    """Require a live registration matching one loaded repository config.
+
+    The bound fingerprints are computed by the trusted repository adapter at
+    startup. Registry status and exact grants are read from SQLite on every
+    authorization decision, so suspension and revocation take effect without
+    restarting the MCP process.
+    """
+
+    def __init__(
+        self,
+        store: CuratorStore,
+        *,
+        project_id: str,
+        repository_fingerprint: str,
+        config_sha256: str,
+        backend_api_version: int,
+        allowed_actions: frozenset[ProjectAction],
+    ) -> None:
+        self._store = store
+        self._project_id = project_id
+        self._repository_fingerprint = repository_fingerprint
+        self._config_sha256 = config_sha256
+        self._backend_api_version = backend_api_version
+        self._allowed_actions = allowed_actions
+
+    def authorize(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        action: ProjectAction,
+    ) -> bool:
+        """Allow only an exact grant for the active, fingerprint-matched repo."""
+
+        if (
+            project_id != self._project_id
+            or not _is_project_action(action)
+            or action not in self._allowed_actions
+        ):
+            return False
+        try:
+            registration = self._store.get_project_registration(project_id)
+        except NotFoundError:
+            return False
+        if (
+            registration.status != "active"
+            or registration.repository_fingerprint != self._repository_fingerprint
+            or registration.config_sha256 != self._config_sha256
+            or registration.backend_api_version != self._backend_api_version
+        ):
             return False
         return self._store.has_project_grant(
             caller.subject_id, project_id, action.value
@@ -211,6 +269,14 @@ class ProjectAccessManager:
 
         self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
         return self._store.project_grants(project_id)
+
+    def get_registration(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> ProjectRegistrationRecord:
+        """Read one project registration after host authorization."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.get_project_registration(project_id)
 
     def list_registration_audit(
         self, caller: AuthenticatedCaller, project_id: str

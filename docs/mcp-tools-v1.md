@@ -35,7 +35,16 @@ the Hermes delivery and identity gates remain independent.
 The `curatormd-v2-mcp` entrypoint binds one local stdio process to the project
 declared in that repository's `.curatormd-v2.toml`. Hermes should configure one
 server instance per profile/repository pair and keep the launcher arguments in
-operator-controlled profile configuration:
+operator-controlled profile configuration. Before launching it, a trusted
+host administrator must register this project and grant the profile exact
+`read` and, when requested, `write` access in the global backend database.
+Use the attended `curatormd-v2-access` command below; it is built on
+`ProjectAccessManager` and is deliberately not available through MCP. The
+launcher never self-registers or creates grants. Registration binds the
+project ID to a fingerprint of the canonical repository path, the SHA-256 of
+the exact `.curatormd-v2.toml` bytes, and the backend API version. Missing,
+suspended, revoked, or mismatched bindings fail closed; updating the repository
+config requires a separately authorized registration update.
 
 ```yaml
 mcp_servers:
@@ -65,20 +74,59 @@ use a private database path owned by the Hermes account. `--profile-id` is an
 operator assertion, not authentication. This launcher is only for a trusted
 local orchestrator that owns the MCP subprocess configuration; it must not be
 exposed as a remote endpoint or reused across principals. Omit `--allow-write`
-for read-only access. Even with it, the process is granted only `read` and
-`write` for the one configured project. Canonical `goal_persist`, SDE review,
+for read-only access. This flag is only an upper bound: `--allow-write` still
+requires a durable `write` grant, and without the flag the launcher denies
+writes even if one exists in the registry. The process cannot use grants for
+other scopes. Canonical `goal_persist`, SDE review,
 fact-archive approval, purge retry, retention-hold release, and event retry
 require separate reviewer/operation grants and remain denied by this launcher;
 there is no MCP tool parameter for selecting another caller or project. An
 absent/invalid repository config fails startup. The local event router and
 purge scheduler are not started by this entrypoint.
 
-This is a runnable local binding, not a production identity provider. A local
-SQLite registration/grant ledger and host-administration interface now exist,
-but this launcher does not consult them or authenticate a Hermes profile.
-Remote authentication, applying durable grants to the launcher, shared rate
-limits, review identity, operator scheduling, and deployment probes remain
-open gates.
+Every `tools/call` request must also carry Hermes-injected `hermes/profile_id`
+and a bounded `hermes/session_id`; the profile must exactly match
+`--profile-id`. Configure `hermes_context: true` only for this local stdio
+server. This fail-closed request-context check prevents tool execution when
+Hermes identity context is absent or mismatched, but the metadata is not a
+cryptographic credential. It does not authenticate a remote MCP client or
+replace registered project grants, owner identity, or deployment-level
+authorization.
+
+### Durable local project access
+
+The local launcher now consults the durable SQLite project registration and
+exact subject/project/action grants on every request. Its loaded repository
+root and `.curatormd-v2.toml` fingerprints must match an active registration;
+registration drift, suspension, missing grants, and revocation fail closed.
+`--allow-write` only permits the launcher to honor an existing write grant;
+it does not create a registration or grant.
+
+Use the separate attended local operator command to provision this ledger. It
+is not exposed through MCP and requires an interactive TTY plus exact typed
+confirmation for each operation:
+
+```sh
+curatormd-v2-access register \
+  --project-root /absolute/path/to/consumer-repository \
+  --database /absolute/path/to/global-curator-v2.sqlite3 \
+  --rationale "Owner-approved local project registration"
+curatormd-v2-access grant \
+  --project-root /absolute/path/to/consumer-repository \
+  --database /absolute/path/to/global-curator-v2.sqlite3 \
+  --subject-id consumer-coding --action read \
+  --rationale "Approve read-only project access"
+```
+
+Grant `write` separately only after review. The command records its actor as
+the effective local Unix UID. That is an account-level audit label, not a
+verified human identity; shared accounts cannot distinguish operators. It does
+not authenticate a Hermes profile or replace a deployment identity provider.
+Use `curatormd-v2-access view`, `revoke`, `suspend`, `reactivate`, or `update`
+for the corresponding attended audit or administrative action. The local
+ledger integration is tested, but remote authentication, verified Hermes
+profile-to-project authorization, reviewer identity, distributed rate limits,
+operator scheduling, and deployment probes remain open gates.
 
 ### Hermes durable Codex hook adapter
 
@@ -160,7 +208,7 @@ and the host profile-to-project permission and deployment gates remain open.
 | `artifact_inventory_discover(goal_id)` | Reviewer-scoped, bounded streaming hash inventory of regular files in `.curatormd-v2/staging/<goal_id>/`; files belonging to other goals cannot enter this receipt's manifest. Incomplete scans cannot release purge. |
 | `sde_confirm` | Record human-approved/rejected decision and exact artifact manifest. An artifact may carry `retention_hold: legal` or `retention_hold: operational`; the hold is reviewer-selected and never inferred by the backend. |
 | `artifact_inventory_complete` | Declare a receipt's full inventory; may release purge after canonical persistence. Newly assigned holds are attributed to the authenticated reviewer; unchanged existing hold attribution is preserved. |
-| `artifact_purge_status` | Inspect the receipt plus each artifact's status (including `held`), retention category, attempt count, creation/last-attempt timestamps and ages, persisted retry deadline/countdown, last error, and next safe recovery action. |
+| `artifact_purge_status` | Inspect the receipt plus each artifact's status (including `held`), retention category, attempt count, creation/last-attempt timestamps and ages, persisted retry deadline/countdown, content-free last error code, and next safe recovery action. |
 | `release_artifact_hold` | Release one exact held path in a receipt after dedicated project `retention_hold_release` scope and plugin reviewer authorization; persist actor, timestamp, and rationale, then resume eligible purge. Exact replay is idempotent; changed actor/rationale conflicts. |
 | `retry_pending_purges` | Immediately retry reviewed, canonically persisted manifests; authenticated use overrides an automatic retry deadline. |
 | `event_queue_status` | Read this bound project's received/failed/quarantined counts, oldest pending age, and aggregate active/expired worker claims without exposing event content. |

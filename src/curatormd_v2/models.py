@@ -193,6 +193,23 @@ class ArtifactStatus(StrEnum):
     HELD = "held"
 
 
+class PurgeFailureCode(StrEnum):
+    """Content-free reasons for retryable artifact purge failures."""
+
+    RETENTION_HOLD = "retention_hold"
+    INVALID_PATH = "invalid_path"
+    OUTSIDE_STAGING_ROOT = "outside_staging_root"
+    STAGING_ROOT = "staging_root"
+    UNSUPPORTED_PLATFORM = "unsupported_platform"
+    NOT_REGULAR_FILE = "not_regular_file"
+    ARTIFACT_CHANGED = "artifact_changed"
+    HASH_MISMATCH = "hash_mismatch"
+    PATH_CHANGED = "path_changed"
+    FILESYSTEM_ERROR = "filesystem_error"
+    INVALID_ARTIFACT = "invalid_artifact"
+    LEGACY_FAILURE_DETAIL_REDACTED = "legacy_failure_detail_redacted"
+
+
 class RetentionHoldKind(StrEnum):
     """Reason class for an explicit, reviewer-visible artifact retention hold."""
 
@@ -661,7 +678,7 @@ class ArtifactRef:
 
 @dataclass(frozen=True, slots=True)
 class PurgeTargetRecord:
-    """Durable per-artifact cleanup state with queue and attempt timestamps."""
+    """Durable cleanup state; error is a content-free failure code."""
 
     artifact: ArtifactRef
     status: ArtifactStatus

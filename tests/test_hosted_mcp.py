@@ -15,11 +15,52 @@ from unittest.mock import patch
 
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
-from mcp.types import TextContent
+from mcp.types import RequestParamsMeta, TextContent
 
-from curatormd_v2 import ProjectAction, SQLiteTokenBucket, hosted_mcp
+from curatormd_v2 import (
+    AuthenticatedCaller,
+    CuratorStore,
+    ProjectAccessManager,
+    ProjectAction,
+    ProjectAdministrationAction,
+    ProjectConfig,
+    SQLiteTokenBucket,
+    hosted_mcp,
+)
 from curatormd_v2.hosted_mcp import build_local_profile_mcp
 from curatormd_v2.mcp_server import safe_tool_handler
+
+
+def _hermes_meta(
+    profile_id: str, session_id: str = "test-session"
+) -> RequestParamsMeta:
+    return {
+        "hermes/profile_id": profile_id,
+        "hermes/session_id": session_id,
+    }
+
+
+class _TestProjectAdmin:
+    def authorize_project_administration(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        action: ProjectAdministrationAction,
+    ) -> bool:
+        return (
+            caller.subject_id == "test-operator"
+            and bool(project_id)
+            and action
+            in {
+                ProjectAdministrationAction.REGISTER,
+                ProjectAdministrationAction.UPDATE,
+                ProjectAdministrationAction.SUSPEND,
+                ProjectAdministrationAction.REACTIVATE,
+                ProjectAdministrationAction.VIEW,
+                ProjectAdministrationAction.GRANT,
+                ProjectAdministrationAction.REVOKE,
+            }
+        )
 
 
 class HostedMcpTests(unittest.TestCase):
@@ -57,12 +98,49 @@ class HostedMcpTests(unittest.TestCase):
         )
         (root / ".curatormd-v2.toml").chmod(0o600)
 
+    def _provision(
+        self,
+        root: Path,
+        database: Path,
+        profile_id: str,
+        *,
+        allow_write: bool = False,
+    ) -> None:
+        """Seed durable access using the host-only project administration API."""
+
+        config = ProjectConfig.load(root)
+        store = CuratorStore(database)
+        try:
+            manager = ProjectAccessManager(store, _TestProjectAdmin())
+            operator = AuthenticatedCaller("test-operator")
+            manager.register_project(
+                operator,
+                config.project_id,
+                config.repository_fingerprint,
+                config.config_sha256,
+                config.backend_api_version,
+                "Approve the disposable integration-test project binding",
+            )
+            for action in (ProjectAction.READ, ProjectAction.WRITE):
+                if action is ProjectAction.WRITE and not allow_write:
+                    continue
+                manager.grant(
+                    operator,
+                    config.project_id,
+                    profile_id,
+                    action,
+                    "Grant the disposable integration-test profile exact access",
+                )
+        finally:
+            store.close()
+
     def test_profile_binding_defaults_to_read_only_and_denies_review_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding")
             runtime = build_local_profile_mcp(
                 project_root=root,
                 database=database,
@@ -102,9 +180,13 @@ class HostedMcpTests(unittest.TestCase):
             root = Path(temporary) / "consumer"
             root.mkdir()
             self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(
+                root, database, "gptmd-coding", allow_write=True
+            )
             runtime = build_local_profile_mcp(
                 project_root=root,
-                database=Path(temporary) / "global.sqlite3",
+                database=database,
                 profile_id="gptmd-coding",
                 allow_write=True,
             )
@@ -134,6 +216,112 @@ class HostedMcpTests(unittest.TestCase):
                 )
             finally:
                 runtime.close()
+
+    def test_every_local_profile_tool_call_requires_matching_hermes_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding")
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="gptmd-coding",
+            )
+            try:
+                async def exercise() -> None:
+                    async with Client(runtime.server, raise_exceptions=False) as client:
+                        missing = await client.call_tool("project_activity_status", {})
+                        self.assertTrue(missing.is_error)
+                        missing_content = missing.content[0]
+                        assert isinstance(missing_content, TextContent)
+                        self.assertEqual(
+                            json.loads(missing_content.text)["code"], "unauthenticated"
+                        )
+
+                        mismatch = await client.call_tool(
+                            "project_activity_status",
+                            {},
+                            meta=_hermes_meta("another-profile"),
+                        )
+                        self.assertTrue(mismatch.is_error)
+
+                        no_session = await client.call_tool(
+                            "project_activity_status",
+                            {},
+                            meta={"hermes/profile_id": "gptmd-coding"},
+                        )
+                        self.assertTrue(no_session.is_error)
+
+                        valid = await client.call_tool(
+                            "project_activity_status",
+                            {},
+                            meta=_hermes_meta("gptmd-coding"),
+                        )
+                        self.assertFalse(valid.is_error)
+
+                asyncio.run(exercise())
+            finally:
+                runtime.close()
+
+    def test_launcher_requires_registered_fingerprint_and_live_grants(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            with self.assertRaisesRegex(ValueError, "registration fingerprint"):
+                build_local_profile_mcp(
+                    project_root=root,
+                    database=database,
+                    profile_id="gptmd-coding",
+                )
+
+            self._provision(root, database, "gptmd-coding")
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="gptmd-coding",
+            )
+            try:
+                self.assertTrue(
+                    runtime.api.authorizer.authorize(
+                        runtime.caller, "bound-project", ProjectAction.READ
+                    )
+                )
+                external_store = CuratorStore(database)
+                try:
+                    manager = ProjectAccessManager(
+                        external_store, _TestProjectAdmin()
+                    )
+                    manager.set_project_status(
+                        AuthenticatedCaller("test-operator"),
+                        "bound-project",
+                        "suspended",
+                        "Suspend the disposable test project",
+                    )
+                finally:
+                    external_store.close()
+                self.assertFalse(
+                    runtime.api.authorizer.authorize(
+                        runtime.caller, "bound-project", ProjectAction.READ
+                    )
+                )
+            finally:
+                runtime.close()
+
+            changed = (root / ".curatormd-v2.toml").read_text()
+            (root / ".curatormd-v2.toml").write_text(
+                changed.replace('project_id = "bound-project"', 'project_id = "changed-project"')
+            )
+            (root / ".curatormd-v2.toml").chmod(0o600)
+            with self.assertRaisesRegex(ValueError, "registration fingerprint"):
+                build_local_profile_mcp(
+                    project_root=root,
+                    database=database,
+                    profile_id="gptmd-coding",
+                )
 
     def test_database_path_must_be_absolute_and_profile_id_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -209,6 +397,8 @@ class HostedMcpTests(unittest.TestCase):
             root = Path(temporary) / "consumer"
             root.mkdir()
             self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding")
             parameters = StdioServerParameters(
                 command=sys.executable,
                 args=[
@@ -217,7 +407,7 @@ class HostedMcpTests(unittest.TestCase):
                     "--project-root",
                     str(root),
                     "--database",
-                    str(Path(temporary) / "global.sqlite3"),
+                    str(database),
                     "--profile-id",
                     "gptmd-coding",
                 ],
@@ -243,6 +433,7 @@ class HostedMcpTests(unittest.TestCase):
                                 }
                             ],
                         },
+                        meta=_hermes_meta("gptmd-coding"),
                     )
                     self.assertTrue(denied.is_error)
                     denied_content = denied.content[0]
@@ -256,7 +447,15 @@ class HostedMcpTests(unittest.TestCase):
                     )
                     self.assertNotIn("Traceback", denied_content.text)
                     self.assertNotIn("project is not authorized", denied_content.text)
-                    queue = await client.call_tool("event_queue_status", {})
+                    missing_context = await client.call_tool(
+                        "event_queue_status", {}
+                    )
+                    self.assertTrue(missing_context.is_error)
+                    queue = await client.call_tool(
+                        "event_queue_status",
+                        {},
+                        meta=_hermes_meta("gptmd-coding"),
+                    )
                     self.assertFalse(queue.is_error)
                     content = queue.content[0]
                     assert isinstance(content, TextContent)
@@ -271,6 +470,10 @@ class HostedMcpTests(unittest.TestCase):
             root = Path(temporary) / "consumer"
             root.mkdir()
             self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(
+                root, database, "gptmd-coding", allow_write=True
+            )
             launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
             self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
             parameters = StdioServerParameters(
@@ -279,7 +482,7 @@ class HostedMcpTests(unittest.TestCase):
                     "--project-root",
                     str(root),
                     "--database",
-                    str(Path(temporary) / "global.sqlite3"),
+                    str(database),
                     "--profile-id",
                     "gptmd-coding",
                     "--allow-write",
@@ -311,10 +514,13 @@ class HostedMcpTests(unittest.TestCase):
                                 }
                             ],
                         },
+                        meta=_hermes_meta("gptmd-coding"),
                     )
                     self.assertFalse(started.is_error)
                     status = await client.call_tool(
-                        "goal_status", {"goal_id": "launcher-goal-1"}
+                        "goal_status",
+                        {"goal_id": "launcher-goal-1"},
+                        meta=_hermes_meta("gptmd-coding"),
                     )
                     self.assertFalse(status.is_error)
                     content = status.content[0]
@@ -346,6 +552,12 @@ class HostedMcpTests(unittest.TestCase):
             self._project(project_a, "project-a")
             self._project(project_b, "project-b")
             database = base / "global.sqlite3"
+            self._provision(
+                project_a, database, "profile-a", allow_write=True
+            )
+            self._provision(
+                project_b, database, "profile-b", allow_write=True
+            )
             launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
             self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
 
@@ -382,6 +594,7 @@ class HostedMcpTests(unittest.TestCase):
                                 }
                             ],
                         },
+                        meta=_hermes_meta("profile-a"),
                     )
                     self.assertFalse(started_a.is_error)
 
@@ -389,7 +602,9 @@ class HostedMcpTests(unittest.TestCase):
                         parameters(project_b, "profile-b"), raise_exceptions=True
                     ) as client_b:
                         page_b = await client_b.call_tool(
-                            "goal_list_page", {"offset": 0, "limit": 10}
+                            "goal_list_page",
+                            {"offset": 0, "limit": 10},
+                            meta=_hermes_meta("profile-b"),
                         )
                         self.assertFalse(page_b.is_error)
                         page_b_content = page_b.content[0]
@@ -400,7 +615,9 @@ class HostedMcpTests(unittest.TestCase):
                         self.assertEqual(page_b_value["goals"], [])
 
                         foreign_status = await client_b.call_tool(
-                            "goal_status", {"goal_id": "project-a-goal"}
+                            "goal_status",
+                            {"goal_id": "project-a-goal"},
+                            meta=_hermes_meta("profile-b"),
                         )
                         self.assertTrue(foreign_status.is_error)
 
@@ -417,11 +634,14 @@ class HostedMcpTests(unittest.TestCase):
                                     }
                                 ],
                             },
+                            meta=_hermes_meta("profile-b"),
                         )
                         self.assertFalse(started_b.is_error)
 
                     page_a = await client_a.call_tool(
-                        "goal_list_page", {"offset": 0, "limit": 10}
+                        "goal_list_page",
+                        {"offset": 0, "limit": 10},
+                        meta=_hermes_meta("profile-a"),
                     )
                     self.assertFalse(page_a.is_error)
                     page_a_content = page_a.content[0]
@@ -434,7 +654,9 @@ class HostedMcpTests(unittest.TestCase):
                         ["project-a-goal"],
                     )
                     foreign_status = await client_a.call_tool(
-                        "goal_status", {"goal_id": "project-b-goal"}
+                        "goal_status",
+                        {"goal_id": "project-b-goal"},
+                        meta=_hermes_meta("profile-a"),
                     )
                     self.assertTrue(foreign_status.is_error)
 

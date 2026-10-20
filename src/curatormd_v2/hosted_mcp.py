@@ -2,10 +2,13 @@
 
 This entrypoint is intended for a trusted local orchestrator such as one
 Hermes profile spawning one MCP subprocess. Its command-line identity is an
-operator assertion, not authentication; do not expose this process remotely or
-share its launcher configuration across principals. The profile receives only
-project read access by default and optional project write access. Review,
-purge, retention-hold, and event-retry actions remain denied.
+operator assertion, not authentication; every tool call must also carry
+matching host-injected Hermes profile and session metadata. This is a local
+stdio host-context binding, not cryptographic authentication; do not expose
+this process remotely or share its launcher configuration across principals.
+The profile receives only project read access by default and optional project
+write access, each requiring an exact durable grant. Review, purge,
+retention-hold, and event-retry actions remain denied.
 """
 
 from __future__ import annotations
@@ -18,15 +21,11 @@ import sys
 
 from mcp.server import MCPServer
 
-from .api import (
-    AuthenticatedCaller,
-    AuthenticatedCuratorAPI,
-    ProjectAction,
-    ProjectGrantAuthorizer,
-)
+from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .mcp_server import build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
+from .project_access import FingerprintBoundSQLiteProjectGrantAuthorizer
 from .rate_limiter import SQLiteTokenBucket
 from .store import CuratorStore
 
@@ -61,10 +60,12 @@ def build_local_profile_mcp(
 ) -> LocalProfileMCP:
     """Bind one local profile to the project declared by its repo config.
 
-    The profile ID and write grant must come from operator-controlled launcher
-    configuration. No tool argument can choose a caller or project. The
-    repository-owned config is validated by ``ProjectConfig.load`` before any
-    plugin is bound.
+    The profile ID and requested action ceiling must come from
+    operator-controlled launcher configuration. Durable project registration
+    and exact action grants must already exist; this project plugin never
+    self-registers or grants access. No tool argument can choose a caller or
+    project. The repository-owned config is validated by ``ProjectConfig.load``
+    before any plugin is bound.
     """
 
     if not _PROFILE_ID_RE.fullmatch(profile_id):
@@ -79,21 +80,38 @@ def build_local_profile_mcp(
     config = ProjectConfig.load(project_root)
     store = CuratorStore(database_path)
     try:
-        plugin = ProjectPlugin.bind(config, store)
         caller = AuthenticatedCaller(profile_id)
-        actions = [ProjectAction.READ]
+        actions = {ProjectAction.READ}
         if allow_write:
-            actions.append(ProjectAction.WRITE)
-        authorizer = ProjectGrantAuthorizer(
-            (profile_id, config.project_id, action) for action in actions
+            actions.add(ProjectAction.WRITE)
+        authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
+            store,
+            project_id=config.project_id,
+            repository_fingerprint=config.repository_fingerprint,
+            config_sha256=config.config_sha256,
+            backend_api_version=config.backend_api_version,
+            allowed_actions=frozenset(actions),
         )
+        if not authorizer.authorize(caller, config.project_id, ProjectAction.READ):
+            raise ValueError(
+                "project registration fingerprint or read grant is not active"
+            )
+        if allow_write and not authorizer.authorize(
+            caller, config.project_id, ProjectAction.WRITE
+        ):
+            raise ValueError("requested project write grant is not active")
+        plugin = ProjectPlugin.bind(config, store)
         api = AuthenticatedCuratorAPI(
             {config.project_id: plugin},
             authorizer=authorizer,
             limiter=SQLiteTokenBucket(store),
         )
         server = build_mcp_server(
-            api, caller, config.project_id, selected_source_id
+            api,
+            caller,
+            config.project_id,
+            selected_source_id,
+            require_hermes_context=True,
         )
     except BaseException:
         store.close()
@@ -117,7 +135,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-write",
         action="store_true",
-        help="grant this profile read/write for its bound project only",
+        help="allow writes only when this profile has an exact durable write grant",
     )
     return parser
 

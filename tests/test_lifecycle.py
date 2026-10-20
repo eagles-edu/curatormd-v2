@@ -937,6 +937,22 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertEqual(first_page.sde_candidate_next_offset, 32)
         self.assertEqual(first_page.pending_purge_total, 105)
         self.assertEqual(first_page.pending_purge_next_offset, 16)
+        projected = self.service.goal_bullet_projection(self.goal.goal_id)
+        projected_text = [bullet.text for bullet in projected.bullets]
+        self.assertTrue(
+            any(
+                "105 SDE candidate(s) await review overall" in text
+                and "sde_offset=32" in text
+                for text in projected_text
+            )
+        )
+        self.assertTrue(
+            any(
+                "105 purge receipt(s) remain pending" in text
+                and "purge_offset=16" in text
+                for text in projected_text
+            )
+        )
         self.assertEqual(len(second_page.sde_candidates), 32)
         self.assertEqual(len(second_page.pending_purges), 16)
         self.assertEqual(second_page.sde_candidate_next_offset, 64)
@@ -1308,6 +1324,14 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertIsNotNone(snapshot.fact_capacity.open_gate)
         assert snapshot.fact_capacity.open_gate is not None
         self.assertIn("capacity reached", snapshot.fact_capacity.open_gate)
+        projection = self.service.goal_bullet_projection(self.goal.goal_id)
+        self.assertTrue(
+            any(
+                item.category.value == "open_gate"
+                and "capacity reached" in item.text
+                for item in projection.bullets
+            )
+        )
         self.assertEqual(snapshot.goal.status, GoalStatus.ACTIVE)
 
         with self.assertRaises(FactCapacityError):

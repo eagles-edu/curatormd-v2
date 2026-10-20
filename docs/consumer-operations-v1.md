@@ -23,17 +23,24 @@ its `.curatormd-v2.toml`, project plugin binding, and canonical Markdown.
    the exact repository root, database path, and profile ID. Start without
    `--allow-write`; use the read-only binding first. The example command and
    authorization boundary are in [`mcp-tools-v1.md`](mcp-tools-v1.md#local-hermes-profile-launcher).
-5. Validate the consumer TOML and backend API version, run Hermes config
+5. Before the first MCP call, use the attended `curatormd-v2-access` command
+   documented in [`mcp-tools-v1.md`](mcp-tools-v1.md#durable-local-project-access)
+   to register the exact repository/config and grant only `read` to the
+   configured profile subject. Registration and grants are not inferred from
+   `--profile-id` and are never self-created by the launcher.
+6. Validate the consumer TOML and backend API version, run Hermes config
    validation, and test the MCP handshake for that profile. Read `goal_list`,
    `event_queue_status`, and `project_health`; an empty ledger is not evidence
    of event capture, and `unknown` health is correct until every required host
    probe is supplied and fresh.
-6. Before enabling `--allow-write`, review the exact profile-to-project binding
-   and the profile's filesystem/process trust. This flag grants only local
-   `read` and `write` actions for the configured project; it does not grant
-   canonical persistence, SDE review, archive approval, purge, hold release, or
-   event retry. `--profile-id` is an operator assertion, not authentication.
-   A production host must replace both assertions with verified identity and
+7. Before enabling `--allow-write`, use the attended access command to grant
+   exact `write` access to the configured profile subject, then review the
+   profile-to-project binding and filesystem/process trust. The flag is only
+   an upper bound: without a durable `write` grant it cannot write, and with it
+   the launcher still cannot perform canonical persistence, SDE review,
+   archive approval, purge, hold release, or event retry. `--profile-id` is an
+   operator assertion, not authentication. A production host must replace
+   local UID administration and profile assertions with verified identity and
    project authorization.
 
 For each task, capture the user-approved problem, source checklist item, and
