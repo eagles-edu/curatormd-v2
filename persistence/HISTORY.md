@@ -956,3 +956,13 @@
 **Impact:** Strengthens locally verifiable Hermes Core integration without asserting an authenticated profile, configured Curator server process, or deployed runtime.
 
 <!-- curatormd:record_id=ce012a58cd2a082a7df70cefdc49a6f6;content_sha256=ce012a58cd2a082a7df70cefdc49a6f60b54ec8048d74781e585ec43834c34ee -->
+
+## 2026-10-20 — Verify reference producer artifact-class inventory
+
+**Decision:** The reference producer regression stages raw-chat, cue, import, scratch, generated, and duplicate classes through atomic publication, then confirms a complete manifest preserves each path and the common digest for identical payloads. Focused plugin tests pass 37 and the full suite passes 321 on Python 3.12.3; strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and diff check pass. Full Pylint remains at 270 non-blocking findings. Real producer routing and out-of-root inventory remain open.
+
+**Rationale:** The open staging-inventory plan item previously had six-class scanner coverage using manually created files, while the reference producer write API was tested for one class.
+
+**Impact:** Connects every supported reference producer class to complete inventory evidence without asserting external producer routing, consumer installation, or production cleanup.
+
+<!-- curatormd:record_id=91d7756c976595d46cabe2f889b60af7;content_sha256=91d7756c976595d46cabe2f889b60af73e8ed025959d5e64540e75e4bec1ae3a -->

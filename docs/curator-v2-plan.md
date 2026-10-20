@@ -452,7 +452,14 @@ consumer plugin, Hermes integration, or production deployment.
       all six classes under its configured staging root, including same-content
       files at distinct paths. This does not prove real producers route every
       artifact into that root; producer adapters and out-of-root coverage remain
-      open.
+      open. Additional progress (2026-10-20): the producer API now has a
+      regression that stages all six supported classes through atomic publication
+      and verifies one complete fresh inventory retains each distinct path and
+      matching digest, including same-content artifacts. The reference producer
+      contract is covered; real producer routing and out-of-root coverage remain
+      open. The focused plugin module passes 37 tests and the full suite passes
+      321 tests; strict Pyright, errors-only Pylint, Bandit, locked dependency
+      audit, and `git diff --check` pass for this local delta.
 - [x] Implement reference-plugin discovery for every regular file inside the
       selected goal directory beneath the configured staging root, with bounded
       streaming SHA-256, an explicit incomplete state on skipped/changed/over-
@@ -1423,7 +1430,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       validator. The full suite passes 320 tests; Pyright, errors-only Pylint,
       Bandit, locked dependency audit, and targeted Pylint for resource/type
       checks pass. The full warning-level inventory is 272 findings, down from
-      274; repository-wide cleanup remains open.
+      274; repository-wide cleanup remains open. Additional verification
+      (2026-10-20): after adding the six-class reference-producer inventory
+      regression, the full suite passes 321 tests on Python 3.12.3. Strict
+      Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+      `git diff --check` pass. The full Pylint inventory remains at 270
+      non-blocking findings; repository-wide cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

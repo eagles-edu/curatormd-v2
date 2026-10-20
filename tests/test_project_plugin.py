@@ -550,6 +550,45 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.artifacts, (artifact,))
 
+    def test_producer_api_stages_every_supported_temporary_artifact_class(self) -> None:
+        """Inventory every temporary class after publication through the producer API."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "all-producer-classes-goal"
+        self._goal(plugin, goal_id)
+        classes = (
+            "raw-chat",
+            "cue",
+            "import",
+            "scratch",
+            "generated",
+            "duplicate",
+        )
+        payloads = {
+            artifact_class: io.BytesIO(b"same temporary bytes")
+            for artifact_class in classes
+        }
+
+        published = {
+            artifact_class: plugin.stage_artifact(
+                goal_id, artifact_class, f"artifact-{index}", payload
+            )
+            for index, (artifact_class, payload) in enumerate(payloads.items())
+        }
+        inventory = plugin.discover_staging_artifacts(goal_id)
+
+        self.assertTrue(inventory.usage.inventory_complete)
+        self.assertIsNotNone(inventory.manifest_sha256)
+        self.assertEqual(
+            {Path(item.path).parent.name for item in inventory.artifacts},
+            set(classes),
+        )
+        self.assertEqual(set(inventory.artifacts), set(published.values()))
+        self.assertEqual(
+            {item.sha256 for item in inventory.artifacts},
+            {hashlib.sha256(b"same temporary bytes").hexdigest()},
+        )
+
     def test_large_import_staging_uses_bounded_python_memory(self) -> None:
         """A large producer stream is copied in bounded chunks, not buffered whole."""
 
