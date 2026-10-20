@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `16`.
+`SQLITE_SCHEMA_VERSION` and is `17`.
 
 ## Version 1 migration
 
@@ -12,8 +12,8 @@ with `CuratorStore` runs the legacy table/column creation, column additions,
 criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
-v7, v8, v9, v10, v11, v12, v13, v14, v15, and v16 migrations below before the store is
-exposed.
+v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, and v17 migrations below before
+the store is exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
 closes its SQLite connection before propagating the error. On the next open, the
@@ -227,3 +227,15 @@ not approved by this local migration evidence. The v15-to-v16 regression
 injects an update-trigger failure, verifies both the legacy detail and version
 stamp are unchanged, then retries after removing the trigger and checks that
 only the failure detail changed.
+
+## Version 17 migration
+
+Version 17 adds a nullable semantic idempotency digest to event receipts. For
+still-retained event payloads, migration parses the bounded typed envelope and
+stores a digest over its canonical content without `occurred_at`; transport
+retries can therefore reuse an event ID when only the locally generated
+occurrence time differs. Processed legacy receipts have already discarded their
+payload and keep a null semantic digest, so they retain strict raw-payload
+digest comparison rather than guessing their original semantic identity. The
+migration and v16-to-v17 retry behavior are covered by local fixtures. This is
+not production upgrade/rollback approval.

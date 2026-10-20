@@ -155,11 +155,50 @@ class SchemaMigrationTests(unittest.TestCase):
                         ("legacy-receipt",),
                     ).fetchone()
                     version = connection.execute("PRAGMA user_version").fetchone()[0]
-                self.assertEqual(version, 16)
+                self.assertEqual(version, SQLITE_SCHEMA_VERSION)
                 self.assertEqual(row["status"], "failed")
                 self.assertEqual(row["attempts"], 3)
                 self.assertEqual(row["error"], "legacy_failure_detail_redacted")
                 self.assertNotIn("SENSITIVE_PURGE_PATH_SENTINEL", row["error"])
+            finally:
+                migrated.close()
+
+    def test_v16_migration_backfills_semantic_digest_for_retained_event(self) -> None:
+        """Backfill retry identity only while the bounded payload is retained."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v16.sqlite3"
+            store = CuratorStore(database_path)
+            event = EventEnvelope(
+                event_id="migration-replay-event",
+                project_id="migration-project",
+                payload=GoalStarted(
+                    goal_id="migration-replay-goal",
+                    problem="Preserve a received event across schema migration",
+                    success_criteria=(
+                        SuccessCriterion("verified", "The event remains retryable"),
+                    ),
+                ),
+            )
+            store.ingest_event(event)
+            store.close()
+
+            connection = sqlite3.connect(database_path)
+            connection.execute("ALTER TABLE event_inbox DROP COLUMN idempotency_sha256")
+            connection.execute("PRAGMA user_version = 16")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    row = connection.execute(
+                        "SELECT idempotency_sha256 FROM event_inbox WHERE event_id = ?",
+                        (event.event_id,),
+                    ).fetchone()
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                self.assertEqual(version, SQLITE_SCHEMA_VERSION)
+                self.assertEqual(row["idempotency_sha256"], event.idempotency_sha256)
             finally:
                 migrated.close()
 

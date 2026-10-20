@@ -1008,3 +1008,13 @@
 **Impact:** Local consumer/profile integration is verified for startup and one authorized read. No Vhost Manager source, V1 persistence, or live gateway process was changed; metadata is supplied by the test client, so authenticated identity, live gateway activation, capture, and deployment-runtime gates remain open.
 
 <!-- curatormd:record_id=9b0d6ed61a6743e5ce6b668aefd6c7ac;content_sha256=9b0d6ed61a6743e5ce6b668aefd6c7ac13942b0c03af71fccfd9074d7bfc72b8 -->
+
+## 2026-10-20 — Verify V2 semantic event retries and Vhost Manager alpha consumer
+
+**Decision:** Curator V2 now persists an occurrence-time-independent idempotency digest for bounded lifecycle events. Schema v17 backfills retained payloads; processed legacy receipts with discarded payloads keep raw-digest conflict behavior. Typed MCP tests prove exact retries remain idempotent and changed content conflicts. The full Curator suite passes 323 tests; Pyright, errors-only Pylint, Bandit, locked audit, lock validation, and `git diff --check` pass.
+
+**Rationale:** The installed local tool factory regenerated `occurred_at` for each invocation, causing exact MCP retries to conflict after the event had been processed and its payload discarded. The semantic digest preserves idempotency without treating changed event content as a retry.
+
+**Impact:** The rebuilt alpha wheel is installed in the isolated Vhost Manager profile environment. Hermes `mcp test` connects and the configured V2 read succeeds. A separate V2-only lifecycle database retains 2 goals and 5 processed event receipts after fresh stdio processes; exact goal/fact retries pass and changed payload is rejected. V2 `project_health` remains `unknown` because router, purge scheduler, host identity, human review, and producer inventory are unobserved. The normal profile database remains read-only with zero events/goals. Authenticated identity, live profile gateway delivery, capture, and deployed Vhost Manager runtime remain open; no V1 persistence or consumer application source was changed.
+
+<!-- curatormd:record_id=4ac1331d2e44a37a1e2ce157f3397212;content_sha256=4ac1331d2e44a37a1e2ce157f339721298ef494ebc6ef30dbb2593c754dac5fb -->

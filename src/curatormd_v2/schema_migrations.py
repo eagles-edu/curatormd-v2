@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 
-SQLITE_SCHEMA_VERSION = 16
+from .events import EventEnvelope
+
+SQLITE_SCHEMA_VERSION = 17
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -342,6 +344,36 @@ def migrate_content_free_purge_errors_v16(connection: sqlite3.Connection) -> Non
     connection.execute("PRAGMA user_version = 16")
 
 
+def migrate_semantic_event_replay_v17(connection: sqlite3.Connection) -> None:
+    """Retain an occurrence-time-independent event identity for transport retries."""
+
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(event_inbox)").fetchall()
+    }
+    if "idempotency_sha256" not in columns:
+        connection.execute(
+            "ALTER TABLE event_inbox ADD COLUMN idempotency_sha256 TEXT"
+        )
+    cursor = connection.execute(
+        "SELECT project_id, event_id, payload_json FROM event_inbox "
+        "WHERE payload_json IS NOT NULL"
+    )
+    while rows := cursor.fetchmany(128):
+        for row in rows:
+            try:
+                digest = EventEnvelope.from_json(row["payload_json"]).idempotency_sha256
+            except (TypeError, ValueError):
+                # Unknown legacy payloads retain the strict raw-digest fallback.
+                continue
+            connection.execute(
+                "UPDATE event_inbox SET idempotency_sha256 = ? "
+                "WHERE project_id = ? AND event_id = ?",
+                (digest, row["project_id"], row["event_id"]),
+            )
+    connection.execute("PRAGMA user_version = 17")
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -400,6 +432,9 @@ def apply_schema_migrations(
         schema_version = 15
     if schema_version == 15:
         migrate_content_free_purge_errors_v16(connection)
+        schema_version = 16
+    if schema_version == 16:
+        migrate_semantic_event_replay_v17(connection)
         return
     if schema_version != 0:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
@@ -423,3 +458,4 @@ def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     migrate_event_dispositions_v14(connection)
     migrate_fact_source_events_v15(connection)
     migrate_content_free_purge_errors_v16(connection)
+    migrate_semantic_event_replay_v17(connection)

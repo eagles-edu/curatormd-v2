@@ -216,6 +216,54 @@ class HostedMcpTests(unittest.TestCase):
             finally:
                 runtime.close()
 
+    def test_typed_mcp_event_retry_ignores_regenerated_occurrence_time(self) -> None:
+        """A new MCP invocation can safely replay a processed event identity."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding", allow_write=True)
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="gptmd-coding",
+                allow_write=True,
+            )
+            try:
+                async def exercise() -> None:
+                    async with Client(runtime.server, raise_exceptions=False) as client:
+                        arguments = {
+                            "event_id": "mcp-replay-event",
+                            "goal_id": "mcp-replay-goal",
+                            "problem": "Verify typed event retry behavior",
+                            "success_criteria": [
+                                {"criterion_id": "verified", "description": "Retry is idempotent"}
+                            ],
+                        }
+                        first = await client.call_tool(
+                            "goal_start", arguments, meta=_hermes_meta("gptmd-coding")
+                        )
+                        self.assertFalse(first.is_error)
+                        retry = await client.call_tool(
+                            "goal_start", arguments, meta=_hermes_meta("gptmd-coding")
+                        )
+                        self.assertFalse(retry.is_error)
+
+                        changed = dict(arguments)
+                        changed["problem"] = "Changed payload must conflict"
+                        conflict = await client.call_tool(
+                            "goal_start", changed, meta=_hermes_meta("gptmd-coding")
+                        )
+                        self.assertTrue(conflict.is_error)
+                        conflict_content = conflict.content[0]
+                        assert isinstance(conflict_content, TextContent)
+                        self.assertEqual(json.loads(conflict_content.text)["code"], "conflict")
+
+                asyncio.run(exercise())
+            finally:
+                runtime.close()
+
     def test_every_local_profile_tool_call_requires_matching_hermes_context(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"

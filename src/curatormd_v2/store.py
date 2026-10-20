@@ -4246,6 +4246,7 @@ class CuratorStore:
                    length(CAST(event_id AS BLOB)) +
                    length(CAST(event_type AS BLOB)) +
                    length(CAST(payload_sha256 AS BLOB)) +
+                   COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
                    length(CAST(payload_bytes AS TEXT)) +
                    COALESCE(length(CAST(payload_json AS BLOB)), 0) +
                    length(CAST(status AS BLOB)) +
@@ -4312,7 +4313,14 @@ class CuratorStore:
                 (event.project_id, event.event_id),
             ).fetchone()
             if existing is not None:
-                if existing["payload_sha256"] != payload_digest:
+                idempotency_digest = event.idempotency_sha256
+                stored_idempotency_digest = existing["idempotency_sha256"]
+                identity_changed = (
+                    existing["payload_sha256"] != payload_digest
+                    if stored_idempotency_digest is None
+                    else stored_idempotency_digest != idempotency_digest
+                )
+                if identity_changed:
                     raise ConflictError(
                         "event ID was already used with a different payload"
                     )
@@ -4325,6 +4333,7 @@ class CuratorStore:
                     event.event_id,
                     event.event_kind.value,
                     payload_digest,
+                    event.idempotency_sha256,
                     str(payload_bytes),
                     payload_json,
                     EventInboxStatus.RECEIVED.value,
@@ -4347,15 +4356,16 @@ class CuratorStore:
             connection.execute(
                 """INSERT INTO event_inbox
                    (project_id, event_id, event_type, payload_sha256, payload_bytes,
-                    payload_json, status, received_at, processed_at, last_error,
-                    source_id, source_sequence)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)""",
+                    idempotency_sha256, payload_json, status, received_at, processed_at,
+                    last_error, source_id, source_sequence)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)""",
                 (
                     event.project_id,
                     event.event_id,
                     event.event_kind.value,
                     payload_digest,
                     payload_bytes,
+                    event.idempotency_sha256,
                     payload_json,
                     EventInboxStatus.RECEIVED.value,
                     received_at,
@@ -4880,6 +4890,7 @@ class CuratorStore:
                           COALESCE(SUM(
                               length(CAST(event_id AS BLOB)) +
                               length(CAST(payload_sha256 AS BLOB)) +
+                              COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
                               length(CAST(event_type AS BLOB)) +
                               length(CAST(status AS BLOB)) +
                               length(CAST(received_at AS BLOB)) +

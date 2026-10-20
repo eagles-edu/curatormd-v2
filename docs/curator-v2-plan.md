@@ -541,7 +541,11 @@ consumer plugin, Hermes integration, or production deployment.
 - [x] Validate version-1 lifecycle event envelopes, reject unknown/duplicate
       fields and payloads over 16 KiB; persist idempotent inbox receipts and
       discard payload text after explicit processed-state transition, without
-      treating project IDs as authentication.
+      treating project IDs as authentication. Typed MCP retries now compare a
+      durable semantic digest that excludes only regenerated transport time;
+      changed event content still conflicts. Migration v17 backfills the digest
+      only for still-retained payloads, while processed legacy receipts keep
+      the strict raw-digest fallback.
 - [x] Apply supported goal/fact lifecycle events and their processed receipts
       in one SQLite transaction through a service bound to one project ID; failed
       events roll back ledger mutations and remain retryable with safe error codes.
@@ -641,7 +645,7 @@ consumer plugin, Hermes integration, or production deployment.
       supported upgrade/rollback procedures. Local non-overwriting SQLite
       backup/restore helpers and integrity tests now exist; production drills,
       migration/rollback drills for deployment data, and supported upgrade/
-      rollback policy remain open. Local migration paths through v16 are
+      rollback policy remain open. Local migration paths through v17 are
       covered; the v0-to-v1 step has an injected-rollback fixture, v1-to-v2
       preserves existing inbox receipts,
       v2-to-v3 backfills purge-target age, and v3-to-v4 adds persisted retry
@@ -667,7 +671,9 @@ consumer plugin, Hermes integration, or production deployment.
       `git diff --check` pass. This is local filesystem evidence, not a
       production backup or restore drill. Version 16 redacts legacy purge
       exception details while preserving retry state, with injected rollback
-      coverage.
+      coverage. Version 17 retains semantic event-retry digests, backfills only
+      bounded payloads still present, and is covered by migration and typed MCP
+      replay/conflict tests.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.
@@ -874,6 +880,19 @@ consumer plugin, Hermes integration, or production deployment.
       Vhost Manager application source or V1 persistence was changed, and no
       live gateway was restarted. This is local consumer/profile smoke evidence,
       not authenticated identity or live Hermes runtime proof.
+      Additional progress (2026-10-20): rebuilt the alpha wheel with schema v17
+      semantic event-retry receipts and refreshed the isolated profile venv.
+      Hermes `mcp test` discovered the configured V2 tool surface; a stdio read
+      against the actual Vhost Manager config succeeded. Using a separate
+      V2-only lifecycle smoke database and the same repository config, the
+      installed launcher processed a goal and fact, accepted both event retries
+      across fresh stdio subprocesses, and rejected changed content for a reused
+      event ID. Reopened-store activity reports 2 goals and 5 processed event
+      receipts. The V2 project's health remains `unknown` because router,
+      scheduler, host identity, human review, and producer-inventory probes are
+      unobserved. Hermes gateway status listed only the default profile; the
+      default gateway was left untouched. Authenticated identity, live profile
+      delivery, and deployed Vhost Manager runtime remain open.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects

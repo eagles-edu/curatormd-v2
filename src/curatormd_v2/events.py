@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+import hashlib
 import json
 import re
 from typing import TypeAlias, TypeVar, cast
@@ -539,6 +540,17 @@ class EventEnvelope:
         if _utf8_length(serialized) > MAX_EVENT_BYTES:
             raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
         return serialized
+
+    @property
+    def idempotency_sha256(self) -> str:
+        """Digest event identity and payload while excluding transport time."""
+
+        identity = self.to_dict()
+        identity.pop("occurred_at")
+        serialized = json.dumps(
+            identity, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     @classmethod
     def from_json(cls, serialized: str) -> EventEnvelope:
