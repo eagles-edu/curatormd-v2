@@ -332,7 +332,14 @@ class HermesHookAdapterTests(unittest.TestCase):
         from mcp.client.stdio import StdioServerParameters
         from mcp.types import TextContent
 
-        from curatormd_v2 import CuratorStore, EventDisposition, FactKind
+        from curatormd_v2 import (
+            CuratorStore,
+            EventDisposition,
+            FactKind,
+            ProjectPlugin,
+            SuccessCriterion,
+        )
+        from curatormd_v2.project_config import ProjectConfig
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
@@ -363,6 +370,25 @@ class HermesHookAdapterTests(unittest.TestCase):
             )
             (root / ".curatormd-v2.toml").chmod(0o600)
             database = root / ".curatormd-v2" / "stdio.sqlite3"
+            foreign_root = Path(temporary) / "foreign-consumer"
+            create_consumer_repo(foreign_root)
+            (foreign_root / "docs" / "tasks.md").write_text("- [ ] foreign task\n")
+            (foreign_root / "persistence" / "HISTORY.md").write_text("# Foreign history\n")
+            foreign_config = (root / ".curatormd-v2.toml").read_text().replace(
+                'project_id = "stdio-project"', 'project_id = "foreign-project"'
+            )
+            (foreign_root / ".curatormd-v2.toml").write_text(foreign_config)
+            (foreign_root / ".curatormd-v2.toml").chmod(0o600)
+            foreign_store = CuratorStore(database)
+            foreign_plugin = ProjectPlugin.bind(
+                ProjectConfig.load(foreign_root), foreign_store
+            )
+            foreign_goal = foreign_plugin.service.goal_start(
+                "A goal owned by the other configured project",
+                (SuccessCriterion("private", "Its facts remain project-scoped"),),
+                goal_id="foreign-project-goal",
+            )
+            foreign_store.close()
             profile_id = "stdio-test-subject"
             session_id = "hermes-stdio-session"
             goal_id = "hermes-stdio-goal"
@@ -498,6 +524,23 @@ class HermesHookAdapterTests(unittest.TestCase):
                         "Codex turn started for the explicitly bound goal.",
                     )
 
+                    foreign_attempt = "foreign-project-attempt"
+                    foreign_event_id = "hermes-" + hashlib.sha256(
+                        f"{source_id}\0codex:turn:start\0{foreign_attempt}".encode(
+                            "utf-8"
+                        )
+                    ).hexdigest()
+                    foreign_event = {
+                        **hook_context,
+                        "goal_id": foreign_goal.goal_id,
+                        "event_id": foreign_event_id,
+                        "source_sequence": 2,
+                        "attempt_id": foreign_attempt,
+                    }
+                    self.assertFalse(
+                        await handler("codex:turn:start", foreign_event)
+                    )
+
             asyncio.run(exercise())
             store = CuratorStore(database)
             try:
@@ -509,6 +552,9 @@ class HermesHookAdapterTests(unittest.TestCase):
                 self.assertEqual(
                     facts[-1].bullet,
                     "Codex turn started for the explicitly bound goal.",
+                )
+                self.assertEqual(
+                    store.list_facts(foreign_goal.goal_id, "foreign-project"), ()
                 )
             finally:
                 store.close()

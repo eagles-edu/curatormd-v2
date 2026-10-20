@@ -871,3 +871,13 @@
 **Impact:** Closes selected source-retention paths across V2 input validation and Markdown parsing while preserving the overall privacy gate.
 
 <!-- curatormd:record_id=25ad9d00689d1d752aab4f62d1c669d9;content_sha256=25ad9d00689d1d752aab4f62d1c669d9db055f0e083930a0220b3048fef2fee1 -->
+
+## 2026-10-20 — Verify Hermes events cannot cross project boundaries
+
+**Decision:** Curator V2's separate-process Hermes adapter acceptance test now places a goal in a second project in the shared SQLite backend, routes an outbox-shaped event for that foreign goal through the project-A MCP process, verifies the adapter does not acknowledge it, and confirms the foreign project's facts remain unchanged. Focused Hermes adapter tests pass (3), the full Curator suite passes (317), and Pyright, errors-only Pylint, Bandit, and git diff --check pass. The test uses synthetic profile identity and a stdio harness; authenticated identity, live profile wiring, and deployed behavior remain open.
+
+**Rationale:** Unit adapter filtering alone did not prove a foreign project goal remains untouched by the project-bound MCP process.
+
+**Impact:** Adds local cross-project isolation evidence for the Hermes-to-Curator process boundary without closing identity or runtime gates.
+
+<!-- curatormd:record_id=fd3f405e4a55bbc1d35500955ebe3e1e;content_sha256=fd3f405e4a55bbc1d35500955ebe3e1e05942063074adfe451e2a9bfd23499f8 -->

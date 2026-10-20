@@ -1070,7 +1070,16 @@ consumer plugin, Hermes integration, or production deployment.
       synthetic test identity; full profile/project authorization, a running
       Hermes outbox-to-Curator route, and deployment remain open.
 - [ ] Verify that profile/project selection and permission checks are explicit
-      and that events cannot cross project boundaries.
+      and that events cannot cross project boundaries. Additional progress
+      (2026-10-20): the separate-process Hermes adapter acceptance test now
+      preloads a goal under a second project in the same SQLite backend, sends
+      an outbox-shaped event for that foreign goal through the project-A Curator
+      MCP process, verifies the adapter does not acknowledge it, and confirms
+      the foreign project's facts remain unchanged. The three focused adapter
+      tests and full 317-test Curator suite pass; Pyright, errors-only Pylint,
+      Bandit, and diff checks pass. This proves local project isolation in the
+      synthetic stdio harness only; authenticated Hermes identity, live profile
+      wiring, and deployed cross-project behavior remain open.
 - [ ] Keep Host Steward inside Hermes Core. CuratorMD may receive only an
       approved cleanup result/reference when relevant; it does not own or execute
       host cleanup.
