@@ -133,6 +133,29 @@ class ProjectPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectConfigError, "not configured"):
             config.checklist_path("unknown")
 
+    def test_invalid_toml_error_does_not_retain_config_source(self) -> None:
+        """Sanitized TOML failures must not retain raw configuration text."""
+
+        self.write_config('project_id = "PRIVATE_CONFIG_CANARY\n')
+        with self.assertRaisesRegex(ProjectConfigError, "valid UTF-8 TOML") as raised:
+            ProjectConfig.load(self.root)
+        self.assertNotIn("PRIVATE_CONFIG_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_invalid_checklist_utf8_error_does_not_retain_source(self) -> None:
+        """Checklist decode failures must not retain the source bytes."""
+
+        config = ProjectConfig.load(self.root)
+        (self.root / "docs" / "tasks.md").write_bytes(
+            b"PRIVATE_CHECKLIST_CANARY\xff"
+        )
+        with self.assertRaisesRegex(ProjectConfigError, "bounded UTF-8") as raised:
+            config.checklist_snapshot("tasks", "- [ ] Example task")
+        self.assertNotIn("PRIVATE_CHECKLIST_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def test_published_project_config_fixture_loads(self) -> None:
         """Accept the checked-in config example in a matching consumer repo."""
 

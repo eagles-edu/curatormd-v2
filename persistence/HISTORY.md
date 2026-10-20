@@ -841,3 +841,13 @@
 **Impact:** Closes a bounded raw-source retention path in V2 event-input exceptions while keeping the broader privacy checklist open.
 
 <!-- curatormd:record_id=53aa3d19c379dbb8a6c2d37c7e0f077c;content_sha256=53aa3d19c379dbb8a6c2d37c7e0f077c986fa5affc70430aa973516ebfb71730 -->
+
+## 2026-10-20 — Sanitize config and checklist decoder failures
+
+**Decision:** Curator V2 configuration and checklist parsing now raise generic errors without retaining raw TOML or checklist bytes through chained decoder exceptions. Regression tests cover malformed TOML and invalid UTF-8 checklist content, including empty exception cause/context. Focused event/API/config tests pass (104), full suite passes (310), and Pyright, errors-only Pylint, Bandit, and git diff --check pass. Broader logging, archive, backup, trace, and upstream privacy review remains open.
+
+**Rationale:** TOMLDecodeError and UnicodeDecodeError can retain source text or bytes in exception fields, so wrapping them with explicit causes keeps raw material reachable.
+
+**Impact:** Closes two additional local raw-source retention paths while preserving the broader privacy gate.
+
+<!-- curatormd:record_id=0bca07a5da2111aa4c6c57d63ee83b25;content_sha256=0bca07a5da2111aa4c6c57d63ee83b2596db2d118038e7dd008cc427591dd5af -->

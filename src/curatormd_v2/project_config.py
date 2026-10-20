@@ -142,6 +142,8 @@ class ProjectConfig:
         no_follow = getattr(os, "O_NOFOLLOW", None)
         if no_follow is None:
             raise ProjectConfigError("platform lacks no-follow checklist reads")
+        read_failed = False
+        decoded = ""
         try:
             descriptor = os.open(path, os.O_RDONLY | no_follow)
             with os.fdopen(descriptor, "rb") as source:
@@ -153,9 +155,19 @@ class ProjectConfig:
                 raise ProjectConfigError(
                     f"checklist exceeds {MAX_CHECKLIST_BYTES} byte snapshot limit"
                 )
+        except OSError:
+            read_failed = True
+            contents = b""
+        if read_failed:
+            raise ProjectConfigError("checklist cannot be read as bounded UTF-8")
+        invalid_utf8 = False
+        try:
             decoded = contents.decode("utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise ProjectConfigError("checklist cannot be read as bounded UTF-8") from exc
+        except UnicodeDecodeError:
+            # UnicodeDecodeError retains the complete checklist snapshot.
+            invalid_utf8 = True
+        if invalid_utf8:
+            raise ProjectConfigError("checklist cannot be read as bounded UTF-8")
         if exact_item_text not in decoded.splitlines():
             raise ProjectConfigError(
                 "selected checklist item does not match an exact source line"
@@ -222,6 +234,7 @@ def _read_project_document(
     no_follow = getattr(os, "O_NOFOLLOW", None)
     if no_follow is None:
         raise ProjectConfigError("platform lacks no-follow project config reads")
+    read_failed = False
     try:
         descriptor = os.open(config_path, os.O_RDONLY | no_follow)
         with os.fdopen(descriptor, "rb") as source:
@@ -237,11 +250,22 @@ def _read_project_document(
                     "project config must not be group- or world-writable"
                 )
             encoded = source.read(MAX_CONFIG_BYTES + 1)
-        if len(encoded) > MAX_CONFIG_BYTES:
-            raise ProjectConfigError(f"config exceeds {MAX_CONFIG_BYTES} bytes")
+    except OSError:
+        read_failed = True
+        encoded = b""
+    if read_failed:
+        raise ProjectConfigError("project config is not valid UTF-8 TOML")
+    if len(encoded) > MAX_CONFIG_BYTES:
+        raise ProjectConfigError(f"config exceeds {MAX_CONFIG_BYTES} bytes")
+    parse_failed = False
+    document: object = {}
+    try:
         document = tomllib.loads(encoded.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        raise ProjectConfigError("project config is not valid UTF-8 TOML") from exc
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        # Both decoder exceptions retain some or all of the original config.
+        parse_failed = True
+    if parse_failed:
+        raise ProjectConfigError("project config is not valid UTF-8 TOML")
     root_table = _table(document, "root")
     _fields(root_table, _ROOT_FIELDS, optional=frozenset({"actions"}))
     version = root_table["schema_version"]

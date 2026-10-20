@@ -1223,6 +1223,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       308-test suite pass; Pyright, errors-only Pylint, Bandit, and diff checks
       pass. This covers event-input exceptions only; the wider log, trace,
       archive, backup, and upstream data-flow review remains open.
+      Further progress (2026-10-20): invalid TOML and invalid UTF-8 checklist
+      errors also no longer retain raw source through chained exceptions. New
+      regressions inspect public messages and exception cause/context. The
+      focused event/API/config suite passes 104 tests and the full suite passes
+      310; Pyright, errors-only Pylint, Bandit, and diff checks pass. This is
+      still bounded local coverage; broader privacy review remains open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
