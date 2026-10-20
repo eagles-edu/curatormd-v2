@@ -893,6 +893,10 @@ consumer plugin, Hermes integration, or production deployment.
       unobserved. Hermes gateway status listed only the default profile; the
       default gateway was left untouched. Authenticated identity, live profile
       delivery, and deployed Vhost Manager runtime remain open.
+      Hosted alpha verification (2026-10-20): GitHub Actions run
+      [39392148597](https://github.com/eagles-edu/curatormd-v2/actions/runs/39392148597)
+      passed on source commit `3ce95b9`, including the Python 3.12/3.13/3.14
+      matrix, blocking quality/security checks, and clean-wheel consumer launcher.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects

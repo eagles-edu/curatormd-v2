@@ -1018,3 +1018,13 @@
 **Impact:** The rebuilt alpha wheel is installed in the isolated Vhost Manager profile environment. Hermes `mcp test` connects and the configured V2 read succeeds. A separate V2-only lifecycle database retains 2 goals and 5 processed event receipts after fresh stdio processes; exact goal/fact retries pass and changed payload is rejected. V2 `project_health` remains `unknown` because router, purge scheduler, host identity, human review, and producer inventory are unobserved. The normal profile database remains read-only with zero events/goals. Authenticated identity, live profile gateway delivery, capture, and deployed Vhost Manager runtime remain open; no V1 persistence or consumer application source was changed.
 
 <!-- curatormd:record_id=4ac1331d2e44a37a1e2ce157f3397212;content_sha256=4ac1331d2e44a37a1e2ce157f339721298ef494ebc6ef30dbb2593c754dac5fb -->
+
+## 2026-10-20 — Pass hosted CI for Curator V2 alpha retry fix
+
+**Decision:** GitHub Actions run `39392148597` passes on Curator V2 source commit `3ce95b9`: Python 3.12/3.13/3.14 suite, blocking type/lint/security/audit checks, and clean-wheel installed consumer-launcher acceptance.
+
+**Rationale:** Hosted matrix evidence confirms the v17 event-retry change and packaged launcher beyond the local Python 3.12 run.
+
+**Impact:** The alpha retry fix is pushed and hosted CI is green. Authentication, policy, live profile delivery, and deployment gates remain open.
+
+<!-- curatormd:record_id=fd38bbb94da6e500ccee6a1385f86c79;content_sha256=fd38bbb94da6e500ccee6a1385f86c79bed798dbaa88a70d9694c8bfe5da51f4 -->
