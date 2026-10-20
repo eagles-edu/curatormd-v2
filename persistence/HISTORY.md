@@ -901,3 +901,13 @@
 **Impact:** Closes the local source/tool ownership boundary between CuratorMD and Hermes Core Host Steward while preserving deployment gates.
 
 <!-- curatormd:record_id=da4048c03294b31696678a458ff85ab7;content_sha256=da4048c03294b31696678a458ff85ab779707e076ec3c2d1263561875ded91e9 -->
+
+## 2026-10-20 — Reduce repository-wide Pylint style findings
+
+**Decision:** The current full Pylint inventory initially reported 292 findings. Curator V2 source and test formatting cleanup removed the remaining long-line, local import-order, and missing helper documentation findings, reducing the inventory to 274. The remaining findings are primarily design/interface complexity and duplicate-code warnings. The 98 affected focused tests and full 319-test suite pass; strict Pyright, errors-only Pylint, and git diff --check pass. Full warning-level cleanup remains open.
+
+**Rationale:** The current plan requires repository-wide Pylint cleanup, and the last recorded inventory predated recent source/test changes.
+
+**Impact:** Reduces warning-level Pylint findings without weakening the blocking errors-only CI gate; structural cleanup remains open.
+
+<!-- curatormd:record_id=88cbf09e2592c880a49d9a123dba2172;content_sha256=88cbf09e2592c880a49d9a123dba2172567d36e0b87ddc3c8d98530bdfc9ba15 -->

@@ -263,7 +263,8 @@ class EventContractTests(unittest.TestCase):
         duplicate_field = "PRIVATE_EVENT_CANARY"
         with self.assertRaisesRegex(ValueError, "duplicate JSON field") as raised:
             EventEnvelope.from_json(
-                '{"schema_version":1,"PRIVATE_EVENT_CANARY":1,"PRIVATE_EVENT_CANARY":1,"event_id":"e",'
+                '{"schema_version":1,"PRIVATE_EVENT_CANARY":1,'
+                '"PRIVATE_EVENT_CANARY":1,"event_id":"e",'
                 '"project_id":"p","occurred_at":"2026-10-18T00:00:00+00:00",'
                 '"event_type":"goal.started","payload":{}}'
             )
@@ -661,7 +662,11 @@ class EventInboxTests(unittest.TestCase):
         """A durable suppressed activity advances ordering and stays suppressed on replay."""
 
         class TestVerifier:
+            """Approve deterministic evidence for the lifecycle fixture."""
+
             def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
+                """Return the fixed test attestation for this evidence."""
+
                 return attest_test_evidence(evidence, context)
 
         verified_service = CuratorService(

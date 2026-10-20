@@ -69,14 +69,25 @@ class APIErrorContractTests(unittest.TestCase):
     def test_error_envelope_does_not_retain_untrusted_code_or_version(self) -> None:
         """Invalid error fields must not be echoed or retained in causes."""
 
-        with self.assertRaisesRegex(ValueError, "unsupported API error code") as code_error:
-            APIError("PRIVATE_ERROR_CODE_CANARY", "The request could not be completed.")  # type: ignore[arg-type]
+        with self.assertRaisesRegex(
+            ValueError, "unsupported API error code"
+        ) as code_error:
+            APIError(
+                "PRIVATE_ERROR_CODE_CANARY",  # type: ignore[arg-type]
+                "The request could not be completed.",
+            )
         self.assertNotIn("PRIVATE_ERROR_CODE_CANARY", str(code_error.exception))
         self.assertIsNone(code_error.exception.__cause__)
         self.assertIsNone(code_error.exception.__context__)
 
-        with self.assertRaisesRegex(ValueError, "unsupported error schema version") as version_error:
-            APIError(APIErrorCode.INTERNAL_ERROR, "The request could not be completed.", "PRIVATE_VERSION_CANARY")  # type: ignore[arg-type]
+        with self.assertRaisesRegex(
+            ValueError, "unsupported error schema version"
+        ) as version_error:
+            APIError(
+                APIErrorCode.INTERNAL_ERROR,
+                "The request could not be completed.",
+                "PRIVATE_VERSION_CANARY",  # type: ignore[arg-type]
+            )
         self.assertNotIn("PRIVATE_VERSION_CANARY", str(version_error.exception))
         self.assertIsNone(version_error.exception.__cause__)
         self.assertIsNone(version_error.exception.__context__)

@@ -343,7 +343,7 @@ def build_mcp_server(
         context: dict[str, str],
         ctx: MCPContext,
     ) -> str:
-        """Translate and ingest one exact host-outbox event for this active session goal."""
+        """Translate one exact host-outbox event for the active session goal."""
         metadata = ctx.request_context.meta
         profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
         session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
@@ -351,7 +351,9 @@ def build_mcp_server(
         if not isinstance(profile_id, str) or profile_id != caller.subject_id:
             raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
         if durable_event is not True:
-            raise PermissionError("Codex lifecycle ingestion requires a host-dispatched durable event")
+            raise PermissionError(
+                "Codex lifecycle ingestion requires a host-dispatched durable event"
+            )
         if not isinstance(session_id, str) or not _HERMES_SESSION_ID_RE.fullmatch(session_id):
             raise PermissionError("trusted Hermes session context is unavailable")
         source_id = "hermes-" + hashlib.sha256(

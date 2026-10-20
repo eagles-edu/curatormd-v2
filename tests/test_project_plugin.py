@@ -17,6 +17,8 @@ from threading import Event, Lock
 from typing import BinaryIO, cast
 from unittest.mock import patch
 
+from project_fixtures import create_consumer_repo
+
 from curatormd_v2 import CuratorStore, SuccessCriterion
 from curatormd_v2.events import EventEnvelope, GoalStarted
 from curatormd_v2.project_config import (
@@ -28,7 +30,6 @@ from curatormd_v2.project_config import (
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
 from curatormd_v2.testing import assert_goal_started_event_contract
-from project_fixtures import create_consumer_repo
 
 
 class ProjectPluginTests(unittest.TestCase):
@@ -560,6 +561,8 @@ class ProjectPluginTests(unittest.TestCase):
                 self.max_read_size = 0
 
             def read(self, size: int = -1) -> bytes:
+                """Return one bounded chunk from the generated fixture input."""
+
                 if size < 0 or size > 64 * 1024:
                     raise AssertionError("staging must request at most a 64 KiB chunk")
                 self.max_read_size = max(self.max_read_size, size)

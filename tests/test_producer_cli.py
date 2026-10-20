@@ -12,10 +12,11 @@ import sys
 import tempfile
 import unittest
 
+from project_fixtures import create_consumer_repo
+
 from curatormd_v2 import CuratorStore, SuccessCriterion
 from curatormd_v2.project_config import ProjectConfig
 from curatormd_v2.project_plugin import ProjectPlugin
-from project_fixtures import create_consumer_repo
 
 
 class ProducerCliTests(unittest.TestCase):

@@ -179,7 +179,9 @@ class McpServerTests(unittest.TestCase):
                 async def exercise() -> None:
                     async with Client(server, raise_exceptions=True) as client:
                         tools = await client.list_tools()
-                        binding_tool = next(tool for tool in tools.tools if tool.name == "hermes_goal_bind")
+                        binding_tool = next(
+                            tool for tool in tools.tools if tool.name == "hermes_goal_bind"
+                        )
                         self.assertNotIn("ctx", binding_tool.input_schema["properties"])
 
                         started = await client.call_tool(

@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from project_fixtures import create_consumer_repo
+
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.types import RequestParamsMeta, TextContent
@@ -29,12 +31,12 @@ from curatormd_v2 import (
 )
 from curatormd_v2.hosted_mcp import build_local_profile_mcp
 from curatormd_v2.mcp_server import safe_tool_handler
-from project_fixtures import create_consumer_repo
-
 
 def _hermes_meta(
     profile_id: str, session_id: str = "test-session"
 ) -> RequestParamsMeta:
+    """Build synthetic Hermes context metadata for boundary tests."""
+
     return {
         "hermes/profile_id": profile_id,
         "hermes/session_id": session_id,
@@ -48,6 +50,8 @@ class _TestProjectAdmin:
         project_id: str,
         action: ProjectAdministrationAction,
     ) -> bool:
+        """Allow administration only to the explicitly named test operator."""
+
         return (
             caller.subject_id == "test-operator"
             and bool(project_id)

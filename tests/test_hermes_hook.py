@@ -11,8 +11,8 @@ import tempfile
 import unittest
 from typing import cast
 
-from curatormd_v2.hermes_hook import build_hermes_hook_handler
 from project_fixtures import create_consumer_repo
+from curatormd_v2.hermes_hook import build_hermes_hook_handler
 
 
 class HermesHookAdapterTests(unittest.TestCase):
@@ -79,7 +79,11 @@ class HermesHookAdapterTests(unittest.TestCase):
                 "cwd": "/private/repo",
             }
 
-            self.assertIsNone(asyncio.run(handle("codex:turn:start", {**event, "project_id": "project-b"})))
+            self.assertIsNone(
+                asyncio.run(
+                    handle("codex:turn:start", {**event, "project_id": "project-b"})
+                )
+            )
             self.assertTrue(asyncio.run(handle("codex:turn:start", event)))
             self.assertEqual(len(calls), 1)
             server, tool, arguments, kwargs = calls[0]
@@ -130,12 +134,17 @@ class HermesHookAdapterTests(unittest.TestCase):
         )
 
         class OnlyProject:
+            """Authorize only the bound test project for this process fixture."""
+
             def authorize(
                 self,
                 caller: AuthenticatedCaller,
                 project_id: str,
                 action: ProjectAction,
             ) -> bool:
+                """Reject every identity or project outside the fixture scope."""
+
+                del action
                 return caller.subject_id == "host-subject" and project_id == "project-a"
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -192,7 +201,10 @@ class HermesHookAdapterTests(unittest.TestCase):
                                 "goal_id": "hermes-e2e-goal",
                                 "problem": "Exercise durable Hermes event ingestion",
                                 "success_criteria": [
-                                    {"criterion_id": "c1", "description": "A typed fact is recorded"}
+                                    {
+                                        "criterion_id": "c1",
+                                        "description": "A typed fact is recorded",
+                                    }
                                 ],
                                 "source_sequence": 1,
                             },

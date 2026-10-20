@@ -1391,6 +1391,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
       pass. The full warning-level inventory fell from 274 to 272 findings at
       9.79/10 (exit 28); repository-wide cleanup remains open.
+      Further progress (2026-10-20): wrapped the newest long lines, corrected
+      local fixture import ordering, and documented nested test helpers. A
+      fresh full-Pylint JSON inventory falls from 292 to 274 findings; the
+      remaining findings are mainly interface/complexity, duplicate-code, and
+      design warnings. The 98 focused affected tests and 319-test full suite
+      pass; strict Pyright, errors-only Pylint, and `git diff --check` pass.
+      Full warning-level cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.
