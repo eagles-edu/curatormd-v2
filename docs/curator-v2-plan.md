@@ -1080,9 +1080,15 @@ consumer plugin, Hermes integration, or production deployment.
       Bandit, and diff checks pass. This proves local project isolation in the
       synthetic stdio harness only; authenticated Hermes identity, live profile
       wiring, and deployed cross-project behavior remain open.
-- [ ] Keep Host Steward inside Hermes Core. CuratorMD may receive only an
+- [x] Keep Host Steward inside Hermes Core. CuratorMD may receive only an
       approved cleanup result/reference when relevant; it does not own or execute
-      host cleanup.
+      host cleanup. Progress (2026-10-20): Curator's real stdio MCP tool list
+      explicitly excludes Host Steward inventory and cleanup tools; Hermes
+      Core's 19 focused Host Steward tests pass, including a named-project
+      profile isolation check, and `python scripts/check` passes all 12 checks.
+      Curator source contains no Host Steward executor or registration. This
+      proves the local code ownership boundary only; live root-account
+      installation and runtime isolation remain open in the deployment gate.
 - [ ] Host Steward inventory attributes filesystem/service growth to known
       owners and labels unknown growth instead of deleting it.
       Progress (2026-10-19): the Hermes Core source checkout now contains an

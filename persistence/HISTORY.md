@@ -891,3 +891,13 @@
 **Impact:** Closes two local untrusted-value disclosure paths while preserving the broader privacy gate.
 
 <!-- curatormd:record_id=2d31062e5f5d91d2bf3e91b2951a0a5a;content_sha256=2d31062e5f5d91d2bf3e91b2951a0a5a57686ac034e5f2ac716bd1be4e52998f -->
+
+## 2026-10-20 — Verify Host Steward stays owned by Hermes Core
+
+**Decision:** Curator's real stdio MCP tool catalog now explicitly excludes Host Steward inventory/proposal/cleanup/receipt/reconciliation tools. Hermes Core Host Steward tests pass (19), including named project profile tool isolation, and Hermes scripts/check passes all 12 checks. Curator's full suite passes 319; strict Pyright, errors-only Pylint, Bandit, locked audit, and git diff --check pass. This verifies local code ownership only; live root-account installation and runtime isolation remain open.
+
+**Rationale:** The V2 plan requires Host Steward to remain in Hermes Core's root account and forbids Curator from owning or executing host cleanup.
+
+**Impact:** Closes the local source/tool ownership boundary between CuratorMD and Hermes Core Host Steward while preserving deployment gates.
+
+<!-- curatormd:record_id=da4048c03294b31696678a458ff85ab7;content_sha256=da4048c03294b31696678a458ff85ab779707e076ec3c2d1263561875ded91e9 -->

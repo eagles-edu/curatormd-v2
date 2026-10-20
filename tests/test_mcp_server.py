@@ -1492,6 +1492,15 @@ class McpServerTests(unittest.TestCase):
                 async with Client(parameters, raise_exceptions=True) as client:
                     tool_result = await client.list_tools()
                     tool_names = [tool.name for tool in tool_result.tools]
+                    self.assertTrue(
+                        {
+                            "host_inventory",
+                            "host_proposals",
+                            "host_cleanup",
+                            "host_cleanup_receipts",
+                            "host_cleanup_reconcile",
+                        }.isdisjoint(tool_names)
+                    )
                     goal_start_tool = next(
                         tool for tool in tool_result.tools if tool.name == "goal_start"
                     )
