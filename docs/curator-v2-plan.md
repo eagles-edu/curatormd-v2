@@ -1078,6 +1078,15 @@ consumer plugin, Hermes integration, or production deployment.
       the adapter has no targeted branch/return/statement-count findings. The
       full warning-level inventory fell from 272 to 270; the adapter still has
       only synthetic Hermes identity and no live profile activation.
+      Additional Hermes Core test progress (2026-10-20): a gateway regression
+      now binds a session/goal in the profile-local outbox, persists a bounded
+      Codex event, dispatches it through a real durable hook handler receiving
+      public `ctx`, calls the allowlisted managed MCP handler with session and
+      durable-event context, and acknowledges only the processed receipt. The
+      12-test hook module and all 12 Hermes `scripts/check` checks pass. The
+      MCP handler factory is stubbed at its connection seam; this does not
+      exercise a configured Curator stdio process, authenticated identity, or
+      live profile activation.
 - [ ] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries. Additional progress
       (2026-10-20): the separate-process Hermes adapter acceptance test now
