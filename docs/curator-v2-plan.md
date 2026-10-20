@@ -1291,7 +1291,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
       pass. Full warning-level Pylint is down from 276 to 274 findings and
       rates the repository at 9.79/10 (exit 28). The repository-wide cleanup
-      remains open.
+      remains open. Additional progress (2026-10-20): extracted cancellation
+      and supersession request validation, replacement ancestry checks, and
+      child/dependency guards from `CuratorStore.retire_goal`, keeping the same
+      transaction boundary and check order. The focused lifecycle and event
+      suites pass 76 tests; the full suite passes 303. Strict Pyright,
+      errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
+      pass. The full warning-level inventory fell from 274 to 272 findings at
+      9.79/10 (exit 28); repository-wide cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

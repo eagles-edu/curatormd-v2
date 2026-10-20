@@ -220,6 +220,99 @@ def _attestation_to_dict(attestation: EvidenceAttestation) -> dict[str, str]:
     }
 
 
+def _validate_retirement_request(
+    goal_id: str,
+    status: GoalStatus,
+    reason: str,
+    fact: Fact,
+    replacement_goal_id: str | None,
+) -> None:
+    """Validate the immutable inputs for a cancellation or supersession."""
+
+    if status not in {GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}:
+        raise ValueError("retirement status must be cancelled or superseded")
+    if not reason.strip() or len(reason) > 500 or "\n" in reason or "\r" in reason:
+        raise ValueError("retirement requires a single-line reason of at most 500 characters")
+    expected_kind = (
+        FactKind.CANCELLED if status is GoalStatus.CANCELLED else FactKind.SUPERSEDED
+    )
+    if fact.goal_id != goal_id or fact.kind is not expected_kind:
+        raise ConflictError("retirement transition requires its matching system fact")
+    if (status is GoalStatus.SUPERSEDED) != (replacement_goal_id is not None):
+        raise ValueError("only supersession has a replacement goal")
+    if replacement_goal_id == goal_id:
+        raise ValueError("a goal cannot supersede itself")
+
+
+def _validate_replacement_goal(
+    connection: sqlite3.Connection,
+    goal_id: str,
+    project_id: str,
+    replacement_goal_id: str | None,
+) -> None:
+    """Require a same-project active replacement outside the retired subtree."""
+
+    if replacement_goal_id is None:
+        return
+    replacement = connection.execute(
+        "SELECT project_id, status, parent_goal_id FROM goals WHERE goal_id = ?",
+        (replacement_goal_id,),
+    ).fetchone()
+    if replacement is None or replacement["project_id"] != project_id:
+        raise ConflictError("replacement goal must exist in the same project")
+    if GoalStatus(replacement["status"]) is not GoalStatus.ACTIVE:
+        raise ConflictError("replacement goal must be active")
+    ancestor_id = replacement["parent_goal_id"]
+    while ancestor_id is not None:
+        if ancestor_id == goal_id:
+            raise ConflictError("a goal cannot be superseded by its descendant")
+        ancestor = connection.execute(
+            "SELECT parent_goal_id FROM goals WHERE goal_id = ? AND project_id = ?",
+            (ancestor_id, project_id),
+        ).fetchone()
+        if ancestor is None:
+            raise ConflictError("replacement goal has a broken parent chain")
+        ancestor_id = ancestor["parent_goal_id"]
+
+
+def _validate_retirement_relationships(
+    connection: sqlite3.Connection, goal_id: str, project_id: str
+) -> None:
+    """Reject retirement while this goal has unresolved children or dependents."""
+
+    active_children = connection.execute(
+        "SELECT goal_id FROM goals WHERE parent_goal_id = ? AND status NOT IN (?, ?, ?)",
+        (
+            goal_id,
+            GoalStatus.COMPLETE.value,
+            GoalStatus.CANCELLED.value,
+            GoalStatus.SUPERSEDED.value,
+        ),
+    ).fetchall()
+    if active_children:
+        raise ConflictError(
+            "resolve child goals before cancelling or superseding their parent: "
+            + ", ".join(child["goal_id"] for child in active_children)
+        )
+    dependent_rows = connection.execute(
+        "SELECT goal_id, depends_on_json, status FROM goals "
+        "WHERE project_id = ? AND goal_id != ?",
+        (project_id, goal_id),
+    ).fetchall()
+    active_dependents = tuple(
+        dependent["goal_id"]
+        for dependent in dependent_rows
+        if GoalStatus(dependent["status"])
+        not in {GoalStatus.COMPLETE, GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}
+        and goal_id in json.loads(dependent["depends_on_json"])
+    )
+    if active_dependents:
+        raise ConflictError(
+            "resolve dependent goals before retiring this dependency: "
+            + ", ".join(active_dependents)
+        )
+
+
 class CuratorStore:
     """Thread-safe SQLite store using short, explicit write transactions."""
 
@@ -1762,19 +1855,9 @@ class CuratorStore:
     ) -> GoalCard:
         """Atomically cancel or supersede a live goal with an immutable fact."""
 
-        if status not in {GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}:
-            raise ValueError("retirement status must be cancelled or superseded")
-        if not reason.strip() or len(reason) > 500 or "\n" in reason or "\r" in reason:
-            raise ValueError("retirement requires a single-line reason of at most 500 characters")
-        expected_kind = (
-            FactKind.CANCELLED if status is GoalStatus.CANCELLED else FactKind.SUPERSEDED
+        _validate_retirement_request(
+            goal_id, status, reason, fact, replacement_goal_id
         )
-        if fact.goal_id != goal_id or fact.kind is not expected_kind:
-            raise ConflictError("retirement transition requires its matching system fact")
-        if (status is GoalStatus.SUPERSEDED) != (replacement_goal_id is not None):
-            raise ValueError("only supersession has a replacement goal")
-        if replacement_goal_id == goal_id:
-            raise ValueError("a goal cannot supersede itself")
         with self._transaction() as connection:
             row = connection.execute(
                 "SELECT status, project_id FROM goals WHERE goal_id = ?", (goal_id,)
@@ -1788,57 +1871,10 @@ class CuratorStore:
             }:
                 raise ConflictError("terminal goals cannot be cancelled or superseded")
             project = row["project_id"]
-            if replacement_goal_id is not None:
-                replacement = connection.execute(
-                    "SELECT project_id, status, parent_goal_id FROM goals WHERE goal_id = ?",
-                    (replacement_goal_id,),
-                ).fetchone()
-                if replacement is None or replacement["project_id"] != project:
-                    raise ConflictError("replacement goal must exist in the same project")
-                if GoalStatus(replacement["status"]) is not GoalStatus.ACTIVE:
-                    raise ConflictError("replacement goal must be active")
-                ancestor_id = replacement["parent_goal_id"]
-                while ancestor_id is not None:
-                    if ancestor_id == goal_id:
-                        raise ConflictError("a goal cannot be superseded by its descendant")
-                    ancestor = connection.execute(
-                        "SELECT parent_goal_id FROM goals WHERE goal_id = ? AND project_id = ?",
-                        (ancestor_id, project),
-                    ).fetchone()
-                    if ancestor is None:
-                        raise ConflictError("replacement goal has a broken parent chain")
-                    ancestor_id = ancestor["parent_goal_id"]
-            active_children = connection.execute(
-                "SELECT goal_id FROM goals WHERE parent_goal_id = ? AND status NOT IN (?, ?, ?)",
-                (
-                    goal_id,
-                    GoalStatus.COMPLETE.value,
-                    GoalStatus.CANCELLED.value,
-                    GoalStatus.SUPERSEDED.value,
-                ),
-            ).fetchall()
-            if active_children:
-                raise ConflictError(
-                    "resolve child goals before cancelling or superseding their parent: "
-                    + ", ".join(child["goal_id"] for child in active_children)
-                )
-            dependent_rows = connection.execute(
-                "SELECT goal_id, depends_on_json, status FROM goals "
-                "WHERE project_id = ? AND goal_id != ?",
-                (project, goal_id),
-            ).fetchall()
-            active_dependents = tuple(
-                dependent["goal_id"]
-                for dependent in dependent_rows
-                if GoalStatus(dependent["status"])
-                not in {GoalStatus.COMPLETE, GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}
-                and goal_id in json.loads(dependent["depends_on_json"])
+            _validate_replacement_goal(
+                connection, goal_id, project, replacement_goal_id
             )
-            if active_dependents:
-                raise ConflictError(
-                    "resolve dependent goals before retiring this dependency: "
-                    + ", ".join(active_dependents)
-                )
+            _validate_retirement_relationships(connection, goal_id, project)
             self._append_fact(connection, fact, project_id)
             connection.execute(
                 "UPDATE goals SET status = ?, next_action = NULL, "

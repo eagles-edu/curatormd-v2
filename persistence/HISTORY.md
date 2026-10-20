@@ -724,3 +724,18 @@
   274 findings and reports 9.79/10 (exit 28).
 - Open: Repository-wide warning-level Pylint cleanup, authenticated Hermes
   identity, live gateway delivery, and deployment remain unverified.
+
+## 2026-10-20 — Goal retirement transaction decomposition
+
+- Intent: Clarify the validation stages in goal cancellation and supersession
+  without weakening their atomic lifecycle rules.
+- Changed: Extracted immutable request checks, same-project active replacement
+  and ancestry validation, and unresolved child/dependency guards into named
+  store helpers. `retire_goal` still runs relational checks, fact append, and
+  state update in one transaction with the original check ordering.
+- Verified: The focused lifecycle and event suites pass 76 tests; the full
+  303-test suite passes. Strict Pyright, errors-only Pylint, Bandit, locked
+  dependency audit, and `git diff --check` pass. Full warning-level Pylint fell
+  from 274 to 272 findings and remains 9.79/10 (exit 28).
+- Open: Repository-wide structural findings and all external identity,
+  retention-policy, and deployment gates remain open.
