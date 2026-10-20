@@ -864,6 +864,16 @@ consumer plugin, Hermes integration, or production deployment.
       This verifies the current wheel/config compatibility and least-privilege
       path, not the already-running Hermes process (which uses the V2 source
       checkout), package release, event capture, or production integration.
+      Alpha consumer progress (2026-10-20): installed the `0.1.0a1` wheel
+      in an isolated `renew-ssl-coding` Hermes profile environment and added a
+      repository-owned `.curatormd-v2.toml` for the Vhost Manager checkout,
+      with dedicated V2 staging/persistence paths and a separate test database.
+      The profile selects five read-only tools, has no write grant, and omits
+      `--allow-write`. Hermes `mcp test` connects; a stdio `goal_list` call with
+      supplied matching profile/session metadata returns an empty list. No
+      Vhost Manager application source or V1 persistence was changed, and no
+      live gateway was restarted. This is local consumer/profile smoke evidence,
+      not authenticated identity or live Hermes runtime proof.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects

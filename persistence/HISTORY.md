@@ -998,3 +998,13 @@
 **Impact:** The alpha candidate is ready for a controlled consumer integration test. No package was published and no consumer, live Hermes profile, deployment, identity, retention, or capture gate was enabled; those remain open.
 
 <!-- curatormd:record_id=daedad2856eac9ed665a022fe5e6e86a;content_sha256=daedad2856eac9ed665a022fe5e6e86a7f77e5210d9f90b7112e17f4eee1b34a -->
+
+## 2026-10-20 — Install Curator V2 alpha in the Vhost Manager test profile
+
+**Decision:** Installed the local `0.1.0a1` wheel in an isolated `renew-ssl-coding` Hermes profile environment. The Vhost Manager repository now has a repository-owned `.curatormd-v2.toml` with a unique V2 project ID, read scope limited to `vhost-manager/` and `docs/`, and separate V2 staging and Markdown persistence paths. The profile uses a separate test database, selects five read-only tools, omits `--allow-write`, and has only a durable read grant. Hermes `mcp test` connected to the packaged launcher; a stdio `goal_list` read with supplied matching profile/session metadata returned no goals.
+
+**Rationale:** Verify the alpha package and local repository plugin against the intended first consumer without changing its application source or reusing V1 state.
+
+**Impact:** Local consumer/profile integration is verified for startup and one authorized read. No Vhost Manager source, V1 persistence, or live gateway process was changed; metadata is supplied by the test client, so authenticated identity, live gateway activation, capture, and deployment-runtime gates remain open.
+
+<!-- curatormd:record_id=9b0d6ed61a6743e5ce6b668aefd6c7ac;content_sha256=9b0d6ed61a6743e5ce6b668aefd6c7ac13942b0c03af71fccfd9074d7bfc72b8 -->
