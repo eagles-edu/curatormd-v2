@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
-import importlib
 import json
 from pathlib import Path
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
@@ -17,6 +17,7 @@ _EVENT_CONTEXT_FIELDS = frozenset(
 )
 _SUPPORTED_EVENTS = frozenset({"codex:turn:start", "codex:turn:end"})
 ToolCall = Callable[..., str | Awaitable[str]]
+MCPCall = Callable[..., object]
 HermesHook = Callable[
     [str, Mapping[str, Any]], Coroutine[Any, Any, bool | None]
 ]
@@ -27,14 +28,16 @@ def build_hermes_hook_handler(
     server_name: str,
     *,
     timeout_seconds: float = 30.0,
+    call_mcp: MCPCall | None = None,
     call_tool: ToolCall | None = None,
 ) -> HermesHook:
     """Create a trusted local hook handler bound to one repository's plugin config.
 
     ``None`` means the event belongs to another configured project hook;
     literal ``True`` acknowledges a durable Curator receipt; ``False`` asks the
-    Hermes outbox to retain and retry the event. The normal implementation
-    calls the already-connected, operator-configured local MCP server.
+    Hermes outbox to retain and retry the event. A Hermes gateway hook passes
+    its public ``ctx.call_mcp`` capability. ``call_tool`` is retained only as
+    an in-process test seam for the adapter's asynchronous fixtures.
     """
     config = ProjectConfig.load(project_root)
     if not server_name.strip() or len(server_name) > 128:
@@ -42,17 +45,10 @@ def build_hermes_hook_handler(
     if timeout_seconds <= 0 or timeout_seconds > 300:
         raise ValueError("timeout_seconds must be between 0 and 300")
 
-    tool_call = call_tool
-    if tool_call is None:
-        # This adapter is imported by Hermes' in-process gateway hook loader.
-        # Keep the Hermes dependency lazy so Curator's backend remains usable
-        # from ordinary CLI/MCP deployments.
-        handlers = importlib.import_module("tools.mcp_tool_handlers")
-        make_tool_handler = cast(
-            Callable[[str, str, float], Callable[..., str]],
-            getattr(handlers, "_make_tool_handler"),
-        )
-        tool_call = make_tool_handler(server_name, "hermes_codex_event", timeout_seconds)
+    if call_mcp is not None and call_tool is not None:
+        raise ValueError("provide only one MCP call adapter")
+    if call_mcp is None and call_tool is None:
+        raise ValueError("a Hermes hook context call_mcp capability is required")
 
     async def handle(event_type: str, hook_context: Mapping[str, Any]) -> bool | None:
         if event_type not in _SUPPORTED_EVENTS:
@@ -75,20 +71,39 @@ def build_hermes_hook_handler(
             }
             if context.get("session_id") != hook_context.get("session_id"):
                 return False
-            raw_response = tool_call(
-                payload,
-                session_id=context["session_id"],
-                hermes_durable_event=True,
-            )
-            if inspect.isawaitable(raw_response):
-                response = await raw_response
+            if call_mcp is not None:
+                response = await asyncio.to_thread(
+                    call_mcp,
+                    server_name,
+                    "hermes_codex_event",
+                    payload,
+                    timeout=timeout_seconds,
+                    session_id=context["session_id"],
+                    hermes_durable_event=True,
+                )
+                if not isinstance(response, Mapping):
+                    return False
+                response_envelope = cast(Mapping[str, Any], response)
+                if (
+                    response_envelope.get("ok") is not True
+                    or response_envelope.get("truncated") is True
+                ):
+                    return False
+                result: object = response_envelope.get("result")
             else:
-                response = raw_response
-            decoded: object = json.loads(response)
-            if not isinstance(decoded, dict) or "error" in decoded:
-                return False
-            envelope = cast(dict[str, Any], decoded)
-            result: object = envelope.get("result")
+                if call_tool is None:
+                    return False
+                raw_response = call_tool(
+                    payload,
+                    session_id=context["session_id"],
+                    hermes_durable_event=True,
+                )
+                if inspect.isawaitable(raw_response):
+                    raw_response = await raw_response
+                decoded: object = json.loads(raw_response)
+                if not isinstance(decoded, dict) or "error" in decoded:
+                    return False
+                result = cast(dict[str, Any], decoded).get("result")
             if isinstance(result, str):
                 result = json.loads(result)
             if not isinstance(result, dict):

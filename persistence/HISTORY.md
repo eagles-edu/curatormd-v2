@@ -782,3 +782,16 @@
 - Open: This does not launch Hermes or its durable outbox; profile metadata is
   synthetic. Live gateway dispatch, authenticated identity, and deployment
   remain open.
+
+## 2026-10-20 — Hermes public hook MCP context for Curator lifecycle delivery
+
+**Decision:** - Intent: Route the Curator V2 Hermes adapter through a supported Hermes gateway hook API.
+- Changed: Added a public profile-scoped hook `ctx.call_mcp` capability with per-hook default-deny allowlists, bounded session context, and delegation to Hermes' existing managed MCP handler; extended PluginContext.call_mcp additively. The Curator adapter now requires the injected public capability and retains an asynchronous test seam only for in-memory fixtures.
+- Verified: Hermes focused hook/MCP/trust tests passed (52), Ruff and `scripts/check` (12 checks) passed. Curator's full suite passed (304), the Hermes adapter suite passed (3), Pyright reported 0 diagnostics, and errors-only Pylint, Bandit, and both `git diff --check` checks passed. The adapter acceptance test uses the public call shape across a separate Curator stdio MCP process and verifies duplicate delivery leaves one durable fact and receipt.
+- Open: Profile identity in tests is synthetic. Authenticated Hermes identity, real gateway/outbox delivery, deployment, and production permission binding remain open.
+
+**Rationale:** The existing Curator adapter imported a private Hermes handler. Hermes gateway hooks do not receive PluginContext, so the integration needs an explicit public per-hook capability.
+
+**Impact:** Improves adapter compatibility with Hermes' documented gateway hook surface while retaining default-deny MCP grants and host-derived profile metadata.
+
+<!-- curatormd:record_id=06ed8fb52610c2f5925d5a62e1bda8f2;content_sha256=06ed8fb52610c2f5925d5a62e1bda8f2df60191fd5eef3a17dfeef3f82038e99 -->

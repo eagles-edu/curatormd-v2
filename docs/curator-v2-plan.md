@@ -1045,6 +1045,20 @@ consumer plugin, Hermes integration, or production deployment.
       identity, and deployment remain unverified.
 - [ ] Integrate profiles, runtime, global router, managed MCP gateway, and
       project-scoped plugin bindings under the Hermes Core account boundary.
+      Additional progress (2026-10-20): Hermes gateway hooks now receive a
+      public profile-scoped `ctx.call_mcp` capability only when a handler
+      declares it. Calls are default-deny under a per-hook MCP allowlist and
+      still pass through Hermes' managed MCP handler and local-stdio trust gate;
+      profile identity remains host-derived. Curator's adapter now requires
+      this public capability and no longer imports Hermes private internals.
+      Its separate-process acceptance test uses the public call shape to send
+      an event through Curator stdio MCP, retries it, and verifies one durable
+      fact/receipt. The Curator suite passes 304 tests, Pyright reports zero
+      diagnostics, and Bandit, errors-only Pylint, and `git diff --check` pass.
+      Hermes' 52 focused tests, Ruff, `scripts/check` (12 checks), and
+      `git diff --check` pass. These are local source/process checks using
+      synthetic test identity; full profile/project authorization, a running
+      Hermes outbox-to-Curator route, and deployment remain open.
 - [ ] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries.
 - [ ] Keep Host Steward inside Hermes Core. CuratorMD may receive only an

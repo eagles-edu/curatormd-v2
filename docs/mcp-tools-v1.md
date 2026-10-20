@@ -144,17 +144,45 @@ durable_events: [codex:turn:start, codex:turn:end]
 # <Hermes profile home>/hooks/curator-v2/handler.py
 from curatormd_v2.hermes_hook import build_hermes_hook_handler
 
-handle = build_hermes_hook_handler(
-    "/path/to/consumer-repository",
-    "curatormd_v2",
-)
+PROJECT_ROOT = "/path/to/consumer-repository"
+MCP_SERVER = "curatormd_v2"
+
+async def handle(event_type, context, *, ctx):
+    adapter = build_hermes_hook_handler(
+        PROJECT_ROOT,
+        MCP_SERVER,
+        call_mcp=ctx.call_mcp,
+    )
+    return await adapter(event_type, context)
+```
+
+The profile operator grants this hook access to exactly its configured MCP
+server using `hooks.entries.curator-v2.mcp_allowlist` in `config.yaml`. The MCP
+server must use a local stdio command with `hermes_context = true` and the
+configured `hermes_project_id`; Hermes derives the profile ID and forwards only
+the host-provided session and durable-event marker. The adapter has no private
+Hermes imports and requires the public hook `ctx.call_mcp` capability.
+
+```yaml
+# <Hermes profile home>/config.yaml
+hooks:
+  entries:
+    curator-v2:
+      mcp_allowlist: [curatormd_v2]
+mcp:
+  servers:
+    curatormd_v2:
+      command: curatormd-v2-mcp
+      args: [--project-root, /path/to/consumer-repository, --database, /path/to/profile/curator-v2.sqlite3]
+      hermes_context: true
+      hermes_project_id: example-project
 ```
 
 The adapter reads the repository-owned `.curatormd-v2.toml`, ignores events
 bound to other project IDs, and calls the already-connected local MCP server's
-`hermes_codex_event` tool. Hermes host metadata supplies the current profile and
-session; a separate host-only `_meta` marker distinguishes durable dispatch
-from a model-authored call. `hermes_goal_bind` validates an explicit active
+`hermes_codex_event` tool through `ctx.call_mcp`. Hermes host metadata supplies
+the current profile and session; a separate host-only `_meta` marker
+distinguishes durable dispatch from a model-authored call. `hermes_goal_bind` validates an explicit active
 goal, while successful goal activation can bind the goal automatically in the
 profile-local outbox. The Codex event tool accepts only that host-dispatched
 marker and verifies deterministic event identity. Curator atomically records

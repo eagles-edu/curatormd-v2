@@ -52,15 +52,21 @@ class HermesHookAdapterTests(unittest.TestCase):
                 """
             )
             (root / ".curatormd-v2.toml").chmod(0o600)
-            calls: list[tuple[dict[str, object], dict[str, object]]] = []
+            calls: list[tuple[str, str, dict[str, object], dict[str, object]]] = []
 
-            def call_tool(arguments: dict[str, object], **kwargs: object) -> str:
-                calls.append((arguments, kwargs))
-                return json.dumps(
-                    {"result": json.dumps({"project_id": "project-a", "status": "processed"})}
-                )
+            def call_mcp(
+                server: str,
+                tool: str,
+                arguments: dict[str, object],
+                **kwargs: object,
+            ) -> dict[str, object]:
+                calls.append((server, tool, arguments, kwargs))
+                return {
+                    "ok": True,
+                    "result": {"project_id": "project-a", "status": "processed"},
+                }
 
-            handle = build_hermes_hook_handler(root, "curator-project-a", call_tool=call_tool)
+            handle = build_hermes_hook_handler(root, "curator-project-a", call_mcp=call_mcp)
             event = {
                 "project_id": "project-a",
                 "goal_id": "goal-1",
@@ -76,10 +82,16 @@ class HermesHookAdapterTests(unittest.TestCase):
             self.assertIsNone(asyncio.run(handle("codex:turn:start", {**event, "project_id": "project-b"})))
             self.assertTrue(asyncio.run(handle("codex:turn:start", event)))
             self.assertEqual(len(calls), 1)
-            arguments, kwargs = calls[0]
+            server, tool, arguments, kwargs = calls[0]
+            self.assertEqual(server, "curator-project-a")
+            self.assertEqual(tool, "hermes_codex_event")
             self.assertEqual(
                 kwargs,
-                {"session_id": "session-1", "hermes_durable_event": True},
+                {
+                    "timeout": 30.0,
+                    "session_id": "session-1",
+                    "hermes_durable_event": True,
+                },
             )
             self.assertEqual(arguments["event_type"], "codex:turn:start")
             self.assertEqual(arguments["goal_id"], "goal-1")
@@ -91,7 +103,7 @@ class HermesHookAdapterTests(unittest.TestCase):
             failing = build_hermes_hook_handler(
                 root,
                 "curator-project-a",
-                call_tool=lambda *_args, **_kwargs: json.dumps({"error": "retry"}),
+                call_mcp=lambda *_args, **_kwargs: {"ok": False, "error": "retry"},
             )
             self.assertFalse(asyncio.run(failing("codex:turn:start", event)))
 
@@ -380,6 +392,8 @@ class HermesHookAdapterTests(unittest.TestCase):
 
             async def exercise() -> None:
                 async with Client(parameters, raise_exceptions=True) as client:
+                    loop = asyncio.get_running_loop()
+
                     async def call_json(
                         name: str, arguments: dict[str, object]
                     ) -> dict[str, object]:
@@ -428,27 +442,38 @@ class HermesHookAdapterTests(unittest.TestCase):
                     )
                     self.assertFalse(bound.is_error)
 
-                    async def call_curator(
-                        arguments: dict[str, object], **kwargs: object
-                    ) -> str:
-                        response = await client.call_tool(
-                            "hermes_codex_event",
-                            arguments,
-                            meta={
-                                "hermes/profile_id": profile_id,
-                                "hermes/session_id": kwargs["session_id"],
-                                "hermes/durable_event": kwargs[
-                                    "hermes_durable_event"
-                                ],
-                            },
+                    def call_curator(
+                        server: str,
+                        tool: str,
+                        arguments: dict[str, object],
+                        *,
+                        timeout: float,
+                        session_id: str,
+                        hermes_durable_event: bool,
+                    ) -> dict[str, object]:
+                        self.assertEqual(server, "curator-stdio-project")
+                        self.assertEqual(tool, "hermes_codex_event")
+                        self.assertTrue(hermes_durable_event)
+                        response_future = asyncio.run_coroutine_threadsafe(
+                            client.call_tool(
+                                tool,
+                                arguments,
+                                meta={
+                                    "hermes/profile_id": profile_id,
+                                    "hermes/session_id": session_id,
+                                    "hermes/durable_event": hermes_durable_event,
+                                },
+                            ),
+                            loop,
                         )
+                        response = response_future.result(timeout=timeout)
                         content = response.content[0]
                         if response.is_error or not isinstance(content, TextContent):
-                            return json.dumps({"error": "stdio event delivery failed"})
-                        return json.dumps({"result": content.text})
+                            return {"ok": False, "error": "stdio event delivery failed"}
+                        return {"ok": True, "result": content.text}
 
                     handler = build_hermes_hook_handler(
-                        root, "curator-stdio-project", call_tool=call_curator
+                        root, "curator-stdio-project", call_mcp=call_curator
                     )
                     self.assertTrue(
                         await handler("codex:turn:start", hook_context)
