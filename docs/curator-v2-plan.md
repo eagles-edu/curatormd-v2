@@ -1283,7 +1283,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       303; strict Pyright, errors-only Pylint, and `git diff --check` pass.
       Repository-wide full-Pylint findings fell from 279 to 276, including
       duplicate-code findings from 24 to 22. The score remains 9.78/10, exit
-      28; broad warning-level cleanup remains open.
+      28; broad warning-level cleanup remains open. Further progress
+      (2026-10-20): decomposed the Hermes Codex event mapper into bounded event
+      type/context validation, lifecycle fact classification, and stable ID
+      derivation helpers without changing its public contract. The six focused
+      Hermes event tests and full 303-test suite pass; strict Pyright,
+      errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
+      pass. Full warning-level Pylint is down from 276 to 274 findings and
+      rates the repository at 9.79/10 (exit 28). The repository-wide cleanup
+      remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

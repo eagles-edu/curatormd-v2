@@ -710,3 +710,17 @@
   (exit 28).
 - Open: Remaining repository-wide interface, complexity, and duplicate-code
   diagnostics require further refactoring.
+
+## 2026-10-20 — Hermes event mapper decomposition
+
+- Intent: Make the Hermes lifecycle translation boundary easier to inspect
+  while preserving its bounded, non-verifying event contract.
+- Changed: Split supported event selection, bound context validation, lifecycle
+  fact classification, and stable event/fact ID derivation into private
+  helpers. The public translator and serialized facts retain the same shape.
+- Verified: All 6 direct Hermes event tests and the full 303-test Curator suite
+  pass. Strict Pyright, errors-only Pylint, Bandit, locked dependency audit,
+  and `git diff --check` pass. Full warning-level Pylint decreased from 276 to
+  274 findings and reports 9.79/10 (exit 28).
+- Open: Repository-wide warning-level Pylint cleanup, authenticated Hermes
+  identity, live gateway delivery, and deployment remain unverified.

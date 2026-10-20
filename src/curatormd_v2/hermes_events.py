@@ -67,11 +67,45 @@ def codex_hook_to_event(
     from the durable event.
     """
 
-    if not isinstance(event_type, str) or event_type not in {
-        _START_EVENT,
-        _END_EVENT,
-    }:
-        raise ValueError("unsupported Hermes Codex lifecycle event")
+    selected_event = _validate_event_type(event_type)
+    hook_context, attempt_id = _validated_hook_context(
+        selected_event, context, binding
+    )
+    kind, bullet = _fact_for_hook(selected_event, hook_context)
+    if not isinstance(occurred_at, str):
+        raise ValueError("occurred_at must be an ISO-8601 timestamp")
+    if not is_exact_int(source_sequence) or source_sequence < 1:
+        raise ValueError("source_sequence must be a positive integer")
+
+    event_id, fact_id = _stable_ids(binding.source_id, selected_event, attempt_id)
+    return EventEnvelope(
+        event_id=event_id,
+        project_id=binding.project_id,
+        source_id=binding.source_id,
+        source_sequence=source_sequence,
+        occurred_at=occurred_at,
+        payload=GoalActivityObserved(
+            goal_id=binding.goal_id,
+            fact_id=fact_id,
+            kind=kind,
+            bullet=bullet,
+        ),
+    )
+
+
+def _validate_event_type(event_type: object) -> str:
+    """Return a supported typed lifecycle event."""
+
+    if isinstance(event_type, str) and event_type in {_START_EVENT, _END_EVENT}:
+        return event_type
+    raise ValueError("unsupported Hermes Codex lifecycle event")
+
+
+def _validated_hook_context(
+    event_type: str, context: object, binding: CodexGoalBinding
+) -> tuple[Mapping[str, object], str]:
+    """Validate bounded hook metadata against a host-resolved binding."""
+
     if not isinstance(context, Mapping):
         raise ValueError("hook context must be a mapping")
     raw_context = cast(Mapping[object, object], context)
@@ -86,48 +120,36 @@ def codex_hook_to_event(
     if session_id != binding.session_id:
         raise ValueError("hook session does not match the current goal binding")
     _validate_optional_metadata(hook_context)
+    return hook_context, attempt_id
 
-    if not isinstance(occurred_at, str):
-        raise ValueError("occurred_at must be an ISO-8601 timestamp")
+
+def _fact_for_hook(
+    event_type: str, hook_context: Mapping[str, object]
+) -> tuple[FactKind, str]:
+    """Classify a lifecycle event without treating runtime status as proof."""
 
     if event_type == _START_EVENT:
-        kind = FactKind.INTENT
-        bullet = "Codex turn started for the explicitly bound goal."
-    else:
-        turn_id = _required_identifier(hook_context, "turn_id")
-        del turn_id  # Correlation only; it must not enter durable project facts.
-        outcome = hook_context.get("outcome")
-        if outcome == "completed":
-            kind = FactKind.CHANGE
-            bullet = "Codex turn ended normally; no success criterion was verified."
-        elif outcome in {"interrupted", "failed"}:
-            kind = FactKind.OPEN_GATE
-            bullet = f"Codex turn ended with runtime outcome: {outcome}."
-        else:
-            raise ValueError("Codex turn end requires a supported runtime outcome")
+        return FactKind.INTENT, "Codex turn started for the explicitly bound goal."
 
-    if not attempt_id:
-        raise ValueError("attempt_id must not be empty")
-    if not is_exact_int(source_sequence) or source_sequence < 1:
-        raise ValueError("source_sequence must be a positive integer")
-    stable_key = f"{binding.source_id}\0{event_type}\0{attempt_id}".encode("utf-8")
+    _required_identifier(hook_context, "turn_id")
+    outcome = hook_context.get("outcome")
+    if outcome == "completed":
+        return (
+            FactKind.CHANGE,
+            "Codex turn ended normally; no success criterion was verified.",
+        )
+    if outcome in {"interrupted", "failed"}:
+        return FactKind.OPEN_GATE, f"Codex turn ended with runtime outcome: {outcome}."
+    raise ValueError("Codex turn end requires a supported runtime outcome")
+
+
+def _stable_ids(source_id: str, event_type: str, attempt_id: str) -> tuple[str, str]:
+    """Derive deterministic event and fact identifiers from a source attempt."""
+
+    stable_key = f"{source_id}\0{event_type}\0{attempt_id}".encode("utf-8")
     event_digest = hashlib.sha256(stable_key).hexdigest()
     fact_digest = hashlib.sha256(stable_key + b"\0fact").hexdigest()
-    event_id = f"hermes-{event_digest}"
-    fact_id = f"fact-{fact_digest}"
-    return EventEnvelope(
-        event_id=event_id,
-        project_id=binding.project_id,
-        source_id=binding.source_id,
-        source_sequence=source_sequence,
-        occurred_at=occurred_at,
-        payload=GoalActivityObserved(
-            goal_id=binding.goal_id,
-            fact_id=fact_id,
-            kind=kind,
-            bullet=bullet,
-        ),
-    )
+    return f"hermes-{event_digest}", f"fact-{fact_digest}"
 
 
 def _required_identifier(context: Mapping[str, object], name: str) -> str:
