@@ -1070,7 +1070,14 @@ consumer plugin, Hermes integration, or production deployment.
       hook/MCP/trust run pass; Ruff, `scripts/check` (12 checks), and
       `git diff --check` pass. These are local source/process checks using
       synthetic test identity; full profile/project authorization, a running
-      Hermes outbox-to-Curator route, and deployment remain open.
+      Hermes outbox-to-Curator route, and deployment remain open. Additional
+      progress (2026-10-20): refactored Curator's project hook adapter into
+      bounded payload construction, public MCP invocation, and durable receipt
+      validation helpers. The focused adapter tests pass (3), the full Curator
+      suite passes 320 tests, strict Pyright and errors-only Pylint pass, and
+      the adapter has no targeted branch/return/statement-count findings. The
+      full warning-level inventory fell from 272 to 270; the adapter still has
+      only synthetic Hermes identity and no live profile activation.
 - [ ] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries. Additional progress
       (2026-10-20): the separate-process Hermes adapter acceptance test now

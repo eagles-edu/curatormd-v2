@@ -933,3 +933,15 @@
 **Impact:** Improves connection cleanup ergonomics and removes two non-blocking Pylint findings while keeping repository-wide design and complexity warnings open.
 
 <!-- curatormd:record_id=6b8b955b60aa3f2d9c8b2e7fe26fd2e6;content_sha256=6b8b955b60aa3f2d9c8b2e7fe26fd2e656d40373aeecbe9897fde4aadc06f389 -->
+
+## 2026-10-20 — Refactor the Hermes project-hook adapter
+
+**Decision:** - Curator's Hermes hook adapter now separates bounded payload construction, public MCP invocation, and durable-receipt validation while preserving skip (`None`) and retry (`False`) behavior and retaining only allowlisted event context.
+- The three focused adapter tests and full 320-test Curator suite pass; Pyright, errors-only Pylint, targeted adapter complexity checks, Bandit, and `git diff --check` pass. Full warning-level Pylint reports 270 findings, down from 272.
+- This is local adapter/source evidence; Hermes runtime activation, authenticated profile identity, and live outbox-to-Curator delivery remain open.
+
+**Rationale:** The single adapter handler had excess branches and early returns around an ownership-sensitive boundary. Extracted helpers make its field filtering, MCP envelope checks, and durable acknowledgment rule independently readable without changing the contract.
+
+**Impact:** Reduces integration-adapter complexity while preserving project scoping and ack-after-durable-receipt behavior; it does not assert deployment or authenticated identity.
+
+<!-- curatormd:record_id=cce502e2dda6684ff05bb99e367449d3;content_sha256=cce502e2dda6684ff05bb99e367449d3ece9b411bd930a138997658a527974cf -->
