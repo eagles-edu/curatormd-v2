@@ -646,3 +646,19 @@
   repository at 9.78/10 and exits 28 with the remaining non-blocking inventory.
 - Open: Repository-wide structural, duplicate-code, and design findings remain
   unresolved.
+
+## 2026-10-20 — Hermes Host Steward growth attribution estimate
+
+- Intent: Make filesystem growth outside configured Host Steward targets
+  visible as unknown instead of leaving it implicit.
+- Changed: In the Hermes Core Host Steward plugin, compare root filesystem
+  used-byte growth with allocated-byte growth in unchanged, complete configured
+  target scans; group measured growth by configured owner and expose the
+  remainder as an unattributed estimate. Baseline and partial coverage are
+  explicit. Updated the Hermes plugin guide and this plan's ownership gate.
+- Verified: All 18 focused Host Steward tests pass with disposable directories;
+  Hermes `scripts/check` passes all 12 checks with no blocking/advisory
+  findings. No real host inventory or cleanup was performed.
+- Open: This estimates only configured target contribution. Attribution of
+  unconfigured paths, service growth, authenticated owner identity, and live
+  deployment remain open.

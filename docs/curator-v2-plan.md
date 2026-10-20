@@ -1092,6 +1092,16 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       recovery behavior only; cross-process supervision, authenticated
       approver identity, real host attribution, live installation, and
       deployment recovery drills remain open.
+      Further progress (2026-10-20): Host Steward inventory now compares the
+      root filesystem used-byte delta with allocated-byte deltas for unchanged,
+      complete configured targets, groups the measured growth by configured
+      owner, and labels the remainder as an unattributed growth estimate.
+      Baseline and partial-coverage states are explicit. Two disposable-path
+      regressions verify unknown growth, owner-plus-remainder reporting, and
+      suppression of owner attribution when a target scan is incomplete; all
+      18 focused Host Steward tests and Hermes `scripts/check` pass. This
+      remains a configured-target estimate; attribution of unconfigured paths,
+      service growth, and live host growth remain open.
 - [x] Document independent failure and recovery paths for Hermes Core,
       CuratorMD backend, project plugins, and Host Steward in
       [`component-failure-recovery-v2.md`](component-failure-recovery-v2.md).
