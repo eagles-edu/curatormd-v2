@@ -80,6 +80,19 @@ class CuratorLifecycleTests(unittest.TestCase):
             checklist_id="task-17",
         )
 
+    def test_invalid_initial_status_does_not_retain_raw_value(self) -> None:
+        """Goal intake errors must not chain caller-controlled enum values."""
+
+        with self.assertRaisesRegex(ValueError, "planned or active") as raised:
+            self.service.goal_start(
+                "Reject an invalid status",
+                (SuccessCriterion("done", "The invalid status is rejected"),),
+                initial_status="PRIVATE_STATUS_CANARY",  # type: ignore[arg-type]
+            )
+        self.assertNotIn("PRIVATE_STATUS_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def tearDown(self) -> None:
         self.store.close()
 

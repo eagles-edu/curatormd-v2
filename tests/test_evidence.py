@@ -273,6 +273,12 @@ class EvidenceAdapterTests(unittest.TestCase):
             "revocation_checked_at": self.now.isoformat(),
         }
         EvidenceAttestation(**values)
+        with self.assertRaisesRegex(ValueError, "ISO-8601 timestamp") as raised:
+            EvidenceAttestation(
+                **{**values, "observed_at": "PRIVATE_TIMESTAMP_CANARY"}
+            )
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
         with self.assertRaisesRegex(ValueError, "timezone"):
             EvidenceAttestation(**{**values, "observed_at": "2026-10-18T12:00:00"})
         with self.assertRaisesRegex(ValueError, "remain valid"):

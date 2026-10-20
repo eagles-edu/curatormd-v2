@@ -56,10 +56,14 @@ def _parse_aware_timestamp(name: str, value: object) -> datetime:
 
     if not isinstance(value, str) or not 1 <= len(value) <= 64:
         raise ValueError(f"{name} must be a bounded ISO-8601 timestamp")
+    parse_failed = False
+    parsed: datetime | None = None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError(f"{name} must be an ISO-8601 timestamp") from exc
+    except ValueError:
+        parse_failed = True
+    if parse_failed or parsed is None:
+        raise ValueError(f"{name} must be an ISO-8601 timestamp")
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError(f"{name} must include a timezone")
     return parsed.astimezone(UTC)

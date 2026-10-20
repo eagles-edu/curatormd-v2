@@ -1235,6 +1235,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       tests and the full 312-test suite pass; Pyright, errors-only Pylint,
       Bandit, and diff checks pass. This closes two archive error paths only;
       broader archive, backup, logging, trace, and upstream review remains open.
+      Further progress (2026-10-20): event/domain enum and timestamp parsing,
+      maintenance batch-limit parsing, and canonical Markdown UTF-8 errors now
+      raise sanitized errors without chained source-bearing exceptions.
+      Regressions inspect exception causes/context and public messages. Focused
+      event, evidence, lifecycle, maintenance, and Markdown suites pass 114
+      tests; the full suite passes 317, with Pyright, errors-only Pylint,
+      Bandit, and diff checks passing. Broader log, trace, upstream, and
+      remaining exception-boundary review stays open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with

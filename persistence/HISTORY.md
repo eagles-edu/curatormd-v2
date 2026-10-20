@@ -861,3 +861,13 @@
 **Impact:** Closes selected source-retention paths during V2 archive retrieval without claiming complete archive privacy coverage.
 
 <!-- curatormd:record_id=50a8e5f1dbf76315a1612b2c90cdfce7;content_sha256=50a8e5f1dbf76315a1612b2c90cdfce78469d8671d6076c10c6042a496aa74c2 -->
+
+## 2026-10-20 — Sanitize V2 validation and canonical decode exceptions
+
+**Decision:** Curator V2 event/domain enum and timestamp validation, model timestamps, maintenance batch-limit parsing, and canonical Markdown UTF-8 decoding now return fixed errors without retaining source-bearing parser exceptions. Regression coverage checks event timestamps/types, evidence timestamps, invalid goal status, CLI limits, and malformed canonical Markdown. Focused suites pass (114), the full suite passes (317), and strict Pyright, errors-only Pylint, Bandit, and git diff --check pass. Broader logging, tracing, upstream, and remaining exception-boundary review stays open.
+
+**Rationale:** Built-in enum, ISO timestamp, integer, and UTF-8 decoding errors may keep rejected values or complete source bytes reachable through chained exceptions.
+
+**Impact:** Closes selected source-retention paths across V2 input validation and Markdown parsing while preserving the overall privacy gate.
+
+<!-- curatormd:record_id=25ad9d00689d1d752aab4f62d1c669d9;content_sha256=25ad9d00689d1d752aab4f62d1c669d9db055f0e083930a0220b3048fef2fee1 -->

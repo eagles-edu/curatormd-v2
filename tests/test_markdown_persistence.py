@@ -679,6 +679,18 @@ class MarkdownPersistenceTests(unittest.TestCase):
             self.plugin.persist_goal(self.goal.goal_id, self.target)
         self.assertEqual(self.target.stat().st_size, len(original))
 
+    def test_invalid_markdown_utf8_error_does_not_retain_source(self) -> None:
+        """Canonical decoder errors must not retain raw Markdown bytes."""
+
+        self.target.write_bytes(b"PRIVATE_MARKDOWN_CANARY\xff")
+        with self.assertRaisesRegex(
+            MarkdownPersistenceError, "must be UTF-8"
+        ) as raised:
+            self.plugin.persist_goal(self.goal.goal_id, self.target)
+        self.assertNotIn("PRIVATE_MARKDOWN_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def _create_other_repo(self) -> Path:
         """Create a separately configured consumer for project-isolation tests."""
 

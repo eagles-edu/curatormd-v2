@@ -212,10 +212,15 @@ class CuratorService:
     ) -> GoalCard:
         """Create a goal with an explicit problem and testable success criteria."""
 
+        parse_failed = False
+        normalized_status: GoalStatus | None = None
         try:
-            initial_status = GoalStatus(initial_status)
-        except ValueError as exc:
-            raise ValueError("initial_status must be planned or active") from exc
+            normalized_status = GoalStatus(initial_status)
+        except ValueError:
+            parse_failed = True
+        if parse_failed or normalized_status is None:
+            raise ValueError("initial_status must be planned or active")
+        initial_status = normalized_status
         if initial_status not in {GoalStatus.PLANNED, GoalStatus.ACTIVE}:
             raise ValueError("initial_status must be planned or active")
         with self.store.transaction():

@@ -291,6 +291,38 @@ class EventContractTests(unittest.TestCase):
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 
+    def test_invalid_timestamp_does_not_retain_raw_source_in_exception(self) -> None:
+        """Timestamp parser errors must not retain caller-controlled values."""
+
+        with self.assertRaisesRegex(ValueError, "ISO-8601 timestamp") as raised:
+            EventEnvelope(
+                "timestamp-event",
+                "project",
+                GoalStarted(
+                    "timestamp-goal",
+                    "Test timestamp handling",
+                    (SuccessCriterion("done", "The invalid input is rejected"),),
+                ),
+                occurred_at="PRIVATE_TIMESTAMP_CANARY",
+            )
+        self.assertNotIn("PRIVATE_TIMESTAMP_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_unknown_event_type_does_not_retain_raw_value_in_exception(self) -> None:
+        """Enum parser errors must not chain the rejected event type."""
+
+        source = (
+            '{"schema_version":1,"event_id":"e","project_id":"p",'
+            '"occurred_at":"2026-10-18T00:00:00+00:00",'
+            '"event_type":"PRIVATE_EVENT_TYPE_CANARY","payload":{}}'
+        )
+        with self.assertRaisesRegex(ValueError, "unknown event type") as raised:
+            EventEnvelope.from_json(source)
+        self.assertNotIn("PRIVATE_EVENT_TYPE_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def test_rejects_invalid_project_id_version_and_naive_timestamp(self) -> None:
         """Require bounded project IDs, supported versions, and timezone."""
 

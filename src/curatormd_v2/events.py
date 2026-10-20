@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 import json
 import re
-from typing import TypeAlias, cast
+from typing import TypeAlias, TypeVar, cast
 
 from .models import (
     MAX_EVIDENCE_REFERENCES,
@@ -29,6 +29,21 @@ EVENT_SCHEMA_VERSION = 1
 MAX_EVENT_BYTES = 16 * 1024
 _PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+EnumValue = TypeVar("EnumValue", bound=StrEnum)
+
+
+def _parse_enum(enum_type: type[EnumValue], value: str, message: str) -> EnumValue:
+    """Parse an untrusted enum value without retaining it in an exception chain."""
+
+    parse_failed = False
+    parsed: EnumValue | None = None
+    try:
+        parsed = enum_type(value)
+    except ValueError:
+        parse_failed = True
+    if parse_failed or parsed is None:
+        raise ValueError(message)
+    return parsed
 
 
 def _validate_lifecycle_revision(revision: int | None) -> None:
@@ -160,10 +175,9 @@ def _validate_goal_started_problem_and_criteria(event: GoalStarted) -> None:
 def _validate_goal_started_status(event: GoalStarted) -> None:
     """Normalize the initial status before checking relationship fields."""
 
-    try:
-        initial_status = GoalStatus(event.initial_status)
-    except ValueError as exc:
-        raise ValueError("initial_status must be planned or active") from exc
+    initial_status = _parse_enum(
+        GoalStatus, event.initial_status, "initial_status must be planned or active"
+    )
     if initial_status not in {GoalStatus.PLANNED, GoalStatus.ACTIVE}:
         raise ValueError("initial_status must be planned or active")
     object.__setattr__(event, "initial_status", initial_status)
@@ -485,10 +499,14 @@ class EventEnvelope:
             raise ValueError("source_sequence requires an explicit source_id")
         if type(self.payload) not in _EVENT_TYPES:
             raise ValueError("unsupported event payload type")
+        parse_failed = False
+        parsed: datetime | None = None
         try:
             parsed = datetime.fromisoformat(self.occurred_at.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("occurred_at must be an ISO-8601 timestamp") from exc
+        except ValueError:
+            parse_failed = True
+        if parse_failed or parsed is None:
+            raise ValueError("occurred_at must be an ISO-8601 timestamp")
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise ValueError("occurred_at must include a timezone")
 
@@ -760,10 +778,9 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
         {"goal_id", "fact_id", "kind", "bullet", "evidence"},
         {"criterion_id"},
     )
-    try:
-        fact_kind = FactKind(_string(value["kind"], "kind"))
-    except ValueError as exc:
-        raise ValueError("unknown fact kind") from exc
+    fact_kind = _parse_enum(
+        FactKind, _string(value["kind"], "kind") or "", "unknown fact kind"
+    )
     if fact_kind is FactKind.REOPENED:
         raise ValueError("reopened facts must use the goal.reopened event")
     if fact_kind is FactKind.CRITERIA_AMENDED:
@@ -777,10 +794,11 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
     for item_value in cast(list[object], evidence_value):
         item = _require_object(item_value, "evidence reference")
         _require_fields(item, {"evidence_kind", "locator", "sha256", "outcome"})
-        try:
-            outcome = EvidenceOutcome(_string(item["outcome"], "outcome"))
-        except ValueError as exc:
-            raise ValueError("unknown evidence outcome") from exc
+        outcome = _parse_enum(
+            EvidenceOutcome,
+            _string(item["outcome"], "outcome") or "",
+            "unknown evidence outcome",
+        )
         evidence.append(
             EvidenceRef(
                 evidence_kind=_string(item["evidence_kind"], "evidence_kind") or "",
@@ -801,10 +819,11 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
 
 def _goal_activity_from_dict(value: dict[str, object]) -> GoalActivityObserved:
     _require_fields(value, {"goal_id", "fact_id", "kind", "bullet"})
-    try:
-        kind = FactKind(_string(value["kind"], "kind"))
-    except ValueError as exc:
-        raise ValueError("unknown activity fact kind") from exc
+    kind = _parse_enum(
+        FactKind,
+        _string(value["kind"], "kind") or "",
+        "unknown activity fact kind",
+    )
     return GoalActivityObserved(
         goal_id=_string(value["goal_id"], "goal_id") or "",
         fact_id=_string(value["fact_id"], "fact_id") or "",
@@ -928,10 +947,11 @@ def _envelope_from_dict(value: object) -> EventEnvelope:
     version = envelope["schema_version"]
     if not isinstance(version, int) or isinstance(version, bool):
         raise ValueError("schema_version must be an integer")
-    try:
-        kind = EventKind(_string(envelope["event_type"], "event_type"))
-    except ValueError as exc:
-        raise ValueError("unknown event type") from exc
+    kind = _parse_enum(
+        EventKind,
+        _string(envelope["event_type"], "event_type") or "",
+        "unknown event type",
+    )
     payload = _payload_from_dict(kind, _require_object(envelope["payload"], "payload"))
     if _EVENT_TYPES[type(payload)] is not kind:
         raise ValueError("event_type does not match payload")

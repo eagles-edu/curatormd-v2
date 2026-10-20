@@ -506,12 +506,18 @@ class MarkdownPersistenceAdapter:
                     raise MarkdownPersistenceError(
                         f"canonical Markdown target exceeds {MAX_MARKDOWN_BYTES} bytes"
                     )
+                decode_failed = False
+                decoded = ""
                 try:
-                    return data.decode("utf-8"), stat.S_IMODE(metadata.st_mode)
-                except UnicodeDecodeError as exc:
+                    decoded = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    # UnicodeDecodeError retains the complete canonical target.
+                    decode_failed = True
+                if decode_failed:
                     raise MarkdownPersistenceError(
                         "canonical Markdown target must be UTF-8"
-                    ) from exc
+                    )
+                return decoded, stat.S_IMODE(metadata.st_mode)
         except OSError as exc:
             raise MarkdownPersistenceError("cannot read canonical Markdown target") from exc
 

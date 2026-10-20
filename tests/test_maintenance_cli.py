@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,12 +10,21 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from curatormd_v2.maintenance_cli import main
+from curatormd_v2.maintenance_cli import main, _positive_limit  # pyright: ignore[reportPrivateUsage]
 from curatormd_v2.models import PurgeStatus
 
 
 class MaintenanceCliTests(unittest.TestCase):
     """Keep scheduled retries explicit, bounded, and content-free."""
+
+    def test_invalid_limit_error_does_not_retain_source_value(self) -> None:
+        """Argument errors must not chain the rejected command-line value."""
+
+        with self.assertRaisesRegex(argparse.ArgumentTypeError, "integer from 1 to 1000") as raised:
+            _positive_limit("PRIVATE_LIMIT_CANARY")
+        self.assertNotIn("PRIVATE_LIMIT_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
 
     def test_execution_requires_explicit_opt_in_before_opening_project(self) -> None:
         errors = StringIO()

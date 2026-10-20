@@ -17,10 +17,14 @@ from .store import CuratorStore
 def _positive_limit(value: str) -> int:
     """Parse a bounded scheduler batch size."""
 
+    parse_failed = False
+    parsed = 0
     try:
         parsed = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("limit must be an integer from 1 to 1000") from exc
+    except ValueError:
+        parse_failed = True
+    if parse_failed:
+        raise argparse.ArgumentTypeError("limit must be an integer from 1 to 1000")
     if not 1 <= parsed <= 1000:
         raise argparse.ArgumentTypeError("limit must be an integer from 1 to 1000")
     return parsed
