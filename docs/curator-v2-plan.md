@@ -1196,6 +1196,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       targets; all 19 focused Host Steward tests and Hermes `scripts/check`
       pass. This remains a configured-target estimate; attribution of
       unconfigured paths, service growth, and live host growth remain open.
+      Additional progress (2026-10-20): inventory snapshots now retain each
+      configured target's service-unit bindings and report positive allocated-
+      byte growth for stable, complete targets with those bindings. A changed
+      binding makes coverage partial and suppresses owner/service-target
+      attribution. The focused regression suite and Hermes `scripts/check`
+      pass. This is configured metadata association, not evidence that a named
+      service caused writes; actual service-owned growth, unconfigured paths,
+      live Host Steward inventory, and installation remain open. This checklist
+      item remains open.
 - [x] Document independent failure and recovery paths for Hermes Core,
       CuratorMD backend, project plugins, and Host Steward in
       [`component-failure-recovery-v2.md`](component-failure-recovery-v2.md).

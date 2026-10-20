@@ -978,3 +978,13 @@
 **Impact:** Removes the handler-factory stub from the gateway regression without claiming configured stdio, authenticated identity, or runtime delivery.
 
 <!-- curatormd:record_id=648df7b420e628f2f16cd4ef204e0db5;content_sha256=648df7b420e628f2f16cd4ef204e0db5d61474d1faca48bf1780ea5b52345e99 -->
+
+## 2026-10-20 — Host Steward service-target growth metadata
+
+**Decision:** - 2026-10-20: Hermes Core Host Steward inventory snapshots now retain configured service-unit bindings and report positive allocated-byte growth for stable, complete configured targets; a changed binding suppresses attribution. The README and V2 plan state that this is operator-supplied metadata association, not proof a service caused writes. `scripts/run_tests.sh tests/plugins/test_host_steward_plugin.py` passed 20 tests and `python3 scripts/check` passed 12 checks locally. Actual service-owned growth, unconfigured paths, authenticated identity, live installation/runtime, and deployment remain open.
+
+**Rationale:** The Hermes Core Host Steward change associates positive growth from stable configured targets with operator-supplied systemd unit names. The V2 plan must preserve the distinction between metadata association and causal service ownership.
+
+**Impact:** Records local verification without claiming causal service attribution or live installation.
+
+<!-- curatormd:record_id=f949fbcf7f0055dc31a21a59aea3f1c7;content_sha256=f949fbcf7f0055dc31a21a59aea3f1c7a922b07eecccab6d9ea72f8ea31e9c8c -->
