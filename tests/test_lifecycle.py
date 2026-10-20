@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
+from purge_fixtures import TestVerifier
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -35,21 +36,6 @@ from curatormd_v2 import (
     SuccessCriterion,
 )
 from curatormd_v2.events import EventEnvelope, FactRecorded, GoalStarted
-
-
-class TestVerifier:
-    """Deterministic adapter fixture; production defaults fail closed."""
-
-    def attest(
-        self, evidence: EvidenceRef, context: EvidenceVerificationContext
-    ):
-        """Attest only references created by the lifecycle test fixture."""
-
-        return (
-            attest_test_evidence(evidence, context)
-            if evidence.locator.startswith("test-proof:")
-            else None
-        )
 
 
 class TransactionCheckingVerifier:

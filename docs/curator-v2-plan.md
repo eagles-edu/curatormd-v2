@@ -1276,6 +1276,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       repository-wide duplicate-code findings fell from 35 to 24; the full
       inventory fell from 288 to 279 messages but remains at 9.78/10, exit 28.
       Broader interface, complexity, and duplication cleanup remains open.
+      Additional progress (2026-10-20): reused the shared deterministic
+      `TestVerifier` and `TestReviewAuthorizer` fixtures across lifecycle,
+      purge, and Markdown tests where their behavior is identical. The focused
+      lifecycle/Markdown/purge modules pass 79 tests, and the full suite passes
+      303; strict Pyright, errors-only Pylint, and `git diff --check` pass.
+      Repository-wide full-Pylint findings fell from 279 to 276, including
+      duplicate-code findings from 24 to 22. The score remains 9.78/10, exit
+      28; broad warning-level cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

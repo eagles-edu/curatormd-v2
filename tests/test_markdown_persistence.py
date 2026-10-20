@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
 from project_fixtures import create_consumer_repo
+from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -50,56 +51,6 @@ class TestVerifier:  # pylint: disable=too-few-public-methods
             if evidence.locator == "test-proof:passed"
             else None
         )
-
-
-class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
-    """Represent the authenticated host reviewer in this test fixture."""
-
-    def authorize(
-        self,
-        project_id: str,
-        candidate_id: str,
-        decision: ReviewDecision,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Return the named test reviewer for the fixture's SDE decision."""
-
-        del project_id, candidate_id, decision, authenticated_subject
-        return "test-reviewer"
-
-    def authorize_correction(
-        self,
-        project_id: str,
-        candidate_id: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Return the same reviewer identity for linked corrections."""
-
-        del project_id, candidate_id, authenticated_subject
-        return "test-reviewer"
-
-    def authorize_feedback(
-        self,
-        project_id: str,
-        candidate_id: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Attribute quality feedback to the fixture reviewer."""
-
-        return self.authorize_correction(project_id, candidate_id, authenticated_subject)
-
-    def authorize_hold_release(
-        self,
-        project_id: str,
-        receipt_id: str,
-        path: str,
-        rationale: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Authorize a controlled hold release for projection regressions."""
-
-        del project_id, receipt_id, path, rationale, authenticated_subject
-        return "test-reviewer"
 
 
 class PersistedReceiptPurger(ArtifactPurger):  # pylint: disable=too-few-public-methods

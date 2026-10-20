@@ -697,3 +697,16 @@
   Pylint decreased from 288 to 279 messages and remains 9.78/10 (exit 28).
 - Open: Repository-wide interface, complexity, and duplicate-code findings
   remain unresolved.
+
+## 2026-10-20 — Shared deterministic test adapters
+
+- Changed: Reused the same test-only `TestVerifier` and
+  `TestReviewAuthorizer` from `tests/purge_fixtures.py` in lifecycle and
+  Markdown tests where the authorization and evidence behavior matches.
+- Verified: The focused lifecycle, Markdown, and purge suites pass 79 tests;
+  the full suite passes 303. Strict Pyright, errors-only Pylint, and
+  `git diff --check` pass. Full warning-level Pylint fell from 279 to 276
+  messages and from 24 to 22 duplicate-code findings; it remains 9.78/10
+  (exit 28).
+- Open: Remaining repository-wide interface, complexity, and duplicate-code
+  diagnostics require further refactoring.
