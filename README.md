@@ -121,6 +121,8 @@ completion until linked work is resolved.
   binding, source sequencing, and transport verification boundaries.
 - [`docs/project-plugin-v1.md`](docs/project-plugin-v1.md) — repository-owned
   config contract and reference plugin limits.
+- [`docs/project-plugin-contract-testing-v1.md`](docs/project-plugin-contract-testing-v1.md)
+  — reusable producer/backend assertions for consumer plugin test suites.
 - [`docs/consumer-operations-v1.md`](docs/consumer-operations-v1.md) — bounded
   local profile install, upgrade, disablement, and recovery guidance; not a
   production deployment runbook.

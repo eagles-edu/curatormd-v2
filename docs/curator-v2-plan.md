@@ -1252,7 +1252,17 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       planned goal fields, and payload disposal. All 245 tests pass on Python
       3.12, 3.13, and 3.14. This is producer-fixture/backend compatibility
       evidence only; a shared test package and real plugin interoperability
-      remain open.
+      remain open. Progress (2026-10-20): added the importable
+      `curatormd_v2.testing.assert_goal_started_event_contract` helper and
+      consumer-facing usage guide. It checks JSON round-trip, exact-retry
+      receipt stability, unchanged persisted `goal.started` fields, project
+      identity, and zero retained event-payload bytes. A Curator reference-
+      plugin regression exercises the helper. The full 302-test suite, strict
+      Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+      `git diff --check` pass; a wheel build includes the helper module. This
+      remains local reference-plugin evidence;
+      shared execution by a consumer plugin and real producer routing remain
+      open.
 - [x] Add deterministic property/fuzz tests for generated event validation,
       evidence-gated lifecycle transitions, path traversal, and event/fact
       replay; see `tests/test_property_fuzz.py`.

@@ -619,3 +619,20 @@
   is 10.00/10, and strict Pyright reports 0 diagnostics.
 - Open: Repository-wide Pylint exits 28 at 9.77/10 with non-blocking findings;
   deployment, identity, retention, and live-runtime gates are unchanged.
+
+## 2026-10-20 — Reusable producer/backend contract assertions
+
+- Intent: Add a bounded, importable contract check that consumer plugin suites
+  can run against the Curator V2 backend.
+- Changed: Added `curatormd_v2.testing.assert_goal_started_event_contract`, a
+  consumer usage guide, and a reference-plugin regression. The assertion
+  covers event JSON round-trip, exact-retry receipt stability, persisted goal
+  fields and project scope, received-byte accounting, and zero retained event
+  payload bytes.
+- Verified: The focused regression and all 302 Curator tests pass; strict
+  Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+  `git diff --check` pass. `uv build --wheel` includes `testing.py` in the
+  backend wheel.
+- Open: The shared assertion has not yet run in a consumer plugin suite; real
+  producer routing, Hermes delivery, deployment, trusted identity, and
+  retention policy remain unverified.

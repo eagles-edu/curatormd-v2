@@ -27,6 +27,7 @@ from curatormd_v2.project_config import (
 )
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
+from curatormd_v2.testing import assert_goal_started_event_contract
 
 
 class ProjectPluginTests(unittest.TestCase):
@@ -311,6 +312,40 @@ class ProjectPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectConfigError, "exact source line"):
             plugin.process_event(forged)
         self.assertEqual([item.goal.goal_id for item in plugin.goal_list()], [payload.goal_id])
+
+    def test_reusable_producer_backend_contract_assertions(self) -> None:
+        """Exercise the importable contract helper against the reference plugin."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        event = EventEnvelope(
+            event_id="shared-contract-event-1",
+            project_id="consumer-a",
+            source_id="contract-test-producer",
+            source_sequence=1,
+            payload=GoalStarted(
+                goal_id="shared-contract-goal-1",
+                problem="Preserve producer supplied goal contract fields",
+                success_criteria=(
+                    SuccessCriterion("persisted", "All supplied fields are retained"),
+                ),
+                owner="contract-test-owner",
+                next_action="Verify the consumer implementation",
+            ),
+        )
+
+        evidence = assert_goal_started_event_contract(
+            plugin,
+            event,
+            expected_project_id="consumer-a",
+        )
+
+        self.assertEqual(evidence.project_id, "consumer-a")
+        self.assertEqual(evidence.event_id, event.event_id)
+        self.assertEqual(evidence.event_payload_bytes_retained, 0)
+        self.assertGreaterEqual(
+            evidence.event_payload_bytes_received,
+            evidence.event_payload_bytes,
+        )
 
     def test_storage_usage_scans_sizes_without_following_staging_symlinks(self) -> None:
         """Measure nested regular files, but expose a skipped link as incomplete."""
