@@ -1493,6 +1493,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       deployment-like infrastructure.
 - [ ] Publish release notes, supported versions, known limitations, and
       operator runbooks before declaring the system production-ready.
+      Alpha-preparation progress (2026-10-20): the package is versioned
+      `0.1.0a1`, and [`alpha-v2.md`](alpha-v2.md) records its local candidate
+      scope, declared Python support, and open gates. The wheel and source
+      archive build; a clean Python 3.12.3 install passes the packaged MCP
+      launcher acceptance test, and the full 321-test suite plus local quality
+      checks pass. This is not a publication or owner-approved release; this
+      checklist item remains open.
 
 ### 10. V1 cutover, rollout, and rollback
 

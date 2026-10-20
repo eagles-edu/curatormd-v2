@@ -108,6 +108,8 @@ completion until linked work is resolved.
 
 ## Architecture sources
 
+- [`docs/alpha-v2.md`](docs/alpha-v2.md) — local alpha scope, package support,
+  known limits, and open release gates.
 - [`docs/curator-v2-plan.md`](docs/curator-v2-plan.md) — lifecycle, behavior,
   tests, and cutover constraints.
 - [`docs/event-contract-v1.md`](docs/event-contract-v1.md) — bounded version-1

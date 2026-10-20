@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "curatormd-v2"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "Goal-ledger CuratorMD V2 core"
 requires-python = ">=3.12,<4"
 dependencies = ["mcp>=2,<3"]
