@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import zlib
 
 from evidence_fixtures import attest_test_evidence
 
@@ -91,6 +93,43 @@ class FactCompactionTests(unittest.TestCase):
             hashlib.sha256(b"archive-fixture").hexdigest(),
             EvidenceOutcome.PASSED,
         )
+
+    def archive_routine_fact(self) -> tuple[Fact, str]:
+        """Create one reviewed routine fact and return its archive key."""
+
+        routine = self.add_fact(
+            FactKind.RESEARCH,
+            "A routine archive fixture with a stable source hash for integrity checks.",
+        )
+        proposal = self.service.fact_compaction_propose(self.goal.goal_id)
+        receipt = self.service.fact_compaction_approve(
+            proposal.compaction_id,
+            self.goal.goal_id,
+            (routine.fact_id,),
+            proposal.source_sha256,
+            "reviewer-1",
+            "Approve archival",
+        )
+        return routine, receipt.compaction_id
+
+    def replace_archive_source(self, compaction_id: str, source: bytes) -> None:
+        """Replace one archive payload while keeping its integrity fields valid."""
+
+        compressed = zlib.compress(source)
+        with self.store.transaction() as connection:
+            connection.execute(
+                """UPDATE fact_archives SET payload_zlib = ?, compressed_bytes = ?,
+                   source_bytes = ?, source_sha256 = ?, archive_sha256 = ?
+                   WHERE compaction_id = ?""",
+                (
+                    compressed,
+                    len(compressed),
+                    len(source),
+                    hashlib.sha256(source).hexdigest(),
+                    hashlib.sha256(compressed).hexdigest(),
+                    compaction_id,
+                ),
+            )
 
     def test_approval_archives_only_eligible_facts_and_keeps_them_retrievable(self) -> None:
         research = self.add_fact(
@@ -286,6 +325,46 @@ class FactCompactionTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(FactArchiveIntegrityError, "compressed hash"):
             self.store.get_fact(routine.fact_id, "archive-project")
+
+    def test_invalid_archive_json_error_does_not_retain_raw_source(self) -> None:
+        """Malformed archived JSON must not remain reachable through causes."""
+
+        routine, compaction_id = self.archive_routine_fact()
+        self.replace_archive_source(
+            compaction_id,
+            b'{"bullet":"PRIVATE_ARCHIVE_CANARY", invalid',
+        )
+        with self.assertRaisesRegex(FactArchiveIntegrityError, "JSON is invalid") as raised:
+            self.store.get_fact(routine.fact_id, "archive-project")
+        self.assertNotIn("PRIVATE_ARCHIVE_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_invalid_archive_kind_error_does_not_echo_raw_value(self) -> None:
+        """Domain validation must not chain enum errors containing archive data."""
+
+        routine, compaction_id = self.archive_routine_fact()
+        source = json.dumps(
+            [
+                {
+                    "fact_id": routine.fact_id,
+                    "goal_id": self.goal.goal_id,
+                    "kind": "PRIVATE_ARCHIVE_CANARY",
+                    "bullet": "A malformed archive record.",
+                    "criterion_id": None,
+                    "evidence": [],
+                    "created_at": routine.created_at,
+                }
+            ]
+        ).encode("utf-8")
+        self.replace_archive_source(compaction_id, source)
+        with self.assertRaisesRegex(
+            FactArchiveIntegrityError, "record failed domain validation"
+        ) as raised:
+            self.store.get_fact(routine.fact_id, "archive-project")
+        self.assertNotIn("PRIVATE_ARCHIVE_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
 
     def test_archive_write_failure_rolls_back_before_active_fact_removal(self) -> None:
         routine = self.add_fact(

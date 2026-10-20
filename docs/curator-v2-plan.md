@@ -1229,6 +1229,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       focused event/API/config suite passes 104 tests and the full suite passes
       310; Pyright, errors-only Pylint, Bandit, and diff checks pass. This is
       still bounded local coverage; broader privacy review remains open.
+      Further progress (2026-10-20): archived JSON decode and invalid archive
+      enum failures now return content-free integrity errors without retaining
+      raw archive data in exception causes or context. Nine focused archive
+      tests and the full 312-test suite pass; Pyright, errors-only Pylint,
+      Bandit, and diff checks pass. This closes two archive error paths only;
+      broader archive, backup, logging, trace, and upstream review remains open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with

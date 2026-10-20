@@ -851,3 +851,13 @@
 **Impact:** Closes two additional local raw-source retention paths while preserving the broader privacy gate.
 
 <!-- curatormd:record_id=0bca07a5da2111aa4c6c57d63ee83b25;content_sha256=0bca07a5da2111aa4c6c57d63ee83b2596db2d118038e7dd008cc427591dd5af -->
+
+## 2026-10-20 — Sanitize archived fact decoder exceptions
+
+**Decision:** Curator V2 fact archive retrieval now converts decompression, JSON parsing, and record-domain validation failures into generic integrity errors without retaining raw archive input through exception causes or context. Regressions cover malformed JSON and an invalid archive enum value. Focused archive tests pass (9), the full suite passes (312), and Pyright, errors-only Pylint, Bandit, and git diff --check pass. Broader archive, backup, logging, trace, and upstream privacy review remains open.
+
+**Rationale:** JSONDecodeError and enum ValueError instances may retain attacker-controlled archive bytes or field values when chained.
+
+**Impact:** Closes selected source-retention paths during V2 archive retrieval without claiming complete archive privacy coverage.
+
+<!-- curatormd:record_id=50a8e5f1dbf76315a1612b2c90cdfce7;content_sha256=50a8e5f1dbf76315a1612b2c90cdfce78469d8671d6076c10c6042a496aa74c2 -->

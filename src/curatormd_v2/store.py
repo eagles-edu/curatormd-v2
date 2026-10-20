@@ -2141,6 +2141,8 @@ class CuratorStore:
             raise FactArchiveIntegrityError("fact archive record schema is invalid")
         if not isinstance(record["evidence"], list):
             raise FactArchiveIntegrityError("fact archive evidence schema is invalid")
+        validation_failed = False
+        fact: Fact | None = None
         try:
             evidence_items = cast(list[object], record["evidence"])
             evidence: list[EvidenceRef] = []
@@ -2239,7 +2241,7 @@ class CuratorStore:
                 raise FactArchiveIntegrityError(
                     "fact archive source_event_id must be a string or null"
                 )
-            return Fact(
+            fact = Fact(
                 goal_id=goal_id,
                 kind=FactKind(kind_value),
                 bullet=bullet,
@@ -2250,10 +2252,16 @@ class CuratorStore:
                 source_event_id=source_event_id,
                 created_at=created_at,
             )
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError):
+            # Enum and domain errors may retain caller-controlled archive values.
+            validation_failed = True
+        if validation_failed:
             raise FactArchiveIntegrityError(
                 "fact archive record failed domain validation"
-            ) from exc
+            )
+        if fact is None:
+            raise FactArchiveIntegrityError("fact archive record failed domain validation")
+        return fact
 
     @classmethod
     def _decode_fact_archive(cls, row: sqlite3.Row) -> tuple[Fact, ...]:
@@ -2265,10 +2273,14 @@ class CuratorStore:
         if hashlib.sha256(compressed).hexdigest() != row["archive_sha256"]:
             raise FactArchiveIntegrityError("fact archive compressed hash mismatch")
         decoder = zlib.decompressobj()
+        decompression_failed = False
+        source = b""
         try:
             source = decoder.decompress(compressed, MAX_FACT_COMPACTION_SOURCE_BYTES + 1)
-        except zlib.error as exc:
-            raise FactArchiveIntegrityError("fact archive compression is invalid") from exc
+        except zlib.error:
+            decompression_failed = True
+        if decompression_failed:
+            raise FactArchiveIntegrityError("fact archive compression is invalid")
         if (
             len(source) > MAX_FACT_COMPACTION_SOURCE_BYTES
             or decoder.unconsumed_tail
@@ -2280,10 +2292,15 @@ class CuratorStore:
             raise FactArchiveIntegrityError("fact archive source size mismatch")
         if hashlib.sha256(source).hexdigest() != row["source_sha256"]:
             raise FactArchiveIntegrityError("fact archive source hash mismatch")
+        parse_failed = False
+        parsed: object = None
         try:
-            parsed: object = json.loads(source)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise FactArchiveIntegrityError("fact archive JSON is invalid") from exc
+            parsed = json.loads(source)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            # Decoder exceptions retain some or all of the decompressed archive.
+            parse_failed = True
+        if parse_failed:
+            raise FactArchiveIntegrityError("fact archive JSON is invalid")
         if not isinstance(parsed, list):
             raise FactArchiveIntegrityError("fact archive record count mismatch")
         records = cast(list[object], parsed)
