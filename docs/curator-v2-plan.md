@@ -626,8 +626,9 @@ consumer plugin, Hermes integration, or production deployment.
       supported upgrade/rollback procedures. Local non-overwriting SQLite
       backup/restore helpers and integrity tests now exist; production drills,
       migration/rollback drills for deployment data, and supported upgrade/
-      rollback policy remain open. Local migration paths through v15 are covered; the v0-to-v1 step has an
-      injected-rollback fixture, v1-to-v2 preserves existing inbox receipts,
+      rollback policy remain open. Local migration paths through v16 are
+      covered; the v0-to-v1 step has an injected-rollback fixture, v1-to-v2
+      preserves existing inbox receipts,
       v2-to-v3 backfills purge-target age, and v3-to-v4 adds persisted retry
       scheduling without delaying legacy failed events; v4-to-v5 adds expiring
       worker claims without losing persisted retry deadlines; v5-to-v6 adds
@@ -642,6 +643,16 @@ consumer plugin, Hermes integration, or production deployment.
       Sequential migration functions are isolated in
       `src/curatormd_v2/schema_migrations.py`; `CuratorStore` retains the
       surrounding transaction boundary and unversioned-schema bootstrap.
+      Additional progress (2026-10-20): added a destination-race failure test
+      for non-overwriting backup installation. It creates the competing file
+      after destination validation but before the hard-link install, then
+      verifies the concurrent file is preserved and the verified temporary
+      snapshot is removed. The focused test and full 303-test suite pass;
+      strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+      `git diff --check` pass. This is local filesystem evidence, not a
+      production backup or restore drill. Version 16 redacts legacy purge
+      exception details while preserving retry state, with injected rollback
+      coverage.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.

@@ -662,3 +662,16 @@
 - Open: This estimates only configured target contribution. Attribution of
   unconfigured paths, service growth, authenticated owner identity, and live
   deployment remain open.
+
+## 2026-10-20 — Backup destination race recovery coverage
+
+- Changed: Added a failure-injection test for a backup destination created
+  after initial validation but before atomic installation.
+- Verified: The competing destination remains byte-for-byte intact and the
+  temporary verified snapshot is removed. The focused test and full 303-test
+  Curator suite pass; strict Pyright, errors-only Pylint, Bandit, locked
+  dependency audit, and `git diff --check` pass. Local migrations are covered
+  through schema version 16, including injected rollback for legacy purge-error
+  redaction.
+- Open: Production backup/restore drills, deployment migration rollback, and
+  system-of-record recovery policy remain open.

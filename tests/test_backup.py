@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sqlite3
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -84,6 +86,34 @@ class DatabaseBackupTests(unittest.TestCase):
 
             self.assertFalse(destination.exists())
             self.assertEqual(corrupt.read_bytes(), b"not a sqlite database")
+            self.assertEqual(tuple(root.glob(".*.tmp")), ())
+
+    def test_concurrent_destination_creation_preserves_winner_and_cleans_temp(self) -> None:
+        """A destination race must not overwrite the concurrent file or leak a temp."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_path = root / "source.sqlite3"
+            source = CuratorStore(source_path)
+            source.close()
+            destination = root / "backup.sqlite3"
+            concurrent_bytes = b"created by the concurrent backup writer"
+            original_link = os.link
+
+            def create_destination_then_link(
+                source_temp: str | Path, target: str | Path
+            ) -> None:
+                Path(target).write_bytes(concurrent_bytes)
+                original_link(source_temp, target)
+
+            with patch(
+                "curatormd_v2.backup.os.link",
+                side_effect=create_destination_then_link,
+            ):
+                with self.assertRaises(FileExistsError):
+                    backup_database(source_path, destination)
+
+            self.assertEqual(destination.read_bytes(), concurrent_bytes)
             self.assertEqual(tuple(root.glob(".*.tmp")), ())
 
     def test_backup_of_processed_event_contains_receipt_not_source_envelope(self) -> None:
