@@ -1252,6 +1252,11 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       tests; the full suite passes 317, with Pyright, errors-only Pylint,
       Bandit, and diff checks passing. Broader log, trace, upstream, and
       remaining exception-boundary review stays open.
+      Further progress (2026-10-20): invalid API error codes and unresolved
+      configured paths no longer expose caller-controlled values through
+      exception causes or messages. Focused error/config tests pass (40), the
+      full suite passes 319, and Pyright, errors-only Pylint, Bandit, and diff
+      checks pass. The larger cross-boundary privacy review remains open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with

@@ -881,3 +881,13 @@
 **Impact:** Adds local cross-project isolation evidence for the Hermes-to-Curator process boundary without closing identity or runtime gates.
 
 <!-- curatormd:record_id=fd3f405e4a55bbc1d35500955ebe3e1e;content_sha256=fd3f405e4a55bbc1d35500955ebe3e1e05942063074adfe451e2a9bfd23499f8 -->
+
+## 2026-10-20 — Sanitize API error and configured path validation
+
+**Decision:** Curator V2 API error envelopes now reject unsupported code/schema values with fixed errors, and config path-resolution failures no longer echo the configured path or retain OS error context. Focused errors/config tests pass (40), the full suite passes (319), and strict Pyright, errors-only Pylint, Bandit, and git diff --check pass. Persistence status remains degraded with zero pending reviews and cues. Broader privacy review remains open.
+
+**Rationale:** Enum conversion errors can retain invalid API code values, and filesystem resolution errors carry paths supplied by repository config.
+
+**Impact:** Closes two local untrusted-value disclosure paths while preserving the broader privacy gate.
+
+<!-- curatormd:record_id=2d31062e5f5d91d2bf3e91b2951a0a5a;content_sha256=2d31062e5f5d91d2bf3e91b2951a0a5a57686ac034e5f2ac716bd1be4e52998f -->

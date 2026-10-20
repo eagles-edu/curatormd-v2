@@ -55,11 +55,15 @@ class APIError:
             isinstance(self.schema_version, bool)
             or self.schema_version != ERROR_SCHEMA_VERSION
         ):
-            raise ValueError(f"unsupported error schema version: {self.schema_version}")
+            raise ValueError("unsupported error schema version")
+        parse_failed = False
+        code: APIErrorCode | None = None
         try:
             code = APIErrorCode(self.code)
-        except ValueError as exc:
-            raise ValueError("unsupported API error code") from exc
+        except ValueError:
+            parse_failed = True
+        if parse_failed or code is None:
+            raise ValueError("unsupported API error code")
         object.__setattr__(self, "code", code)
         if self.message != _PUBLIC_MESSAGES[code]:
             raise ValueError("API error message must use the stable public text")

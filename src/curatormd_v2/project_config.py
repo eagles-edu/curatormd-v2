@@ -455,10 +455,15 @@ def _resolve_existing_path(root: Path, value: object, name: str) -> Path:
         current = current / part
         if current.is_symlink():
             raise ProjectConfigError(f"{name} must not traverse symlinks")
+    resolution_failed = False
+    resolved = root
     try:
         resolved = current.resolve(strict=True)
-    except OSError as exc:
-        raise ProjectConfigError(f"{name} does not exist: {value}") from exc
+    except OSError:
+        # OS errors can retain absolute paths from an untrusted config value.
+        resolution_failed = True
+    if resolution_failed:
+        raise ProjectConfigError(f"{name} does not exist")
     if not _is_within(resolved, root) or resolved == root:
         raise ProjectConfigError(f"{name} must stay below the repository root")
     return resolved

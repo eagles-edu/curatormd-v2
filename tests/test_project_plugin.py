@@ -143,6 +143,20 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 
+    def test_missing_config_path_error_does_not_echo_untrusted_path(self) -> None:
+        """Path resolution errors must not expose a configured filesystem path."""
+
+        self.write_config(
+            self._valid_config().replace(
+                'tasks = "docs/tasks.md"', 'tasks = "PRIVATE_PATH_CANARY"'
+            )
+        )
+        with self.assertRaisesRegex(ProjectConfigError, "does not exist") as raised:
+            ProjectConfig.load(self.root)
+        self.assertNotIn("PRIVATE_PATH_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def test_invalid_checklist_utf8_error_does_not_retain_source(self) -> None:
         """Checklist decode failures must not retain the source bytes."""
 
