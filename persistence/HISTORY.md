@@ -739,3 +739,17 @@
   from 274 to 272 findings and remains 9.79/10 (exit 28).
 - Open: Repository-wide structural findings and all external identity,
   retention-policy, and deployment gates remain open.
+
+## 2026-10-20 — Sensitive event persistence boundary coverage
+
+- Intent: Strengthen local evidence that a credential-like event rejected
+  before ingestion does not reach persistent V2 project state.
+- Changed: Extended the API regression to scan the live SQLite database, WAL,
+  SHM, configured canonical Markdown target, and SQLite backup for the injected
+  canary, in addition to checking receipt/goal absence and project metrics.
+- Verified: The focused API suite passes 30 tests and the full Curator suite
+  passes 303. Strict Pyright, errors-only Pylint, Bandit, locked dependency
+  audit, and `git diff --check` pass.
+- Open: This proves one rejected-event path only. Retry/quarantine payloads,
+  full logging and trace flows, other artifact classes, and deployment-level
+  privacy review remain open.

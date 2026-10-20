@@ -1132,9 +1132,21 @@ class ApiFacadeTests(unittest.TestCase):
         metrics = api.project_prometheus_metrics(self.caller, "project-a")
         self.assertNotIn(secret, metrics)
 
+        secret_bytes = secret.encode("utf-8")
+        database_path = Path(self.store.database)
+        for path in (
+            database_path,
+            Path(f"{database_path}-wal"),
+            Path(f"{database_path}-shm"),
+        ):
+            if path.exists():
+                self.assertNotIn(secret_bytes, path.read_bytes(), str(path))
+        history = (self.root / "persistence" / "HISTORY.md").read_bytes()
+        self.assertNotIn(secret_bytes, history)
+
         backup_path = self.root.parent / "sensitive-rejection-backup.sqlite3"
         backup_database(self.store.database, backup_path)
-        self.assertNotIn(secret.encode("utf-8"), backup_path.read_bytes())
+        self.assertNotIn(secret_bytes, backup_path.read_bytes())
 
     def test_event_project_mismatch_and_unknown_projects_are_denied(self) -> None:
         api = AuthenticatedCuratorAPI(

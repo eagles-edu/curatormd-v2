@@ -1170,7 +1170,11 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       independent regressions cover sanitized MCP error/log output and
       successful-event backup receipts. This does not close failed/quarantined
       retry payload, full WAL/trace/upstream, or universal sensitive-data
-      detection review.
+      detection review. Additional progress (2026-10-20): the same rejection
+      regression now scans the live SQLite main/WAL/SHM files and the configured
+      canonical Markdown target for the marker. The focused API suite and full
+      303-test suite pass. This covers one rejected-event path only; logs,
+      traces, other artifact classes, and cross-boundary flow remain open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
