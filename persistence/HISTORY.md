@@ -686,3 +686,14 @@
   findings. No live inventory or cleanup was performed.
 - Open: Configured-scope deltas remain estimates; unconfigured-path and service
   growth attribution and live deployment are still unverified.
+
+## 2026-10-20 — Shared temporary consumer test layout
+
+- Changed: Extracted repeated temporary consumer-repository directory creation
+  into `tests/project_fixtures.py` and reused it across six test modules.
+- Verified: The affected modules pass 96 tests and the full suite passes 303;
+  strict Pyright, errors-only Pylint, and `git diff --check` pass. Repository-
+  wide duplicate-code findings decreased from 35 to 24; full warning-level
+  Pylint decreased from 288 to 279 messages and remains 9.78/10 (exit 28).
+- Open: Repository-wide interface, complexity, and duplicate-code findings
+  remain unresolved.

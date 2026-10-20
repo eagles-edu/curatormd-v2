@@ -28,6 +28,7 @@ from curatormd_v2.project_config import (
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
 from curatormd_v2.testing import assert_goal_started_event_contract
+from project_fixtures import create_consumer_repo
 
 
 class ProjectPluginTests(unittest.TestCase):
@@ -38,13 +39,8 @@ class ProjectPluginTests(unittest.TestCase):
             tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
         )
         self.root = Path(self.temporary) / "consumer"
-        self.root.mkdir()
-        (self.root / ".git").mkdir()
-        (self.root / "src").mkdir()
-        (self.root / "docs").mkdir()
-        (self.root / "persistence").mkdir()
+        create_consumer_repo(self.root)
         self.stage = self.root / ".curatormd-v2" / "staging"
-        self.stage.mkdir(parents=True)
         (self.root / "docs" / "tasks.md").write_text("- [ ] Example task\n")
         (self.root / "persistence" / "HISTORY.md").write_text("# History\n")
         self.write_config()

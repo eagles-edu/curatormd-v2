@@ -1268,6 +1268,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       focused Pylint run is clean, its regression and the full 302-test suite
       pass, and the full warning-level score is now 9.78/10 (exit 28); the
       repository-wide structural, duplication, and design findings remain open.
+      Further progress (2026-10-20): extracted the common temporary consumer-
+      repository directory layout into `tests/project_fixtures.py` and reused
+      it across API, plugin, Markdown, MCP, producer CLI, and hosted MCP tests.
+      The six affected modules pass 96 tests and the full suite passes 303;
+      strict Pyright, errors-only Pylint, and `git diff --check` pass. The
+      repository-wide duplicate-code findings fell from 35 to 24; the full
+      inventory fell from 288 to 279 messages but remains at 9.78/10, exit 28.
+      Broader interface, complexity, and duplication cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

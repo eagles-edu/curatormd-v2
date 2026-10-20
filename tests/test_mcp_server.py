@@ -17,6 +17,7 @@ from mcp.client.stdio import StdioServerParameters
 from mcp.types import TextContent
 
 from evidence_fixtures import attest_test_evidence
+from project_fixtures import create_consumer_repo
 
 from curatormd_v2 import (
     AuthenticatedCaller,
@@ -140,12 +141,7 @@ class McpServerTests(unittest.TestCase):
     def test_hermes_goal_binding_requires_trusted_context_and_active_project_goal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
-            (root / ".git").mkdir()
-            (root / "src").mkdir()
-            (root / "docs").mkdir()
-            (root / "persistence").mkdir()
-            (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+            create_consumer_repo(root)
             (root / "docs" / "tasks.md").write_text("- [ ] Bind current goal\n")
             (root / "persistence" / "HISTORY.md").write_text("# History\n")
             (root / ".curatormd-v2.toml").write_text(
@@ -332,13 +328,8 @@ class McpServerTests(unittest.TestCase):
     def test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
-            (root / ".git").mkdir()
-            (root / "src").mkdir()
-            (root / "docs").mkdir()
-            (root / "persistence").mkdir()
+            create_consumer_repo(root)
             staging = root / ".curatormd-v2" / "staging"
-            staging.mkdir(parents=True)
             history = root / "persistence" / "HISTORY.md"
             history.write_text("# History\n")
             (root / "docs" / "tasks.md").write_text("- [ ] MCP SDE task\n")
@@ -927,12 +918,7 @@ class McpServerTests(unittest.TestCase):
     def test_mcp_client_drives_a_project_bound_evidence_gated_goal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
-            (root / ".git").mkdir()
-            (root / "src").mkdir()
-            (root / "docs").mkdir()
-            (root / "persistence").mkdir()
-            (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+            create_consumer_repo(root)
             (root / "docs" / "tasks.md").write_text("- [ ] MCP task\n")
             (root / "persistence" / "HISTORY.md").write_text("# History\n")
             (root / ".curatormd-v2.toml").write_text(
@@ -1469,12 +1455,7 @@ class McpServerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
-            (root / ".git").mkdir()
-            (root / "src").mkdir()
-            (root / "docs").mkdir()
-            (root / "persistence").mkdir()
-            (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+            create_consumer_repo(root)
             (root / "docs" / "tasks.md").write_text("- [ ] stdio task\n")
             (root / "persistence" / "HISTORY.md").write_text("# History\n")
             (root / ".curatormd-v2.toml").write_text(

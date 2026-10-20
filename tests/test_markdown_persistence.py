@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
+from project_fixtures import create_consumer_repo
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -128,13 +129,7 @@ class MarkdownPersistenceTests(unittest.TestCase):
             tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
         )
         base = Path(self.temporary)
-        self.root = base / "consumer"
-        self.root.mkdir()
-        (self.root / ".git").mkdir()
-        (self.root / "src").mkdir()
-        (self.root / "docs").mkdir()
-        (self.root / "persistence").mkdir()
-        (self.root / ".curatormd-v2" / "staging").mkdir(parents=True)
+        self.root = create_consumer_repo(base / "consumer")
         (self.root / "docs" / "tasks.md").write_text("- [ ] Implement adapter\n")
         self.target = self.root / "persistence" / "HISTORY.md"
         self.target.write_text("# Existing project history\n\nKeep this text.\n")
@@ -736,13 +731,7 @@ class MarkdownPersistenceTests(unittest.TestCase):
     def _create_other_repo(self) -> Path:
         """Create a separately configured consumer for project-isolation tests."""
 
-        root = Path(self.temporary) / "other-consumer"
-        root.mkdir()
-        (root / ".git").mkdir()
-        (root / "src").mkdir()
-        (root / "docs").mkdir()
-        (root / "persistence").mkdir()
-        (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+        root = create_consumer_repo(Path(self.temporary) / "other-consumer")
         (root / "docs" / "tasks.md").write_text("- [ ] Other task\n")
         (root / "persistence" / "HISTORY.md").write_text("# Other history\n")
         (root / ".curatormd-v2.toml").write_text(

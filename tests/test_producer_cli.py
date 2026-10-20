@@ -15,6 +15,7 @@ import unittest
 from curatormd_v2 import CuratorStore, SuccessCriterion
 from curatormd_v2.project_config import ProjectConfig
 from curatormd_v2.project_plugin import ProjectPlugin
+from project_fixtures import create_consumer_repo
 
 
 class ProducerCliTests(unittest.TestCase):
@@ -25,15 +26,9 @@ class ProducerCliTests(unittest.TestCase):
             tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
         )
         self.root = Path(self.temporary) / "consumer"
-        self.root.mkdir()
-        (self.root / ".git").mkdir()
-        (self.root / "src").mkdir()
-        (self.root / "docs").mkdir()
-        (self.root / "persistence").mkdir()
+        create_consumer_repo(self.root)
         (self.root / "docs" / "tasks.md").write_text("- [ ] Capture import\n")
         (self.root / "persistence" / "HISTORY.md").write_text("# History\n")
-        staging = self.root / ".curatormd-v2" / "staging"
-        staging.mkdir(parents=True)
         config_path = self.root / ".curatormd-v2.toml"
         config_path.write_text(
             """\

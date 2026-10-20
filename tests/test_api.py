@@ -10,6 +10,7 @@ from typing import cast
 import unittest
 
 from evidence_fixtures import attest_test_evidence
+from project_fixtures import create_consumer_repo
 
 from curatormd_v2 import (
     AuthenticatedCaller,
@@ -165,12 +166,7 @@ class ApiFacadeTests(unittest.TestCase):
             tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
         )
         self.root = Path(temporary) / "consumer"
-        self.root.mkdir()
-        (self.root / ".git").mkdir()
-        (self.root / "src").mkdir()
-        (self.root / "docs").mkdir()
-        (self.root / "persistence").mkdir()
-        (self.root / ".curatormd-v2" / "staging").mkdir(parents=True)
+        create_consumer_repo(self.root)
         (self.root / "docs" / "tasks.md").write_text("- [ ] API task\n")
         (self.root / "persistence" / "HISTORY.md").write_text("# History\n")
         (self.root / ".curatormd-v2.toml").write_text(

@@ -29,6 +29,7 @@ from curatormd_v2 import (
 )
 from curatormd_v2.hosted_mcp import build_local_profile_mcp
 from curatormd_v2.mcp_server import safe_tool_handler
+from project_fixtures import create_consumer_repo
 
 
 def _hermes_meta(
@@ -67,11 +68,7 @@ class HostedMcpTests(unittest.TestCase):
     """Keep each local MCP process pinned to one project and principal."""
 
     def _project(self, root: Path, project_id: str = "bound-project") -> None:
-        (root / ".git").mkdir()
-        (root / "src").mkdir()
-        (root / "docs").mkdir()
-        (root / "persistence").mkdir()
-        (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+        create_consumer_repo(root)
         (root / "docs" / "tasks.md").write_text("- [ ] Bounded task\n")
         (root / "persistence" / "HISTORY.md").write_text("# History\n")
         (root / ".curatormd-v2.toml").write_text(
@@ -137,7 +134,6 @@ class HostedMcpTests(unittest.TestCase):
     def test_profile_binding_defaults_to_read_only_and_denies_review_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(root, database, "gptmd-coding")
@@ -178,7 +174,6 @@ class HostedMcpTests(unittest.TestCase):
     def test_write_grant_is_exact_to_profile_project_and_still_not_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(
@@ -220,7 +215,6 @@ class HostedMcpTests(unittest.TestCase):
     def test_every_local_profile_tool_call_requires_matching_hermes_context(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(root, database, "gptmd-coding")
@@ -268,7 +262,6 @@ class HostedMcpTests(unittest.TestCase):
     def test_launcher_requires_registered_fingerprint_and_live_grants(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             with self.assertRaisesRegex(ValueError, "registration fingerprint"):
@@ -326,7 +319,6 @@ class HostedMcpTests(unittest.TestCase):
     def test_database_path_must_be_absolute_and_profile_id_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             with self.assertRaisesRegex(ValueError, "absolute path"):
                 build_local_profile_mcp(
@@ -395,7 +387,6 @@ class HostedMcpTests(unittest.TestCase):
     def test_stdio_process_pins_real_config_and_rejects_ungranted_goal_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(root, database, "gptmd-coding")
@@ -468,7 +459,6 @@ class HostedMcpTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(
@@ -547,8 +537,6 @@ class HostedMcpTests(unittest.TestCase):
             base = Path(temporary)
             project_a = base / "consumer-a"
             project_b = base / "consumer-b"
-            project_a.mkdir()
-            project_b.mkdir()
             self._project(project_a, "project-a")
             self._project(project_b, "project-b")
             database = base / "global.sqlite3"
