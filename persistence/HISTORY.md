@@ -988,3 +988,13 @@
 **Impact:** Records local verification without claiming causal service attribution or live installation.
 
 <!-- curatormd:record_id=f949fbcf7f0055dc31a21a59aea3f1c7;content_sha256=f949fbcf7f0055dc31a21a59aea3f1c7a922b07eecccab6d9ea72f8ea31e9c8c -->
+
+## 2026-10-20 — Prepare and verify Curator V2 alpha candidate
+
+**Decision:** Curator V2 package metadata is now `0.1.0a1`. The wheel and source archive build; a clean Python 3.12.3 environment installs the wheel and passes the packaged MCP launcher acceptance test. The full Curator suite passes 321 tests; Pyright, errors-only Pylint, Bandit, locked dependency audit, lock validation, and `git diff --check` pass locally. GitHub Actions run 39389283097 passes on alpha commit `8733875`, including the Python 3.12/3.13/3.14 matrix, quality/security checks, and clean-wheel launcher acceptance.
+
+**Rationale:** Establish an evidence-backed alpha package and local consumer-plugin baseline before the planned Vhost Manager integration test.
+
+**Impact:** The alpha candidate is ready for a controlled consumer integration test. No package was published and no consumer, live Hermes profile, deployment, identity, retention, or capture gate was enabled; those remain open.
+
+<!-- curatormd:record_id=daedad2856eac9ed665a022fe5e6e86a;content_sha256=daedad2856eac9ed665a022fe5e6e86a7f77e5210d9f90b7112e17f4eee1b34a -->
