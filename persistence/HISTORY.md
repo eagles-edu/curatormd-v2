@@ -753,3 +753,16 @@
 - Open: This proves one rejected-event path only. Retry/quarantine payloads,
   full logging and trace flows, other artifact classes, and deployment-level
   privacy review remain open.
+
+## 2026-10-20 — Hermes outbox process-crash recovery
+
+- Intent: Verify that the Hermes Core profile-local lifecycle outbox recovers
+  its committed event and acknowledgment state after real process exits.
+- Changed: Added a subprocess regression that terminates workers abruptly
+  after enqueue, retry, and acknowledgment commits, then reopens the same
+  profile outbox from fresh processes and checks exact replay/idempotency.
+- Verified: The new subprocess test and the 8-test gateway hook suite pass via
+  Hermes `scripts/run_tests.sh`. Hermes `scripts/check` passes all 12 checks
+  with zero blocking or advisory findings.
+- Open: This is local SQLite/outbox evidence, not running gateway supervision,
+  cross-process Curator MCP delivery, authenticated identity, or deployment.

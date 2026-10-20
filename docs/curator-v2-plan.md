@@ -1027,6 +1027,14 @@ consumer plugin, Hermes integration, or production deployment.
       proves ordered delivery and acknowledgment through `agent:start`; 14
       hook and multiplex-scope tests passed, as did Hermes Ruff/health checks.
       Real gateway restart and deployed-profile delivery remain unverified.
+      Additional progress (2026-10-20): a Hermes subprocess regression commits
+      an outbox event and exits without closing SQLite, then uses fresh
+      processes to verify exact-envelope retry, duplicate enqueue idempotency,
+      durable acknowledgment, and no replay after acknowledgment. The new
+      process test and all 8 hook tests pass; Hermes `scripts/check` passes all
+      12 checks with zero blocking/advisory findings. This proves local outbox
+      process-crash recovery only; live gateway supervision, cross-process MCP
+      delivery, identity, and deployment remain unverified.
 - [ ] Integrate profiles, runtime, global router, managed MCP gateway, and
       project-scoped plugin bindings under the Hermes Core account boundary.
 - [ ] Verify that profile/project selection and permission checks are explicit
