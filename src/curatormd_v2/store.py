@@ -13,7 +13,8 @@ import re
 import sqlite3
 import stat
 from threading import RLock
-from typing import Generator, cast
+from types import TracebackType
+from typing import Generator, Self, cast
 import zlib
 
 from .events import (
@@ -365,6 +366,21 @@ class CuratorStore:
 
         with self._lock:
             self._connection.close()
+
+    def __enter__(self) -> Self:
+        """Return this store for use in a resource-managed block."""
+
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Close the database connection when leaving a resource-managed block."""
+
+        self.close()
 
     @contextmanager
     def _transaction(self) -> Generator[sqlite3.Connection, None, None]:

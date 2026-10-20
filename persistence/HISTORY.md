@@ -911,3 +911,25 @@
 **Impact:** Reduces warning-level Pylint findings without weakening the blocking errors-only CI gate; structural cleanup remains open.
 
 <!-- curatormd:record_id=88cbf09e2592c880a49d9a123dba2172;content_sha256=88cbf09e2592c880a49d9a123dba2172567d36e0b87ddc3c8d98530bdfc9ba15 -->
+
+## 2026-10-20 — Verify canonical persistence precedes unheld artifact purge
+
+**Decision:** - The MCP SDE lifecycle acceptance test stages a held artifact and an unheld transient-content canary; it verifies canonical Markdown persistence before immediate purge of the unheld file, while the held file remains pending and the canary is absent from canonical Markdown.
+- Current Curator quality checks pass: Pyright reports 0 diagnostics; errors-only Pylint, Bandit, locked dependency audit, and `git diff --check` exit successfully. Full warning-level Pylint cleanup and production purge scheduling remain open.
+
+**Rationale:** The V2 purge contract requires canonical persistence before cleanup, distinct held-artifact behavior, and no raw transient content in canonical facts. The completed local quality checks establish the current static baseline without closing live-runtime or deployment gates.
+
+**Impact:** Preserves a compact verification fact for purge ordering and current static quality state; production consumer and scheduler behavior remain unverified.
+
+<!-- curatormd:record_id=193835595deff78817bc9c693448b0ca;content_sha256=193835595deff78817bc9c693448b0ca4c74295337f3801ecdd7008b0c0b5f53 -->
+
+## 2026-10-20 — Scope Curator SQLite connections with the store context manager
+
+**Decision:** - `CuratorStore` now supports `with` blocks and closes its SQLite connection on exit; project-access test setup uses `TestCase.enterContext` to own the store through teardown.
+- `ProjectActivitySnapshot` keeps exact built-in boolean validation through the shared runtime type guard. The full suite passes 320 tests; Pyright, errors-only Pylint, targeted resource/type Pylint, Bandit, and locked dependency audit pass. Full warning-level Pylint reports 272 findings, down from 274.
+
+**Rationale:** The store owns an open SQLite connection and tests had to manage cleanup manually. Context-manager support makes connection lifetime explicit; the shared exact-type guard retains runtime rejection of non-boolean values without relaxing validation.
+
+**Impact:** Improves connection cleanup ergonomics and removes two non-blocking Pylint findings while keeping repository-wide design and complexity warnings open.
+
+<!-- curatormd:record_id=6b8b955b60aa3f2d9c8b2e7fe26fd2e6;content_sha256=6b8b955b60aa3f2d9c8b2e7fe26fd2e656d40373aeecbe9897fde4aadc06f389 -->

@@ -442,7 +442,9 @@ consumer plugin, Hermes integration, or production deployment.
       persistence, the unheld file is purged in the same operation while the
       held file remains pending; a unique transient-content canary is absent
       from canonical Markdown. This is local end-to-end test evidence, not a
-      live consumer or production purge scheduler.
+      live consumer or production purge scheduler. The current full Curator
+      suite passes 320 tests; Pyright reports zero diagnostics, errors-only
+      Pylint, Bandit, locked dependency audit, and `git diff --check` pass.
 - [ ] Implement inventory discovery in each staging adapter and prove it
       accounts for every temporary artifact class (raw chat, cue, import, scratch,
       generated intermediate, and duplicate). Progress (2026-10-18): the
@@ -1398,6 +1400,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       design warnings. The 98 focused affected tests and 319-test full suite
       pass; strict Pyright, errors-only Pylint, and `git diff --check` pass.
       Full warning-level cleanup remains open.
+      Further progress (2026-10-20): added context-manager support to
+      `CuratorStore` so its SQLite connection can be scoped to resource
+      lifetime, and moved project-access test setup to `TestCase.enterContext`.
+      Exact boolean validation continues to use the shared strict runtime
+      validator. The full suite passes 320 tests; Pyright, errors-only Pylint,
+      Bandit, locked dependency audit, and targeted Pylint for resource/type
+      checks pass. The full warning-level inventory is 272 findings, down from
+      274; repository-wide cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.

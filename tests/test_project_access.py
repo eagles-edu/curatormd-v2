@@ -39,9 +39,14 @@ class DurableProjectAccessTests(unittest.TestCase):
     """Prove persistent grants, auditability, revocation, and default denial."""
 
     def setUp(self) -> None:
+        # unittest keeps the directory and store alive until teardown.
+        # pylint: disable=consider-using-with
         temporary = self.enterContext(tempfile.TemporaryDirectory())
-        self.store = CuratorStore(f"{temporary}/curator.sqlite3")
-        self.addCleanup(self.store.close)
+        # pylint: enable=consider-using-with
+        store = CuratorStore(
+            f"{temporary}/curator.sqlite3"
+        )
+        self.store = self.enterContext(store)
         self.admin = TestProjectAdministrator()
         self.manager = ProjectAccessManager(self.store, self.admin)
         self.operator = AuthenticatedCaller("operator-1")

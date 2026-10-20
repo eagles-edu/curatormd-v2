@@ -10,7 +10,7 @@ from typing import TypeGuard
 from uuid import uuid4
 
 from .content_safety import validate_safe_text
-from .validation import is_exact_int
+from .validation import is_exact_bool, is_exact_int
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -1193,7 +1193,7 @@ class ProjectActivitySnapshot:
             raise ValueError("event receipt total must match its processing states")
         if self.sde_candidate_count != sum(counts[8:11]):
             raise ValueError("SDE total must match its review states")
-        if type(self.events_observed) is not bool:
+        if not is_exact_bool(self.events_observed):
             raise ValueError("events_observed must be a boolean")
         if self.events_observed != (self.event_receipt_count > 0):
             raise ValueError("events_observed must match retained event receipts")
