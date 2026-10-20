@@ -675,3 +675,14 @@
   redaction.
 - Open: Production backup/restore drills, deployment migration rollback, and
   system-of-record recovery policy remain open.
+
+## 2026-10-20 — Host Steward overlapping-target attribution guard
+
+- Changed: Added a regression for nested configured inventory targets. Because
+  their scans overlap, Host Steward marks coverage partial, suppresses owner
+  attribution, and reports the filesystem delta as unattributed.
+- Verified: All 19 focused Host Steward tests pass with disposable paths;
+  Hermes `scripts/check` passes all 12 checks with no blocking/advisory
+  findings. No live inventory or cleanup was performed.
+- Open: Configured-scope deltas remain estimates; unconfigured-path and service
+  growth attribution and live deployment are still unverified.
