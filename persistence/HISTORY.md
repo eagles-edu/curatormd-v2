@@ -766,3 +766,19 @@
   with zero blocking or advisory findings.
 - Open: This is local SQLite/outbox evidence, not running gateway supervision,
   cross-process Curator MCP delivery, authenticated identity, or deployment.
+
+## 2026-10-20 — Hermes adapter to Curator stdio process
+
+- Intent: Verify the Curator-side Hermes adapter and durable event receiver
+  across the actual MCP stdio process boundary.
+- Changed: Added an acceptance test that creates a synthetic Hermes-format
+  envelope, binds its test profile/session to an active goal, sends it through
+  the repository-configured hook adapter into a separate Curator MCP process,
+  repeats the event, then reopens the child's SQLite database.
+- Verified: The adapter suite passes 3 tests and the full Curator suite passes
+  304. Strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+  `git diff --check` pass. The child database contains the durable receipt and
+  exactly one Hermes turn fact after duplicate delivery.
+- Open: This does not launch Hermes or its durable outbox; profile metadata is
+  synthetic. Live gateway dispatch, authenticated identity, and deployment
+  remain open.

@@ -6,10 +6,13 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
+from typing import cast
 
 from curatormd_v2.hermes_hook import build_hermes_hook_handler
+from project_fixtures import create_consumer_repo
 
 
 class HermesHookAdapterTests(unittest.TestCase):
@@ -308,5 +311,179 @@ class HermesHookAdapterTests(unittest.TestCase):
                         self.assertNotIn(late_event.payload.fact_id, retained_ids)
 
                 asyncio.run(drive())
+            finally:
+                store.close()
+
+    def test_adapter_delivers_to_a_separate_durable_mcp_process(self) -> None:
+        """Route a Hermes envelope over stdio and reopen the child's receipt."""
+        from mcp import Client
+        from mcp.client.stdio import StdioServerParameters
+        from mcp.types import TextContent
+
+        from curatormd_v2 import CuratorStore, EventDisposition, FactKind
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            create_consumer_repo(root)
+            (root / "docs" / "tasks.md").write_text("- [ ] stdio task\n")
+            (root / "persistence" / "HISTORY.md").write_text("# History\n")
+            (root / ".curatormd-v2.toml").write_text(
+                """\
+                schema_version = 1
+                backend_api_version = 1
+                project_id = "stdio-project"
+
+                [scope]
+                read_paths = ["src", "docs"]
+
+                [checklists]
+                tasks = "docs/tasks.md"
+
+                [evidence]
+                adapters = []
+
+                [staging]
+                root = ".curatormd-v2/staging"
+
+                [persistence]
+                targets = ["persistence/HISTORY.md"]
+                """
+            )
+            (root / ".curatormd-v2.toml").chmod(0o600)
+            database = root / ".curatormd-v2" / "stdio.sqlite3"
+            profile_id = "stdio-test-subject"
+            session_id = "hermes-stdio-session"
+            goal_id = "hermes-stdio-goal"
+            attempt_id = "hermes-stdio-attempt"
+            source_id = "hermes-" + hashlib.sha256(
+                f"{profile_id}\0stdio-project".encode("utf-8")
+            ).hexdigest()
+            event_id = "hermes-" + hashlib.sha256(
+                f"{source_id}\0codex:turn:start\0{attempt_id}".encode("utf-8")
+            ).hexdigest()
+            hook_context: dict[str, object] = {
+                "project_id": "stdio-project",
+                "goal_id": goal_id,
+                "event_id": event_id,
+                "source_id": source_id,
+                "source_sequence": 1,
+                "occurred_at": "2026-10-20T00:00:00+00:00",
+                "attempt_id": attempt_id,
+                "session_id": session_id,
+            }
+            parameters = StdioServerParameters(
+                command=sys.executable,
+                args=[str(Path(__file__).with_name("mcp_stdio_fixture.py"))],
+                env={"CURATOR_TEST_PROJECT_ROOT": str(root)},
+                cwd=Path(__file__).parents[1],
+            )
+
+            async def exercise() -> None:
+                async with Client(parameters, raise_exceptions=True) as client:
+                    async def call_json(
+                        name: str, arguments: dict[str, object]
+                    ) -> dict[str, object]:
+                        result = await client.call_tool(name, arguments)
+                        self.assertFalse(result.is_error, name)
+                        content = result.content[0]
+                        assert isinstance(content, TextContent)
+                        decoded: object = json.loads(content.text)
+                        assert isinstance(decoded, dict)
+                        return cast(dict[str, object], decoded)
+
+                    started = await call_json(
+                        "goal_start",
+                        {
+                            "event_id": "stdio-goal-start",
+                            "goal_id": goal_id,
+                            "problem": "Exercise separate-process Hermes delivery",
+                            "success_criteria": [
+                                {
+                                    "criterion_id": "fact",
+                                    "description": "The durable lifecycle fact is stored",
+                                }
+                            ],
+                            "source_sequence": 1,
+                        },
+                    )
+                    self.assertEqual(started["status"], "processed")
+                    activated = await call_json(
+                        "goal_activate",
+                        {
+                            "event_id": "stdio-goal-activate",
+                            "goal_id": goal_id,
+                            "reason": "Activate the synthetic integration goal",
+                            "expected_lifecycle_revision": 1,
+                            "source_sequence": 2,
+                        },
+                    )
+                    self.assertEqual(activated["status"], "processed")
+                    bound = await client.call_tool(
+                        "hermes_goal_bind",
+                        {"goal_id": goal_id},
+                        meta={
+                            "hermes/profile_id": profile_id,
+                            "hermes/session_id": session_id,
+                        },
+                    )
+                    self.assertFalse(bound.is_error)
+
+                    async def call_curator(
+                        arguments: dict[str, object], **kwargs: object
+                    ) -> str:
+                        response = await client.call_tool(
+                            "hermes_codex_event",
+                            arguments,
+                            meta={
+                                "hermes/profile_id": profile_id,
+                                "hermes/session_id": kwargs["session_id"],
+                                "hermes/durable_event": kwargs[
+                                    "hermes_durable_event"
+                                ],
+                            },
+                        )
+                        content = response.content[0]
+                        if response.is_error or not isinstance(content, TextContent):
+                            return json.dumps({"error": "stdio event delivery failed"})
+                        return json.dumps({"result": content.text})
+
+                    handler = build_hermes_hook_handler(
+                        root, "curator-stdio-project", call_tool=call_curator
+                    )
+                    self.assertTrue(
+                        await handler("codex:turn:start", hook_context)
+                    )
+                    self.assertTrue(
+                        await handler("codex:turn:start", hook_context)
+                    )
+                    status = await call_json("goal_status", {"goal_id": goal_id})
+                    goal_value = status["goal"]
+                    assert isinstance(goal_value, dict)
+                    goal = cast(dict[str, object], goal_value)
+                    self.assertEqual(goal["status"], "active")
+                    facts_value = status["facts"]
+                    assert isinstance(facts_value, list)
+                    facts = cast(list[dict[str, object]], facts_value)
+                    self.assertEqual(
+                        len(facts),
+                        2,
+                    )
+                    self.assertEqual(
+                        facts[-1]["bullet"],
+                        "Codex turn started for the explicitly bound goal.",
+                    )
+
+            asyncio.run(exercise())
+            store = CuratorStore(database)
+            try:
+                receipt = store.event_receipt("stdio-project", event_id)
+                self.assertEqual(receipt.disposition, EventDisposition.APPLIED)
+                facts = store.list_facts(goal_id, "stdio-project")
+                self.assertEqual(len(facts), 2)
+                self.assertTrue(all(fact.kind is FactKind.INTENT for fact in facts))
+                self.assertEqual(
+                    facts[-1].bullet,
+                    "Codex turn started for the explicitly bound goal.",
+                )
             finally:
                 store.close()

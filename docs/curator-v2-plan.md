@@ -1034,7 +1034,15 @@ consumer plugin, Hermes integration, or production deployment.
       process test and all 8 hook tests pass; Hermes `scripts/check` passes all
       12 checks with zero blocking/advisory findings. This proves local outbox
       process-crash recovery only; live gateway supervision, cross-process MCP
-      delivery, identity, and deployment remain unverified.
+      delivery, identity, and deployment remain unverified. Additional
+      progress (2026-10-20): a Curator subprocess acceptance test now sends a
+      Hermes-format envelope through the repository-bound hook adapter into a
+      separate Curator stdio MCP process, repeats the event, and reopens the
+      child process's SQLite store to confirm one durable fact and receipt. It
+      uses synthetic profile/session metadata and does not launch Hermes or its
+      outbox; the full Curator suite passes 304 tests, strict Pyright and
+      errors-only Pylint pass. Real gateway-to-MCP dispatch, authenticated
+      identity, and deployment remain unverified.
 - [ ] Integrate profiles, runtime, global router, managed MCP gateway, and
       project-scoped plugin bindings under the Hermes Core account boundary.
 - [ ] Verify that profile/project selection and permission checks are explicit
