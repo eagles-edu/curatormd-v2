@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import UTC, datetime, timedelta
 import hashlib
+from io import BytesIO
 import tempfile
 from typing import cast
 import unittest
@@ -16,6 +17,7 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     backup_database,
+    ArtifactRef,
     ConflictError,
     CuratorStore,
     EvidenceGateError,
@@ -44,6 +46,7 @@ from curatormd_v2 import (
     ProjectPlugin,
     RateLimitExceeded,
     ReviewDecision,
+    RetentionHoldKind,
     SDEQualityFeedbackLabel,
     SuccessCriterion,
 )
@@ -1435,6 +1438,16 @@ class ApiFacadeTests(unittest.TestCase):
             .operational_counts.pending_review_count,
             1,
         )
+        fully_probed_api = AuthenticatedCuratorAPI(
+            {"project-a": plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+        review_health = fully_probed_api.project_health(self.caller, "project-a")
+        self.assertEqual(review_health.status.value, "degraded")
+        self.assertIn("review_backlog", review_health.gate_codes)
         with self.assertRaisesRegex(EvidenceGateError, "fact IDs must be unique"):
             api.sde_assess(
                 self.caller,
@@ -1464,6 +1477,78 @@ class ApiFacadeTests(unittest.TestCase):
                 (),
             )
         )
+
+    def test_project_health_reports_held_purge_receipt_and_artifact_as_required_work(
+        self,
+    ) -> None:
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
+        )
+        goal = plugin.service.goal_start(
+            "Keep an approved held artifact visible to operations",
+            (SuccessCriterion("verified", "Verification evidence passes"),),
+        )
+        change, _ = plugin.service.goal_fact(
+            goal.goal_id, FactKind.CHANGE, "Implemented the scoped change"
+        )
+        evidence = EvidenceRef(
+            "unit-test",
+            "test-proof:verified",
+            hashlib.sha256(b"test-proof").hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        verification, _ = plugin.service.goal_fact(
+            goal.goal_id,
+            FactKind.VERIFICATION,
+            "The scoped verification passed",
+            criterion_id="verified",
+            evidence=(evidence,),
+        )
+        api = AuthenticatedCuratorAPI(
+            {"project-a": plugin},
+            AllowProject(
+                {
+                    ("hermes-user-1", "project-a", ProjectAction.READ),
+                    ("hermes-user-1", "project-a", ProjectAction.WRITE),
+                    ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+                }
+            ),
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+        candidate = api.sde_assess(
+            self.caller,
+            "project-a",
+            goal.goal_id,
+            Materiality.IMPLEMENTATION,
+            "A verified change should be reviewable",
+            (change.fact_id, verification.fact_id),
+        )
+        assert candidate is not None
+        staged = plugin.stage_artifact(
+            goal.goal_id, "scratch", "held-health-artifact", BytesIO(b"held")
+        )
+        held = ArtifactRef(staged.path, staged.sha256, RetentionHoldKind.LEGAL)
+
+        receipt = api.sde_confirm(
+            self.caller,
+            "project-a",
+            candidate.candidate_id,
+            ReviewDecision.APPROVED,
+            (held,),
+            artifact_inventory_complete=True,
+            rationale="Keep the legal hold visible to operations",
+        )
+
+        self.assertEqual(receipt.purge_status.value, "purge_pending")
+        health = api.project_health(self.caller, "project-a")
+        self.assertEqual(health.status.value, "degraded")
+        self.assertEqual(health.operational_counts.pending_purge_receipt_count, 1)
+        self.assertEqual(health.operational_counts.pending_purge_artifact_count, 1)
+        self.assertIn("purge_pending", health.gate_codes)
+        self.assertIn("purge_artifacts_pending", health.gate_codes)
+        self.assertIn("staged_artifacts_present", health.gate_codes)
 
 
 if __name__ == "__main__":

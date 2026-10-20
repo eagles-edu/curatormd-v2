@@ -819,3 +819,15 @@
 **Impact:** Keeps the integration's final ownership and API boundary accurate while preserving Hermes Core's file-size health constraint.
 
 <!-- curatormd:record_id=f296f36d3531cec1ce1b13fc49866365;content_sha256=f296f36d3531cec1ce1b13fc49866365a221c8fa550ddc72b754527a15024718 -->
+
+## 2026-10-20 — Prove local health degrades for pending review and held purge work
+
+**Decision:** - Changed: Extended API health coverage for an outstanding SDE review and a held artifact with a pending purge receipt and artifact.
+- Verified: Both cases return `degraded` with all dependency probes healthy and expose the exact review/purge/staging gate codes. The focused API suite passes 31 tests; the full Curator suite passes 305; Pyright reports 0 diagnostics; errors-only Pylint and Bandit pass.
+- Open: Production scheduler health, alert delivery, and production storage-adapter failure accounting remain unverified.
+
+**Rationale:** The health plan item already had local aggregate counts, but lacked direct regressions for pending review and pending held-purge states under otherwise healthy dependency probes.
+
+**Impact:** Strengthens evidence that local operational health cannot report green while required reviewer or purge work remains.
+
+<!-- curatormd:record_id=ee92b8c406aa726f1014af8a245454af;content_sha256=ee92b8c406aa726f1014af8a245454afd42768a47cfeb96cf6768ed5bc3b3512 -->

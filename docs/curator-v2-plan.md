@@ -504,6 +504,12 @@ consumer plugin, Hermes integration, or production deployment.
       health; green must remain impossible while required work is pending,
       overdue, or unaccounted for. This requires the production scheduler and
       health/alert integration, not just the project-scoped status tool.
+      Additional progress (2026-10-20): API regressions now prove that a pending
+      SDE review and a held artifact with a pending purge receipt/artifact each
+      force `degraded` status even when every dependency probe is healthy. The
+      existing local aggregator's exact pending-work counts and gate codes are
+      exercised directly. Production scheduler state, alert delivery, and
+      storage-adapter failure accounting remain open.
 - [ ] Complete a failure-injection test matrix against the production storage
       and staging adapters, not only local temporary files.
 
