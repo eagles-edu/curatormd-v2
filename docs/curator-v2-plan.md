@@ -267,7 +267,15 @@ consumer plugin, Hermes integration, or production deployment.
       a live consumer emits the action.
 - [ ] Demonstrate the lifecycle through a real consumer workflow, from request
       capture to a truthful planned/active/completed/open/blocked/deferred/
-      cancelled/superseded status view.
+      cancelled/superseded status view. Progress (2026-10-20): the installed
+      alpha MCP launcher ran against the actual Vhost Manager repository config
+      and a separate V2 smoke database. A goal and fact were written, exact
+      retries across fresh subprocesses were idempotent, changed event content
+      conflicted, and a finish request without criterion evidence remained open.
+      `goal_report` showed the open TODO and `goal_status` retained the unmet
+      criterion. This uses manually supplied Hermes context and test-only write
+      access; a Vhost Manager application producer and live profile route remain
+      open, so the real consumer workflow item is not closed.
 
 ### 2. Evidence and fact ledger
 
@@ -673,7 +681,9 @@ consumer plugin, Hermes integration, or production deployment.
       exception details while preserving retry state, with injected rollback
       coverage. Version 17 retains semantic event-retry digests, backfills only
       bounded payloads still present, and is covered by migration and typed MCP
-      replay/conflict tests.
+      replay/conflict tests. A second migration regression verifies processed
+      v16 receipts with discarded payloads remain on strict raw-digest conflict
+      behavior instead of receiving a guessed semantic identity.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.

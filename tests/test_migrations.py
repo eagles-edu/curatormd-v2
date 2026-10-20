@@ -12,6 +12,7 @@ from evidence_fixtures import attest_test_evidence
 from curatormd_v2 import (
     ArtifactPurger,
     ArtifactRef,
+    ConflictError,
     CuratorService,
     CuratorStore,
     CriterionStatus,
@@ -199,6 +200,59 @@ class SchemaMigrationTests(unittest.TestCase):
                     version = connection.execute("PRAGMA user_version").fetchone()[0]
                 self.assertEqual(version, SQLITE_SCHEMA_VERSION)
                 self.assertEqual(row["idempotency_sha256"], event.idempotency_sha256)
+            finally:
+                migrated.close()
+
+    def test_v16_migration_does_not_guess_identity_for_processed_event(self) -> None:
+        """Keep strict replay conflict when the legacy payload was discarded."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v16-processed.sqlite3"
+            store = CuratorStore(database_path)
+            payload = GoalStarted(
+                goal_id="migration-processed-goal",
+                problem="Keep processed legacy event identity conservative",
+                success_criteria=(
+                    SuccessCriterion("verified", "Unknown identity stays unknown"),
+                ),
+            )
+            original = EventEnvelope(
+                event_id="migration-processed-event",
+                project_id="migration-project",
+                payload=payload,
+                occurred_at="2026-10-20T08:00:00+00:00",
+            )
+            store.ingest_event(original)
+            store.mark_event_processed(
+                "migration-project", "migration-processed-event"
+            )
+            store.close()
+
+            connection = sqlite3.connect(database_path)
+            connection.execute("ALTER TABLE event_inbox DROP COLUMN idempotency_sha256")
+            connection.execute("PRAGMA user_version = 16")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    row = connection.execute(
+                        """SELECT payload_json, payload_sha256, idempotency_sha256
+                           FROM event_inbox WHERE project_id = ? AND event_id = ?""",
+                        ("migration-project", "migration-processed-event"),
+                    ).fetchone()
+                self.assertIsNone(row["payload_json"])
+                self.assertTrue(row["payload_sha256"])
+                self.assertIsNone(row["idempotency_sha256"])
+                retry = EventEnvelope(
+                    event_id=original.event_id,
+                    project_id=original.project_id,
+                    payload=payload,
+                    occurred_at="2026-10-20T08:00:01+00:00",
+                )
+                with self.assertRaisesRegex(ConflictError, "different payload"):
+                    migrated.ingest_event(retry)
             finally:
                 migrated.close()
 

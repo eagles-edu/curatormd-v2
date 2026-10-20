@@ -1028,3 +1028,13 @@
 **Impact:** The alpha retry fix is pushed and hosted CI is green. Authentication, policy, live profile delivery, and deployment gates remain open.
 
 <!-- curatormd:record_id=fd38bbb94da6e500ccee6a1385f86c79;content_sha256=fd38bbb94da6e500ccee6a1385f86c79bed798dbaa88a70d9694c8bfe5da51f4 -->
+
+## 2026-10-20 — Verify Vhost Manager open-status workflow and conservative v16 replay migration
+
+**Decision:** The installed Curator V2 alpha launcher, using the actual Vhost Manager repository config and an isolated V2 smoke database, processed a goal and fact, accepted their retries across fresh MCP subprocesses, and rejected changed content for the same event ID. A completion request without criterion evidence kept the goal and criterion open; `goal_report` exposed the open TODO. The reopened database reports 2 goals and 6 processed event receipts; project health remains unknown for five unobserved dependencies. A new migration regression proves processed v16 receipts with discarded payloads keep strict raw-digest conflict behavior. The full Curator suite passes 324 tests; Pyright, errors-only Pylint, Bandit, locked audit, lock check, and diff check pass.
+
+**Rationale:** The alpha consumer smoke needed evidence of truthful status output after persistent request, change, and incomplete finish events. The migration fallback must not infer semantic identity after raw event content has been discarded.
+
+**Impact:** This verifies an installed package workflow against the real consumer config in a separate test database. Hermes metadata is synthetic, writes use explicit test-only access, and no Vhost Manager application source changed. The real producer workflow, authenticated identity, live profile delivery, retention policy, and deployed runtime remain open. Hosted CI for the new migration regression is pending.
+
+<!-- curatormd:record_id=a1d735d3c7fd21051deb3c1cfb45f3ce;content_sha256=a1d735d3c7fd21051deb3c1cfb45f3cee5ba6fe473a47bf2c1003d7b6c40fafd -->
