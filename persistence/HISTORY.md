@@ -966,3 +966,15 @@
 **Impact:** Connects every supported reference producer class to complete inventory evidence without asserting external producer routing, consumer installation, or production cleanup.
 
 <!-- curatormd:record_id=91d7756c976595d46cabe2f889b60af7;content_sha256=91d7756c976595d46cabe2f889b60af73e8ed025959d5e64540e75e4bec1ae3a -->
+
+## 2026-10-20 — Exercise Hermes managed MCP handler in durable hook test
+
+**Decision:** - The Hermes gateway regression now runs the production `_make_tool_handler` and managed MCP dispatch against a fake connected session/background test loop, and verifies the processed receipt clears the persisted event while request metadata contains Hermes-derived profile/session plus the durable marker.
+- `scripts/run_tests.sh tests/gateway/test_hooks.py` passes all 12 tests; `python3 scripts/check` passes 12 checks; Hermes and Curator `git diff --check` pass.
+- This is local source/test evidence only. Configured Curator stdio launch, authenticated identity, profile authorization, live gateway delivery, and deployment remain open.
+
+**Rationale:** The earlier regression stubbed the managed MCP handler factory. Exercising its production path strengthens the local Hermes integration evidence while keeping the fake transport boundary explicit.
+
+**Impact:** Removes the handler-factory stub from the gateway regression without claiming configured stdio, authenticated identity, or runtime delivery.
+
+<!-- curatormd:record_id=648df7b420e628f2f16cd4ef204e0db5;content_sha256=648df7b420e628f2f16cd4ef204e0db5d61474d1faca48bf1780ea5b52345e99 -->

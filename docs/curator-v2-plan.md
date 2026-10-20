@@ -1091,9 +1091,12 @@ consumer plugin, Hermes integration, or production deployment.
       public `ctx`, calls the allowlisted managed MCP handler with session and
       durable-event context, and acknowledges only the processed receipt. The
       12-test hook module and all 12 Hermes `scripts/check` checks pass. The
-      MCP handler factory is stubbed at its connection seam; this does not
-      exercise a configured Curator stdio process, authenticated identity, or
-      live profile activation.
+      regression now invokes the production `_make_tool_handler` and its
+      managed call path against a fake connected MCP session, with a separate
+      test loop; it verifies the processed receipt, outbox acknowledgment, and
+      Hermes-derived profile/session/durable-event request metadata. This still
+      does not launch a configured Curator stdio process or prove authenticated
+      identity, profile authorization, or live profile activation.
 - [ ] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries. Additional progress
       (2026-10-20): the separate-process Hermes adapter acceptance test now
