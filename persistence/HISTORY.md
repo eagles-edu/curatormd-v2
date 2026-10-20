@@ -636,3 +636,13 @@
 - Open: The shared assertion has not yet run in a consumer plugin suite; real
   producer routing, Hermes delivery, deployment, trusted identity, and
   retention policy remain unverified.
+
+## 2026-10-20 — Producer contract helper warning cleanup
+
+- Changed: Replaced the helper's long boolean comparison with explicit tuples
+  of persisted and producer-supplied goal fields.
+- Verified: The focused regression and full 302-test suite pass; strict
+  Pyright and focused Pylint pass. Full warning-level Pylint rates the
+  repository at 9.78/10 and exits 28 with the remaining non-blocking inventory.
+- Open: Repository-wide structural, duplicate-code, and design findings remain
+  unresolved.

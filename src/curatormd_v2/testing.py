@@ -88,21 +88,35 @@ def assert_goal_started_event_contract(
 
     snapshot = adapter.goal_status(event.payload.goal_id)
     goal = snapshot.goal
-    if goal.project_id != expected_project_id:
-        raise PluginContractViolation("persisted goal escaped the expected project")
-    if (
-        goal.goal_id != event.payload.goal_id
-        or goal.problem != event.payload.problem
-        or goal.owner != event.payload.owner
-        or goal.success_criteria != event.payload.success_criteria
-        or goal.status != event.payload.initial_status
-        or goal.checklist_id != event.payload.checklist_id
-        or goal.checklist_version != event.payload.checklist_version
-        or goal.checklist_source_text != event.payload.checklist_source_text
-        or goal.parent_goal_id != event.payload.parent_goal_id
-        or goal.depends_on_goal_ids != event.payload.depends_on_goal_ids
-        or goal.next_action != event.payload.next_action
-    ):
+    persisted_fields = (
+        goal.goal_id,
+        goal.project_id,
+        goal.problem,
+        goal.owner,
+        goal.success_criteria,
+        goal.status,
+        goal.checklist_id,
+        goal.checklist_version,
+        goal.checklist_source_text,
+        goal.parent_goal_id,
+        goal.depends_on_goal_ids,
+        goal.next_action,
+    )
+    producer_fields = (
+        event.payload.goal_id,
+        expected_project_id,
+        event.payload.problem,
+        event.payload.owner,
+        event.payload.success_criteria,
+        event.payload.initial_status,
+        event.payload.checklist_id,
+        event.payload.checklist_version,
+        event.payload.checklist_source_text,
+        event.payload.parent_goal_id,
+        event.payload.depends_on_goal_ids,
+        event.payload.next_action,
+    )
+    if persisted_fields != producer_fields:
         raise PluginContractViolation("persisted goal differs from producer contract")
 
     usage = adapter.storage_usage()

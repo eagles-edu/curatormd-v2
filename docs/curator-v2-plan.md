@@ -1241,7 +1241,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       identity; its focused Pylint run reports 10.00/10, its two CLI tests pass,
       and strict Pyright reports 0 diagnostics. Repository-wide Pylint remains
       open: the full run exits 28 at 9.77/10 with non-blocking design,
-      duplication, and warning findings.
+      duplication, and warning findings. Further progress (2026-10-20): removed
+      the new producer/backend contract helper's boolean-expression complexity
+      warning by comparing explicit persisted and producer field tuples. Its
+      focused Pylint run is clean, its regression and the full 302-test suite
+      pass, and the full warning-level score is now 9.78/10 (exit 28); the
+      repository-wide structural, duplication, and design findings remain open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [ ] Add producer/backend contract tests shared with real project plugins.
