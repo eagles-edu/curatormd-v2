@@ -2382,3 +2382,15 @@
 **Open gate:** Authenticated identity, owner-approved retention/hold rules, production scheduling/recovery, the real Vhost application workflow, and live goal-ledger persistence remain unverified. The user selected that they will provide identity and retention decisions, but no mapping or policy values are recorded yet; these gates remain open.
 
 **Outcome:** The plan now has one authoritative progress definition and the latest hosted result is recorded. No delivery row changed status; no V1, GPTMD, or consumer source/state changed.
+
+## 2026-10-21 — Document intentional Curator V2 Pylint exceptions
+
+**Intent:** Remove misleading warning-level Pylint findings where broad exception handling or explicit subprocess lifecycle management is required by the fail-closed and bounded-resource contracts.
+
+**Changed fact:** Added local, rationale-bearing Pylint exceptions for arbitrary host readiness failures, sanitized MCP and producer error boundaries, and the two `Popen` lifecycles that enforce timed termination and bounded waits. Runtime behavior is unchanged.
+
+**Verification:** Focused Pylint for broad catches, context-manager suggestions, and line length passes on the four affected modules. The full warning-level inventory falls from 280 to 274 findings (exit 24); repository-wide warning cleanup remains open. `git diff --check` passes.
+
+**Open gate:** Structural, interface, and duplicate-code Pylint findings remain. This change does not close the repository-wide Pylint checklist item or any deployment, identity, retention, or live-runtime gate.
+
+**Outcome:** Six reviewed false-positive/design warnings now carry explicit local rationale; no application behavior or delivery status changed.

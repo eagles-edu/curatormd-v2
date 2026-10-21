@@ -1871,6 +1871,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       strict Pyright, repository errors-only Pylint, focused purge complexity
       Pylint, Bandit, and `git diff --check` pass. The refreshed full warning
       inventory falls from 283 to 280; repository-wide cleanup remains open.
+      Further progress (2026-10-21): documented six intentional Pylint
+      exceptions at the fail-closed readiness, sanitized tool/producer error,
+      and explicitly timed subprocess boundaries. Focused Pylint for those
+      rules and line length passes. A fresh full warning-level inventory falls
+      from 280 to 274; this records justified exception handling and does not
+      close the repository-wide cleanup item.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

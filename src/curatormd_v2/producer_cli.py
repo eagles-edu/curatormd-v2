@@ -70,7 +70,8 @@ def main(
             + "\n"
         )
         return 0
-    except Exception:  # never echo producer input or internal exception details
+    # The producer boundary must sanitize arbitrary adapter and input failures.
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         print("Curator V2 staging failed (invalid request or producer error).", file=errors)
         return 2
     finally:

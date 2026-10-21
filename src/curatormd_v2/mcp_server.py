@@ -82,7 +82,8 @@ def safe_tool_handler(handler: Any) -> Any:
     def invoke(*args: Any, **kwargs: Any) -> Any:
         try:
             return handler(*args, **kwargs)
-        except Exception as exc:  # MCP SDK otherwise logs a traceback for tool failures.
+        # Plugin and SDK failures must become sanitized tool results, never tracebacks.
+        except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             error = to_api_error(exc)
             logger.warning(
                 "Curator MCP tool failed with code=%s exception_type=%s",

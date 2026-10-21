@@ -196,7 +196,8 @@ class GitCommitDiffResolver(EvidenceSourceResolver):
         ]
         try:
             # The only dynamic command values are the validated full commit IDs.
-            process = subprocess.Popen(  # nosec B603
+            # A context manager would wait without the bounded timeout/kill path below.
+            process = subprocess.Popen(  # nosec B603  # pylint: disable=consider-using-with
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -416,7 +417,8 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         try:
-            process = subprocess.Popen(  # nosec B603
+            # Keep timeout-triggered process-group termination and bounded wait.
+            process = subprocess.Popen(  # nosec B603  # pylint: disable=consider-using-with
                 list(self.command),
                 cwd=cwd,
                 stdin=subprocess.DEVNULL,

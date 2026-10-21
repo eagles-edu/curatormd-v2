@@ -295,7 +295,8 @@ def _evaluate_dependency(
     if not probe_failed:
         try:
             raw = readiness.get(name)
-        except Exception:  # noqa: BLE001 - malformed host data is not readiness
+        # A host-supplied Mapping may raise adapter-defined exceptions on read.
+        except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             probe_failed = True
             raw = None
         if raw is None:
@@ -353,7 +354,8 @@ def _evaluate_dependencies(
     if readiness_provider is not None:
         try:
             readiness = readiness_provider.readiness(project_id)
-        except Exception:  # noqa: BLE001 - health must degrade to unknown, not green
+        # A readiness adapter may fail with any exception; unknown must not go green.
+        except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             probe_failed = True
 
     dependencies: list[DependencyHealth] = []
