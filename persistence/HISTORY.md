@@ -2293,10 +2293,20 @@
 
 **Intent:** Make the alpha version, supported Python range, known limitations, and operator guidance discoverable from one concise release note without implying production readiness.
 
-**Changed fact:** Added `docs/release-notes-v2.md` and closed the release-documentation checklist item. It links the existing alpha scope, consumer operations guide, CI policy, and release-gate ledger. Checklist progress is 139/211 complete (72 open).
+**Changed fact:** Added `docs/release-notes-v2.md` and closed the release-documentation checklist item. It links the existing alpha scope, consumer operations guide, CI policy, and release-gate ledger. Delivery-checklist progress is 125/153 complete (28 open).
 
 **Verification:** The locked Curator suite passes 354 tests. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, locked dependency audit, `uv lock --check`, and `git diff --check` pass.
 
 **Open gate:** Curator V2 goal-list access still returns `unauthenticated: Trusted Hermes profile context is required`; this is not verified live goal-ledger persistence. The documentation item does not close production identity, retention, scheduling/recovery, deployment, or live-runtime gates.
 
 **Outcome:** The local alpha documentation now states its support boundary and links operator procedures. No consumer repository, V1 runtime, GPTMD, Hermes Core, or application data changed.
+
+## 2026-10-21 — Clarify Curator V2 delivery progress count
+
+**Changed fact:** The plan now defines progress as the checked rows in its `Delivery checklist` section. Reusable work-cycle and request templates and later acceptance prompts are excluded. The current count is 125/153 complete, 28 open. The earlier 139/211 figure counted every checkbox in the document, including those non-delivery prompts, and is not comparable.
+
+**Verification:** Counted checked and open rows between `## Delivery checklist` and `#### Repeatable work-cycle checklist` directly from the current plan; the section contains 125 checked and 28 open rows.
+
+**Open gate:** The denominator can change when delivery rows are added or removed. Authenticated goal-ledger access remains unavailable in this session.
+
+**Outcome:** Future progress updates use the delivery-only count; no delivery status changed in this correction.

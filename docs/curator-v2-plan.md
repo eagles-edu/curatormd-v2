@@ -166,6 +166,10 @@ Checkboxes describe verified repository state, not architectural intent:
 - `[ ]` Open: proposed, not implemented, or not yet verified end to end.
 - `[!]` Decision or external dependency required before the item can close.
 
+Progress counts refer to rows in this **Delivery checklist** section only.
+Reusable work-cycle and request templates and later acceptance prompts are not
+delivery items and are excluded from the numerator and denominator.
+
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
 consumer plugin, Hermes integration, or production deployment.
