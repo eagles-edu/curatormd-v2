@@ -2078,6 +2078,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
       pass. A fresh repository-wide inventory is 286 findings (274 refactor,
       12 oversized-module convention); broad cleanup remains open.
+      Further progress (2026-10-22): isolated no-follow Markdown target opening
+      and sanitized missing/open errors in `_open_target`, keeping descriptor
+      reading and closure in `_read_target`. All 19 focused Markdown tests and
+      the full 368-test suite pass; strict Pyright, errors-only Pylint, Bandit,
+      locked dependency audit, and `git diff --check` pass. The full Pylint
+      inventory is 285 findings (273 refactor, 12 oversized-module convention);
+      `_read_target` no longer reports too-many-branches. Broad cleanup remains
+      open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

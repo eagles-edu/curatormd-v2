@@ -2753,3 +2753,15 @@
 **Open gate:** Repository-wide Pylint cleanup remains open. Authenticated production identity, deployment-owned retention/recovery, and live consumer/runtime proof remain open. No delivery row changed status; no V1, GPTMD, or consumer worktree was changed.
 
 **Outcome:** The delivery count is now consistent with its exclusion rule, and one local structural finding was removed. The Curator V2 goal remains active.
+
+## 2026-10-22 — Isolate Markdown target opening
+
+**Intent:** Continue the local V2 Pylint cleanup by separating target opening from bounded Markdown reading while preserving the no-follow and sanitized-error behavior.
+
+**Changed fact:** Added `_open_target` to perform the no-follow open and normalize missing/open failures. `_read_target` retains the descriptor-based regular-file, size, UTF-8, mode, and closure checks.
+
+**Verification:** All 19 focused Markdown-persistence tests and the full 368-test suite pass. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, locked dependency audit, and `git diff --check` pass. Full Pylint is 285 findings (273 refactor, 12 convention), down one; `_read_target` no longer has the excess-branch finding.
+
+**Open gate:** Repository-wide Pylint cleanup, production identity, retention/recovery policy, deployment, and live consumer/runtime proof remain open. No delivery row changed status, and no V1, GPTMD, consumer, or Hermes Core file changed.
+
+**Outcome:** One additional local structural finding was removed; Curator V2's broader alpha and release gates remain open.

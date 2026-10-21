@@ -506,19 +506,9 @@ class MarkdownPersistenceAdapter:
 
     @staticmethod
     def _read_target(target: Path) -> tuple[str, int]:
-        no_follow = getattr(os, "O_NOFOLLOW", None)
-        if no_follow is None:
-            raise MarkdownPersistenceError("platform lacks no-follow Markdown reads")
-        open_failed = False
-        descriptor = -1
-        try:
-            descriptor = os.open(target, os.O_RDONLY | no_follow)
-        except FileNotFoundError:
+        descriptor = MarkdownPersistenceAdapter._open_target(target)
+        if descriptor is None:
             return "", 0o600
-        except OSError:
-            open_failed = True
-        if open_failed:
-            raise MarkdownPersistenceError("cannot safely open Markdown target")
 
         decoded = ""
         mode = 0o600
@@ -561,6 +551,25 @@ class MarkdownPersistenceAdapter:
         if read_failed:
             raise MarkdownPersistenceError("cannot read canonical Markdown target")
         return decoded, mode
+
+    @staticmethod
+    def _open_target(target: Path) -> int | None:
+        """Open a Markdown target without following links or leaking OS errors."""
+
+        no_follow = getattr(os, "O_NOFOLLOW", None)
+        if no_follow is None:
+            raise MarkdownPersistenceError("platform lacks no-follow Markdown reads")
+        open_failed = False
+        descriptor = -1
+        try:
+            descriptor = os.open(target, os.O_RDONLY | no_follow)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            open_failed = True
+        if open_failed:
+            raise MarkdownPersistenceError("cannot safely open Markdown target")
+        return descriptor
 
     @staticmethod
     def _atomic_replace(target: Path, data: bytes, mode: int) -> None:
