@@ -2406,3 +2406,15 @@
 **Open gate:** Repository-wide warning-level Pylint cleanup remains open. No delivery row changed status; owner-approved identity/retention and deployment/live-runtime gates remain open.
 
 **Outcome:** The lifecycle store retains the same validation sequence and output while removing one structural Pylint finding.
+
+## 2026-10-21 — Simplify Curator project activity aggregation
+
+**Intent:** Reduce local complexity in the bounded activity snapshot without changing its SQLite read transaction or public counts.
+
+**Changed fact:** Materialized event and SDE status aggregates directly as dictionaries within the existing transaction, removing intermediate row collections from `CuratorStore.project_activity_status`.
+
+**Verification:** The focused project-activity API regression passes. Strict Pyright reports zero diagnostics; repository errors-only Pylint and `git diff --check` pass. The refreshed full warning-level inventory falls from 273 to 272 findings.
+
+**Open gate:** Repository-wide warning-level Pylint cleanup remains open. No delivery row changed status; deployment, identity, retention, and live-runtime gates remain open.
+
+**Outcome:** Activity counts preserve the existing transaction snapshot semantics with one fewer structural Pylint finding.

@@ -3028,11 +3028,14 @@ class CuratorStore:
                 raise RuntimeError("project activity snapshot cannot nest a transaction")
             self._connection.execute("BEGIN")
             try:
-                event_rows = self._connection.execute(
-                    "SELECT status, COUNT(*) AS count FROM event_inbox "
-                    "WHERE project_id = ? GROUP BY status",
-                    (project_id,),
-                ).fetchall()
+                event_counts = {
+                    row["status"]: int(row["count"])
+                    for row in self._connection.execute(
+                        "SELECT status, COUNT(*) AS count FROM event_inbox "
+                        "WHERE project_id = ? GROUP BY status",
+                        (project_id,),
+                    ).fetchall()
+                }
                 event_times = self._connection.execute(
                     "SELECT MAX(received_at) AS last_received, "
                     "MAX(processed_at) AS last_processed FROM event_inbox "
@@ -3052,19 +3055,20 @@ class CuratorStore:
                         (project_id,),
                     ).fetchone()[0]
                 )
-                sde_rows = self._connection.execute(
-                    "SELECT s.status, COUNT(*) AS count FROM sde_candidates AS s "
-                    "JOIN goals AS g ON g.goal_id = s.goal_id "
-                    "WHERE g.project_id = ? GROUP BY s.status",
-                    (project_id,),
-                ).fetchall()
+                sde_counts = {
+                    row["status"]: int(row["count"])
+                    for row in self._connection.execute(
+                        "SELECT s.status, COUNT(*) AS count FROM sde_candidates AS s "
+                        "JOIN goals AS g ON g.goal_id = s.goal_id "
+                        "WHERE g.project_id = ? GROUP BY s.status",
+                        (project_id,),
+                    ).fetchall()
+                }
             except BaseException:
                 self._connection.rollback()
                 raise
             self._connection.commit()
 
-        event_counts = {row["status"]: int(row["count"]) for row in event_rows}
-        sde_counts = {row["status"]: int(row["count"]) for row in sde_rows}
         received = event_counts.get(EventInboxStatus.RECEIVED.value, 0)
         failed = event_counts.get(EventInboxStatus.FAILED.value, 0)
         quarantined = event_counts.get(EventInboxStatus.QUARANTINED.value, 0)

@@ -1883,6 +1883,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       reports zero diagnostics, and errors-only Pylint and `git diff --check`
       pass. The fresh full warning-level inventory falls from 274 to 273; the
       repository-wide cleanup item remains open.
+      Further progress (2026-10-21): aggregated event and SDE status rows as
+      dictionaries inside the existing read transaction, removing two
+      intermediates from `project_activity_status` without changing its
+      snapshot boundary. Its focused API regression passes; strict Pyright,
+      errors-only Pylint, and `git diff --check` pass. Full warning-level
+      findings fall from 273 to 272; repository-wide cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
