@@ -2346,3 +2346,15 @@
 **Open gate:** The full warning-level inventory at `e609fa6` contained 289 findings before this cleanup; the current repository total has not been recounted. The full Pylint checklist item remains open.
 
 **Outcome:** Six local diagnostics were removed with test coverage passing; no runtime, consumer, or external gate changed.
+
+## 2026-10-21 — Verify targeted Pylint cleanup in hosted CI
+
+**Intent:** Confirm the targeted style cleanup and its test coverage pass on the pushed Curator V2 source.
+
+**Changed fact:** Curator commit `0106a62` passed required GitHub Actions run [39632645359](https://github.com/eagles-edu/curatormd-v2/actions/runs/39632645359).
+
+**Verification:** Python 3.12, 3.13, and 3.14 suites, strict typing, blocking Pylint, Bandit, locked dependency audit, and installed-wheel acceptance all pass.
+
+**Open gate:** Repository-wide warning-level Pylint cleanup remains open; this hosted workflow enforces errors/fatal diagnostics only. Deployment, identity, retention, and live-runtime gates remain open.
+
+**Outcome:** The targeted cleanup is verified in hosted CI without changing the warning policy or runtime behavior.
