@@ -2,9 +2,16 @@
 
 ## 2026-10-22
 
+- Refactored the review CLI regression setup into shared, typed fixture helpers
+  for exact local reviewer grants and candidate/staging preparation. All eight
+  focused review CLI tests and the full 368-test suite pass; strict Pyright,
+  errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
+  pass. The full warning-level Pylint inventory decreased from 295 to 293,
+  with the review CLI test file decreasing from 38 to 36 findings. No lint
+  suppression was added; repository-wide structural cleanup remains open.
 - Reverified the Curator V2 alpha worktree: all 368 locked unit tests pass;
   strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
-  `git diff --check` pass. Full Pylint still reports 295 non-blocking
+  `git diff --check` pass. Full Pylint still reports 293 non-blocking
   refactor/convention findings, so repository-wide cleanup remains open.
 - Read-only inspection of the configured local V2 SQLite database reports
   `quick_check=ok`, schema v20, one goal, two facts, 12 inbox rows, one project

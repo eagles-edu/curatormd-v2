@@ -22,6 +22,7 @@ from curatormd_v2.api import AuthenticatedCaller
 from curatormd_v2.access_cli import main as access_main
 from curatormd_v2.evidence import EvidenceVerificationContext
 from curatormd_v2.models import (
+    ArtifactRef,
     EvidenceOutcome,
     EvidenceRef,
     FactKind,
@@ -121,6 +122,14 @@ class _Receipt:
 class _Projection:
     target = Path("/tmp/HISTORY.md")
     sha256 = "b" * 64
+
+
+@dataclass(frozen=True)
+class _PreparedCliReview:
+    goal_id: str
+    candidate_id: str
+    staged_artifact: ArtifactRef
+    manifest_hash: str
 
 
 class _TestEvidenceVerifier:
@@ -229,6 +238,102 @@ class ReviewCliTests(unittest.TestCase):
             """
         )
         (root / ".curatormd-v2.toml").chmod(0o600)
+
+    def _grant_local_reviewer(
+        self, root: Path, database: Path, rationale: str
+    ) -> None:
+        subject = f"local-uid:{os.geteuid()}"
+        for operation, phrase, extra in (
+            ("register", "REGISTER review-cli-project", ()),
+            (
+                "grant",
+                f"GRANT read review-cli-project {subject}",
+                ("--subject-id", subject, "--action", "read"),
+            ),
+            (
+                "grant",
+                f"GRANT review review-cli-project {subject}",
+                ("--subject-id", subject, "--action", "review"),
+            ),
+        ):
+            errors = StringIO()
+            result = access_main(
+                [
+                    operation,
+                    "--project-root",
+                    str(root),
+                    "--database",
+                    str(database),
+                    *extra,
+                    "--rationale",
+                    rationale,
+                ],
+                stdin=_InteractiveInput(phrase + "\n"),
+                stdout=StringIO(),
+                stderr=errors,
+            )
+            self.assertEqual(result, 0, errors.getvalue())
+
+    def _prepare_local_review(self, root: Path, database: Path) -> _PreparedCliReview:
+        config = ProjectConfig.load(root)
+        store = CuratorStore(database)
+        plugin = ProjectPlugin.bind(
+            config,
+            store,
+            evidence_verifier=_TestEvidenceVerifier(),
+            review_authorizer=LocalUIDReviewAuthorizer(),
+        )
+        goal = plugin.service.goal_start(
+            "Review one verified local change",
+            (SuccessCriterion("verified", "The disposable proof passes"),),
+            goal_id="review-cli-goal",
+        )
+        change, _ = plugin.service.goal_fact(
+            goal.goal_id, FactKind.CHANGE, "Implemented the bounded change"
+        )
+        evidence = EvidenceRef(
+            "unit-test",
+            "review-cli-proof:verified",
+            hashlib.sha256(b"disposable proof").hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        verified, _ = plugin.service.goal_fact(
+            goal.goal_id,
+            FactKind.VERIFICATION,
+            "The disposable proof passed",
+            criterion_id="verified",
+            evidence=(evidence,),
+        )
+        candidate = plugin.service.sde_assess(
+            goal.goal_id,
+            Materiality.IMPLEMENTATION,
+            "A verified local implementation change",
+            (change.fact_id, verified.fact_id),
+            impact="Observed in the disposable fixture",
+            retrieval_value="Useful when reviewing this local change",
+        )
+        if candidate is None:
+            store.close()
+            self.fail("verified implementation was not assessed as an SDE")
+        staged_artifact = plugin.stage_artifact(
+            goal.goal_id,
+            "import",
+            "transient-canary",
+            io.BytesIO(b"TRANSIENT REVIEW CLI CANARY\n"),
+        )
+        inventory = plugin.discover_staging_artifacts(goal.goal_id)
+        manifest_hash = inventory.manifest_sha256
+        if manifest_hash is None:
+            store.close()
+            self.fail("staging inventory did not produce a manifest hash")
+        prepared = _PreparedCliReview(
+            goal.goal_id,
+            candidate.candidate_id,
+            staged_artifact,
+            manifest_hash,
+        )
+        store.close()
+        return prepared
 
     def test_review_uses_current_local_uid_and_rejects_a_profile_name(self) -> None:
         authorizer = LocalUIDReviewAuthorizer()
@@ -386,98 +491,20 @@ class ReviewCliTests(unittest.TestCase):
             root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
-            subject = f"local-uid:{os.geteuid()}"
-
-            for operation, phrase, extra in (
-                ("register", "REGISTER review-cli-project", ()),
-                (
-                    "grant",
-                    f"GRANT read review-cli-project {subject}",
-                    ("--subject-id", subject, "--action", "read"),
-                ),
-                (
-                    "grant",
-                    f"GRANT review review-cli-project {subject}",
-                    ("--subject-id", subject, "--action", "review"),
-                ),
-            ):
-                errors = StringIO()
-                result = access_main(
-                    [
-                        operation,
-                        "--project-root",
-                        str(root),
-                        "--database",
-                        str(database),
-                        *extra,
-                        *( (
-                            "--rationale",
-                            "Authorize the isolated reviewer fixture",
-                        ) if operation != "view" else () ),
-                    ],
-                    stdin=_InteractiveInput(phrase + "\n"),
-                    stdout=StringIO(),
-                    stderr=errors,
-                )
-                self.assertEqual(result, 0, errors.getvalue())
-
-            config = ProjectConfig.load(root)
-            store = CuratorStore(database)
-            plugin = ProjectPlugin.bind(
-                config,
-                store,
-                evidence_verifier=_TestEvidenceVerifier(),
-                review_authorizer=LocalUIDReviewAuthorizer(),
+            self._grant_local_reviewer(
+                root,
+                database,
+                "Authorize the isolated reviewer fixture",
             )
-            goal = plugin.service.goal_start(
-                "Review one verified local change",
-                (SuccessCriterion("verified", "The disposable proof passes"),),
-                goal_id="review-cli-goal",
-            )
-            change, _ = plugin.service.goal_fact(
-                goal.goal_id, FactKind.CHANGE, "Implemented the bounded change"
-            )
-            evidence = EvidenceRef(
-                "unit-test",
-                "review-cli-proof:verified",
-                hashlib.sha256(b"disposable proof").hexdigest(),
-                EvidenceOutcome.PASSED,
-            )
-            verified, _ = plugin.service.goal_fact(
-                goal.goal_id,
-                FactKind.VERIFICATION,
-                "The disposable proof passed",
-                criterion_id="verified",
-                evidence=(evidence,),
-            )
-            candidate = plugin.service.sde_assess(
-                goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "A verified local implementation change",
-                (change.fact_id, verified.fact_id),
-                impact="Observed in the disposable fixture",
-                retrieval_value="Useful when reviewing this local change",
-            )
-            if candidate is None:
-                self.fail("verified implementation was not assessed as an SDE")
-            staged_artifact = plugin.stage_artifact(
-                goal.goal_id,
-                "import",
-                "transient-canary",
-                io.BytesIO(b"TRANSIENT REVIEW CLI CANARY\n"),
-            )
-            staged = Path(staged_artifact.path)
-            inventory = plugin.discover_staging_artifacts(goal.goal_id)
-            manifest_hash = inventory.manifest_sha256
-            self.assertIsNotNone(manifest_hash)
-            candidate_id = candidate.candidate_id
-            store.close()
+            prepared = self._prepare_local_review(root, database)
+            staged = Path(prepared.staged_artifact.path)
 
             phrase = (
-                f"APPROVE {candidate_id} AND PURGE INVENTORY {manifest_hash}"
+                f"APPROVE {prepared.candidate_id} AND PURGE INVENTORY "
+                f"{prepared.manifest_hash}"
             )
             result_output = _InteractiveOutput()
-            result_errors = StringIO()
+            result_errors = _InteractiveErrors()
             result = main(
                 [
                     "--project-root",
@@ -485,13 +512,13 @@ class ReviewCliTests(unittest.TestCase):
                     "--database",
                     str(database),
                     "review",
-                    candidate_id,
+                    prepared.candidate_id,
                 ],
                 stdin=_InteractiveInput(
                     f"approve\n{phrase}\nVerified in the disposable suite\n"
                 ),
                 stdout=result_output,
-                stderr=_InteractiveErrors(),
+                stderr=result_errors,
             )
 
             self.assertEqual(result, 0, result_errors.getvalue())
@@ -499,7 +526,7 @@ class ReviewCliTests(unittest.TestCase):
             reopened = CuratorStore(database)
             self.assertEqual(
                 reopened.staging_artifact_times(
-                    "review-cli-project", (staged_artifact,)
+                    "review-cli-project", (prepared.staged_artifact,)
                 ),
                 {},
             )
@@ -507,7 +534,7 @@ class ReviewCliTests(unittest.TestCase):
                 ProjectConfig.load(root), reopened
             )
             replacement = reopened_plugin.stage_artifact(
-                goal.goal_id,
+                prepared.goal_id,
                 "import",
                 "transient-canary",
                 io.BytesIO(b"replacement transient bytes"),
@@ -517,7 +544,7 @@ class ReviewCliTests(unittest.TestCase):
             )
             self.assertTrue(replacement_age.inventory_complete)
             self.assertEqual(replacement_age.eligible_artifacts, ())
-            self.assertEqual(replacement.path, staged_artifact.path)
+            self.assertEqual(replacement.path, prepared.staged_artifact.path)
             reopened.close()
             history = (root / "persistence" / "HISTORY.md").read_text()
             self.assertIn("Implemented the bounded change", history)
@@ -532,50 +559,26 @@ class ReviewCliTests(unittest.TestCase):
             root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
-            subject = f"local-uid:{os.geteuid()}"
-            for operation, phrase, extra in (
-                ("register", "REGISTER review-cli-project", ()),
-                (
-                    "grant",
-                    f"GRANT read review-cli-project {subject}",
-                    ("--subject-id", subject, "--action", "read"),
-                ),
-                (
-                    "grant",
-                    f"GRANT review review-cli-project {subject}",
-                    ("--subject-id", subject, "--action", "review"),
-                ),
-            ):
-                result = access_main(
-                    [
-                        operation,
-                        "--project-root",
-                        str(root),
-                        "--database",
-                        str(database),
-                        *extra,
-                        "--rationale",
-                        "Authorize the disposable expiry fixture",
-                    ],
-                    stdin=_InteractiveInput(phrase + "\n"),
-                    stdout=StringIO(),
-                    stderr=StringIO(),
-                )
-                self.assertEqual(result, 0)
+            self._grant_local_reviewer(
+                root,
+                database,
+                "Authorize the disposable expiry fixture",
+            )
 
-            config = ProjectConfig.load(root)
             store = CuratorStore(database)
             plugin = ProjectPlugin.bind(
-                config, store, review_authorizer=LocalUIDReviewAuthorizer()
+                ProjectConfig.load(root),
+                store,
+                review_authorizer=LocalUIDReviewAuthorizer(),
             )
             goal = plugin.service.goal_start(
                 "Expire one old local artifact",
                 (SuccessCriterion("verified", "The artifact is temporary"),),
                 goal_id="expiry-cli-goal",
             )
-            staged_at = datetime.now(UTC) - timedelta(hours=73)
             with patch(
-                "curatormd_v2.store.utc_now", return_value=staged_at.isoformat()
+                "curatormd_v2.store.utc_now",
+                return_value=(datetime.now(UTC) - timedelta(hours=73)).isoformat(),
             ):
                 artifact = plugin.stage_artifact(
                     goal.goal_id,
@@ -615,7 +618,7 @@ class ReviewCliTests(unittest.TestCase):
             receipt = reopened.expiry_purge_receipt(
                 emitted["receipt_id"], "review-cli-project"
             )
-            self.assertEqual(receipt.reviewer_id, subject)
+            self.assertEqual(receipt.reviewer_id, f"local-uid:{os.geteuid()}")
             self.assertEqual(receipt.manifest_sha256, manifest_hash)
             self.assertEqual(receipt.status.value, "complete")
             self.assertEqual(

@@ -628,7 +628,7 @@ consumer plugin, Hermes integration, or production deployment.
       version 20, one goal, two facts, 12 inbox rows, one project registration,
       and two grants. The MCP ledger read still returns `unauthenticated`, so
       trusted-profile protocol access and live capture remain unverified. A
-      full Pylint inventory reports 295 non-blocking refactor/convention
+      full Pylint inventory reports 293 non-blocking refactor/convention
       findings; repository-wide structural cleanup remains open.
 - [x] Implement persisted per-artifact capped exponential backoff, a bounded
       scheduler-facing due-retry pass, and status visibility for each retry
@@ -2031,6 +2031,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       project-plugin suites pass 51 tests; strict Pyright, errors-only Pylint,
       Bandit, dependency audit, lock check, and `git diff --check` pass. The
       broad structural cleanup remains open.
+      Additional progress (2026-10-22): factored the review CLI tests' shared
+      local reviewer grants and candidate/staging setup into named helpers.
+      The focused eight-test file passes; full-suite verification passes 368
+      tests, strict Pyright, errors-only Pylint, Bandit, locked dependency
+      audit, and `git diff --check`. The full warning-level inventory fell from
+      295 to 293; review-CLI file findings fell from 38 to 36. This removes two
+      test-local complexity findings without suppressions; broad cleanup
+      remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
