@@ -2466,3 +2466,15 @@
 **Open gate:** The local Linux account is selected for alpha review only. Hermes-authenticated human identity, deployment, owner retention/hold policy, production purge scheduling/recovery, and live application behavior remain open. No delivery checklist row changed status; progress remains 126/153 complete (27 open).
 
 **Outcome:** Local attended review and same-action exact-inventory purge authorization are packaged and locally verified. This does not authorize Hermes profile review, establish production identity, or close the deployment, retention, or live-runtime gates.
+
+## 2026-10-22 — Exercise local reviewer through the real V2 ledger
+
+**Intent:** Extend local alpha verification beyond a mocked API boundary by running the attended reviewer against disposable V2 persistence and exact project grants.
+
+**Changed fact:** Added an end-to-end test that provisions a disposable project registration and `local-uid:<euid>` read/review grants, creates a verified pending SDE and staged transient file through the real project plugin, then invokes the installed CLI code path.
+
+**Verification:** The CLI displays and confirms the candidate's complete manifest, stores the decision, persists canonical Markdown, purges the unheld transient file, and keeps its canary out of canonical Markdown. The focused reviewer tests pass; the full locked suite, strict Pyright, errors-only Pylint, and `git diff --check` are rerun for this addition.
+
+**Open gate:** The end-to-end fixture proves local implementation only. Hermes-authenticated human identity, approved retention/hold rules, deployment, production purge scheduling/recovery, and live consumer behavior remain open. Delivery progress remains 126/153 (27 open).
+
+**Outcome:** Local alpha review now has real-store lifecycle coverage without changing the deployment or identity gates.

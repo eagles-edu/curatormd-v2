@@ -478,7 +478,9 @@ consumer plugin, Hermes integration, or production deployment.
       `eaglesvn` is selected as the sole human reviewer through an attended CLI
       bound to the current Linux UID; the `renew-ssl-coding` Hermes profile has
       no authenticated human subject and remains unable to review or purge.
-      This local adapter does not close the Hermes identity gate.
+      A disposable end-to-end CLI test now exercises its actual grant ledger,
+      pending SDE, exact staged inventory, canonical write, and purge. This
+      local adapter does not close the Hermes identity gate.
 - [x] Make an SDE decision and its artifact manifest immutable after the first
       durable receipt; repeated requests with changed decision or targets conflict.
 - [x] Record bounded, idempotent corrections as linked append-only follow-up

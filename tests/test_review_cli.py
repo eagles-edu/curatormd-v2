@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from io import StringIO
+import hashlib
+import os
 from pathlib import Path
 import tempfile
 from typing import Any
@@ -12,10 +14,22 @@ import unittest
 from unittest.mock import patch
 
 from curatormd_v2.api import AuthenticatedCaller
-from curatormd_v2.models import ReviewDecision
+from curatormd_v2.access_cli import main as access_main
+from curatormd_v2.evidence import EvidenceVerificationContext
+from curatormd_v2.models import (
+    EvidenceOutcome,
+    EvidenceRef,
+    FactKind,
+    Materiality,
+    ReviewDecision,
+    SuccessCriterion,
+)
+from curatormd_v2.project_config import ProjectConfig
+from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.review_cli import LocalUIDReviewAuthorizer, main
 from curatormd_v2.reviews import ReviewAuthorizationError
 from curatormd_v2.store import CuratorStore
+from evidence_fixtures import attest_test_evidence
 
 
 class _PurgeStatus(StrEnum):
@@ -98,6 +112,15 @@ class _Receipt:
 class _Projection:
     target = Path("/tmp/HISTORY.md")
     sha256 = "b" * 64
+
+
+class _TestEvidenceVerifier:
+    def attest(
+        self, evidence: EvidenceRef, context: EvidenceVerificationContext
+    ):
+        if evidence.locator != "review-cli-proof:verified":
+            return None
+        return attest_test_evidence(evidence, context)
 
 
 class _ReviewAPI:
@@ -310,6 +333,130 @@ class ReviewCliTests(unittest.TestCase):
 
             self.assertEqual(result, 2)
             self.assertFalse(database.exists())
+
+    def test_local_cli_reviews_real_store_and_purges_after_canonical_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            self._project(root)
+            database = Path(temporary) / "curator.sqlite3"
+            subject = f"local-uid:{os.geteuid()}"
+
+            for operation, phrase, extra in (
+                ("register", "REGISTER review-cli-project", ()),
+                (
+                    "grant",
+                    f"GRANT read review-cli-project {subject}",
+                    ("--subject-id", subject, "--action", "read"),
+                ),
+                (
+                    "grant",
+                    f"GRANT review review-cli-project {subject}",
+                    ("--subject-id", subject, "--action", "review"),
+                ),
+            ):
+                errors = StringIO()
+                result = access_main(
+                    [
+                        operation,
+                        "--project-root",
+                        str(root),
+                        "--database",
+                        str(database),
+                        *extra,
+                        *( (
+                            "--rationale",
+                            "Authorize the isolated reviewer fixture",
+                        ) if operation != "view" else () ),
+                    ],
+                    stdin=_InteractiveInput(phrase + "\n"),
+                    stdout=StringIO(),
+                    stderr=errors,
+                )
+                self.assertEqual(result, 0, errors.getvalue())
+
+            config = ProjectConfig.load(root)
+            store = CuratorStore(database)
+            plugin = ProjectPlugin.bind(
+                config,
+                store,
+                evidence_verifier=_TestEvidenceVerifier(),
+                review_authorizer=LocalUIDReviewAuthorizer(),
+            )
+            goal = plugin.service.goal_start(
+                "Review one verified local change",
+                (SuccessCriterion("verified", "The disposable proof passes"),),
+                goal_id="review-cli-goal",
+            )
+            change, _ = plugin.service.goal_fact(
+                goal.goal_id, FactKind.CHANGE, "Implemented the bounded change"
+            )
+            evidence = EvidenceRef(
+                "unit-test",
+                "review-cli-proof:verified",
+                hashlib.sha256(b"disposable proof").hexdigest(),
+                EvidenceOutcome.PASSED,
+            )
+            verified, _ = plugin.service.goal_fact(
+                goal.goal_id,
+                FactKind.VERIFICATION,
+                "The disposable proof passed",
+                criterion_id="verified",
+                evidence=(evidence,),
+            )
+            candidate = plugin.service.sde_assess(
+                goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "A verified local implementation change",
+                (change.fact_id, verified.fact_id),
+                impact="Observed in the disposable fixture",
+                retrieval_value="Useful when reviewing this local change",
+            )
+            if candidate is None:
+                self.fail("verified implementation was not assessed as an SDE")
+            staged = (
+                root
+                / ".curatormd-v2"
+                / "staging"
+                / goal.goal_id
+                / "import"
+                / "transient-canary.txt"
+            )
+            staged.parent.mkdir(parents=True)
+            staged.write_text("TRANSIENT REVIEW CLI CANARY\n")
+            inventory = plugin.discover_staging_artifacts(goal.goal_id)
+            manifest_hash = inventory.manifest_sha256
+            self.assertIsNotNone(manifest_hash)
+            candidate_id = candidate.candidate_id
+            store.close()
+
+            phrase = (
+                f"APPROVE {candidate_id} AND PURGE INVENTORY {manifest_hash}"
+            )
+            result_output = _InteractiveOutput()
+            result_errors = StringIO()
+            result = main(
+                [
+                    "--project-root",
+                    str(root),
+                    "--database",
+                    str(database),
+                    "review",
+                    candidate_id,
+                ],
+                stdin=_InteractiveInput(
+                    f"approve\n{phrase}\nVerified in the disposable suite\n"
+                ),
+                stdout=result_output,
+                stderr=result_errors,
+            )
+
+            self.assertEqual(result, 0, result_errors.getvalue())
+            self.assertFalse(staged.exists())
+            history = (root / "persistence" / "HISTORY.md").read_text()
+            self.assertIn("Implemented the bounded change", history)
+            self.assertNotIn("TRANSIENT REVIEW CLI CANARY", history)
+            self.assertIn('"purge_status": "complete"', result_output.getvalue())
 
 
 if __name__ == "__main__":
