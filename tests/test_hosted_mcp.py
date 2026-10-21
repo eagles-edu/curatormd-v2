@@ -689,6 +689,50 @@ class HostedMcpTests(unittest.TestCase):
 
             asyncio.run(exercise())
 
+    def test_installed_launcher_exposes_sde_proposal_context(self) -> None:
+        """The installed MCP schema carries compact proposal context fields."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding", allow_write=True)
+            launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
+            self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
+            parameters = StdioServerParameters(
+                command=str(launcher),
+                args=[
+                    "--project-root",
+                    str(root),
+                    "--database",
+                    str(database),
+                    "--profile-id",
+                    "gptmd-coding",
+                    "--allow-write",
+                ],
+                env={"PATH": os.environ.get("PATH", "")},
+                cwd=Path(__file__).parents[1],
+            )
+
+            async def exercise() -> None:
+                async with Client(parameters, raise_exceptions=True) as client:
+                    tools = await client.list_tools()
+                    assessment = next(
+                        tool for tool in tools.tools if tool.name == "sde_assess"
+                    )
+                    schema = assessment.input_schema
+                    properties = schema["properties"]
+                    self.assertIn("impact", properties)
+                    self.assertIn("retrieval_value", properties)
+                    self.assertNotIn("project_id", properties)
+                    required = set(schema.get("required", []))
+                    self.assertTrue(
+                        {"impact", "retrieval_value"}.isdisjoint(required),
+                        "routine progress must remain valid without SDE context",
+                    )
+
+            asyncio.run(exercise())
+
     def test_two_stdio_projects_sharing_database_remain_isolated(self) -> None:
         """Separate consumer launchers cannot list or read each other's goals."""
 

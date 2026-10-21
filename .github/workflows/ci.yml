@@ -45,6 +45,7 @@ jobs:
             "$RUNNER_TEMP/curator-v2-wheel-venv/bin/python" \
             -m unittest \
             test_hosted_mcp.HostedMcpTests.test_installed_launcher_writes_and_reads_a_project_bound_goal \
+            test_hosted_mcp.HostedMcpTests.test_installed_launcher_exposes_sde_proposal_context \
             -v
       - name: Exercise installed operational command entrypoints
         env:

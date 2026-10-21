@@ -6,7 +6,7 @@ checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
 Current source snapshot (2026-10-21): Curator commit `94bb816` is pushed to
-`main`; the locked local suite passes 353 tests and the GitHub Actions run
+`main`; the locked local suite passes 354 tests and the GitHub Actions run
 [39628941504](https://github.com/eagles-edu/curatormd-v2/actions/runs/39628941504)
 passes the Python 3.12/3.13/3.14 matrix, strict typing, errors-only Pylint,
 Bandit, dependency audit, and clean-wheel acceptance. Hermes Core source head
@@ -18,6 +18,11 @@ The authenticated Curator V2 goal-list call currently returns
 persistence is unverified. These source checks do not close authenticated
 identity, owner retention policy, production scheduling/recovery, or live
 application workflow gates.
+
+The clean-wheel acceptance now also starts the installed MCP launcher and
+asserts `sde_assess` exposes optional `impact` and `retrieval_value` fields
+without exposing `project_id`. The local Python 3.12 wheel install and both
+installed-launcher checks pass. Hosted CI for this new assertion is pending.
 
 Local alpha candidate (2026-10-21): package metadata is `0.1.0a1`. The wheel
 and source archive build successfully. The wheel installs into the isolated

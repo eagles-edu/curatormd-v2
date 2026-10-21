@@ -2252,3 +2252,15 @@
 **Open gate:** Read-only Curator V2 goal listing returns `unauthenticated: Trusted Hermes profile context is required`; live tracker persistence is unverified. These checks do not prove cryptographic Hermes identity, production scheduling/recovery, owner-approved retention, or the Vhost application workflow. Checklist remains 138/211 complete (73 open).
 
 **Outcome:** Local Hermes Core integration and Curator package/repository checks are current and verified. Deployment, identity, retention-policy, and live-runtime gates remain open.
+
+## 2026-10-21 — Verify installed MCP SDE proposal schema
+
+**Intent:** Ensure a freshly built Curator V2 alpha wheel exposes the new SDE proposal context through its actual installed MCP launcher.
+
+**Changed fact:** Added a clean-wheel acceptance test that connects to the installed launcher and checks `sde_assess` includes optional `impact` and `retrieval_value` fields while keeping `project_id` bound to the consumer configuration. CI now runs this contract beside installed goal read/write acceptance.
+
+**Verification:** The built wheel installs into a fresh Python 3.12.3 environment; both installed-launcher acceptance tests pass. All 354 Curator tests pass. Strict Pyright, errors-only Pylint, Bandit, locked dependency audit, `uv lock --check`, and `git diff --check` pass.
+
+**Open gate:** Hosted CI for the new wheel-schema assertion is pending. Consumer profile reinstallation and live Hermes identity/runtime remain separate gates. Checklist remains 138/211 complete (73 open).
+
+**Outcome:** The packaged alpha now has a direct regression for the installed SDE MCP input contract. No consumer repository or runtime was changed.
