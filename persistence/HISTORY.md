@@ -1530,3 +1530,16 @@
 **Open gate:** This verifies the isolated local alpha event route. It does not establish cryptographic human identity, owner-approved retention policy, production backup/recovery, or release approval. V2 checklist progress remains 133/211 (78 open).
 
 **Outcome:** The deployed Vhost alpha route now produces acknowledged Hermes outbox events and processed Curator receipts. The natural-language CLI response claimed the bind had failed, while the persisted Hermes binding and Curator receipts show it completed; persisted state is the verification evidence. No V1 or GPTMD source/state was used.
+
+
+## 2026-10-21 — Verify Curator V2 profile health after live receipt replay
+
+**Intent:** Confirm current V2 operational readiness independently from successful event receipts and avoid treating a working route as an overall healthy service.
+
+**Changed fact:** The installed Vhost profile's read-only `project_health` path returns `unknown`, while reporting zero pending, failed, or quarantined events. Its explicit dependency gates are `event_router`, `purge_scheduler`, `host_identity`, `human_review`, and `artifact_producer_inventory`. The profile assertion and local grants do not provide cryptographic identity or fresh host-owned readiness probes.
+
+**Verification:** A read-only call to the installed `curator_v2` stdio launcher returned status `unknown` and exactly those five `dependency_unknown:*` gate codes. The V2 SQLite database remains integrity-clean; the Vhost inbox cursor remains at 9 with 10 processed receipts.
+
+**Open gate:** Supply independently trusted readiness observations and approved identity/retention/recovery policy before claiming the global service is healthy or production-ready. V2 checklist progress remains 133/211 (78 open).
+
+**Outcome:** V2 persistence has verified processed lifecycle receipts, while overall readiness correctly remains unknown. This fact concerns the Curator V2 profile and does not report V1 status.

@@ -1716,8 +1716,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       match. After a system gateway restart, a fresh profile session replayed
       the queue: Hermes source sequences 1-9 are acknowledged, the current
       session binding matches its Vhost project and goal, and Curator's inbox
-      cursor is 9 with 10 processed receipts. The global SQLite store passes
-      `quick_check=ok`. The CLI response text claimed the bind was rejected,
+      cursor is 9 with 10 processed receipts. All nine source events have
+      `applied` disposition; two compact `intent` and `change` facts are linked
+      to the active Vhost goal. The source inbox rows retain no payload JSON.
+      The global SQLite store passes `quick_check=ok`. A read-only
+      `project_health` call through the installed V2 profile launcher returns
+      `unknown` with zero pending/failed/quarantined events and five explicit
+      unknown dependency gates: event router, purge scheduler, host identity,
+      human review, and artifact-producer inventory. This is not a healthy/green
+      result. The CLI response text claimed the bind was rejected,
       but the durable binding and receipt records confirm the write completed.
       The live Vhost event route is now verified for this local alpha profile;
       cryptographic identity, retention, and deployment recovery remain open.

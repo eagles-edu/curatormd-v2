@@ -60,7 +60,11 @@ the exact commit only.
   compatibility probe passes. Curator's 336-test suite, strict Pyright,
   errors-only Pylint, Bandit, dependency audit, and diff check pass. This is a
   local alpha deployment; identity, retention, backup/recovery, and release
-  approval remain open.
+  approval remain open. The current profile-bound V2 `project_health` read is
+  `unknown`, with zero pending/failed/quarantined events and unknown required
+  probes for the event router, purge scheduler, host identity, human review,
+  and artifact-producer inventory. Processed receipts do not make the overall
+  service healthy.
 
 - V1 is outside this V2 alpha and is not an import source or rollback target.
   In the Vhost Manager Hermes profile, the legacy Curator MCP entry is disabled
