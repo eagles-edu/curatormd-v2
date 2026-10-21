@@ -1093,7 +1093,7 @@ consumer plugin, Hermes integration, or production deployment.
       `backend_api_version = 1`; regression coverage exercises each rejection.
       The current local wheel/config installation is recorded below; released
       upgrade compatibility and live Hermes authorization remain unverified.
-- [ ] Implement project identity registration and authorization so a plugin
+- [x] Implement local project registration and exact authorization so a plugin
       cannot read or write another project's goals, artifacts, or records.
       Progress (2026-10-19): the API registry rejects project IDs that do not
       match each plugin's repository config, and `ProjectGrantAuthorizer` now
@@ -1114,7 +1114,17 @@ consumer plugin, Hermes integration, or production deployment.
       missing registration, config drift, and live suspension denial are
       covered. Trusted Hermes authentication and authenticated host-admin
       provisioning remain open; injected request metadata is not cryptographic
-      identity, and deployment denial tests remain open.
+      identity, and deployment denial tests remain open. Progress
+      (2026-10-22): `test_two_stdio_projects_sharing_database_remain_isolated`
+      proves local launchers cannot list or read each other's goals, while
+      `test_two_repository_plugins_share_backend_without_sharing_goals` now
+      also places a file under project A's staging root and proves project B's
+      plugin rejects a per-goal scan for that foreign goal and excludes the
+      file from its complete project inventory. Separate canonical projections
+      remain confined to each configured consumer path.
+      This closes local project registration/grant and plugin-isolation
+      behavior only. Verified Hermes human identity, authenticated registry
+      administration, and deployment-level denial tests remain open.
 - [x] Implement reference-plugin checklist mapping that records the configured
       source ID, exact selected source line, and SHA-256 file revision; source edits
       do not mutate an existing goal snapshot. Format-specific consumer adapters

@@ -2490,3 +2490,15 @@
 **Open gate:** Hermes-authenticated identity, approved retention and hold rules, deployment, production scheduling/recovery, and live application behavior remain open. Delivery progress remains 126/153 (27 open).
 
 **Outcome:** The local alpha review command has operator instructions with its identity and deletion boundaries stated plainly.
+
+## 2026-10-22 — Verify local project artifact isolation
+
+**Intent:** Complete the local project-isolation delivery row with direct evidence that one consumer plugin cannot inspect another project's staged artifacts.
+
+**Changed fact:** Extended the two-repository shared-store regression with an artifact staged only beneath project A's configured root. Project B's plugin rejects a per-goal scan for that foreign goal ID and excludes the file from its complete project inventory. The plan marks local registration/grant isolation complete and keeps host identity and deployment proof explicit.
+
+**Verification:** The two-plugin project suite passes 39 tests; the hosted-MCP suite passes 13 tests; the full locked suite passes 359 tests; strict Pyright reports zero diagnostics; errors-only Pylint, locked dependency audit, lock check, and `git diff --check` pass. Directly counted checked/open rows between `## Delivery checklist` and `#### Repeatable work-cycle checklist`: 127 complete and 26 open.
+
+**Open gate:** These are local disposable repository/process tests. They do not authenticate Hermes identities, verify root-account registry provisioning, or establish deployment isolation. Retention, deployment, and live-runtime gates remain open.
+
+**Outcome:** This update targets local exact-grant and repository-root isolation only; no production identity or runtime gate is closed.

@@ -934,10 +934,28 @@ class ProjectPluginTests(unittest.TestCase):
             exact_item_text="- [ ] Separate task",
         )
 
+        artifact_a = (
+            self.root
+            / ".curatormd-v2"
+            / "staging"
+            / goal_a.goal_id
+            / "import"
+            / "project-a-only.bin"
+        )
+        artifact_a.parent.mkdir(parents=True)
+        artifact_a.write_bytes(b"project-a-private-artifact")
+
         self.assertEqual([item.goal.goal_id for item in project_a.goal_list()], [goal_a.goal_id])
         self.assertEqual([item.goal.goal_id for item in project_b.goal_list()], [goal_b.goal_id])
         with self.assertRaises(LookupError):
             project_b.goal_status(goal_a.goal_id)
+        with self.assertRaises(LookupError):
+            project_b.discover_staging_artifacts(goal_a.goal_id)
+        project_inventory_b = project_b.discover_project_staging_artifacts()
+        self.assertTrue(project_inventory_b.usage.inventory_complete)
+        self.assertNotIn(
+            str(artifact_a), {item.path for item in project_inventory_b.artifacts}
+        )
 
         projection_a = project_a.persist_goal(
             goal_a.goal_id, "persistence/HISTORY.md"
