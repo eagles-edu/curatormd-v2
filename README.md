@@ -37,9 +37,11 @@ or project records.
   decisions are explicit and immutable. The review-authorizer boundary fails
   closed by default, and receipts retain its authenticated reviewer identity;
   the in-process review queue exposes selected evidence by project. A
-  project-scoped review API/MCP surface exists, but its reviewer authorizer
-  is deliberately fail-closed until Hermes Core supplies verified identity;
-  a reviewer UI and production identity binding remain unimplemented.
+  project-scoped review API/MCP surface exists. `curatormd-v2-review` provides
+  an attended local-alpha reviewer bound to the current non-setuid Linux UID
+  and exact project grants. Hermes profile review remains denied until Hermes
+  Core supplies an authenticated human identity; the local CLI is not that
+  production identity binding. See the [consumer operations guide](docs/consumer-operations-v1.md#review-one-local-alpha-candidate).
 - Post-review purge records its decision and artifact hashes before deletion.
   Purge is restricted to exact regular files under a configured staging root;
   hash mismatches, symlinks, directories, and outside paths are retained and

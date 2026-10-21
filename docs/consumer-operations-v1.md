@@ -42,13 +42,52 @@ its `.curatormd-v2.toml`, project plugin binding, and canonical Markdown.
    authentication. A production host must replace local UID administration
    and profile assertions with verified identity and project authorization.
 
+## Review one local alpha candidate
+
+The attended `curatormd-v2-review` command is for local alpha use under the
+selected Linux account only; for the current alpha, that account is `eaglesvn`.
+Register the exact project and grant that account both `read` and `review`
+using `curatormd-v2-access`. The reviewer CLI checks
+the account's effective UID, requires a visible interactive terminal, and
+uses the configured global database plus this consumer's validated project
+config. Do not grant review to a Hermes profile with `Auth: none`.
+
+List pending candidates:
+
+```sh
+curatormd-v2-review \
+  --project-root /absolute/path/to/consumer \
+  --database /absolute/private/path/to/curator.sqlite3 \
+  queue
+```
+
+Review one candidate:
+
+```sh
+curatormd-v2-review \
+  --project-root /absolute/path/to/consumer \
+  --database /absolute/private/path/to/curator.sqlite3 \
+  review CANDIDATE_ID
+```
+
+The command displays selected facts, the complete hashed staging inventory,
+and the canonical Markdown target. One explicit approve/reject action and the
+candidate ID plus inventory hash authorize disposition and cleanup of that
+exact inventory. The plugin re-scans before recording the decision, writes
+canonical facts and the receipt before purge, and leaves held artifacts in
+place. Incomplete or changed inventories fail closed. Use `--target` only
+when the consumer config has more than one canonical target. The local UID
+binding does not authenticate Hermes sessions or close production identity,
+retention-policy, scheduling, or deployment gates.
+
 For each task, capture the user-approved problem, source checklist item, and
 observable success criteria before implementation. Record concise typed fact
 bullets during work; at handoff, leave incomplete criteria open with the
 evidence still needed and a concrete next action. A runtime turn ending is not
 goal completion evidence. SDE disposition, canonical persistence, and artifact
-purge are separately authorized operations; do not represent them as automatic
-consequences of a goal update.
+purge are not automatic consequences of a goal update. In the local attended
+review CLI, one decision authorizes cleanup of the displayed exact inventory;
+canonical persistence still completes before purge begins.
 
 ## Run one due-purge retry pass
 
@@ -161,7 +200,8 @@ conflict repair or production recovery authority.
   plugin, local SQLite ledger, local stdio MCP launcher, explicit in-process
   authorization checks, `curatormd-v2-stage` for bounded stdin-only local
   producer streaming, `curatormd-v2-maintenance` for an explicitly enabled,
-  bounded due-purge retry pass, and `curatormd-v2-router` for an explicitly
+  bounded due-purge retry pass, `curatormd-v2-review` for attended local-UID
+  SDE review under exact grants, and `curatormd-v2-router` for an explicitly
   enabled, bounded one-shot event pass over named project bindings.
   `curatormd-v2-storage` creates integrity-checked backups and restores only
   to an explicitly confirmed new path; it does not switch the active database.

@@ -2478,3 +2478,15 @@
 **Open gate:** The end-to-end fixture proves local implementation only. Hermes-authenticated human identity, approved retention/hold rules, deployment, production purge scheduling/recovery, and live consumer behavior remain open. Delivery progress remains 126/153 (27 open).
 
 **Outcome:** Local alpha review now has real-store lifecycle coverage without changing the deployment or identity gates.
+
+## 2026-10-22 — Document the local alpha review operation
+
+**Intent:** Make the locally verified reviewer usable without implying Hermes profile authentication or production readiness.
+
+**Changed fact:** The README now distinguishes the local UID reviewer from the Hermes identity gate. The consumer operations guide documents exact read/review grant prerequisites, queue and review commands, visible inventory-hash confirmation, canonical-write-before-purge behavior, and current account selection (`eaglesvn`).
+
+**Verification:** `git diff --check` passes. These documentation edits describe the previously pushed CLI and the real disposable ledger test; they do not enable review in a consumer profile or change Vhost/GPTMD state.
+
+**Open gate:** Hermes-authenticated identity, approved retention and hold rules, deployment, production scheduling/recovery, and live application behavior remain open. Delivery progress remains 126/153 (27 open).
+
+**Outcome:** The local alpha review command has operator instructions with its identity and deletion boundaries stated plainly.
