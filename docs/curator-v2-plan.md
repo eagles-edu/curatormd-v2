@@ -1970,7 +1970,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       `R0914` Pylint, strict Pyright, repository errors-only Pylint, Bandit,
       and `git diff --check` pass. The previous full warning inventory had 272
       findings; it was not recomputed for this small change. Repository-wide
-      Pylint cleanup remains open.
+      Pylint cleanup remains open. Fresh inventory (2026-10-22): the full
+      repository reports 295 findings (283 refactor, 12 oversized-module
+      convention findings, and no warnings), down from 306 immediately before
+      the latest style cleanup. Eleven convention/warning findings were removed
+      through test-fixture import ordering, test-double documentation and
+      unused-parameter naming, and line wrapping. Focused review-CLI and
+      project-plugin suites pass 51 tests; strict Pyright, errors-only Pylint,
+      Bandit, dependency audit, lock check, and `git diff --check` pass. The
+      broad structural cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
