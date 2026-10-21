@@ -2765,3 +2765,15 @@
 **Open gate:** Repository-wide Pylint cleanup, production identity, retention/recovery policy, deployment, and live consumer/runtime proof remain open. No delivery row changed status, and no V1, GPTMD, consumer, or Hermes Core file changed.
 
 **Outcome:** One additional local structural finding was removed; Curator V2's broader alpha and release gates remain open.
+
+## 2026-10-22 — Verify current Vhost alpha package composition
+
+**Intent:** Install the just-pushed V2 candidate in the dedicated local Vhost alpha profile and verify its consumer and Hermes composition before any live application request.
+
+**Changed fact:** Built the wheel from Curator commit `24cae4c` (SHA-256 `3f552edf5edafa9f509a491e385dfc6286751e99ebf1cf5dd7dddead5d62ca1a`) and reinstalled it only in the `renew-ssl-coding` Curator V2 environment. All 35 installed Python modules match source. The Hermes profile reports 47 Curator tools and `auth=none`; gateway status lists only the default-profile PID.
+
+**Verification:** The seven Vhost installed-consumer contracts pass. The Hermes Core managed-MCP disposable integration passes three lifecycle events, exact replay, failed-delivery retry, planned-goal binding denial, reviewer-only persistence denial, Vhost projection reconciliation, and private/out-of-scope target checks. Hermes `scripts/check` passes 12 checks; 69 focused Hermes integration and Host Steward tests pass. A read-only SQLite check reports schema 20, `quick_check=ok`, one goal, two facts, 12 inbox receipts, and two project grants.
+
+**Open gate:** No live Vhost application request or interactive authenticated profile call was verified; Hermes reported `auth=none` and listed only the default gateway PID. Production identity, retention/recovery, deployment recovery, and live-runtime acceptance remain open. Vhost source files and their pre-existing dirty state were preserved; no GPTMD or V1 repository/state was touched.
+
+**Outcome:** The current V2 wheel and repository-owned Vhost plugin compose locally through Hermes Core's managed MCP path. This is local alpha evidence, not production readiness or a closed lifecycle checklist item.

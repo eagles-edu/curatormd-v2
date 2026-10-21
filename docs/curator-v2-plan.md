@@ -352,6 +352,20 @@ consumer plugin, Hermes integration, or production deployment.
       tools and `auth=none`; gateway status shows only the default-profile PID,
       so interactive profile authorization and a live application request
       remain unverified.
+      Latest local alpha package (2026-10-22): built from Curator commit
+      `24cae4c`, wheel SHA-256
+      `3f552edf5edafa9f509a491e385dfc6286751e99ebf1cf5dd7dddead5d62ca1a`,
+      and installed in the dedicated profile environment. All 35 installed
+      Python module hashes match source. Seven Vhost consumer contracts and the
+      Hermes Core managed-MCP harness pass; the harness processes three
+      lifecycle events and verifies retry/replay, binding denial, reviewer
+      denial, projection reconciliation, and privacy canaries. Hermes MCP
+      discovery exposes 47 tools with `auth=none`. Read-only SQLite reports
+      schema 20, `quick_check=ok`, one goal, two facts, 12 inbox receipts, and
+      two project grants. Gateway status lists only the default-profile PID.
+      This verifies the current package/plugin composition and stored database
+      integrity, not an interactive Vhost request or authenticated identity;
+      the lifecycle checklist item remains open.
 
 ### 2. Evidence and fact ledger
 

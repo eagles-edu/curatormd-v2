@@ -233,3 +233,19 @@ events, retry/replay, binding checks, and projection reconciliation. Installed
 `auth=none`; gateway status lists only the default-profile PID. The install and
 disposable tests do not establish interactive profile authorization or a live
 Vhost application request.
+
+Current source package recheck (2026-10-22): built from Curator commit
+`24cae4c`, wheel SHA-256
+`3f552edf5edafa9f509a491e385dfc6286751e99ebf1cf5dd7dddead5d62ca1a`, and
+installed in the dedicated `renew-ssl-coding` Curator V2 environment. Hashes
+match all 35 installed Python modules. All seven Vhost consumer contracts pass,
+and the Hermes Core managed-MCP disposable harness passes with three processed
+events, exact replay, failed-delivery retry, explicit binding checks, denied
+reviewer persistence, reconciled projection, and absent private/out-of-scope
+canaries. MCP discovery exposes 47 tools with `auth=none`. Read-only SQLite
+reports schema 20, `quick_check=ok`, one goal, two facts, 12 inbox receipts,
+and two project grants. Gateway status lists only the default-profile PID.
+These checks verify the current package and local plugin composition. They do
+not verify an interactive profile tool call or live Vhost application request;
+authenticated identity, production policy/recovery, and live runtime gates
+remain open.
