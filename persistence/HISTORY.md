@@ -2204,3 +2204,15 @@
 **Open gate:** Curator V2 MCP tracker access returned `unauthenticated: Trusted Hermes profile context is required`, so live project-ledger persistence is unverified. Deployment-owned identity and trust, owner-approved retention, production scheduling/recovery, and real consumer workflow remain open. The V2 plan remains 136/211 complete (75 open); no gated checkbox is closed by local tests.
 
 **Outcome:** Local suite, blocking quality/security checks, and package import are verified for this tree. No V1, GPTMD, Host Steward, or Vhost runtime state was changed.
+
+## 2026-10-21 — Install pushed Curator V2 wheel in isolated Vhost alpha profile
+
+**Intent:** Run the conditional local Vhost consumer check after the pushed Curator backend, package, and repository plugin met their local verification bar.
+
+**Changed fact:** Rebuilt the `0.1.0a1` wheel from Curator commit `aa12cd8` (SHA-256 `ae07285be32d624884ebfef9ec1a44c4b9ea146a03257d84903008bbd595d10f`) and installed it in the isolated `renew-ssl-coding` Hermes profile environment. No Vhost source or application data changed.
+
+**Verification:** The installed Vhost consumer contract passes 7/7. The Hermes-managed integration harness reports explicit goal binding, bounded lifecycle delivery, safe exact replay, failed-delivery retry, processed receipts, disposable Vhost projection reconciliation, and denial of reviewer-only persistence to the write-only profile. All 34 installed package modules match Curator source hashes. Hermes MCP discovery connects with `auth=none` and exposes 46 tools.
+
+**Open gate:** The harness uses disposable state and does not exercise the real Vhost application request/UI workflow. MCP discovery does not authenticate Hermes identity. Production identity, approved retention, scheduler/recovery, live health, and release approval remain open; checklist progress remains 136/211 (75 open).
+
+**Outcome:** The locally verified Curator package is installed and passes the Vhost plugin composition contracts in the isolated alpha profile. The Curator MCP tracker remains unauthenticated outside the trusted Hermes profile context. No GPTMD, V1, Host Steward, or Vhost application data changed.

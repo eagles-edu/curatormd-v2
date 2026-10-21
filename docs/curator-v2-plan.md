@@ -2034,6 +2034,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       target and imports the packaged Git evidence resolvers. This verifies
       package inclusion and importability, not a live consumer workflow or
       deployment trust. Checklist remains 136/211 complete (75 open).
+      Vhost alpha install (2026-10-21): rebuilt the wheel from pushed Curator
+      commit `aa12cd8` and installed it only in the isolated
+      `renew-ssl-coding` profile environment. All 34 installed Python modules
+      match the source hashes; the installed consumer contracts pass 7/7, and
+      the Hermes-managed integration harness passes against disposable state.
+      Hermes discovers 46 MCP tools with transport auth `none`. This verifies
+      package/plugin composition only; it does not exercise the Vhost
+      application workflow or establish authenticated identity. No Vhost
+      source or application data changed.
 
       Vhost alpha runtime probe (2026-10-21): installed the bounded Hermes Core
       lifecycle-hook/outbox files plus the Hermes-root Host Steward plugin in
