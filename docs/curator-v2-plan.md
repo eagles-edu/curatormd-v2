@@ -1499,6 +1499,20 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       prove live root-account enablement, authenticated reviewer identity,
       production supervision, or deployment recovery.
 
+      Vhost alpha package update (2026-10-21): rebuilt wheel SHA-256
+      `b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3`
+      was installed only in the dedicated `renew-ssl-coding` alpha virtualenv;
+      all 34 installed module hashes match Curator source. The seven Vhost
+      consumer contracts and the Hermes-managed disposable integration harness
+      pass. Profile MCP discovery connects with `auth=none` and discovers 46
+      tools. A read-only SQLite probe after the supported schema migration
+      reports `quick_check=ok`, schema 18, one project goal, two facts, 12
+      processed event receipts, zero retained inbox payload JSON bytes, and
+      both SDE context columns. No Vhost source or application data changed.
+      This package/profile integration result does not prove authenticated
+      identity, successful interactive MCP approval, application workflow,
+      production health, or deployment recovery.
+
 ### 8. Security, privacy, token, and disk controls
 
 - [x] Bound key goal, criterion, fact, evidence locator, and SDE rationale

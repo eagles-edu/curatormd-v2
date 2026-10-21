@@ -144,6 +144,18 @@ the installed consumer contract do not prove a successful profile-mediated
 request. The Vhost application workflow and canonical target write remain
 unverified.
 
+Latest alpha wheel retest (2026-10-21): wheel SHA-256
+`b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3` is
+installed in the dedicated `renew-ssl-coding` virtualenv, with all 34 package
+module hashes matching source. The seven Vhost consumer contracts and the
+Hermes-managed disposable integration harness pass; profile MCP discovery
+connects with `auth=none` and exposes 46 tools. A read-only profile database
+check after the v18 migration reports `quick_check=ok`, one goal, two facts, 12
+processed receipts, zero retained inbox payload JSON bytes, and both new SDE
+context columns. No Vhost repository source or application data changed. This
+does not resolve the separate interactive MCP approval rejection, establish
+authenticated identity, or exercise the Vhost application workflow.
+
 Current source package recheck (2026-10-21): rebuilt wheel SHA-256 is
 `2773a8e05fc28dc8e45c236b75e208428c276cfa201a98de96891c616cc2bb0e` and is
 installed in the isolated Vhost alpha profile. All seven installed consumer

@@ -2276,3 +2276,15 @@
 **Open gate:** Hermes hosted CI, authenticated identity, owner retention policy, production scheduling/recovery, Vhost application workflow, and live Curator goal-tracker persistence remain unverified. Checklist is 138/211 complete (73 open).
 
 **Outcome:** The alpha wheel's new SDE MCP schema is verified both locally and in hosted CI. No consumer install or live runtime was changed.
+
+## 2026-10-21 — Reinstall Curator V2 alpha wheel in isolated Vhost profile
+
+**Intent:** Exercise the current packaged Curator V2 backend through the isolated Vhost consumer plugin and the actual Hermes Core managed-MCP harness after clean-wheel CI passed.
+
+**Changed fact:** Installed wheel `b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3` in the dedicated `renew-ssl-coding` alpha virtualenv. All 34 installed module hashes match Curator source. Profile MCP startup exposes schema version 18 with the new nullable SDE context columns. The Vhost repository source and application data were not changed.
+
+**Verification:** Vhost consumer contracts pass 7/7; the Hermes Core managed-MCP disposable harness passes explicit goal binding, planned-goal denial, three processed events, exact replay, failed-delivery retry, privacy checks, reviewer-write denial, and Vhost projection reconciliation. `hermes --profile renew-ssl-coding mcp test curator_v2` connects and discovers 46 tools with transport auth `none`. A direct read-only profile database check reports `quick_check=ok`, schema 18, one goal, two facts, 12 processed event receipts, zero retained payload JSON bytes, and no SDE candidates or review receipts.
+
+**Open gate:** Tool discovery and the disposable harness do not establish authenticated Hermes identity or approval of a real interactive call. The Vhost application workflow, production health, retention policy, deployment recovery, and release approval remain open. Checklist remains 138/211 complete (73 open).
+
+**Outcome:** The current alpha wheel, Vhost plugin contracts, and Hermes-managed MCP composition are verified in the isolated local profile. No GPTMD, deprecated V1 runtime, Host Steward ownership, Vhost source, or application data changed.

@@ -25,6 +25,16 @@ without exposing `project_id`. The local Python 3.12 wheel install and both
 installed-launcher checks pass, and the hosted wheel-install job passes this
 new assertion.
 
+The same wheel (`b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3`)
+is now installed in the isolated `renew-ssl-coding` alpha virtualenv. All 34
+package module hashes match source; seven Vhost consumer contracts and the
+Hermes-managed disposable lifecycle harness pass. Profile MCP discovery
+connects with `auth=none` and lists 46 tools. A read-only profile-store check
+reports schema 18, `quick_check=ok`, one goal, two facts, 12 processed receipts,
+and zero retained event payload JSON bytes. This is local alpha package and
+storage evidence; interactive identity/approval and the Vhost application
+workflow remain unverified.
+
 Local alpha candidate (2026-10-21): package metadata is `0.1.0a1`. The wheel
 and source archive build successfully. The wheel installs into the isolated
 Vhost Manager profile environment; Hermes tool discovery, a config-bound read,
