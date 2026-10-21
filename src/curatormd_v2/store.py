@@ -190,6 +190,16 @@ def _json_dump(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
+def _validate_unique_amended_criteria_ids(
+    criteria: tuple[SuccessCriterion, ...],
+) -> None:
+    """Reject repeated criterion IDs before checking later amendment fields."""
+
+    criterion_ids = tuple(item.criterion_id for item in criteria)
+    if len(criterion_ids) != len(set(criterion_ids)):
+        raise ValueError("amended criterion IDs must be unique")
+
+
 _ERROR_CODE_RE = re.compile(r"^[a-zA-Z0-9_.:-]{1,128}$")
 
 
@@ -2021,9 +2031,7 @@ class CuratorStore:
             raise ValueError(
                 f"amended criteria must contain 1-{MAX_SUCCESS_CRITERIA} items"
             )
-        criterion_ids = tuple(item.criterion_id for item in criteria)
-        if len(criterion_ids) != len(set(criterion_ids)):
-            raise ValueError("amended criterion IDs must be unique")
+        _validate_unique_amended_criteria_ids(criteria)
         if not reason.strip() or not next_action.strip() or len(next_action) > 1000:
             raise ValueError("criteria amendment requires a bounded reason and next action")
         serialized = _json_dump([

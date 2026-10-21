@@ -2394,3 +2394,15 @@
 **Open gate:** Structural, interface, and duplicate-code Pylint findings remain. This change does not close the repository-wide Pylint checklist item or any deployment, identity, retention, or live-runtime gate.
 
 **Outcome:** Six reviewed false-positive/design warnings now carry explicit local rationale; no application behavior or delivery status changed.
+
+## 2026-10-21 — Extract Curator criteria-amendment validation
+
+**Intent:** Reduce lifecycle-store complexity while preserving criteria amendment validation order and externally visible errors.
+
+**Changed fact:** Extracted duplicate criterion-ID validation into a private helper called at the same point in `CuratorStore.amend_goal_criteria`; the function no longer exceeds Pylint's local-variable limit.
+
+**Verification:** Both focused criteria-amendment lifecycle tests pass. Strict Pyright reports zero diagnostics; repository errors-only Pylint and `git diff --check` pass. The full warning-level inventory falls from 274 to 273.
+
+**Open gate:** Repository-wide warning-level Pylint cleanup remains open. No delivery row changed status; owner-approved identity/retention and deployment/live-runtime gates remain open.
+
+**Outcome:** The lifecycle store retains the same validation sequence and output while removing one structural Pylint finding.

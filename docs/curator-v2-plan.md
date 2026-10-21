@@ -1877,6 +1877,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       rules and line length passes. A fresh full warning-level inventory falls
       from 280 to 274; this records justified exception handling and does not
       close the repository-wide cleanup item.
+      Further progress (2026-10-21): moved amended-criteria uniqueness
+      validation into a private helper without changing validation order or
+      error text. Both focused lifecycle amendment tests pass, strict Pyright
+      reports zero diagnostics, and errors-only Pylint and `git diff --check`
+      pass. The fresh full warning-level inventory falls from 274 to 273; the
+      repository-wide cleanup item remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
