@@ -1,5 +1,12 @@
 # Curator V2 history
 
+## 2026-10-22
+
+- Added a separate V2-owned VS Code status-label extension. It displays
+  `CuratorMD V2` with neutral wording and explicitly states that health,
+  capture, persistence, and identity are not checked. JavaScript syntax and
+  manifest parsing checks pass; this label is not runtime-health evidence.
+
 ## 2026-10-19
 
 - Hardened host resolver receipts at construction: bounded safe single-line

@@ -1,0 +1,29 @@
+{
+  "name": "curatormd-v2-status",
+  "displayName": "CuratorMD V2 Status",
+  "description": "A neutral VS Code status bar label for CuratorMD V2.",
+  "version": "0.1.0",
+  "publisher": "curatormd",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eagles-edu/curatormd-v2.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "curatormdV2.showStatusInfo",
+        "title": "CuratorMD V2: About Status Label"
+      }
+    ]
+  }
+}
