@@ -9,8 +9,9 @@ consumer repositories, or access production credentials.
 - A separate packaging job builds the wheel, installs it into a clean Python
   environment, exercises the installed stdio launcher against a temporary
   consumer repository/config and runs all installed operational CLI
-  entrypoints. The storage CLI smoke takes and restores an integrity-checked
-  snapshot to a new path, then verifies the restored row. These checks do not
+  entrypoints, including the attended local SDE reviewer. The storage CLI smoke
+  takes and restores an integrity-checked snapshot to a new path, then verifies
+  the restored row. These checks do not
   add the source tree to `PYTHONPATH`; they verify the built distribution
   rather than an editable checkout. They remain fixture-consumer checks, not
   installation in a production repository or Hermes identity proof.

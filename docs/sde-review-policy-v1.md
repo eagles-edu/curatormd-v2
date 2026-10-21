@@ -48,7 +48,17 @@ manifest. Approval or rejection is attributable and immutable. A correction is
 a separately authorized, append-only record linked to the decided candidate;
 it never rewrites the candidate or its decision receipt. Pending decisions do
 not authorize cleanup. Canonical project facts and the receipt must be durable
-before a separately approved purge of the exact unchanged transient manifest.
+before purge of the exact unchanged transient manifest begins.
+
+The local attended reviewer may combine disposition and cleanup approval in
+one explicit action when it displays a complete, freshly hashed inventory.
+The reviewer must type the decision, candidate ID, and inventory hash. The
+plugin re-scans the exact inventory before storing the receipt, then persists
+canonical facts and the receipt before attempting eligible purge. Any held
+artifact remains held. Incomplete inventories cannot authorize cleanup through
+this workflow. Other API callers may record a decision and complete an
+inventory separately; they do not inherit the local reviewer's combined
+confirmation.
 
 This policy does not define legal holds, project-specific retention, or an
 automatic compaction policy. Those remain explicit release gates.

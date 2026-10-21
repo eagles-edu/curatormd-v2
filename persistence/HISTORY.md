@@ -2454,3 +2454,15 @@
 **Open gate:** This local database inspection does not authenticate Hermes identity, establish live goal-tracker persistence, or prove project health. The last authenticated Curator goal-list attempt returned `unauthenticated: Trusted Hermes profile context is required`. Identity, owner-approved retention, production scheduling/recovery, and the Vhost application workflow remain open.
 
 **Outcome:** Progress reporting has one explicit delivery-only denominator and current local persistence evidence. No checklist row was closed; no V1, GPTMD, Vhost application data, or runtime configuration changed.
+
+## 2026-10-22 — Add attended local SDE review and exact purge confirmation
+
+**Intent:** Implement the user-selected local alpha reviewer (`eaglesvn`) so one explicit SDE decision can approve cleanup of the exact displayed inventory after canonical persistence.
+
+**Changed fact:** Added `curatormd-v2-review`, bound to the current non-setuid Linux UID and exact project `read`/`review` grants. Review requires a visible terminal, displays the candidate packet and complete hashed inventory, and requires the candidate ID plus manifest hash in the confirmation phrase. The same decision call records the complete inventory; the plugin re-scans before receipt storage, canonical facts and receipt persist before purge, and existing holds remain. The plan's Hermes-authenticated identity row stays open because the `renew-ssl-coding` profile has no authenticated human subject.
+
+**Verification:** The locked Curator V2 suite passes 358 tests; strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, locked dependency audit, `uv lock --check`, wheel build/install and installed reviewer `--help`, and `git diff --check` pass. Four focused reviewer tests cover UID binding, profile-name rejection, complete-manifest confirmation and persistence ordering, and refusal of piped input/output. The MCP lifecycle regression now records decision plus full inventory in one action and passes in the full suite.
+
+**Open gate:** The local Linux account is selected for alpha review only. Hermes-authenticated human identity, deployment, owner retention/hold policy, production purge scheduling/recovery, and live application behavior remain open. No delivery checklist row changed status; progress remains 126/153 complete (27 open).
+
+**Outcome:** Local attended review and same-action exact-inventory purge authorization are packaged and locally verified. This does not authorize Hermes profile review, establish production identity, or close the deployment, retention, or live-runtime gates.

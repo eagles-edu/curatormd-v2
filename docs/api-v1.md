@@ -46,6 +46,13 @@ an HTTP or MCP server, and it does not authenticate credentials.
   reviewer identity and rationale. These are explicit human labels, not ground
   truth or model-training signals.
 
+The `curatormd-v2-review` local CLI binds attended review to the current
+non-setuid Linux UID (`local-uid:<euid>`), exact project grants, and a visible
+terminal. It displays selected facts and the complete hashed artifact
+inventory; one explicit decision can authorize cleanup of that exact inventory.
+This is a local-alpha host adapter, not a Hermes authenticator. Hermes-
+authenticated human identity remains a separate integration gate.
+
 ## Operations and MCP mapping
 
 | API method | Required action | Intended tool/route |

@@ -585,18 +585,29 @@ class McpServerTests(unittest.TestCase):
                         self.assertTrue(inventory["usage"]["inventory_complete"])
                         manifest = inventory["artifacts"]
                         self.assertEqual(len(manifest), 2)
+                        reviewed_manifest = [
+                            (
+                                {
+                                    **artifact,
+                                    "retention_hold": "operational",
+                                }
+                                if Path(artifact["path"]) == staged
+                                else artifact
+                            )
+                            for artifact in manifest
+                        ]
                         receipt = await call_json(
                             "sde_confirm",
                             {
                                 "candidate_id": candidate["candidate_id"],
                                 "decision": "approved",
-                                "artifacts": [],
-                                "artifact_inventory_complete": False,
+                                "artifacts": reviewed_manifest,
+                                "artifact_inventory_complete": True,
                                 "rationale": "Human reviewer approved the bounded facts",
                             },
                         )
                         self.assertEqual(receipt["reviewer_id"], "host-subject")
-                        self.assertFalse(receipt["artifact_inventory_complete"])
+                        self.assertTrue(receipt["artifact_inventory_complete"])
                         self.assertFalse(receipt["canonical_persisted"])
                         self.assertEqual(receipt["purge_status"], "purge_pending")
                         self.assertTrue(staged.exists())
@@ -609,21 +620,8 @@ class McpServerTests(unittest.TestCase):
                             1,
                         )
 
-                        inventory_receipt = await call_json(
-                            "artifact_inventory_complete",
-                            {
-                                "receipt_id": receipt["receipt_id"],
-                                "artifacts": [
-                                    ({
-                                        **artifact,
-                                        "retention_hold": "operational",
-                                    } if Path(artifact["path"]) == staged else artifact)
-                                    for artifact in manifest
-                                ],
-                            },
-                        )
-                        self.assertTrue(inventory_receipt["artifact_inventory_complete"])
-                        self.assertFalse(inventory_receipt["canonical_persisted"])
+                        self.assertTrue(receipt["artifact_inventory_complete"])
+                        self.assertFalse(receipt["canonical_persisted"])
                         self.assertTrue(staged.exists())
                         self.assertTrue(unheld_staged.exists())
                         inventory_health = await call_json("project_health", {})

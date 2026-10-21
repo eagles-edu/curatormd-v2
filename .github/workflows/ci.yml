@@ -57,6 +57,7 @@ jobs:
           "$wheel_bin/curatormd-v2-stage" --help >/dev/null
           "$wheel_bin/curatormd-v2-maintenance" --help >/dev/null
           "$wheel_bin/curatormd-v2-access" --help >/dev/null
+          "$wheel_bin/curatormd-v2-review" --help >/dev/null
           "$wheel_bin/curatormd-v2-router" --help >/dev/null
           "$wheel_bin/curatormd-v2-storage" --help >/dev/null
           "$wheel_python" - <<'PY'

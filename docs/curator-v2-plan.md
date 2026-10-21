@@ -474,8 +474,11 @@ consumer plugin, Hermes integration, or production deployment.
 - [ ] Bind review decisions to verified Hermes Core user/project permissions
       and exercise authenticated reviewer identity end to end. The current
       local profile ID is an operator assertion, and synthetic test authorizers
-      do not satisfy this production identity gate; a reviewer UI also remains
-      unimplemented.
+      do not satisfy this production identity gate. For local alpha only,
+      `eaglesvn` is selected as the sole human reviewer through an attended CLI
+      bound to the current Linux UID; the `renew-ssl-coding` Hermes profile has
+      no authenticated human subject and remains unable to review or purge.
+      This local adapter does not close the Hermes identity gate.
 - [x] Make an SDE decision and its artifact manifest immutable after the first
       durable receipt; repeated requests with changed decision or targets conflict.
 - [x] Record bounded, idempotent corrections as linked append-only follow-up
