@@ -2670,3 +2670,15 @@
 **Open gate:** The profile install and disposable harness do not prove an interactive authenticated tool call or live Vhost application workflow. Production identity, retention/recovery, deployment, and runtime gates remain open.
 
 **Outcome:** The current wheel is installed and verified through the local consumer/plugin path; production and live-profile claims remain open.
+
+## 2026-10-22 — Verify Curator goal-ledger caller context
+
+**Intent:** Check whether this Codex session can read the active V2 ledger through the configured Curator protocol before making any persistence claim.
+
+**Changed fact:** The read-only Curator V2 `goal_list` call returned `unauthenticated` with the fixed message that trusted Hermes profile context is required. No ledger mutation was attempted. This client call did not include Hermes profile metadata and is separate from the successful disposable Hermes-managed stdio integration.
+
+**Verification:** The MCP tool returned `isError=true`, code `unauthenticated`; the worktree and existing goal state were not changed by the call.
+
+**Open gate:** This Codex session cannot claim current Curator goal-ledger state or persist goal events through the protocol without trusted Hermes context. The result does not establish failure of the separately tested local profile or an authenticated human identity.
+
+**Outcome:** Ledger access remains unknown from this client; checked-in V2 history remains the available repository audit trail.

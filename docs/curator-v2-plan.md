@@ -497,6 +497,13 @@ consumer plugin, Hermes integration, or production deployment.
       A disposable end-to-end CLI test now exercises its actual grant ledger,
       pending SDE, exact staged inventory, canonical write, and purge. This
       local adapter does not close the Hermes identity gate.
+      Additional verification (2026-10-22): the current Codex client attempted
+      the read-only Curator V2 `goal_list` tool without Hermes profile context;
+      the server returned `unauthenticated` / trusted Hermes context required,
+      and no goal state changed. This is distinct from the successful
+      disposable Hermes managed-MCP harness and does not prove this session's
+      user identity. Persistent goal-ledger updates from this client remain
+      unverified.
 - [x] Make an SDE decision and its artifact manifest immutable after the first
       durable receipt; repeated requests with changed decision or targets conflict.
 - [x] Record bounded, idempotent corrections as linked append-only follow-up
