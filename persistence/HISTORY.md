@@ -2322,3 +2322,15 @@
 **Open gate:** Real transcript/import/test producers, artifacts outside the configured staging root, approved age-retention policy, and production inventory scheduling remain open.
 
 **Outcome:** Local staging inventory is closed at the reference adapter boundary only; no external consumer or runtime gate changed.
+
+## 2026-10-21 — Verify hosted Curator V2 alpha CI
+
+**Intent:** Verify the pushed alpha documentation and local staging-inventory checklist update on the repository's required hosted workflow.
+
+**Changed fact:** GitHub Actions run [39631809235](https://github.com/eagles-edu/curatormd-v2/actions/runs/39631809235) completed successfully for commit `e609fa6`.
+
+**Verification:** Python 3.12, 3.13, and 3.14 suites, strict typing, blocking Pylint, Bandit, locked dependency audit, clean installed-wheel acceptance, and installed operational CLI checks all pass.
+
+**Open gate:** Hosted CI verifies repository/package behavior for this source revision; owner-approved retention, authenticated identity, production scheduling/recovery, deployment, and live-runtime gates remain open. The delivery checklist remains 126/153 complete (27 open).
+
+**Outcome:** The staging-inventory implementation and release documentation have local and hosted repository-level verification. No consumer or Hermes runtime state changed.
