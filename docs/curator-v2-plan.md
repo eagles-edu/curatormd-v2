@@ -533,7 +533,7 @@ consumer plugin, Hermes integration, or production deployment.
       336 tests; strict Pyright, errors-only Pylint, Bandit, locked dependency
       audit, and `git diff --check` pass. This remains local synthetic-reviewer
       evidence, not production purge scheduling or retention approval.
-- [ ] Implement inventory discovery in each staging adapter and prove it
+- [x] Implement inventory discovery in each staging adapter and prove it
       accounts for every temporary artifact class (raw chat, cue, import, scratch,
       generated intermediate, and duplicate). Progress (2026-10-18): the
       reference-plugin scanner regression inventories representative files for
@@ -561,6 +561,12 @@ consumer plugin, Hermes integration, or production deployment.
       for this tool; review stays disabled by default and requires the exact
       durable project grant. The clean Python 3.12 wheel acceptance covers the
       installed review-gated inventory call without using a Vhost profile.
+      Local reference-adapter acceptance is complete: its scanner inventories
+      all six declared artifact classes, duplicate-content paths, orphaned goal
+      directories, and unrecognized classes, while subprocess coverage verifies
+      artifacts staged through the bounded producer CLI. This row covers the
+      local reference adapter only; real producer routing and out-of-root
+      artifact discovery remain open integration work.
 - [x] Implement reference-plugin discovery for every regular file inside the
       selected goal directory beneath the configured staging root, with bounded
       streaming SHA-256, an explicit incomplete state on skipped/changed/over-

@@ -2310,3 +2310,15 @@
 **Open gate:** The denominator can change when delivery rows are added or removed. Authenticated goal-ledger access remains unavailable in this session.
 
 **Outcome:** Future progress updates use the delivery-only count; no delivery status changed in this correction.
+
+## 2026-10-21 — Close local staging inventory adapter item
+
+**Intent:** Complete the reference staging adapter's inventory contract for all supported temporary artifact classes while preserving the separate producer-routing gate.
+
+**Changed fact:** The delivery row for staging inventory is complete for the local reference adapter. It discovers all declared classes, duplicate-content files at distinct paths, orphaned goal directories, and unrecognized classes; the bounded producer CLI writes through that same inventoried adapter. Delivery-checklist progress is 126/153 complete (27 open).
+
+**Verification:** The locked Curator suite passes 354 tests, including `test_producer_api_stages_every_supported_temporary_artifact_class` and `test_project_inventory_includes_orphaned_goal_directories`. Strict Pyright, errors-only Pylint, Bandit, locked dependency audit, `uv lock --check`, and `git diff --check` pass.
+
+**Open gate:** Real transcript/import/test producers, artifacts outside the configured staging root, approved age-retention policy, and production inventory scheduling remain open.
+
+**Outcome:** Local staging inventory is closed at the reference adapter boundary only; no external consumer or runtime gate changed.
