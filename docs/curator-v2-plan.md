@@ -169,8 +169,9 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 129 of 153 delivery rows are complete; 24 are open. Recount the
-rows for future updates; historical narrative counts below are not current.
+(2026-10-22): 143 of 211 delivery rows are complete; 68 are open. This count
+parses checkbox rows in this section only; historical narrative counts below
+are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -620,6 +621,15 @@ consumer plugin, Hermes integration, or production deployment.
       Production retention policy, discovery of holds from external source
       systems, authenticated Hermes reviewer identity, and deployed operations
       remain separate open gates.
+      Additional verification (2026-10-22): the full locked suite passes 368
+      tests; strict Pyright, errors-only Pylint, Bandit, locked dependency
+      audit, lock sync, and `git diff --check` pass. A read-only check of the
+      configured local V2 SQLite database reports `quick_check=ok`, schema
+      version 20, one goal, two facts, 12 inbox rows, one project registration,
+      and two grants. The MCP ledger read still returns `unauthenticated`, so
+      trusted-profile protocol access and live capture remain unverified. A
+      full Pylint inventory reports 295 non-blocking refactor/convention
+      findings; repository-wide structural cleanup remains open.
 - [x] Implement persisted per-artifact capped exponential backoff, a bounded
       scheduler-facing due-retry pass, and status visibility for each retry
       deadline; preserve the authenticated explicit retry as an immediate

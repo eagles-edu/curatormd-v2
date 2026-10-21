@@ -2,6 +2,21 @@
 
 ## 2026-10-22
 
+- Reverified the Curator V2 alpha worktree: all 368 locked unit tests pass;
+  strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+  `git diff --check` pass. Full Pylint still reports 295 non-blocking
+  refactor/convention findings, so repository-wide cleanup remains open.
+- Read-only inspection of the configured local V2 SQLite database reports
+  `quick_check=ok`, schema v20, one goal, two facts, 12 inbox rows, one project
+  registration, and two grants. The Curator MCP ledger read remains
+  `unauthenticated`; authenticated profile access and live capture are unknown.
+- Corrected the plan's delivery-only snapshot to 143/211 complete and 68 open,
+  counting checkbox rows only in the Delivery checklist section. Historical
+  inline progress counts are not current snapshots.
+- The interrupted-cleanup reconciliation regression remains covered by the
+  full suite; no deployment, identity, production retention, or live-runtime
+  gate was changed by these checks.
+
 - Added a separate V2-owned VS Code status-label extension. It displays
   `CuratorMD V2` with neutral wording and explicitly states that health,
   capture, persistence, and identity are not checked. JavaScript syntax and
