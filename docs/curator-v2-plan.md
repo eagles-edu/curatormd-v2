@@ -1007,7 +1007,16 @@ consumer plugin, Hermes integration, or production deployment.
       check is clean. A direct Curator V2 `project_health` read from this
       unauthenticated Codex context returns `unauthenticated`; current runtime
       health and persistence status therefore remain unknown. No checklist item
-      closes from this verification.
+      closes from this verification. Additional verification (2026-10-22):
+      the focused Hermes project-usage/Codex-accounting/hook/outbox suite passes
+      46 tests across five files. Its first run exposed a test-isolation issue:
+      bootstrap read the neighboring real-home install manifest because this
+      checkout is beneath `~/.hermes`; the two affected test fixtures now bypass
+      dependency activation while retaining the isolated test home and HTTP
+      fakes. Ruff, `git diff --check`, and `python3 scripts/check` pass, with all
+      12 Core checks green. This is local source/test evidence only; it does not
+      prove a live provider response, production profile health, complete usage,
+      budget policy, retention policy, or alert delivery.
 - [ ] Verify restart recovery, duplicate delivery, delayed ordering, load,
       database locking, backup restore, and multi-project isolation. Local unit
       coverage now explicitly closes/reopens SQLite with a sequence-gap event

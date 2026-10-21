@@ -2598,3 +2598,15 @@
 **Open gate:** The approved policy applies to local alpha only. The `renew-ssl-coding` profile still reports `auth=none`; production role provisioning, retention policy, external legal/operational hold discovery, scheduling, alerting, and live runtime remain unverified.
 
 **Outcome:** The local hold rule and enforcement evidence are recorded; no production or live-identity gate is closed.
+
+## 2026-10-22 — Verify Hermes project-usage integration in isolation
+
+**Intent:** Recheck the Hermes-owned project-usage path while keeping provider/model counts out of Curator events and keeping live identity/runtime claims evidence-bound.
+
+**Changed fact:** Two Hermes test fixtures now stub only bootstrap dependency activation so tests running from a checkout beneath `~/.hermes` do not read the neighboring real-home install manifest. The local suite covers project-usage aggregation, Codex/provider usage attribution, Gateway hook persistence, and durable outbox replay. Curator remains unchanged for token accounting; Host Steward and the project-usage ledger remain Hermes Core-owned.
+
+**Verification:** The focused Hermes integration selection passes 46 tests across five files. `python3 scripts/check` passes all 12 Core checks; Ruff on the changed files and Hermes `git diff --check` pass. Curator's delivery checklist count remains 129/153 complete and 24 open.
+
+**Open gate:** This is local test/source evidence. Live provider capture, complete project-wide token coverage, authenticated profile identity, production budgets/retention/alerts, and live runtime remain unverified.
+
+**Outcome:** The local Hermes usage integration is testable without real-home manifest access; no production or live-provider gate is closed.
