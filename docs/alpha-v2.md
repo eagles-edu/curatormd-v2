@@ -54,7 +54,11 @@ the exact commit only.
   alpha profile, not cryptographic identity or production authorization. A
   natural-language CLI response claimed the bind failed, but persisted Hermes
   binding and Curator receipt records confirm it completed. The consumer test
-  suite passes seven contracts. A focused Hermes suite passes 58 tests and
+  suite passes seven contracts; its composed disposable-checkout case writes
+  and reconciles Hermes-derived facts through the configured Markdown adapter,
+  while canaries and an out-of-scope target remain absent/unchanged. This is
+  local consumer-adapter evidence, not a production target write. A focused
+  Hermes suite passes 58 tests and
   `python3 scripts/check` passes 12 checks. The focused shell-hook suite has one
   known profile-isolation failure (52 passed, 2 skipped); its direct config
   compatibility probe passes. Curator's 336-test suite, strict Pyright,

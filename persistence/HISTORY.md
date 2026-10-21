@@ -1543,3 +1543,16 @@
 **Open gate:** Supply independently trusted readiness observations and approved identity/retention/recovery policy before claiming the global service is healthy or production-ready. V2 checklist progress remains 133/211 (78 open).
 
 **Outcome:** V2 persistence has verified processed lifecycle receipts, while overall readiness correctly remains unknown. This fact concerns the Curator V2 profile and does not report V1 status.
+
+
+## 2026-10-21 — Compose Hermes lifecycle delivery with Vhost persistence
+
+**Intent:** Extend the Vhost installed-consumer contract to verify that bounded Hermes lifecycle facts can reach the repository-configured canonical Markdown adapter after durable processing.
+
+**Changed fact:** The end-to-end Vhost consumer test now runs against a disposable Git clone of the Vhost config. It drives the consumer hook through a managed-MCP test bridge into the installed Curator stdio launcher, verifies processed start/end receipts and compact facts, projects the goal to its configured history target, reconciles the projection, and checks canary exclusion plus an unchanged out-of-scope target.
+
+**Verification:** The full installed Vhost consumer contract passes all seven tests. The composed flow writes and reconciles only within its temporary checkout and disposable SQLite database.
+
+**Open gate:** This does not launch Hermes Core or its production router, write the live Vhost canonical target, establish authenticated identity, or close retention/recovery policy. The deployment-level integration checklist remains open; V2 progress is still 133/211 (78 open).
+
+**Outcome:** Local consumer integration now composes bounded Hermes event handling with configured Vhost Markdown persistence without touching Vhost project data.

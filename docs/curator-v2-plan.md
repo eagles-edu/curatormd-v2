@@ -1598,7 +1598,16 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       stdio subprocess; use temporary SQLite and repository plugin fixtures.
 - [ ] Add deployment-level integration tests using the Hermes router,
       production canonical persistence adapter, and representative consumer
-      repositories.
+      repositories. Local composition progress (2026-10-21): the Vhost consumer
+      contract now runs the installed Curator stdio launcher in a disposable
+      clone of the Vhost repository, dispatches bounded Hermes lifecycle events
+      through the consumer hook bridge, verifies processed receipts and compact
+      facts, writes the configured Markdown projection, reconciles it, and
+      confirms canary text and out-of-scope targets remain absent/unchanged.
+      All seven Vhost contracts pass. This composes the local consumer adapter;
+      it does not launch Hermes Core or its production router, use a production
+      persistence target, or prove production deployment behavior, so the item
+      remains open.
 - [x] Add end-to-end acceptance tests for: start -> fact bullets -> evidence
       -> open or complete -> SDE review -> receipt -> complete artifact inventory
       -> purge -> truthful status; the MCP acceptance path is in
