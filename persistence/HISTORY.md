@@ -2741,3 +2741,15 @@
 **Open gate:** This Codex session cannot claim current Curator goal-ledger state or persist goal events through the protocol without trusted Hermes context. The result does not establish failure of the separately tested local profile or an authenticated human identity.
 
 **Outcome:** Ledger access remains unknown from this client; checked-in V2 history remains the available repository audit trail.
+
+## 2026-10-22 — Correct Curator V2 delivery progress and simplify config parsing
+
+**Intent:** Keep the plan's delivery count aligned with its stated rule and continue the open local Pylint cleanup without weakening config validation.
+
+**Changed fact:** Corrected the snapshot to 130/173 complete (43 open) by excluding the 38 per-task checkboxes in section 11's reusable execution templates. Extracted bounded TOML parsing and root-schema validation from `_read_project_document` into `_parse_project_config`; validation order and sanitized errors are preserved.
+
+**Verification:** The focused project-plugin suite passes 43 tests and the full Curator suite passes 368 tests. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, locked dependency audit, and `git diff --check` pass. The fresh full Pylint inventory is 286 findings (274 refactor, 12 convention), one fewer than the prior 287; `_read_project_document` no longer reports too-many-branches.
+
+**Open gate:** Repository-wide Pylint cleanup remains open. Authenticated production identity, deployment-owned retention/recovery, and live consumer/runtime proof remain open. No delivery row changed status; no V1, GPTMD, or consumer worktree was changed.
+
+**Outcome:** The delivery count is now consistent with its exclusion rule, and one local structural finding was removed. The Curator V2 goal remains active.

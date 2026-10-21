@@ -169,9 +169,10 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 143 of 211 delivery rows are complete; 68 are open. This count
-parses checkbox rows in this section only; historical narrative counts below
-are not current.
+(2026-10-22): 130 of 173 delivery rows are complete; 43 are open. The count
+includes implementation rows in sections 0–10, 12, and Definition of done. It
+excludes section 11's reusable execution templates; their per-task checkboxes
+are not delivery progress. Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -2070,6 +2071,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       pass. The full Pylint inventory is 287 findings (275 refactor, 12
       oversized-module convention). Deployment-owned source credentials, trust
       roots, and end-to-end source probes remain open.
+      Further progress (2026-10-22): extracted bounded TOML/schema validation
+      from `_read_project_document` into `_parse_project_config`; the
+      project-config file no longer reports the excess-branch finding. The 43
+      focused project-plugin tests and full 368-test suite pass; strict Pyright,
+      errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`
+      pass. A fresh repository-wide inventory is 286 findings (274 refactor,
+      12 oversized-module convention); broad cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

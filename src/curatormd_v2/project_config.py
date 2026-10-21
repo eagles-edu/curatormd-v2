@@ -255,6 +255,13 @@ def _read_project_document(
         encoded = b""
     if read_failed:
         raise ProjectConfigError("project config is not valid UTF-8 TOML")
+    root_table = _parse_project_config(encoded)
+    return root, root_table, hashlib.sha256(encoded).hexdigest()
+
+
+def _parse_project_config(encoded: bytes) -> dict[str, object]:
+    """Parse bounded config bytes and validate its root schema."""
+
     if len(encoded) > MAX_CONFIG_BYTES:
         raise ProjectConfigError(f"config exceeds {MAX_CONFIG_BYTES} bytes")
     parse_failed = False
@@ -271,7 +278,7 @@ def _read_project_document(
     version = root_table["schema_version"]
     if not isinstance(version, int) or isinstance(version, bool) or version != 1:
         raise ProjectConfigError("schema_version must be integer 1")
-    return root, root_table, hashlib.sha256(encoded).hexdigest()
+    return root_table
 
 
 def _validate_config_values(value: object) -> None:
