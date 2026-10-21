@@ -2622,3 +2622,15 @@
 **Open gate:** Production retention/hold policy, authenticated identity, deployment recovery, and live-runtime evidence remain open.
 
 **Outcome:** Local-alpha approval and production-release evidence are described separately; the full V2 goal remains active.
+
+## 2026-10-22 — Recheck the isolated Vhost alpha endpoint
+
+**Intent:** Use the owner's conditional approval to recheck the deployed V2 profile endpoint after the local backend, package, and plugin acceptance checks passed.
+
+**Changed fact:** The `renew-ssl-coding` endpoint ensure command returned `state=ready` with the systemd supervisor and the expected bounded runtime capabilities. The profile Curator MCP stdio check connected and discovered 46 tools, reporting `auth=none`. The profile gateway status still listed only the default gateway PID. Alpha documentation now distinguishes the endpoint handshake and stdio discovery from an interactive profile call or Vhost application workflow.
+
+**Verification:** Read-only gateway status and MCP discovery succeeded. No Curator goal, fact, canonical target, or staged artifact was written by this check. `git diff --check` passes.
+
+**Open gate:** Profile tool-call approval, authenticated identity, real Vhost application request/canonical write, production retention/recovery, and live production runtime remain unverified. Only the exact local UID-reviewed purge path is approved for local alpha.
+
+**Outcome:** The isolated endpoint is ready and the installed stdio tool surface is discoverable; application workflow and production readiness remain open.

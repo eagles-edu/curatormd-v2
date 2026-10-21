@@ -201,8 +201,21 @@ write is verified.
 
 Keep alpha capture limited to the installed local Vhost Manager lifecycle hook.
 It records bounded session/goal metadata and excludes prompt/response content.
-Do not broaden capture or enable destructive cleanup until the retention and
-recovery policy is approved. Preserve existing canonical records and staged
-evidence while evaluating this candidate. See the
+The approved local retention policy allows prompt expiry eligibility and a
+72-hour maximum-age fallback, but purge still requires the attended local UID
+review and an exact durable receipt. Do not broaden capture or enable an
+unattended production cleanup path until production retention and recovery
+policies are approved. Preserve existing canonical records and staged evidence
+while evaluating this candidate. See the
 [`release-gate ledger`](release-gates-v2.md) for the remaining V2 evidence
 and approvals.
+
+Vhost profile endpoint recheck (2026-10-22):
+`hermes -p renew-ssl-coding gateway ensure --json --timeout 45` returned
+`state=ready` under the systemd supervisor with a profile-scoped endpoint and
+durable-admission, event-replay, and session-authority capabilities. The
+profile's Curator MCP stdio test connects and discovers 46 tools, with transport
+auth reported as `none`. A subsequent gateway status lists only the default
+gateway PID; the endpoint handshake and stdio discovery do not prove an
+interactive profile tool call, authenticated identity, Vhost application
+workflow, or canonical application-target write.
