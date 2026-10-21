@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `17`.
+`SQLITE_SCHEMA_VERSION` and is `18`.
 
 ## Version 1 migration
 
@@ -12,7 +12,7 @@ with `CuratorStore` runs the legacy table/column creation, column additions,
 criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
-v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, and v17 migrations below before
+v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, and v18 migrations below before
 the store is exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
@@ -238,4 +238,12 @@ occurrence time differs. Processed legacy receipts have already discarded their
 payload and keep a null semantic digest, so they retain strict raw-payload
 digest comparison rather than guessing their original semantic identity. The
 migration and v16-to-v17 retry behavior are covered by local fixtures. This is
+not production upgrade/rollback approval.
+
+## Version 18 migration
+
+Version 18 adds nullable `impact` and `retrieval_value` columns to
+`sde_candidates`. New significant-event proposals require both compact fields;
+existing rows remain readable with null values and are not retroactively
+rewritten. The v17-to-v18 fixture covers the migration. This local behavior is
 not production upgrade/rollback approval.

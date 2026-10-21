@@ -1579,6 +1579,8 @@ class CuratorLifecycleTests(unittest.TestCase):
             Materiality.ROUTINE,
             "Routine progress update",
             tuple(f.fact_id for f in self.store.list_facts(self.goal.goal_id)),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         self.assertIsNone(candidate)
         self.assertEqual(self.store.list_sde_candidates(self.goal.goal_id), ())
@@ -1593,6 +1595,8 @@ class CuratorLifecycleTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "Durable change",
                 (change.fact_id,),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
 
     def test_sde_rationale_is_a_compact_line_linked_to_verified_bullets(self) -> None:
@@ -1606,18 +1610,26 @@ class CuratorLifecycleTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "First paragraph.\nSecond paragraph.",
                 (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
         candidate = self.service.sde_assess(
             self.goal.goal_id,
             Materiality.IMPLEMENTATION,
             "The durable health check is supported by a passing test",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         self.assertIsNotNone(candidate)
         assert candidate is not None
         review = self.service.sde_review_detail(candidate.candidate_id)
         self.assertEqual(len(review.facts), 2)
         self.assertTrue(any(fact.evidence for fact in review.facts))
+        self.assertEqual(candidate.impact, "Observed in the bounded test scenario")
+        self.assertEqual(
+            candidate.retrieval_value, "Useful for future maintenance review"
+        )
 
     def test_repeated_sde_assessment_deduplicates_the_same_fact_set(self) -> None:
         change, _ = self.service.goal_fact(
@@ -1630,18 +1642,61 @@ class CuratorLifecycleTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "Durable and tested implementation",
             selected,
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         repeated = self.service.sde_assess(
             self.goal.goal_id,
             Materiality.IMPLEMENTATION,
-            "Repeated assessment of the same facts",
+            "Durable and tested implementation",
             selected,
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         self.assertIsNotNone(first)
         self.assertIsNotNone(repeated)
         assert first is not None and repeated is not None
         self.assertEqual(first.candidate_id, repeated.candidate_id)
         self.assertEqual(len(self.store.list_sde_candidates(self.goal.goal_id)), 1)
+
+    def test_replayed_sde_assessment_rejects_changed_proposal_context(self) -> None:
+        change, _ = self.service.goal_fact(
+            self.goal.goal_id, FactKind.CHANGE, "Added a scoped readiness check"
+        )
+        verification = self.verify("unit", "Readiness regression passed")
+        selected = (change.fact_id, verification.fact_id)
+        self.service.sde_assess(
+            self.goal.goal_id,
+            Materiality.IMPLEMENTATION,
+            "The readiness check is durable and verified",
+            selected,
+            impact="Observed behavior is covered by a passing test",
+            retrieval_value="Helps maintainers trace the readiness contract",
+        )
+        with self.assertRaisesRegex(ConflictError, "changed its proposal context"):
+            self.service.sde_assess(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The readiness check is durable and verified",
+                selected,
+                impact="Expected production impact is unmeasured",
+                retrieval_value="Helps maintainers trace the readiness contract",
+            )
+
+    def test_sde_assessment_requires_compact_impact_and_retrieval_value(self) -> None:
+        change, _ = self.service.goal_fact(
+            self.goal.goal_id, FactKind.CHANGE, "Added another readiness check"
+        )
+        verification = self.verify("unit", "Readiness regression passed")
+        with self.assertRaisesRegex(ValueError, "SDE impact must contain"):
+            self.service.sde_assess(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The readiness change is durable",
+                (change.fact_id, verification.fact_id),
+                impact=" ",
+                retrieval_value="Useful for future maintenance review",
+            )
 
     def test_review_queue_detail_is_bounded_and_project_scoped(self) -> None:
         """Show reviewers only selected facts and the goal in their project."""
@@ -1655,6 +1710,8 @@ class CuratorLifecycleTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "The implementation is durable and directly verified",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
 
@@ -1683,6 +1740,8 @@ class CuratorLifecycleTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "Other project change has direct evidence",
             (other_change.fact_id, other_verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert other_candidate is not None
 

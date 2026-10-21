@@ -163,6 +163,8 @@ targets = ["persistence/HISTORY.md"]
             Materiality.IMPLEMENTATION,
             "The behavior is durable and verified",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
         return candidate.candidate_id

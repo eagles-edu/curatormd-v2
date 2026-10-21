@@ -688,6 +688,9 @@ def _render_candidates(candidates: tuple[SDECandidate, ...]) -> list[str]:
             "  - Candidate "
             + f"`{candidate.candidate_id}`: `{candidate.status.value}`; "
             + f"`{candidate.materiality.value}`; "
+            + f"Impact: {_markdown_text(candidate.impact or 'not recorded')}; "
+            + "Retrieval value: "
+            + f"{_markdown_text(candidate.retrieval_value or 'not recorded')}; "
             + _markdown_text(candidate.rationale)
             for candidate in approved
         ),

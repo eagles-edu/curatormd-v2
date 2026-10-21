@@ -2768,7 +2768,7 @@ class CuratorStore:
 
     @staticmethod
     def _candidate_dedupe_key(candidate: SDECandidate) -> str:
-        """Hash the goal, materiality, and fact set that define candidate identity."""
+        """Hash the goal, materiality, and selected fact set for idempotency."""
 
         payload = {
             "goal_id": candidate.goal_id,
@@ -2802,21 +2802,36 @@ class CuratorStore:
                 row["goal_id"] != candidate.goal_id for row in rows
             ):
                 raise ConflictError("all SDE evidence facts must belong to the candidate goal")
+            if candidate.impact is None or candidate.retrieval_value is None:
+                raise ValueError(
+                    "new SDE candidates require impact and retrieval value"
+                )
             existing = connection.execute(
                 "SELECT * FROM sde_candidates WHERE dedupe_key = ?", (dedupe_key,)
             ).fetchone()
             if existing is not None:
-                return self._candidate_from_row(existing), False
+                stored = self._candidate_from_row(existing)
+                if (
+                    stored.rationale != candidate.rationale.strip()
+                    or stored.impact != candidate.impact.strip()
+                    or stored.retrieval_value != candidate.retrieval_value.strip()
+                ):
+                    raise ConflictError(
+                        "replayed SDE assessment changed its proposal context"
+                    )
+                return stored, False
             connection.execute(
                 """INSERT INTO sde_candidates
-                   (candidate_id, goal_id, materiality, rationale, fact_ids_json,
-                    dedupe_key, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (candidate_id, goal_id, materiality, rationale, impact,
+                    retrieval_value, fact_ids_json, dedupe_key, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     candidate.candidate_id,
                     candidate.goal_id,
                     candidate.materiality.value,
                     candidate.rationale.strip(),
+                    candidate.impact.strip(),
+                    candidate.retrieval_value.strip(),
                     _json_dump(candidate.fact_ids),
                     dedupe_key,
                     candidate.status.value,
@@ -2854,6 +2869,8 @@ class CuratorStore:
             materiality=Materiality(row["materiality"]),
             rationale=row["rationale"],
             fact_ids=tuple(json.loads(row["fact_ids_json"])),
+            impact=row["impact"],
+            retrieval_value=row["retrieval_value"],
             candidate_id=row["candidate_id"],
             status=SDEStatus(row["status"]),
             created_at=row["created_at"],
@@ -4829,6 +4846,8 @@ class CuratorStore:
                      length(CAST(s.goal_id AS BLOB)) +
                      length(CAST(s.materiality AS BLOB)) +
                      length(CAST(s.rationale AS BLOB)) +
+                     COALESCE(length(CAST(s.impact AS BLOB)), 0) +
+                     COALESCE(length(CAST(s.retrieval_value AS BLOB)), 0) +
                      length(CAST(s.fact_ids_json AS BLOB)) +
                      length(CAST(s.dedupe_key AS BLOB)) +
                      length(CAST(s.status AS BLOB)) +

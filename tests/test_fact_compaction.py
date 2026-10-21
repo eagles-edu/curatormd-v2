@@ -295,6 +295,8 @@ class FactCompactionTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "The change is material and has passing direct verification.",
             (research.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         self.assertIsNotNone(candidate)
         with self.assertRaisesRegex(ConflictError, "no eligible routine facts"):

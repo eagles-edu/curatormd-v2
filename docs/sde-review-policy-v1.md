@@ -24,6 +24,10 @@ significant.
 
 - Link each SDE assertion to selected immutable goal facts and bounded evidence
   references. A passing check proves only the behavior covered by that check.
+- Include a compact impact statement and a separate retrieval-value statement
+  in every new candidate. Label impact as observed or expected where needed;
+  retrieval value describes what a future maintainer may need to find and is
+  not evidence that the proposed impact occurred.
 - Keep observed facts distinct from expected benefits, estimates, and open
   questions. Use wording such as `Observed:` for directly measured outcomes and
   `Expected:` for plausible but unmeasured benefits.

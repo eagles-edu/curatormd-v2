@@ -104,12 +104,14 @@
     "sdeCandidate": {
       "description": "Canonical JSON-compatible shape of curatormd_v2.models.SDECandidate.",
       "type": "object",
-      "required": ["goal_id", "materiality", "rationale", "fact_ids", "candidate_id", "status", "created_at"],
+      "required": ["goal_id", "materiality", "rationale", "fact_ids", "impact", "retrieval_value", "candidate_id", "status", "created_at"],
       "properties": {
         "goal_id": {"type": "string", "minLength": 1},
         "materiality": {"enum": ["implementation", "decision", "recovery", "verified_lesson"]},
         "rationale": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
         "fact_ids": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "impact": {"type": ["string", "null"], "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
+        "retrieval_value": {"type": ["string", "null"], "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
         "candidate_id": {"type": "string", "minLength": 1},
         "status": {"enum": ["pending_review", "approved", "rejected"]},
         "created_at": {"type": "string"}

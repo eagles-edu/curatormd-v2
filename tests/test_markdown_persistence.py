@@ -428,6 +428,8 @@ class MarkdownPersistenceTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "Durable implementation with direct test evidence",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         self.assertIsNotNone(candidate)
         assert candidate is not None
@@ -498,6 +500,8 @@ class MarkdownPersistenceTests(unittest.TestCase):
             Materiality.RECOVERY,
             "The interrupted projection can be retried without changing facts",
             (change.fact_id, verified.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
         receipt = self.plugin.sde_confirm(
@@ -589,6 +593,8 @@ class MarkdownPersistenceTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             rationale,
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
         receipt = self.plugin.sde_confirm(

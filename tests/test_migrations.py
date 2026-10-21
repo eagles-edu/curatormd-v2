@@ -28,6 +28,7 @@ from curatormd_v2 import (
     SQLITE_SCHEMA_VERSION,
     SuccessCriterion,
 )
+from curatormd_v2.schema_migrations import apply_schema_migrations
 
 
 class MigrationEvidenceVerifier:
@@ -95,6 +96,43 @@ class MigrationReviewAuthorizer:
 
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
+
+    def test_v17_migration_adds_nullable_sde_proposal_context(self) -> None:
+        """Keep old proposals readable without inventing impact metadata."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute(
+                """CREATE TABLE sde_candidates (
+                       candidate_id TEXT PRIMARY KEY,
+                       goal_id TEXT NOT NULL,
+                       materiality TEXT NOT NULL,
+                       rationale TEXT NOT NULL,
+                       fact_ids_json TEXT NOT NULL,
+                       dedupe_key TEXT NOT NULL,
+                       status TEXT NOT NULL,
+                       created_at TEXT NOT NULL
+                   )"""
+            )
+            connection.execute(
+                """INSERT INTO sde_candidates VALUES
+                   ('legacy-sde', 'goal', 'implementation', 'legacy', '[]',
+                    'legacy-key', 'pending_review', '2026-10-20T00:00:00+00:00')"""
+            )
+            connection.execute("PRAGMA user_version = 17")
+            apply_schema_migrations(connection, 17)
+
+            candidate = connection.execute(
+                "SELECT impact, retrieval_value FROM sde_candidates "
+                "WHERE candidate_id = 'legacy-sde'"
+            ).fetchone()
+            self.assertEqual(tuple(candidate), (None, None))
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0], 18
+            )
+        finally:
+            connection.close()
 
     def test_v15_migration_redacts_legacy_purge_failure_details(self) -> None:
         """Remove potentially sensitive exception text without clearing retry state."""
@@ -681,6 +719,8 @@ class SchemaMigrationTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "Durable migration fixture",
                 (changed.fact_id, verified.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
             self.assertIsNotNone(candidate)
             assert candidate is not None
@@ -875,6 +915,8 @@ class SchemaMigrationTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "Purge retry migration fixture",
                 (changed.fact_id, verified.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
             self.assertIsNotNone(candidate)
             assert candidate is not None

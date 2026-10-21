@@ -1285,11 +1285,17 @@ class CuratorService:
         materiality: Materiality,
         rationale: str,
         fact_ids: tuple[str, ...],
+        impact: str | None = None,
+        retrieval_value: str | None = None,
     ) -> SDECandidate | None:
         """Return routine work directly or stage verified significant facts for review."""
 
         if materiality is Materiality.ROUTINE:
             return None
+        if impact is None or retrieval_value is None:
+            raise EvidenceGateError(
+                "SDE assessment requires impact and retrieval value"
+            )
         if not fact_ids:
             raise EvidenceGateError("SDE assessment requires selected goal facts")
         if len(fact_ids) > MAX_SDE_SUPPORTING_FACTS:
@@ -1317,6 +1323,8 @@ class CuratorService:
             materiality=materiality,
             rationale=rationale,
             fact_ids=fact_ids,
+            impact=impact,
+            retrieval_value=retrieval_value,
         )
         stored_candidate, _inserted = self.store.add_sde_candidate(
             candidate, self.project_id

@@ -556,6 +556,8 @@ class SDECandidate:
     materiality: Materiality
     rationale: str
     fact_ids: tuple[str, ...]
+    impact: str | None = None
+    retrieval_value: str | None = None
     candidate_id: str = field(default_factory=new_id)
     status: SDEStatus = SDEStatus.PENDING_REVIEW
     created_at: str = field(default_factory=utc_now)
@@ -568,6 +570,17 @@ class SDECandidate:
             raise ValueError("SDE rationale must contain 1-1000 characters")
         if "\n" in self.rationale or "\r" in self.rationale:
             raise ValueError("SDE rationale must be a single compact line")
+        for name, value in (
+            ("impact", self.impact),
+            ("retrieval_value", self.retrieval_value),
+        ):
+            if value is None:
+                continue  # Existing candidates remain readable after migration.
+            validate_safe_text(value, f"sde.{name}")
+            if not value.strip() or len(value) > 1000:
+                raise ValueError(f"SDE {name} must contain 1-1000 characters")
+            if "\n" in value or "\r" in value:
+                raise ValueError(f"SDE {name} must be a single compact line")
         if not self.fact_ids or len(self.fact_ids) != len(set(self.fact_ids)):
             raise ValueError("SDE candidate requires unique supporting fact IDs")
         if len(self.fact_ids) > MAX_SDE_SUPPORTING_FACTS:

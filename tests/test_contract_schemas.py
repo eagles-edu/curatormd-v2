@@ -241,6 +241,8 @@ class ContractSchemaTests(unittest.TestCase):
             materiality=Materiality.VERIFIED_LESSON,
             rationale="The record contract now has executable schema coverage",
             fact_ids=(fact.fact_id,),
+            impact="Observed local schema coverage is passing",
+            retrieval_value="Helps future maintainers find the schema contract",
         )
         correction = SDECorrection(
             correction_id="correction-schema",

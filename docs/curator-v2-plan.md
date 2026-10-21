@@ -2438,9 +2438,14 @@ Final report: completed facts, open items, recovery path, next action
       current gates, and TODOs from stored records. The reopened-goal regression
       confirms prior proof remains visible as history while no longer counting as
       current verification, and the concrete reopen action remains visible.
-- [ ] Assess significance from verified durable facts. Ordinary maintenance
+- [x] Assess significance from verified durable facts. Ordinary maintenance
       stays a compact goal update; an SDE candidate contains only selected facts,
-      evidence, impact, and retrieval value for human review.
+      evidence, impact, and retrieval value for human review. Routine progress
+      creates no candidate; new significant proposals require a selected
+      currently verified passing fact and compact impact/retrieval fields,
+      persist them immutably, and remain pending human review. The v17-to-v18
+      migration preserves existing candidates with null context. Focused
+      API/MCP/lifecycle/migration tests cover these boundaries.
 - [ ] Before a review decision, show the candidate bullets, provenance,
       evidence, and exact temporary-artifact inventory to the authorized reviewer.
       Progress (2026-10-19): a new `sde_review_packet` MCP read under project

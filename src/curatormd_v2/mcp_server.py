@@ -735,6 +735,8 @@ def build_mcp_server(
         materiality: str,
         rationale: str,
         fact_ids: list[str],
+        impact: str | None = None,
+        retrieval_value: str | None = None,
     ) -> str:
         """Assess selected facts; a candidate remains pending human review."""
 
@@ -745,6 +747,8 @@ def build_mcp_server(
             Materiality(materiality),
             rationale,
             tuple(fact_ids),
+            impact,
+            retrieval_value,
         )
         return _json_result(candidate)
 

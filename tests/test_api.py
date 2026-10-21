@@ -1332,6 +1332,8 @@ class ApiFacadeTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "A durable change has passing evidence",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
         authorizer = AllowProject(
@@ -1549,6 +1551,8 @@ class ApiFacadeTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "A verified change should be reviewable",
                 (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
 
         api = AuthenticatedCuratorAPI({"project-a": plugin}, self.authorizer)
@@ -1559,6 +1563,8 @@ class ApiFacadeTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "A verified change should be reviewable",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
         self.assertEqual(candidate.status.value, "pending_review")
@@ -1597,6 +1603,8 @@ class ApiFacadeTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "Repeated support is invalid",
                 (verification.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
         with self.assertRaisesRegex(EvidenceGateError, "supporting fact limit"):
             api.sde_assess(
@@ -1606,6 +1614,8 @@ class ApiFacadeTests(unittest.TestCase):
                 Materiality.IMPLEMENTATION,
                 "Oversized support is invalid",
                 (verification.fact_id,) * 33,
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
 
         self.assertIsNone(
@@ -1616,6 +1626,8 @@ class ApiFacadeTests(unittest.TestCase):
                 Materiality.ROUTINE,
                 "Ordinary progress is not an SDE",
                 (),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
             )
         )
 
@@ -1665,6 +1677,8 @@ class ApiFacadeTests(unittest.TestCase):
             Materiality.IMPLEMENTATION,
             "A verified change should be reviewable",
             (change.fact_id, verification.fact_id),
+            impact="Observed in the bounded test scenario",
+            retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
         staged = plugin.stage_artifact(

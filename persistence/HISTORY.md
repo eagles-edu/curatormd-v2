@@ -2216,3 +2216,15 @@
 **Open gate:** The harness uses disposable state and does not exercise the real Vhost application request/UI workflow. MCP discovery does not authenticate Hermes identity. Production identity, approved retention, scheduler/recovery, live health, and release approval remain open; checklist progress remains 136/211 (75 open).
 
 **Outcome:** The locally verified Curator package is installed and passes the Vhost plugin composition contracts in the isolated alpha profile. The Curator MCP tracker remains unauthenticated outside the trusted Hermes profile context. No GPTMD, V1, Host Steward, or Vhost application data changed.
+
+## 2026-10-21 — Add explicit impact and retrieval value to SDE proposals
+
+**Intent:** Make significance assessment distinguish verified facts, claimed or expected impact, and future retrieval value while keeping ordinary progress on the goal ledger.
+
+**Changed fact:** New significant SDE candidates now require compact impact and retrieval-value fields alongside selected same-goal facts and a currently verified passing fact. These fields persist immutably and conflicting replay context is rejected. Routine progress still creates no candidate. Schema v18 adds nullable columns so existing proposals remain readable without invented context. The V2 plan's corresponding local checklist item is closed; human disposition, retention policy, and runtime gates remain separate.
+
+**Verification:** All 353 Curator tests pass. Strict Pyright reports 0 diagnostics; errors-only Pylint, Bandit, locked dependency audit, `uv lock --check`, `git diff --check`, and `uv build` pass. The built alpha wheel SHA-256 is `b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3`.
+
+**Open gate:** The current authenticated Curator V2 goal tracker is unavailable in this session; this history update is repository-local evidence, not live tracker persistence. Production migration/rollback, authenticated identity, human review, retention policy, scheduler/recovery, and live runtime remain open. The checklist is 137/211 complete (74 open).
+
+**Outcome:** Local SDE proposal context, migration, API/MCP paths, tests, and package build are verified. No V1 runtime, GPTMD, Host Steward, Vhost application data, or production state changed.

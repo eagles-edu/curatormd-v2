@@ -1060,10 +1060,14 @@ class ProjectPlugin:
         materiality: Materiality,
         rationale: str,
         fact_ids: tuple[str, ...],
+        impact: str | None = None,
+        retrieval_value: str | None = None,
     ) -> SDECandidate | None:
         """Create a review proposal only from verified facts in this project."""
 
-        return self.service.sde_assess(goal_id, materiality, rationale, fact_ids)
+        return self.service.sde_assess(
+            goal_id, materiality, rationale, fact_ids, impact, retrieval_value
+        )
 
     def sde_review_detail(self, candidate_id: str) -> SDEReviewDetail:
         """Read one candidate and its selected evidence within this project."""

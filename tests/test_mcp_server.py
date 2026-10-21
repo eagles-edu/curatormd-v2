@@ -541,6 +541,8 @@ class McpServerTests(unittest.TestCase):
                                 "goal_id": "mcp-sde-goal",
                                 "materiality": "implementation",
                                 "rationale": "A durable project change has passing evidence",
+                                "impact": "Observed local verification passed",
+                                "retrieval_value": "Helps maintainers find the contract",
                                 "fact_ids": [
                                     "mcp-sde-change",
                                     "mcp-sde-verification",
@@ -895,6 +897,8 @@ class McpServerTests(unittest.TestCase):
                                 "rationale": (
                                     "The change establishes a broad durable production impact"
                                 ),
+                                "impact": "Expected production impact is unmeasured",
+                                "retrieval_value": "Helps distinguish claims from observed outcomes",
                                 "fact_ids": [
                                     "mcp-rejected-change",
                                     "mcp-rejected-verification",
@@ -1064,6 +1068,8 @@ class McpServerTests(unittest.TestCase):
                     Materiality.IMPLEMENTATION,
                     "The implementation is durable and verified",
                     (change.fact_id, verification.fact_id),
+                    impact="Observed in the bounded test scenario",
+                    retrieval_value="Useful for future maintenance review",
                 )
                 assert candidate is not None
                 plugin.service.sde_confirm(

@@ -58,7 +58,7 @@ an HTTP or MCP server, and it does not authenticate credentials.
 | Fact archive approval | `review` | `fact_compaction_approve` (authenticated reviewer, exact fact IDs/hash, atomic archive-before-removal) |
 | Fact archive audit | `read` | `fact_archive_receipts` (bounded, hash-verified receipts) |
 | Project usage | `read` | `project_storage_usage` (includes a bounded repository staging-size scan) |
-| SDE significance assessment | `write` | `sde_assess` (up to 32 unique same-goal facts; creates only pending proposals) |
+| SDE significance assessment | `write` | `sde_assess` (up to 32 unique same-goal facts; routine progress returns no candidate; significant proposals require compact impact and retrieval value plus verified evidence, and remain pending human review) |
 | SDE review reads | `read` | `sde_review_queue`, `sde_review_detail` |
 | Combined SDE review packet | `review` | `sde_review_packet` (selected candidate facts/evidence plus a fresh hashed artifact inventory) |
 | `sde_confirm` | `review` plus plugin review authorizer | `sde_confirm` |

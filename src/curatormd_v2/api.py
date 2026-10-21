@@ -808,12 +808,16 @@ class AuthenticatedCuratorAPI:
         materiality: Materiality,
         rationale: str,
         fact_ids: tuple[str, ...],
+        impact: str | None = None,
+        retrieval_value: str | None = None,
     ) -> SDECandidate | None:
         """Assess facts under write scope; proposals still require human review."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.WRITE
-        ).sde_assess(goal_id, materiality, rationale, fact_ids)
+        ).sde_assess(
+            goal_id, materiality, rationale, fact_ids, impact, retrieval_value
+        )
 
     def sde_review_detail(
         self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
