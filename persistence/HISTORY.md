@@ -2228,3 +2228,15 @@
 **Open gate:** The current authenticated Curator V2 goal tracker is unavailable in this session; this history update is repository-local evidence, not live tracker persistence. Production migration/rollback, authenticated identity, human review, retention policy, scheduler/recovery, and live runtime remain open. The checklist is 137/211 complete (74 open).
 
 **Outcome:** Local SDE proposal context, migration, API/MCP paths, tests, and package build are verified. No V1 runtime, GPTMD, Host Steward, Vhost application data, or production state changed.
+
+## 2026-10-21 — Close local SDE canonical-write and purge lifecycle item
+
+**Intent:** Verify the checklist's local cleanup guarantee from review receipt through canonical persistence, exact inventory purge, hold retention, and retry recovery.
+
+**Changed fact:** The plan now records the local lifecycle item as complete based on the existing MCP and purge regressions. Those tests show canonical goal facts and the immutable review receipt are persisted before eligible transient data is purged; held artifacts remain, and injected purge failures stay pending until retry succeeds.
+
+**Verification:** `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end` and `test_interrupted_purge_is_visible_and_retryable` are included in the passing 353-test locked suite. `git diff --check` passes for this plan/history update.
+
+**Open gate:** Tests use a test review authorizer and disposable local state. Live authenticated reviewer UX, approved retention policy, production cleanup scheduling/recovery, and live runtime remain open. Checklist is 138/211 complete (73 open).
+
+**Outcome:** The local canonical-write-before-purge and retry lifecycle row is closed; this does not close deployment, identity, retention, or live-runtime gates.

@@ -2455,10 +2455,17 @@ Final report: completed facts, open items, recovery path, next action
       are denied before details are fetched. Inventory is point-in-time and
       decision-time manifest checks remain required; live authenticated reviewer
       UX is still open.
-- [ ] After an immutable approval or rejection receipt and a verified canonical
+- [x] After an immutable approval or rejection receipt and a verified canonical
       bullet projection, purge only the complete, allowlisted temporary inventory;
       preserve compact facts and receipt, and expose every failed or incomplete
-      purge as pending with a retry path.
+      purge as pending with a retry path. `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end`
+      verifies incomplete inventory blocks deletion, canonical goal/receipt
+      persistence precedes purge, only the complete reviewed manifest is
+      considered, an operational hold is retained, an unheld artifact is
+      purged, and injected purge failure remains `purge_pending` until retry
+      succeeds. `test_interrupted_purge_is_visible_and_retryable` verifies
+      recovery after store reopen. The reviewer in these tests is a test
+      authorizer; live authenticated reviewer UX remains open.
 - [x] Verify the final user-facing summary against stored state: problem,
       success criteria, verified facts, outcome, remaining gates, purge status,
       and next action must agree. The MCP end-to-end SDE/purge regression now
