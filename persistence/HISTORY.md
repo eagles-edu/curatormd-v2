@@ -2288,3 +2288,15 @@
 **Open gate:** Tool discovery and the disposable harness do not establish authenticated Hermes identity or approval of a real interactive call. The Vhost application workflow, production health, retention policy, deployment recovery, and release approval remain open. Checklist remains 138/211 complete (73 open).
 
 **Outcome:** The current alpha wheel, Vhost plugin contracts, and Hermes-managed MCP composition are verified in the isolated local profile. No GPTMD, deprecated V1 runtime, Host Steward ownership, Vhost source, or application data changed.
+
+## 2026-10-21 — Publish Curator V2 alpha release notes
+
+**Intent:** Make the alpha version, supported Python range, known limitations, and operator guidance discoverable from one concise release note without implying production readiness.
+
+**Changed fact:** Added `docs/release-notes-v2.md` and closed the release-documentation checklist item. It links the existing alpha scope, consumer operations guide, CI policy, and release-gate ledger. Checklist progress is 139/211 complete (72 open).
+
+**Verification:** The locked Curator suite passes 354 tests. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, locked dependency audit, `uv lock --check`, and `git diff --check` pass.
+
+**Open gate:** Curator V2 goal-list access still returns `unauthenticated: Trusted Hermes profile context is required`; this is not verified live goal-ledger persistence. The documentation item does not close production identity, retention, scheduling/recovery, deployment, or live-runtime gates.
+
+**Outcome:** The local alpha documentation now states its support boundary and links operator procedures. No consumer repository, V1 runtime, GPTMD, Hermes Core, or application data changed.

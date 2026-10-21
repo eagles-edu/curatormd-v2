@@ -1965,8 +1965,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       external probes, alert delivery, and deployment behavior remain open.
 - [ ] Run security, privacy, load, restart, restore, and disk-growth tests on
       deployment-like infrastructure.
-- [ ] Publish release notes, supported versions, known limitations, and
-      operator runbooks before declaring the system production-ready.
+- [x] Publish release notes, supported versions, known limitations, and
+      operator runbooks before declaring the system production-ready. The
+      versioned alpha scope, supported Python range, limitations, and linked
+      operator guidance are summarized in [`release-notes-v2.md`](release-notes-v2.md);
+      detailed procedures remain in the consumer operations guide. This closes
+      the documentation deliverable only and does not declare production
+      readiness or close deployment, identity, retention, recovery, or runtime
+      gates.
       Alpha-preparation progress (2026-10-20): the package is versioned
       `0.1.0a1`, and [`alpha-v2.md`](alpha-v2.md) records its local candidate
       scope, declared Python support, and open gates. The wheel and source
