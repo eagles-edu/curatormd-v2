@@ -343,6 +343,13 @@ consumer plugin, Hermes integration, or production deployment.
       remained absent/unchanged. The seven Vhost installed-consumer contracts
       also pass against this wheel. This is current-wheel local composition,
       not a live user request or production deployment; the item remains open.
+      Local alpha install (2026-10-22): the wheel from commit `060b325` is now
+      installed in the dedicated `renew-ssl-coding` Curator V2 environment;
+      the seven Vhost contracts and Hermes managed-MCP harness pass there too.
+      The installed core module hashes match source. MCP discovery reports 47
+      tools and `auth=none`; gateway status shows only the default-profile PID,
+      so interactive profile authorization and a live application request
+      remain unverified.
 
 ### 2. Evidence and fact ledger
 

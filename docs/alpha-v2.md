@@ -204,8 +204,9 @@ write is verified.
 Keep alpha capture limited to the installed local Vhost Manager lifecycle hook.
 It records bounded session/goal metadata and excludes prompt/response content.
 The approved local retention policy allows prompt expiry eligibility and a
-72-hour maximum-age fallback, but purge still requires the attended local UID
-review and an exact durable receipt. Do not broaden capture or enable an
+hard 72-hour maximum age even with pending SDE review. Explicit legal or
+operational holds remain exceptions until separately released; purge still
+requires the attended local UID review and an exact durable receipt. Do not broaden capture or enable an
 unattended production cleanup path until production retention and recovery
 policies are approved. Preserve existing canonical records and staged evidence
 while evaluating this candidate. See the
@@ -221,3 +222,14 @@ auth reported as `none`. A subsequent gateway status lists only the default
 gateway PID; the endpoint handshake and stdio discovery do not prove an
 interactive profile tool call, authenticated identity, Vhost application
 workflow, or canonical application-target write.
+
+Local alpha wheel deployment (2026-10-22): installed the wheel built from
+Curator commit `060b325` into the dedicated `renew-ssl-coding` Curator V2
+environment. The seven Vhost consumer contracts pass (7/7), as does the
+Hermes Core managed-MCP disposable harness with three processed lifecycle
+events, retry/replay, binding checks, and projection reconciliation. Installed
+`project_plugin.py`, `store.py`, and `mcp_server.py` hashes match source.
+`hermes -p renew-ssl-coding mcp test curator_v2` discovers 47 tools but reports
+`auth=none`; gateway status lists only the default-profile PID. The install and
+disposable tests do not establish interactive profile authorization or a live
+Vhost application request.

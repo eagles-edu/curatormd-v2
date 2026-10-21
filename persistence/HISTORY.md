@@ -2658,3 +2658,15 @@
 **Open gate:** This is a disposable local integration, not a live Vhost application request. Authenticated human identity, production authorization, production retention/recovery, and live deployment/runtime remain unverified.
 
 **Outcome:** The current Curator wheel composes locally with Hermes Core managed MCP and the Vhost plugin; the live workflow/release gate remains open.
+
+## 2026-10-22 — Install and verify the current Vhost alpha wheel
+
+**Intent:** Put the owner-approved local alpha package into the dedicated Vhost Hermes profile environment and verify the installed consumer path.
+
+**Changed fact:** Reinstalled the wheel built from Curator commit `060b325` into the `renew-ssl-coding` Curator V2 environment. Installed `project_plugin.py`, `store.py`, and `mcp_server.py` hashes match the repository source. The seven Vhost consumer tests and Hermes Core managed-MCP disposable harness pass against this environment. Hermes MCP discovery exposes 47 tools and reports `auth=none`; gateway status lists only the default-profile PID.
+
+**Verification:** The Vhost contract suite passes 7/7; the disposable Hermes harness passes with three processed events, exact replay, failed-delivery retry, denied premature binding and reviewer-only persistence, and reconciled projection. No Vhost application records were written.
+
+**Open gate:** The profile install and disposable harness do not prove an interactive authenticated tool call or live Vhost application workflow. Production identity, retention/recovery, deployment, and runtime gates remain open.
+
+**Outcome:** The current wheel is installed and verified through the local consumer/plugin path; production and live-profile claims remain open.
