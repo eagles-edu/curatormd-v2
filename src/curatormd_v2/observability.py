@@ -116,6 +116,16 @@ def render_project_metrics(
             health.operational_counts.pending_purge_artifact_count,
             "Pending purge artifact targets.",
         ),
+        (
+            "expiry_purge_receipts_pending",
+            health.operational_counts.pending_expiry_purge_receipt_count,
+            "Pending attended expiry purge receipts.",
+        ),
+        (
+            "expiry_purge_artifacts_pending",
+            health.operational_counts.pending_expiry_purge_artifact_count,
+            "Pending attended expiry purge artifact targets.",
+        ),
     )
     for suffix, value, help_text in queue_metrics:
         _metric(

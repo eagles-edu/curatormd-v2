@@ -2550,3 +2550,15 @@
 **Open gate:** Production retention policy, authenticated Hermes reviewer identity, deployment and scheduled runtime remain open. The delivery checklist stays at 127/153 complete and 26 open.
 
 **Outcome:** The local alpha now implements both prompt post-record eligibility and the 72-hour maximum-age fallback without granting unattended deletion authority.
+
+## 2026-10-22 — Include expiry cleanup in operational health
+
+**Intent:** Prevent an incomplete attended expiry purge from remaining invisible or allowing local health to report green.
+
+**Changed fact:** Project operational counts now include pending expiry receipts and artifact targets. Local health adds distinct expiry-purge gates, and Prometheus exports both counts. MCP health serialization includes the new counters. Production scheduling and alert delivery remain separate.
+
+**Verification:** The full locked suite passes 368 tests; focused API (36), MCP (6), and concurrency (7) suites pass. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, `uv audit`, `uv lock --check`, and `git diff --check` pass. The API regression proves a pending expiry receipt forces degraded status with all host dependency probes ready.
+
+**Open gate:** Production scheduler/alert integration, authenticated Hermes identity, deployment, and live runtime remain open. The delivery checklist remains 127/153 complete and 26 open.
+
+**Outcome:** Local health cannot report green while an attended expiry receipt or its target remains pending; this is local aggregation evidence only.

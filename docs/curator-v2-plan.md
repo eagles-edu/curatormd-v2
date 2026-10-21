@@ -640,7 +640,13 @@ consumer plugin, Hermes integration, or production deployment.
       now map to fixed error codes and a `staging_adapter_unavailable` gate;
       project health remains readable but degraded, and Prometheus exposes the
       gate. A focused regression covers both surfaces. This does not cover
-      production storage adapters or scheduler/alert failures.
+      production storage adapters or scheduler/alert failures. Additional
+      local progress (2026-10-22): operational counts, health gates, and
+      Prometheus metrics now include schema-v20 attended expiry receipts and
+      their remaining targets. A regression proves an incomplete expiry
+      receipt forces degraded status even when host dependency probes are
+      healthy. This remains local SQLite evidence; production scheduler,
+      alerting, and process/database reconciliation remain open.
 - [ ] Complete a failure-injection test matrix against the production storage
       and staging adapters, not only local temporary files.
 

@@ -628,6 +628,12 @@ class McpServerTests(unittest.TestCase):
                         self.assertEqual(pending_health["status"], "degraded")
                         self.assertEqual(
                             pending_health["operational_counts"][
+                                "pending_expiry_purge_receipt_count"
+                            ],
+                            0,
+                        )
+                        self.assertEqual(
+                            pending_health["operational_counts"][
                                 "pending_purge_receipt_count"
                             ],
                             1,

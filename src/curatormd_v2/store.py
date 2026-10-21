@@ -3445,7 +3445,7 @@ class CuratorStore:
         )
 
     def project_operational_counts(self, project_id: str) -> ProjectOperationalCounts:
-        """Count review and purge work exactly with bounded aggregate queries."""
+        """Count SDE, expiry, and purge work with bounded aggregate queries."""
 
         with self._lock:
             row = self._connection.execute(
@@ -3462,10 +3462,21 @@ class CuratorStore:
                       JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
                       JOIN goals AS g ON g.goal_id = s.goal_id
                       WHERE g.project_id = ? AND r.purge_status = ?
-                        AND p.status != ?) AS pending_artifacts""",
+                        AND p.status != ?) AS pending_artifacts,
+                     (SELECT COUNT(*) FROM expiry_purge_receipts AS r
+                      WHERE r.project_id = ? AND r.status = ?) AS pending_expiry_receipts,
+                     (SELECT COUNT(*) FROM expiry_purge_targets AS t
+                      JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
+                      WHERE r.project_id = ? AND r.status = ?
+                        AND t.status != ?) AS pending_expiry_artifacts""",
                 (
                     project_id,
                     SDEStatus.PENDING_REVIEW.value,
+                    project_id,
+                    PurgeStatus.PURGE_PENDING.value,
+                    project_id,
+                    PurgeStatus.PURGE_PENDING.value,
+                    ArtifactStatus.PURGED.value,
                     project_id,
                     PurgeStatus.PURGE_PENDING.value,
                     project_id,
@@ -3477,6 +3488,8 @@ class CuratorStore:
             pending_review_count=int(row["pending_reviews"]),
             pending_purge_receipt_count=int(row["pending_receipts"]),
             pending_purge_artifact_count=int(row["pending_artifacts"]),
+            pending_expiry_purge_receipt_count=int(row["pending_expiry_receipts"]),
+            pending_expiry_purge_artifact_count=int(row["pending_expiry_artifacts"]),
         )
 
     def project_activity_status(self, project_id: str) -> ProjectActivitySnapshot:

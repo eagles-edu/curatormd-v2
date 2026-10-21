@@ -236,6 +236,14 @@ def _evaluate_local_health(
         (counts.pending_review_count > 0, "review_backlog"),
         (counts.pending_purge_receipt_count > 0, "purge_pending"),
         (counts.pending_purge_artifact_count > 0, "purge_artifacts_pending"),
+        (
+            counts.pending_expiry_purge_receipt_count > 0,
+            "expiry_purge_pending",
+        ),
+        (
+            counts.pending_expiry_purge_artifact_count > 0,
+            "expiry_purge_artifacts_pending",
+        ),
         (not usage.global_event_inbox.can_accept_new_event, "event_capacity_exhausted"),
         (usage.fact_capacity_reached, "fact_capacity_exhausted"),
     )

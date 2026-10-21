@@ -81,7 +81,7 @@ authenticated human identity remains a separate integration gate.
 | `retry_pending_purges` | `purge_retry` | `retry_pending_purges` |
 | Event queue status | `read` | `event_queue_status` (project-scoped counts, oldest pending age, active claims, expired claims) |
 | Project activity | `read` | `project_activity_status` (retained event/goal/fact/SDE counts and event recency; content-free and separate from readiness) |
-| Project operational health | `read` | `project_health` (local queue/review/purge/capacity/staging observations plus host dependency probes) |
+| Project operational health | `read` | `project_health` (local event/review/SDE-purge/expiry-purge/capacity/staging observations plus host dependency probes) |
 | Project metrics exposition | `read` | `project_prometheus_metrics` (content-free, project-authorized Prometheus text snapshot) |
 | Quarantined event retry | `event_retry` | `event_quarantine_retry` (authenticated actor recorded in retry audit) |
 

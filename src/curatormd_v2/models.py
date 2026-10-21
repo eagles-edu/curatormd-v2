@@ -1237,6 +1237,8 @@ class ProjectOperationalCounts:
     pending_review_count: int
     pending_purge_receipt_count: int
     pending_purge_artifact_count: int
+    pending_expiry_purge_receipt_count: int
+    pending_expiry_purge_artifact_count: int
 
 
 @dataclass(frozen=True, slots=True)

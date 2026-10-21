@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import UTC, datetime, timedelta
 import hashlib
+import json
 from io import BytesIO
 import tempfile
 from typing import cast
@@ -1729,6 +1730,43 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertIn("purge_pending", health.gate_codes)
         self.assertIn("purge_artifacts_pending", health.gate_codes)
         self.assertIn("staged_artifacts_present", health.gate_codes)
+
+    def test_project_health_reports_pending_expiry_receipt_and_targets(self) -> None:
+        """A failed attended expiry purge must keep local health degraded."""
+
+        artifact = ArtifactRef("expiry-goal/scratch/transient", "a" * 64)
+        manifest = json.dumps(
+            [(artifact.path, artifact.sha256)], separators=(",", ":")
+        )
+        manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+        self.store.create_expiry_purge_receipt(
+            "project-a",
+            "hermes-user-1",
+            manifest_sha256,
+            (artifact,),
+        )
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+
+        health = api.project_health(self.caller, "project-a")
+        metrics = api.project_prometheus_metrics(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertEqual(
+            health.operational_counts.pending_expiry_purge_receipt_count, 1
+        )
+        self.assertEqual(
+            health.operational_counts.pending_expiry_purge_artifact_count, 1
+        )
+        self.assertIn("expiry_purge_pending", health.gate_codes)
+        self.assertIn("expiry_purge_artifacts_pending", health.gate_codes)
+        self.assertIn('curatormd_expiry_purge_receipts_pending{project_id="project-a"} 1', metrics)
+        self.assertIn('curatormd_expiry_purge_artifacts_pending{project_id="project-a"} 1', metrics)
 
 
 if __name__ == "__main__":
