@@ -52,6 +52,7 @@ from curatormd_v2 import (
     SuccessCriterion,
 )
 from curatormd_v2.content_safety import SensitiveContentError
+from curatormd_v2.project_config import ProjectConfigError
 from curatormd_v2.store import NotFoundError
 
 
@@ -578,6 +579,33 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertFalse(health.staging_inventory_complete)
         self.assertIn("staging_inventory_incomplete", health.gate_codes)
 
+    def test_project_health_accounts_for_staging_root_adapter_failure(self) -> None:
+        """Keep health readable and degraded when the staging root cannot open."""
+
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+        with patch.object(
+            self.plugin,
+            "_locked_staging_root",
+            side_effect=ProjectConfigError("staging root cannot be opened safely"),
+        ):
+            health = api.project_health(self.caller, "project-a")
+            metrics = api.project_prometheus_metrics(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertFalse(health.staging_inventory_complete)
+        self.assertIn("staging_inventory_incomplete", health.gate_codes)
+        self.assertIn("staging_adapter_unavailable", health.gate_codes)
+        self.assertIn(
+            'curatormd_project_open_gate{project_id="project-a",gate="staging_adapter_unavailable"} 1',
+            metrics,
+        )
+
     def test_project_health_degrades_for_known_failure_or_local_backlog(self) -> None:
         readiness = DependencyReadiness(
             {
@@ -710,6 +738,7 @@ class ApiFacadeTests(unittest.TestCase):
             'curatormd_staging_class_bytes{project_id="project-a",class="cue"} 24',
             metrics,
         )
+        self.assertNotIn('gate="staging_budget_reached"', metrics)
         self.assertNotIn(problem, metrics)
         self.assertNotIn("private artifact payload", metrics)
         self.assertNotIn("private-cue.json", metrics)
@@ -733,6 +762,34 @@ class ApiFacadeTests(unittest.TestCase):
                 self.assertIsNotNone(current_family)
                 self.assertEqual(line.split("{", maxsplit=1)[0], current_family)
         self.assertIsNone(pending_help)
+
+        for byte_limit, file_limit in ((24, 25), (4096, 1)):
+            with self.subTest(byte_limit=byte_limit, file_limit=file_limit):
+                limited_config = config_text.replace(
+                    "max_project_bytes = 4096",
+                    f"max_project_bytes = {byte_limit}",
+                ).replace(
+                    "max_project_files = 25",
+                    f"max_project_files = {file_limit}",
+                )
+                config_path.write_text(limited_config, encoding="utf-8")
+                limited_plugin = ProjectPlugin.bind(
+                    ProjectConfig.load(self.root), self.store
+                )
+                limited_api = AuthenticatedCuratorAPI(
+                    {"project-a": limited_plugin}, self.authorizer
+                )
+                health = limited_api.project_health(self.caller, "project-a")
+                self.assertEqual(health.status.value, "degraded")
+                self.assertIn("staging_budget_reached", health.gate_codes)
+                limited_metrics = limited_api.project_prometheus_metrics(
+                    self.caller, "project-a"
+                )
+                self.assertIn(
+                    'curatormd_project_open_gate{project_id="project-a",'
+                    'gate="staging_budget_reached"} 1',
+                    limited_metrics,
+                )
 
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.project_prometheus_metrics(AuthenticatedCaller("other-user"), "project-a")
@@ -1305,6 +1362,29 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.scope_goal_id, goal.goal_id)
         self.assertEqual(len(inventory.artifacts), 1)
+
+        orphan = stage_root / "orphaned-goal" / "scratch" / "unbound.bin"
+        orphan.parent.mkdir(parents=True)
+        orphan.write_bytes(b"orphaned temporary data")
+        project_inventory = api.discover_project_artifact_inventory(
+            self.caller, "project-a"
+        )
+        self.assertTrue(project_inventory.usage.inventory_complete)
+        self.assertIsNone(project_inventory.scope_goal_id)
+        self.assertEqual(len(project_inventory.artifacts), 3)
+        self.assertIn(
+            str(orphan), {item.path for item in project_inventory.artifacts}
+        )
+
+        read_only_api = AuthenticatedCuratorAPI(
+            {"project-a": plugin},
+            AllowProject({("hermes-user-1", "project-a", ProjectAction.READ)}),
+        )
+        with self.assertRaisesRegex(PermissionError, "project is not authorized"):
+            read_only_api.discover_project_artifact_inventory(
+                self.caller, "project-a"
+            )
+
         with self.assertRaisesRegex(ConflictError, "does not match current staging"):
             api.sde_confirm(
                 self.caller,

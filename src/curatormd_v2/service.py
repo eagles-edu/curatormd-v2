@@ -71,6 +71,7 @@ from .evidence import (
     RejectUnverifiedEvidence,
     evidence_has_current_attestations,
 )
+from .errors import safe_exception_label
 from .purge import ArtifactPurger, PurgeError
 from .reviews import (
     RejectUnauthenticatedReview,
@@ -1890,7 +1891,7 @@ class CuratorService:
         if isinstance(exc, (EventClaimError, EventInboxCapacityError)):
             raise exc
         # Persist only a bounded exception type code; payload details can be private.
-        error_code = re.sub(r"[^a-zA-Z0-9_.:-]", "_", type(exc).__name__)[:128]
+        error_code = safe_exception_label(exc)
         with self.store.transaction():
             accepted, _inserted = self.store.ingest_event(event)
             if accepted.status is EventInboxStatus.PROCESSED:

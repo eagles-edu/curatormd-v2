@@ -41,6 +41,7 @@ from curatormd_v2 import (
     build_mcp_server,
     codex_hook_to_event,
 )
+from curatormd_v2.mcp_server import safe_tool_handler
 
 
 class AllowProject:  # pylint: disable=too-few-public-methods
@@ -137,6 +138,28 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
 
 class McpServerTests(unittest.TestCase):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""
+
+    def test_dynamic_exception_type_name_is_not_logged_or_returned(self) -> None:
+        """Do not trust adapter-controlled exception class names in diagnostics."""
+
+        exception_type_canary = "PRIVATE_EXCEPTION_TYPE_CANARY"
+        exception_message_canary = "PRIVATE_EXCEPTION_MESSAGE_CANARY"
+        private_exception_type = type(exception_type_canary, (RuntimeError,), {})
+
+        def fail_with_private_exception() -> None:
+            raise private_exception_type(exception_message_canary)
+
+        handler = safe_tool_handler(fail_with_private_exception)
+        with self.assertLogs("curatormd_v2.mcp_server", level="WARNING") as captured:
+            result = handler()
+
+        self.assertTrue(result.is_error)
+        self.assertNotIn(exception_type_canary, str(result.content))
+        self.assertNotIn(exception_message_canary, str(result.content))
+        log_output = "\n".join(captured.output)
+        self.assertIn("exception_type=unexpected_exception", log_output)
+        self.assertNotIn(exception_type_canary, log_output)
+        self.assertNotIn(exception_message_canary, log_output)
 
     def test_hermes_goal_binding_requires_trusted_context_and_active_project_goal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -677,7 +700,37 @@ class McpServerTests(unittest.TestCase):
                         self.assertFalse(report_result.is_error)
                         report_content = report_result.content[0]
                         assert isinstance(report_content, TextContent)
+                        self.assertIn(
+                            "- Outcome: `complete` (lifecycle revision `2`)",
+                            report_content.text,
+                        )
+                        self.assertIn(
+                            "- Problem: Expose verified SDE assessment",
+                            report_content.text,
+                        )
+                        self.assertIn(
+                            "- Next action: none (goal is terminal).",
+                            report_content.text,
+                        )
+                        self.assertIn(
+                            "- [x] `evidence` — verified: The selected verification passes; "
+                            "proof facts: `mcp-sde-verification`",
+                            report_content.text,
+                        )
+                        self.assertIn(
+                            "`mcp-sde-verification` — verification: The integration evidence passed",
+                            report_content.text,
+                        )
+                        self.assertIn(
+                            f"Purge receipt {receipt['receipt_id']} remains pending",
+                            report_content.text,
+                        )
+                        self.assertIn(
+                            "canonical write verified at `persistence/HISTORY.md`",
+                            report_content.text,
+                        )
                         self.assertIn("purge `purge_pending`", report_content.text)
+                        self.assertIn("Resolve purge receipt", report_content.text)
 
                         release_rationale = "Retention owner approved release"
                         private_error_marker = "SENSITIVE_PURGE_EXCEPTION_SENTINEL"
@@ -741,6 +794,38 @@ class McpServerTests(unittest.TestCase):
                         self.assertEqual(
                             released_status[1][0]["hold_release_rationale"],
                             release_rationale,
+                        )
+                        completed_report = await client.call_tool(
+                            "goal_report", {"goal_id": "mcp-sde-goal"}
+                        )
+                        self.assertFalse(completed_report.is_error)
+                        completed_report_content = completed_report.content[0]
+                        assert isinstance(completed_report_content, TextContent)
+                        self.assertIn(
+                            "- Outcome: `complete` (lifecycle revision `2`)",
+                            completed_report_content.text,
+                        )
+                        self.assertIn(
+                            "canonical write verified at `persistence/HISTORY.md`",
+                            completed_report_content.text,
+                        )
+                        self.assertIn(
+                            "purge `complete`", completed_report_content.text
+                        )
+                        self.assertIn(
+                            "Purge `complete`: 1 receipt(s)",
+                            completed_report_content.text,
+                        )
+                        self.assertIn(
+                            "## Current open gates\n- None recorded.",
+                            completed_report_content.text,
+                        )
+                        self.assertNotIn(
+                            "Resolve purge receipt", completed_report_content.text
+                        )
+                        self.assertIn(
+                            "## Open TODOs\n- None recorded for this goal.",
+                            completed_report_content.text,
                         )
 
                         await call_json(
@@ -1354,6 +1439,20 @@ class McpServerTests(unittest.TestCase):
                         )
                         self.assertEqual(inventory_value["artifacts"], [])
 
+                        project_inventory_result = await client.call_tool(
+                            "project_artifact_inventory_discover", {}
+                        )
+                        self.assertFalse(project_inventory_result.is_error)
+                        project_inventory_content = project_inventory_result.content[0]
+                        assert isinstance(project_inventory_content, TextContent)
+                        project_inventory_value = json.loads(
+                            project_inventory_content.text
+                        )
+                        self.assertTrue(
+                            project_inventory_value["usage"]["inventory_complete"]
+                        )
+                        self.assertIsNone(project_inventory_value["scope_goal_id"])
+
                         planned_start = await client.call_tool(
                             "goal_start",
                             {
@@ -1439,6 +1538,7 @@ class McpServerTests(unittest.TestCase):
                 self.assertIn("sde_quality_feedback_summary", names)
                 self.assertIn("project_storage_usage", names)
                 self.assertIn("artifact_inventory_discover", names)
+                self.assertIn("project_artifact_inventory_discover", names)
                 self.assertIn("sde_review_packet", names)
                 self.assertIn("goal_reopen", names)
                 self.assertIn("goal_amend_criteria", names)

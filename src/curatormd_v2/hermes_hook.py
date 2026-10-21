@@ -162,8 +162,9 @@ def build_hermes_hook_handler(
                 call_tool=call_tool,
             )
             return _has_durable_receipt(result)
-        except Exception:
-            # Hook exceptions must not expose source details or cause an ack.
+        except Exception:  # pylint: disable=broad-exception-caught
+            # This is the untrusted host/MCP boundary: unknown adapter failures
+            # must not expose source details or acknowledge durable delivery.
             return False
 
     return handle

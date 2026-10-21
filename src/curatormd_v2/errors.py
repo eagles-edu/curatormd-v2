@@ -41,6 +41,34 @@ _PUBLIC_MESSAGES = {
     APIErrorCode.INTERNAL_ERROR: "The request could not be completed.",
 }
 
+_SAFE_EXCEPTION_LABELS = frozenset(
+    {
+        "AttributeError",
+        "ConflictError",
+        "EvidenceAdapterError",
+        "EvidenceGateError",
+        "EventOrderError",
+        "FactCapacityError",
+        "GoalListCapacityError",
+        "NotFoundError",
+        "OSError",
+        "PermissionError",
+        "RuntimeError",
+        "TypeError",
+        "ValueError",
+    }
+)
+
+
+def safe_exception_label(error: Exception) -> str:
+    """Return only a fixed exception label suitable for logs and receipts."""
+
+    exception_type = type(error)
+    name = type.__getattribute__(exception_type, "__name__")
+    if name in _SAFE_EXCEPTION_LABELS:
+        return name
+    return "unexpected_exception"
+
 
 @dataclass(frozen=True, slots=True)
 class APIError:

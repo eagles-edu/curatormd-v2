@@ -106,6 +106,7 @@ class HostedMcpTests(unittest.TestCase):
         profile_id: str,
         *,
         allow_write: bool = False,
+        allow_review: bool = False,
     ) -> None:
         """Seed durable access using the host-only project administration API."""
 
@@ -122,8 +123,14 @@ class HostedMcpTests(unittest.TestCase):
                 config.backend_api_version,
                 "Approve the disposable integration-test project binding",
             )
-            for action in (ProjectAction.READ, ProjectAction.WRITE):
+            for action in (
+                ProjectAction.READ,
+                ProjectAction.WRITE,
+                ProjectAction.REVIEW,
+            ):
                 if action is ProjectAction.WRITE and not allow_write:
+                    continue
+                if action is ProjectAction.REVIEW and not allow_review:
                     continue
                 manager.grant(
                     operator,
@@ -180,9 +187,7 @@ class HostedMcpTests(unittest.TestCase):
             root = Path(temporary) / "consumer"
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
-            self._provision(
-                root, database, "gptmd-coding", allow_write=True
-            )
+            self._provision(root, database, "gptmd-coding", allow_write=True)
             runtime = build_local_profile_mcp(
                 project_root=root,
                 database=database,
@@ -215,6 +220,88 @@ class HostedMcpTests(unittest.TestCase):
                 )
             finally:
                 runtime.close()
+
+    def test_review_grant_is_exact_and_requires_launcher_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(
+                root,
+                database,
+                "reviewer-profile",
+                allow_review=True,
+            )
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="reviewer-profile",
+                allow_review=True,
+            )
+            try:
+                authorizer = runtime.api.authorizer
+                self.assertTrue(
+                    authorizer.authorize(
+                        runtime.caller, "bound-project", ProjectAction.REVIEW
+                    )
+                )
+                self.assertFalse(
+                    authorizer.authorize(
+                        AuthenticatedCaller("other-profile"),
+                        "bound-project",
+                        ProjectAction.REVIEW,
+                    )
+                )
+                self.assertFalse(
+                    authorizer.authorize(
+                        runtime.caller, "another-project", ProjectAction.REVIEW
+                    )
+                )
+                self.assertFalse(
+                    authorizer.authorize(
+                        runtime.caller, "bound-project", ProjectAction.WRITE
+                    )
+                )
+            finally:
+                runtime.close()
+
+            read_only_runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="reviewer-profile",
+            )
+            try:
+                self.assertFalse(
+                    read_only_runtime.api.authorizer.authorize(
+                        read_only_runtime.caller,
+                        "bound-project",
+                        ProjectAction.REVIEW,
+                    )
+                )
+            finally:
+                read_only_runtime.close()
+
+            store = CuratorStore(database)
+            try:
+                manager = ProjectAccessManager(store, _TestProjectAdmin())
+                manager.grant(
+                    AuthenticatedCaller("test-operator"),
+                    "bound-project",
+                    "read-only-profile",
+                    ProjectAction.READ,
+                    "Grant only read access for the launcher opt-in test",
+                )
+            finally:
+                store.close()
+            with self.assertRaisesRegex(
+                ValueError, "requested project review grant is not active"
+            ):
+                build_local_profile_mcp(
+                    project_root=root,
+                    database=database,
+                    profile_id="read-only-profile",
+                    allow_review=True,
+                )
 
     def test_typed_mcp_event_retry_ignores_regenerated_occurrence_time(self) -> None:
         """A new MCP invocation can safely replay a processed event identity."""
@@ -514,7 +601,11 @@ class HostedMcpTests(unittest.TestCase):
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(
-                root, database, "gptmd-coding", allow_write=True
+                root,
+                database,
+                "gptmd-coding",
+                allow_write=True,
+                allow_review=True,
             )
             launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
             self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
@@ -528,6 +619,7 @@ class HostedMcpTests(unittest.TestCase):
                     "--profile-id",
                     "gptmd-coding",
                     "--allow-write",
+                    "--allow-review",
                 ],
                 env={
                     "PATH": os.environ.get("PATH", ""),
@@ -538,6 +630,10 @@ class HostedMcpTests(unittest.TestCase):
             async def exercise() -> None:
                 async with Client(parameters, raise_exceptions=True) as client:
                     tools = await client.list_tools()
+                    self.assertIn(
+                        "project_artifact_inventory_discover",
+                        {tool.name for tool in tools.tools},
+                    )
                     goal_start = next(
                         tool for tool in tools.tools if tool.name == "goal_start"
                     )
@@ -579,6 +675,17 @@ class HostedMcpTests(unittest.TestCase):
                         goal["success_criteria"][0]["criterion_id"],
                         "stdio-roundtrip",
                     )
+                    inventory_result = await client.call_tool(
+                        "project_artifact_inventory_discover",
+                        {},
+                        meta=_hermes_meta("gptmd-coding"),
+                    )
+                    self.assertFalse(inventory_result.is_error)
+                    inventory_content = inventory_result.content[0]
+                    assert isinstance(inventory_content, TextContent)
+                    inventory = json.loads(inventory_content.text)
+                    self.assertTrue(inventory["usage"]["inventory_complete"])
+                    self.assertIsNone(inventory["scope_goal_id"])
 
             asyncio.run(exercise())
 

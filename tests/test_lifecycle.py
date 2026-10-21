@@ -876,6 +876,47 @@ class CuratorLifecycleTests(unittest.TestCase):
             open_report,
         )
 
+    def test_partial_child_completion_stays_visible_without_completing_parent(self) -> None:
+        """Keep completed child history visible while the parent still has work."""
+
+        completed_child = self.service.goal_start(
+            "Complete one child task",
+            (SuccessCriterion("child-proof", "The child work is verified"),),
+            goal_id="child-completed",
+            parent_goal_id=self.goal.goal_id,
+        )
+        self.service.goal_fact(
+            completed_child.goal_id,
+            FactKind.VERIFICATION,
+            "The child acceptance evidence passed",
+            criterion_id="child-proof",
+            evidence=(self.proof("child-completed-proof"),),
+        )
+        completed = self.service.goal_finish(
+            completed_child.goal_id,
+            "The child criterion has passing evidence",
+        )
+        open_child = self.service.goal_start(
+            "Keep another child task open",
+            (SuccessCriterion("remaining-work", "The remaining work is tracked"),),
+            goal_id="child-open",
+            parent_goal_id=self.goal.goal_id,
+        )
+
+        report = self.service.goal_report(self.goal.goal_id)
+        listed = self.service.goal_list_page(limit=10)
+        parent_card = next(
+            card for card in listed.goals if card.goal_id == self.goal.goal_id
+        )
+
+        self.assertEqual(completed.status, GoalStatus.COMPLETE)
+        self.assertEqual(open_child.status, GoalStatus.ACTIVE)
+        self.assertIn("`child-completed` — `complete`", report)
+        self.assertIn("`child-open` — `active`", report)
+        self.assertIn("1 child goal(s) remain open overall", report)
+        self.assertEqual(parent_card.status, self.goal.status)
+        self.assertNotIn("- Outcome: `complete`", report)
+
     def test_goal_report_uses_bounded_history_pages_and_exact_child_counts(self) -> None:
         for index in range(35):
             self.service.goal_start(

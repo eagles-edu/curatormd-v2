@@ -245,9 +245,30 @@ def _evaluate_local_health(
     staging = usage.staging
     staging_complete = staging.inventory_complete if staging is not None else None
     staging_count = staging.regular_file_count if staging is not None else None
+    if staging is not None and staging_complete is True:
+        byte_limit_reached = (
+            usage.staging_project_byte_limit is not None
+            and staging.observed_file_bytes >= usage.staging_project_byte_limit
+        )
+        file_limit_reached = (
+            usage.staging_project_file_limit is not None
+            and staging.regular_file_count >= usage.staging_project_file_limit
+        )
+        if byte_limit_reached or file_limit_reached:
+            gates.append("staging_budget_reached")
+            degraded = True
     if staging_complete is False:
         gates.append("staging_inventory_incomplete")
         degraded = True
+        if staging is not None and staging.error_code in {
+            "root_invalid",
+            "root_unavailable",
+            "permission_denied",
+            "unsupported_platform",
+            "staging_root_unavailable",
+            "staging_lock_unavailable",
+        }:
+            gates.append("staging_adapter_unavailable")
     elif staging_complete is None:
         gates.append("staging_inventory_unavailable")
         unknown = True
@@ -760,6 +781,15 @@ class AuthenticatedCuratorAPI:
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).discover_staging_artifacts(goal_id)
+
+    def discover_project_artifact_inventory(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> StagingArtifactInventory:
+        """Hash the bounded project staging tree for an authorized review."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).discover_project_staging_artifacts()
 
     def sde_review_queue(
         self, caller: AuthenticatedCaller, project_id: str, limit: int = 100

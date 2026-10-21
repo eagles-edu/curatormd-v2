@@ -89,10 +89,14 @@ class ProjectPlugin:
         if no_follow is None or directory_flag is None:
             raise ProjectConfigError("platform lacks safe staging lock primitives")
         root = self.config.validated_staging_root()
+        root_open_failed = False
+        root_fd = -1
         try:
             root_fd = os.open(root, os.O_RDONLY | directory_flag | no_follow)
-        except OSError as exc:
-            raise ProjectConfigError("staging root cannot be opened safely") from exc
+        except OSError:
+            root_open_failed = True
+        if root_open_failed:
+            raise ProjectConfigError("staging root cannot be opened safely")
         try:
             fcntl.flock(root_fd, fcntl.LOCK_EX)
             yield root_fd
@@ -450,10 +454,19 @@ class ProjectPlugin:
         queue, counts, usage = self.service.store.project_health_inputs(
             self.config.project_id
         )
-        with self._locked_staging_root() as root_fd:
-            staging = self._scan_staging_tree(
-                discover_artifacts=False, staging_root_fd=root_fd
-            ).usage
+        try:
+            with self._locked_staging_root() as root_fd:
+                staging = self._scan_staging_tree(
+                    discover_artifacts=False, staging_root_fd=root_fd
+                ).usage
+        except ProjectConfigError:
+            staging = StagingUsage(
+                0, 0, 0, 0, 0, 0, False, "staging_root_unavailable"
+            )
+        except OSError:
+            staging = StagingUsage(
+                0, 0, 0, 0, 0, 0, False, "staging_lock_unavailable"
+            )
         return queue, counts, replace(
             usage,
             staging=staging,
@@ -474,6 +487,21 @@ class ProjectPlugin:
                 discover_artifacts=True,
                 scope_goal_id=goal_id,
                 staging_root_fd=root_fd,
+            )
+
+    def discover_project_staging_artifacts(self) -> StagingArtifactInventory:
+        """Inventory every staged file in this project without authorizing purge.
+
+        The project-wide snapshot includes files under unrecognized or orphaned
+        goal directories so they cannot disappear from inventory merely because
+        they are not attached to a current goal. Incomplete or over-limit scans
+        remain explicitly incomplete; callers must not use this method as
+        approval to delete anything.
+        """
+
+        with self._locked_staging_root() as root_fd:
+            return self._scan_staging_tree(
+                discover_artifacts=True, staging_root_fd=root_fd
             )
 
     def stage_artifact(

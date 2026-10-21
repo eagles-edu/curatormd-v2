@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from curatormd_v2.maintenance_cli import main, _positive_limit  # pyright: ignore[reportPrivateUsage]
 from curatormd_v2.models import PurgeStatus
@@ -16,6 +16,20 @@ from curatormd_v2.models import PurgeStatus
 
 class MaintenanceCliTests(unittest.TestCase):
     """Keep scheduled retries explicit, bounded, and content-free."""
+
+    @staticmethod
+    def _store_context() -> MagicMock:
+        """Model the store context manager and its close behavior."""
+
+        store = MagicMock()
+        store.__enter__.return_value = store
+
+        def close_without_suppressing(*_exception: object) -> bool:
+            store.close()
+            return False
+
+        store.__exit__.side_effect = close_without_suppressing
+        return store
 
     def test_invalid_limit_error_does_not_retain_source_value(self) -> None:
         """Argument errors must not chain the rejected command-line value."""
@@ -41,7 +55,7 @@ class MaintenanceCliTests(unittest.TestCase):
     def test_due_retry_counts_are_bounded_and_pending_returns_alert_code(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "curator.sqlite"
-            store = Mock()
+            store = self._store_context()
             plugin = SimpleNamespace(
                 retry_due_purges=Mock(
                     return_value=(
@@ -93,7 +107,7 @@ class MaintenanceCliTests(unittest.TestCase):
 
     def test_clean_batch_returns_zero(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            store = Mock()
+            store = self._store_context()
             plugin = SimpleNamespace(retry_due_purges=Mock(return_value=()))
             output = StringIO()
             with (
@@ -130,7 +144,7 @@ class MaintenanceCliTests(unittest.TestCase):
 
     def test_runtime_error_is_sanitized_and_store_is_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            store = Mock()
+            store = self._store_context()
             errors = StringIO()
             with (
                 patch(

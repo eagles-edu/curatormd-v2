@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -57,6 +58,18 @@ class DurableEventRouterTests(unittest.TestCase):
         """Close whichever store instance remains after a restart test."""
 
         self.store.close()
+
+    def retry_audit_actor(self, event_id: str) -> str:
+        """Read the actor recorded for one project-local retry."""
+
+        with self.store.transaction() as connection:
+            row = connection.execute(
+                "SELECT actor_id FROM event_retry_audit "
+                "WHERE project_id = ? AND event_id = ?",
+                ("project-a", event_id),
+            ).fetchone()
+        assert row is not None
+        return str(row["actor_id"])
 
     def test_router_does_not_claim_events_outside_its_fixed_project_map(self) -> None:
         """An omitted project binding stays untouched in the shared inbox."""
@@ -320,14 +333,7 @@ finally:
         )
         self.assertEqual(retried.status, EventInboxStatus.FAILED)
         self.assertEqual(retried.attempts, 0)
-        with self.store.transaction() as connection:
-            audit = connection.execute(
-                "SELECT actor_id FROM event_retry_audit "
-                "WHERE project_id = ? AND event_id = ?",
-                ("project-a", event.event_id),
-            ).fetchone()
-        self.assertEqual(audit["actor_id"], "operator-7")
-
+        self.assertEqual(self.retry_audit_actor(event.event_id), "operator-7")
         final = self.router.route_once()
         self.assertEqual(final.processed_count, 1)
         self.assertEqual(
@@ -341,6 +347,77 @@ finally:
         self.assertIsNone(
             self.store.event_receipt("project-a", event.event_id).next_attempt_at
         )
+
+    def test_failure_detail_is_not_exposed_while_retry_payload_is_preserved(self) -> None:
+        """Keep exception text out of logs and receipts without dropping retry data."""
+
+        payload_canary = "PRIVATE_ROUTER_PAYLOAD_CANARY"
+        exception_canary = "PRIVATE_ROUTER_EXCEPTION_CANARY"
+        exception_type_canary = "PRIVATE_ROUTER_EXCEPTION_TYPE_CANARY"
+        private_exception_type = type(exception_type_canary, (RuntimeError,), {})
+        event = EventEnvelope(
+            "private-router-failure",
+            "project-a",
+            GoalStarted(
+                "private-router-goal",
+                f"Transient request detail {payload_canary}",
+                (SuccessCriterion("retry", "Retry after the adapter recovers"),),
+            ),
+        )
+        self.store.ingest_event(event)
+
+        with patch.object(
+            self.service,
+            "process_event",
+            side_effect=private_exception_type(exception_canary),
+        ):
+            with self.assertNoLogs("curatormd_v2", level="DEBUG"):
+                result = self.router.route_once()
+
+                # Make the second delivery immediately eligible so this test
+                # also covers the durable quarantine transition.
+                with self.store.transaction() as connection:
+                    connection.execute(
+                        "UPDATE event_inbox SET next_attempt_at = "
+                        "'2000-01-01T00:00:00+00:00' "
+                        "WHERE project_id = ? AND event_id = ?",
+                        ("project-a", event.event_id),
+                    )
+                quarantined_result = self.router.route_once()
+
+                retried_receipt = self.store.retry_quarantined_event(
+                    "project-a", event.event_id, "operator-7"
+                )
+                retry_result = self.router.route_once()
+
+        receipt = self.store.event_receipt("project-a", event.event_id)
+        self.assertEqual(result.failed_count, 1)
+        self.assertEqual(quarantined_result.quarantined_count, 1)
+        self.assertEqual(retried_receipt.status, EventInboxStatus.FAILED)
+        self.assertEqual(retried_receipt.attempts, 0)
+        self.assertEqual(retry_result.failed_count, 1)
+        self.assertEqual(receipt.status, EventInboxStatus.FAILED)
+        self.assertEqual(receipt.attempts, 1)
+        self.assertEqual(receipt.last_error_code, "unexpected_exception")
+        for public_result in (result, quarantined_result, retried_receipt, retry_result, receipt):
+            self.assertNotIn(exception_canary, repr(public_result))
+            self.assertNotIn(exception_type_canary, repr(public_result))
+
+        with self.store.transaction() as connection:
+            row = connection.execute(
+                "SELECT payload_json, last_error FROM event_inbox "
+                "WHERE project_id = ? AND event_id = ?",
+                ("project-a", event.event_id),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertIn(payload_canary, row["payload_json"])
+        self.assertNotIn(exception_canary, row["payload_json"])
+        self.assertEqual(row["last_error"], "unexpected_exception")
+        self.assertNotIn(exception_type_canary, row["last_error"])
+        audit_actor = self.retry_audit_actor(event.event_id)
+        self.assertEqual(audit_actor, "operator-7")
+        self.assertNotIn(exception_canary, audit_actor)
 
     def test_source_sequence_gaps_wait_and_resume_in_order(self) -> None:
         later = EventEnvelope(

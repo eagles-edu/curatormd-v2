@@ -32,7 +32,7 @@ from .events import (
     GoalReopened,
     GoalStarted,
 )
-from .errors import to_api_error
+from .errors import safe_exception_label, to_api_error
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
 from .models import (
     ArtifactRef,
@@ -87,7 +87,7 @@ def safe_tool_handler(handler: Any) -> Any:
             logger.warning(
                 "Curator MCP tool failed with code=%s exception_type=%s",
                 error.code,
-                type(exc).__name__,
+                safe_exception_label(exc),
             )
             return CallToolResult(
                 content=[
@@ -758,6 +758,18 @@ def build_mcp_server(
 
         return _json_result(
             api.discover_artifact_inventory(caller, project_id, goal_id)
+        )
+
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True, destructive_hint=False, open_world_hint=False
+        )
+    )
+    def project_artifact_inventory_discover() -> str:
+        """Discover this project's bounded staging manifest for human review."""
+
+        return _json_result(
+            api.discover_project_artifact_inventory(caller, project_id)
         )
 
     @_safe_tool()

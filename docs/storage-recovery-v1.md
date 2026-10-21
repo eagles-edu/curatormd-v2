@@ -17,6 +17,25 @@ an existing snapshot and restores it to a new path. It never restores in place
 or overwrites an existing path. Both operations reject symlink paths, and
 temporary snapshot files are private and removed after failed operations.
 
+The `curatormd-v2-storage` command exposes these operations without printing
+database paths or raw SQLite errors:
+
+```sh
+curatormd-v2-storage backup \
+  --database /private/curator.sqlite3 \
+  --destination /private/backups/curator.sqlite3
+
+curatormd-v2-storage restore \
+  --backup /private/backups/curator.sqlite3 \
+  --destination /private/recovery/curator-review.sqlite3 \
+  --restore-to-new-path
+```
+
+Restore requires the explicit `--restore-to-new-path` confirmation. Both
+commands refuse existing destinations and report only the operation and
+verification status. A successful restore creates an isolated review copy; it
+does not authorize switching the live system to that copy.
+
 Example from a Python maintenance process:
 
 ```python

@@ -484,14 +484,24 @@ class MarkdownPersistenceAdapter:
         no_follow = getattr(os, "O_NOFOLLOW", None)
         if no_follow is None:
             raise MarkdownPersistenceError("platform lacks no-follow Markdown reads")
+        open_failed = False
+        descriptor = -1
         try:
             descriptor = os.open(target, os.O_RDONLY | no_follow)
         except FileNotFoundError:
             return "", 0o600
-        except OSError as exc:
-            raise MarkdownPersistenceError("cannot safely open Markdown target") from exc
+        except OSError:
+            open_failed = True
+        if open_failed:
+            raise MarkdownPersistenceError("cannot safely open Markdown target")
+
+        decoded = ""
+        mode = 0o600
+        read_failed = False
         try:
-            with os.fdopen(descriptor, "rb") as source:
+            source = os.fdopen(descriptor, "rb")
+            descriptor = -1
+            with source:
                 metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(metadata.st_mode):
                     raise MarkdownPersistenceError(
@@ -517,14 +527,22 @@ class MarkdownPersistenceAdapter:
                     raise MarkdownPersistenceError(
                         "canonical Markdown target must be UTF-8"
                     )
-                return decoded, stat.S_IMODE(metadata.st_mode)
-        except OSError as exc:
-            raise MarkdownPersistenceError("cannot read canonical Markdown target") from exc
+                mode = stat.S_IMODE(metadata.st_mode)
+        except OSError:
+            read_failed = True
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        if read_failed:
+            raise MarkdownPersistenceError("cannot read canonical Markdown target")
+        return decoded, mode
 
     @staticmethod
     def _atomic_replace(target: Path, data: bytes, mode: int) -> None:
         temporary_path: str | None = None
         descriptor = -1
+        replacement_failed = False
+        cleanup_failed = False
         try:
             descriptor, temporary_path = tempfile.mkstemp(
                 prefix=".curatormd-v2-write-", dir=target.parent
@@ -547,18 +565,28 @@ class MarkdownPersistenceAdapter:
                 os.fsync(directory_fd)
             finally:
                 os.close(directory_fd)
-        except (OSError, ValueError) as exc:
-            raise MarkdownPersistenceError(
-                "atomic canonical Markdown replacement failed"
-            ) from exc
+        except (OSError, ValueError):
+            replacement_failed = True
         finally:
             if descriptor >= 0:
-                os.close(descriptor)
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    cleanup_failed = True
             if temporary_path is not None:
                 try:
                     os.unlink(temporary_path)
                 except FileNotFoundError:
                     pass
+                except OSError:
+                    cleanup_failed = True
+        if replacement_failed:
+            message = "atomic canonical Markdown replacement failed"
+            if cleanup_failed:
+                message += " and temporary cleanup failed"
+            raise MarkdownPersistenceError(message)
+        if cleanup_failed:
+            raise MarkdownPersistenceError("temporary canonical Markdown cleanup failed")
 
 
 def _markdown_text(value: str) -> str:

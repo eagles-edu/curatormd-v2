@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 import tempfile
@@ -19,11 +20,20 @@ from curatormd_v2 import (
     GoalStatus,
     SuccessCriterion,
 )
-from curatormd_v2.router_cli import main
+from curatormd_v2.router_cli import MAX_ROUTER_BATCH, _positive_limit, main  # pyright: ignore[reportPrivateUsage]
 
 
 class RouterCliTests(unittest.TestCase):
     """Keep one-shot routing opt-in, bounded, and scoped to listed projects."""
+
+    def test_batch_limit_uses_the_router_ceiling(self) -> None:
+        """Accept the router maximum and reject the next value."""
+        self.assertEqual(_positive_limit(str(MAX_ROUTER_BATCH)), MAX_ROUTER_BATCH)
+        self.assertRaises(
+            argparse.ArgumentTypeError,
+            _positive_limit,
+            str(MAX_ROUTER_BATCH + 1),
+        )
 
     def test_processing_requires_explicit_opt_in_before_loading_projects(self) -> None:
         """A default invocation must not inspect configs or open the database."""

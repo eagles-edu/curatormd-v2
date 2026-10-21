@@ -77,12 +77,14 @@ exposed as a remote endpoint or reused across principals. Omit `--allow-write`
 for read-only access. This flag is only an upper bound: `--allow-write` still
 requires a durable `write` grant, and without the flag the launcher denies
 writes even if one exists in the registry. The process cannot use grants for
-other scopes. Canonical `goal_persist`, SDE review,
-fact-archive approval, purge retry, retention-hold release, and event retry
-require separate reviewer/operation grants and remain denied by this launcher;
-there is no MCP tool parameter for selecting another caller or project. An
-absent/invalid repository config fails startup. The local event router and
-purge scheduler are not started by this entrypoint.
+other scopes. Review-gated inventory, `goal_persist`, SDE disposition, and
+fact-archive approval additionally require the optional `--allow-review` flag
+and an exact durable `review` grant. The flag defaults off and does not create a
+grant. Purge retry, retention-hold release, and event retry remain separately
+scoped operations and are not enabled by either flag; there is no MCP tool
+parameter for selecting another caller or project. An absent/invalid
+repository config fails startup. The local event router and purge scheduler
+are not started by this entrypoint.
 
 Every `tools/call` request must also carry Hermes-injected `hermes/profile_id`
 and a bounded `hermes/session_id`; the profile must exactly match
@@ -100,7 +102,9 @@ exact subject/project/action grants on every request. Its loaded repository
 root and `.curatormd-v2.toml` fingerprints must match an active registration;
 registration drift, suspension, missing grants, and revocation fail closed.
 `--allow-write` only permits the launcher to honor an existing write grant;
-it does not create a registration or grant.
+it does not create a registration or grant. `--allow-review` follows the same
+rule for review operations and remains disabled unless explicitly selected in
+the operator-managed launcher configuration.
 
 Use the separate attended local operator command to provision this ledger. It
 is not exposed through MCP and requires an interactive TTY plus exact typed

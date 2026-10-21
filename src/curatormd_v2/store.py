@@ -3733,7 +3733,7 @@ class CuratorStore:
                 (receipt_id, path, project_id),
             ).fetchone()
             if row is None:
-                raise NotFoundError(f"purge target not found in project receipt: {path}")
+                raise NotFoundError("purge target not found in project receipt")
             if row["hold_released_at"] is not None:
                 if (
                     row["hold_released_by"] == actor_id
@@ -3962,7 +3962,7 @@ class CuratorStore:
                 (receipt_id, path),
             ).fetchone()
             if target is None:
-                raise NotFoundError(f"purge target not found in receipt: {path}")
+                raise NotFoundError("purge target not found in receipt")
             held = connection.execute(
                 "SELECT retention_hold, hold_released_at FROM purge_targets "
                 "WHERE receipt_id = ? AND path = ?",
@@ -3989,7 +3989,7 @@ class CuratorStore:
                 (status.value, error, next_attempt_at, receipt_id, path),
             )
             if cursor.rowcount != 1:
-                raise NotFoundError(f"purge target not found in receipt: {path}")
+                raise NotFoundError("purge target not found in receipt")
             attempted_at = utc_now()
             unfinished = connection.execute(
                 "SELECT COUNT(*) FROM purge_targets WHERE receipt_id = ? AND status != ?",

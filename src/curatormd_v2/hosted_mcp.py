@@ -57,6 +57,7 @@ def build_local_profile_mcp(
     profile_id: str,
     source_id: str | None = None,
     allow_write: bool = False,
+    allow_review: bool = False,
 ) -> LocalProfileMCP:
     """Bind one local profile to the project declared by its repo config.
 
@@ -84,6 +85,8 @@ def build_local_profile_mcp(
         actions = {ProjectAction.READ}
         if allow_write:
             actions.add(ProjectAction.WRITE)
+        if allow_review:
+            actions.add(ProjectAction.REVIEW)
         authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
             store,
             project_id=config.project_id,
@@ -100,6 +103,10 @@ def build_local_profile_mcp(
             caller, config.project_id, ProjectAction.WRITE
         ):
             raise ValueError("requested project write grant is not active")
+        if allow_review and not authorizer.authorize(
+            caller, config.project_id, ProjectAction.REVIEW
+        ):
+            raise ValueError("requested project review grant is not active")
         plugin = ProjectPlugin.bind(config, store)
         api = AuthenticatedCuratorAPI(
             {config.project_id: plugin},
@@ -137,6 +144,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow writes only when this profile has an exact durable write grant",
     )
+    parser.add_argument(
+        "--allow-review",
+        action="store_true",
+        help="allow review tools only when this profile has an exact durable review grant",
+    )
     return parser
 
 
@@ -151,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             profile_id=args.profile_id,
             source_id=args.source_id,
             allow_write=args.allow_write,
+            allow_review=args.allow_review,
         )
     except Exception:  # pylint: disable=broad-exception-caught  # Keep startup errors private.
         print(

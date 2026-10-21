@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Mapping
 from uuid import uuid4
 
+from .errors import safe_exception_label
 from .events import EventQueueStatus, EventInboxStatus
 from .service import CuratorService
 from .store import CuratorStore, EventClaimError
@@ -15,7 +15,6 @@ from .store import CuratorStore, EventClaimError
 DEFAULT_MAX_DELIVERY_ATTEMPTS = 5
 MAX_ROUTER_BATCH = 1000
 MAX_ROUTER_PROJECTS = 128
-_ERROR_CODE_RE = re.compile(r"[^a-zA-Z0-9_.:-]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +90,7 @@ class DurableEventRouter:
                     claim_lost += 1
                     continue
                 except Exception as exc:  # pylint: disable=broad-exception-caught
-                    code = _ERROR_CODE_RE.sub("_", type(exc).__name__)[:128]
+                    code = safe_exception_label(exc)
                     try:
                         current = self.store.event_receipt(
                             event.project_id, event.event_id

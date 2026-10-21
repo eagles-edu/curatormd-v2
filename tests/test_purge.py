@@ -34,6 +34,7 @@ from curatormd_v2 import (
     SuccessCriterion,
 )
 from curatormd_v2.maintenance_cli import main as maintenance_main
+from curatormd_v2.store import NotFoundError
 
 
 class ReceiptCheckingPurger(ArtifactPurger):
@@ -705,6 +706,70 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
         _, targets = self.service.artifact_purge_status(receipt.receipt_id)
         self.assertEqual(targets[0].error, "outside_staging_root")
+
+    def test_purge_errors_do_not_retain_private_paths(self) -> None:
+        """Path confinement and filesystem failures expose no chained path."""
+
+        private_path = "/srv/private/customer/staged.json"
+        outside = ArtifactRef(private_path, hashlib.sha256(b"secret").hexdigest())
+        with self.assertRaisesRegex(
+            PurgeError, "artifact is outside the configured staging root"
+        ) as raised:
+            ArtifactPurger(self.stage).purge(outside)
+        self.assertNotIn(private_path, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+        in_scope = self.stage / "inside.json"
+        in_scope.write_text("secret", encoding="utf-8")
+        artifact = ArtifactRef(
+            str(in_scope), hashlib.sha256(b"secret").hexdigest()
+        )
+        with patch(
+            "curatormd_v2.purge.os.fstat",
+            side_effect=OSError(f"permission denied: {private_path}"),
+        ):
+            with self.assertRaisesRegex(
+                PurgeError, "cannot safely inspect or remove artifact"
+            ) as raised:
+                ArtifactPurger(self.stage).purge(artifact)
+        self.assertNotIn(private_path, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_store_missing_purge_target_errors_do_not_echo_path(self) -> None:
+        """Direct store failures do not retain caller-supplied artifact paths."""
+
+        candidate_id = self.candidate("missing purge target")
+        _, artifact = self.artifact("existing.json")
+        receipt = self.service.sde_confirm(
+            candidate_id,
+            ReviewDecision.APPROVED,
+            (artifact,),
+            artifact_inventory_complete=True,
+        )
+        receipt = self.persist_canonical(receipt)
+        private_path = "/srv/private/customer/not-in-this-receipt.json"
+
+        with self.assertRaises(NotFoundError) as raised:
+            self.store.release_artifact_hold(
+                receipt.receipt_id,
+                private_path,
+                self.service.project_id,
+                "test-reviewer",
+                "Owner requested a hold release",
+            )
+        self.assertNotIn(private_path, str(raised.exception))
+
+        with self.assertRaises(NotFoundError) as raised:
+            self.store.record_purge_result(
+                receipt.receipt_id,
+                private_path,
+                ArtifactStatus.FAILED,
+                "filesystem_error",
+                self.service.project_id,
+            )
+        self.assertNotIn(private_path, str(raised.exception))
 
     def test_directories_and_symlinks_are_never_purged(self) -> None:
         nested = self.stage / "nested"

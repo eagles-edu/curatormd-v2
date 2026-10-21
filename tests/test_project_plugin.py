@@ -71,6 +71,23 @@ class ProjectPluginTests(unittest.TestCase):
         finally:
             os.close(probe_fd)
 
+    def test_staging_open_error_does_not_retain_private_path(self) -> None:
+        """Sanitized staging failures do not chain filesystem path details."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        private_path = "/srv/private/customer/staging"
+        with patch(
+            "curatormd_v2.project_plugin.os.open",
+            side_effect=OSError(f"permission denied: {private_path}"),
+        ):
+            with self.assertRaisesRegex(
+                ProjectConfigError, "staging root cannot be opened safely"
+            ) as raised:
+                plugin.retry_due_purges(9)
+        self.assertNotIn(private_path, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def write_config(self, content: str | None = None) -> None:
         """Write a minimal, valid repository-local config fixture."""
 
@@ -817,6 +834,40 @@ class ProjectPluginTests(unittest.TestCase):
             tuple(item.path for item in beta_inventory.artifacts),
             (str(beta_file),),
         )
+
+    def test_project_inventory_includes_orphaned_goal_directories(self) -> None:
+        """A project snapshot covers every class and orphaned goal directories."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        self._goal(plugin, "goal-alpha")
+        self._goal(plugin, "goal-beta")
+        artifacts = {
+            "raw-chat": self.stage / "goal-alpha" / "raw-chat" / "raw.bin",
+            "cue": self.stage / "goal-alpha" / "cue" / "cue.bin",
+            "import": self.stage / "goal-beta" / "import" / "import.bin",
+            "scratch": self.stage / "goal-beta" / "scratch" / "scratch.bin",
+            "generated": self.stage / "goal-alpha" / "generated" / "generated.bin",
+            "duplicate": self.stage / "orphaned-goal" / "duplicate" / "duplicate.bin",
+            "other": self.stage / "orphaned-goal" / "unrecognized" / "other.bin",
+        }
+        for artifact_class, artifact in artifacts.items():
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_bytes(artifact_class.encode())
+
+        inventory = plugin.discover_project_staging_artifacts()
+
+        self.assertTrue(inventory.usage.inventory_complete)
+        self.assertIsNone(inventory.scope_goal_id)
+        self.assertEqual(inventory.usage.regular_file_count, len(artifacts))
+        self.assertEqual(
+            {item.path for item in inventory.artifacts},
+            {str(artifact) for artifact in artifacts.values()},
+        )
+        self.assertEqual(
+            {item.artifact_class.value for item in inventory.usage.classes},
+            {"raw-chat", "cue", "import", "scratch", "generated", "duplicate", "other"},
+        )
+        self.assertEqual(len(inventory.manifest_sha256 or ""), 64)
 
     def test_goal_staging_scope_does_not_follow_a_symlink(self) -> None:
         """Reject a goal directory replaced by a symlink outside the staging root."""

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import hashlib
 import tempfile
 import unittest
+from typing import BinaryIO, cast
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
@@ -688,6 +690,70 @@ class MarkdownPersistenceTests(unittest.TestCase):
         ) as raised:
             self.plugin.persist_goal(self.goal.goal_id, self.target)
         self.assertNotIn("PRIVATE_MARKDOWN_CANARY", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    def test_filesystem_errors_do_not_retain_private_paths(self) -> None:
+        """Sanitized persistence failures have no chained OS path detail."""
+
+        adapter = MarkdownPersistenceAdapter(self.config, self.store, self.target)
+        private_path = "/srv/private/customer/notes.md"
+        with patch(
+            "curatormd_v2.markdown_persistence.os.open",
+            side_effect=OSError(f"permission denied: {private_path}"),
+        ):
+            with self.assertRaisesRegex(
+                MarkdownPersistenceError, "cannot safely open Markdown target"
+            ) as raised:
+                adapter.persist_goal(self.goal.goal_id)
+        self.assertNotIn(private_path, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+        real_fdopen = os.fdopen
+
+        class FailingReader:
+            """Raise a path-bearing error from the canonical target read."""
+
+            def __init__(self, source: BinaryIO) -> None:
+                self.source = source
+
+            def __enter__(self) -> object:
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                self.source.close()
+
+            def fileno(self) -> int:
+                return self.source.fileno()
+
+            def read(self, _limit: int) -> bytes:
+                raise OSError(f"read failed: {private_path}")
+
+        def wrap_fdopen(descriptor: int, mode: str) -> object:
+            return FailingReader(cast(BinaryIO, real_fdopen(descriptor, mode)))
+
+        with patch(
+            "curatormd_v2.markdown_persistence.os.fdopen",
+            side_effect=wrap_fdopen,
+        ):
+            with self.assertRaisesRegex(
+                MarkdownPersistenceError, "cannot read canonical Markdown target"
+            ) as raised:
+                adapter.persist_goal(self.goal.goal_id)
+        self.assertNotIn(private_path, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+        with patch(
+            "curatormd_v2.markdown_persistence.os.replace",
+            side_effect=OSError(f"replace failed: {private_path}"),
+        ):
+            with self.assertRaisesRegex(
+                MarkdownPersistenceError, "atomic canonical Markdown replacement failed"
+            ) as raised:
+                adapter.persist_goal(self.goal.goal_id)
+        self.assertNotIn(private_path, str(raised.exception))
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 

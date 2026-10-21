@@ -11,7 +11,28 @@ import tempfile
 import unittest
 from typing import cast
 
+from mcp import Client
+from mcp.client.stdio import StdioServerParameters
+from mcp.types import TextContent
+
 from project_fixtures import create_consumer_repo
+from curatormd_v2 import (
+    AuthenticatedCaller,
+    AuthenticatedCuratorAPI,
+    CodexGoalBinding,
+    CuratorStore,
+    EventDisposition,
+    FactKind,
+    GoalActivityObserved,
+    GoalStatus,
+    InMemoryTokenBucket,
+    ProjectAction,
+    ProjectConfig,
+    ProjectPlugin,
+    SuccessCriterion,
+    build_mcp_server,
+    codex_hook_to_event,
+)
 from curatormd_v2.hermes_hook import build_hermes_hook_handler
 
 
@@ -111,28 +132,20 @@ class HermesHookAdapterTests(unittest.TestCase):
             )
             self.assertFalse(asyncio.run(failing("codex:turn:start", event)))
 
+            def raise_private_exception(*_args: object, **_kwargs: object) -> None:
+                raise RuntimeError("private adapter diagnostic")
+
+            failing_exception = build_hermes_hook_handler(
+                root,
+                "curator-project-a",
+                call_mcp=raise_private_exception,
+            )
+            self.assertFalse(
+                asyncio.run(failing_exception("codex:turn:start", event))
+            )
+
     def test_adapter_routes_a_durable_event_through_the_real_mcp_server(self) -> None:
         """Exercise the adapter, trusted MCP context, translator, and router together."""
-        from mcp import Client
-        from mcp.types import TextContent
-
-        from curatormd_v2 import (
-            AuthenticatedCaller,
-            AuthenticatedCuratorAPI,
-            CodexGoalBinding,
-            CuratorStore,
-            FactKind,
-            EventDisposition,
-            GoalActivityObserved,
-            GoalStatus,
-            InMemoryTokenBucket,
-            ProjectAction,
-            ProjectConfig,
-            ProjectPlugin,
-            build_mcp_server,
-            codex_hook_to_event,
-        )
-
         class OnlyProject:
             """Authorize only the bound test project for this process fixture."""
 
@@ -340,19 +353,6 @@ class HermesHookAdapterTests(unittest.TestCase):
 
     def test_adapter_delivers_to_a_separate_durable_mcp_process(self) -> None:
         """Route a Hermes envelope over stdio and reopen the child's receipt."""
-        from mcp import Client
-        from mcp.client.stdio import StdioServerParameters
-        from mcp.types import TextContent
-
-        from curatormd_v2 import (
-            CuratorStore,
-            EventDisposition,
-            FactKind,
-            ProjectPlugin,
-            SuccessCriterion,
-        )
-        from curatormd_v2.project_config import ProjectConfig
-
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             create_consumer_repo(root)

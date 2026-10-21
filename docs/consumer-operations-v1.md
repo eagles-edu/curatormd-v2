@@ -33,15 +33,14 @@ its `.curatormd-v2.toml`, project plugin binding, and canonical Markdown.
    `event_queue_status`, and `project_health`; an empty ledger is not evidence
    of event capture, and `unknown` health is correct until every required host
    probe is supplied and fresh.
-7. Before enabling `--allow-write`, use the attended access command to grant
-   exact `write` access to the configured profile subject, then review the
-   profile-to-project binding and filesystem/process trust. The flag is only
-   an upper bound: without a durable `write` grant it cannot write, and with it
-   the launcher still cannot perform canonical persistence, SDE review,
-   archive approval, purge, hold release, or event retry. `--profile-id` is an
-   operator assertion, not authentication. A production host must replace
-   local UID administration and profile assertions with verified identity and
-   project authorization.
+7. Enable `--allow-write` only after the attended access command grants exact
+   `write` access to the configured profile subject. Grant `review` separately
+   and add `--allow-review` only when that profile needs review-gated inventory,
+   canonical persistence, SDE disposition, or archive approval. Both flags are
+   upper bounds and neither creates grants. Purge retry, hold release, and event
+   retry retain separate grants. `--profile-id` is an operator assertion, not
+   authentication. A production host must replace local UID administration
+   and profile assertions with verified identity and project authorization.
 
 For each task, capture the user-approved problem, source checklist item, and
 observable success criteria before implementation. Record concise typed fact
@@ -79,7 +78,34 @@ means startup or execution failed. The worker is a local one-shot mechanism,
 not an installed systemd timer, production scheduler, or alert-delivery setup.
 Use the same trusted account that owns the database, repository config, and
 staging tree; never expose the command as an unauthenticated network service.
-Keep V2 capture disabled until the retention and recovery policy is approved.
+Keep production and broadly enabled V2 capture disabled until the retention and
+recovery policy is approved. The bounded Vhost Manager local alpha hook is
+limited to session/goal lifecycle metadata and excludes prompt/response content;
+do not broaden its event scope or enable destructive cleanup without the same
+policy approval.
+
+## Run one bounded event-router pass
+
+The package includes an explicit one-shot router command. It requires
+`--route-events`, a private absolute database path, and one or more trusted
+consumer roots. Repeat `--project-root` for every project the pass may process;
+events for projects not in that fixed list remain untouched in the shared inbox.
+The batch limit is 1–1000. The command emits content-free aggregate counts and
+returns nonzero when bound-project events remain pending/quarantined or a claim
+is lost.
+
+```sh
+curatormd-v2-router \
+  --database /absolute/path/to/private/curatormd-v2.sqlite3 \
+  --project-root /absolute/path/to/consumer-a \
+  --project-root /absolute/path/to/consumer-b \
+  --batch-limit 100 \
+  --route-events
+```
+
+This runs one bounded pass only. It does not start a worker, timer, production
+scheduler, or alert delivery. Do not run it with a partial project map as a
+substitute for the trusted production router configuration.
 
 ## Upgrade the backend or plugin contract
 
@@ -134,10 +160,14 @@ conflict repair or production recovery authority.
 - Supported here: strict repository config loading, the reference project
   plugin, local SQLite ledger, local stdio MCP launcher, explicit in-process
   authorization checks, `curatormd-v2-stage` for bounded stdin-only local
-  producer streaming, and `curatormd-v2-maintenance` for an explicitly enabled,
-  bounded due-purge retry pass.
+  producer streaming, `curatormd-v2-maintenance` for an explicitly enabled,
+  bounded due-purge retry pass, and `curatormd-v2-router` for an explicitly
+  enabled, bounded one-shot event pass over named project bindings.
+  `curatormd-v2-storage` creates integrity-checked backups and restores only
+  to an explicitly confirmed new path; it does not switch the active database.
 - Not established by install or handshake: authenticated Hermes identity,
-  runtime event mapping, global event routing, installed scheduling/alerts,
+  runtime event mapping, continuously operated global routing, installed
+  scheduling/alerts,
   source-specific producer integration, evidence-source verification, review
   identity, cross-project isolation in a deployed host, or truthful production
   monitoring.

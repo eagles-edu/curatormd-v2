@@ -46,13 +46,17 @@ class ArtifactPurger:
         if not supplied.is_absolute():
             raise PurgeError(PurgeFailureCode.INVALID_PATH, "artifact path must be absolute")
         target = Path(os.path.abspath(supplied))
+        outside_staging_root = False
+        relative = target
         try:
             relative = target.relative_to(self.staging_root)
-        except ValueError as exc:
+        except ValueError:
+            outside_staging_root = True
+        if outside_staging_root:
             raise PurgeError(
                 PurgeFailureCode.OUTSIDE_STAGING_ROOT,
                 "artifact is outside the configured staging root",
-            ) from exc
+            )
         if not relative.parts:
             raise PurgeError(
                 PurgeFailureCode.STAGING_ROOT,
@@ -76,6 +80,7 @@ class ArtifactPurger:
         root_fd = -1
         opened_directories: list[int] = []
         file_fd = -1
+        filesystem_failed = False
         try:
             try:
                 root_fd = os.open(
@@ -136,11 +141,8 @@ class ArtifactPurger:
                         "artifact path changed while its hash was being verified"
                     )
                 os.unlink(filename, dir_fd=parent_fd)
-            except OSError as exc:
-                raise PurgeError(
-                    PurgeFailureCode.FILESYSTEM_ERROR,
-                    "cannot safely inspect or remove artifact",
-                ) from exc
+            except OSError:
+                filesystem_failed = True
         finally:
             if file_fd >= 0:
                 os.close(file_fd)
@@ -148,4 +150,9 @@ class ArtifactPurger:
                 os.close(directory_fd)
             if root_fd >= 0:
                 os.close(root_fd)
+        if filesystem_failed:
+            raise PurgeError(
+                PurgeFailureCode.FILESYSTEM_ERROR,
+                "cannot safely inspect or remove artifact",
+            )
         return True

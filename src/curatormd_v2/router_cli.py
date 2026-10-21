@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 from typing import TextIO
 
+from .cli_args import positive_integer_limit
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .router import DurableEventRouter, MAX_ROUTER_BATCH, MAX_ROUTER_PROJECTS
@@ -17,17 +18,7 @@ from .store import CuratorStore
 def _positive_limit(value: str) -> int:
     """Parse a bounded event batch size without echoing rejected input."""
 
-    parse_failed = False
-    parsed = 0
-    try:
-        parsed = int(value)
-    except ValueError:
-        parse_failed = True
-    if parse_failed or not 1 <= parsed <= MAX_ROUTER_BATCH:
-        raise argparse.ArgumentTypeError(
-            f"limit must be an integer from 1 to {MAX_ROUTER_BATCH}"
-        )
-    return parsed
+    return positive_integer_limit(value, MAX_ROUTER_BATCH)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -89,53 +80,47 @@ def main(
         print("Curator V2 router failed (invalid project binding count).", file=errors)
         return 2
 
-    store: CuratorStore | None = None
     try:
         configs = tuple(ProjectConfig.load(root) for root in arguments.project_root)
         project_ids = tuple(config.project_id for config in configs)
         if len(set(project_ids)) != len(project_ids):
             raise ValueError("duplicate configured project binding")
-        store = CuratorStore(arguments.database)
-        services = {
-            config.project_id: ProjectPlugin.bind(config, store).service
-            for config in configs
-        }
-        result = DurableEventRouter(store, services).route_once(
-            arguments.batch_limit
-        )
-        queue_counts = _queue_counts(store, project_ids)
-        output.write(
-            json.dumps(
-                {
-                    "attempted": result.attempted_count,
-                    "claim_lost": result.claim_lost_count,
-                    "failed": result.failed_count,
-                    "processed": result.processed_count,
-                    "project_count": len(project_ids),
-                    **queue_counts,
-                },
-                separators=(",", ":"),
-                sort_keys=True,
+        with CuratorStore(arguments.database) as store:
+            services = {
+                config.project_id: ProjectPlugin.bind(config, store).service
+                for config in configs
+            }
+            result = DurableEventRouter(store, services).route_once(
+                arguments.batch_limit
             )
-            + "\n"
-        )
-        return int(
-            bool(
-                queue_counts["pending"]
-                or queue_counts["quarantined"]
-                or result.claim_lost_count
+            queue_counts = _queue_counts(store, project_ids)
+            output.write(
+                json.dumps(
+                    {
+                        "attempted": result.attempted_count,
+                        "claim_lost": result.claim_lost_count,
+                        "failed": result.failed_count,
+                        "processed": result.processed_count,
+                        "project_count": len(project_ids),
+                        **queue_counts,
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
             )
-        )
+            return int(
+                bool(
+                    queue_counts["pending"]
+                    or queue_counts["quarantined"]
+                    or result.claim_lost_count
+                )
+            )
     except Exception:  # pylint: disable=broad-exception-caught
         print(
             "Curator V2 router failed (configuration or routing error).",
             file=errors,
         )
         return 2
-    finally:
-        if store is not None:
-            store.close()
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

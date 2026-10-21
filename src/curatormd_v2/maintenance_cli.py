@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 from typing import TextIO
 
+from .cli_args import positive_integer_limit
 from .models import PurgeStatus
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
@@ -17,17 +18,7 @@ from .store import CuratorStore
 def _positive_limit(value: str) -> int:
     """Parse a bounded scheduler batch size."""
 
-    parse_failed = False
-    parsed = 0
-    try:
-        parsed = int(value)
-    except ValueError:
-        parse_failed = True
-    if parse_failed:
-        raise argparse.ArgumentTypeError("limit must be an integer from 1 to 1000")
-    if not 1 <= parsed <= 1000:
-        raise argparse.ArgumentTypeError("limit must be an integer from 1 to 1000")
-    return parsed
+    return positive_integer_limit(value, 1000)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -70,30 +61,29 @@ def main(
         print("Curator V2 maintenance failed (invalid configuration).", file=errors)
         return 2
 
-    store: CuratorStore | None = None
     try:
         config = ProjectConfig.load(arguments.project_root)
-        store = CuratorStore(database)
-        plugin = ProjectPlugin.bind(config, store)
-        receipts = plugin.retry_due_purges(arguments.batch_limit)
-        completed = sum(
-            receipt.purge_status is PurgeStatus.COMPLETE for receipt in receipts
-        )
-        pending = len(receipts) - completed
-        output.write(
-            json.dumps(
-                {
-                    "project_id": config.project_id,
-                    "processed": len(receipts),
-                    "complete": completed,
-                    "pending": pending,
-                },
-                separators=(",", ":"),
-                sort_keys=True,
+        with CuratorStore(database) as store:
+            plugin = ProjectPlugin.bind(config, store)
+            receipts = plugin.retry_due_purges(arguments.batch_limit)
+            completed = sum(
+                receipt.purge_status is PurgeStatus.COMPLETE for receipt in receipts
             )
-            + "\n"
-        )
-        return 1 if pending else 0
+            pending = len(receipts) - completed
+            output.write(
+                json.dumps(
+                    {
+                        "project_id": config.project_id,
+                        "processed": len(receipts),
+                        "complete": completed,
+                        "pending": pending,
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            return 1 if pending else 0
     except Exception:  # pylint: disable=broad-exception-caught
         # The boundary must sanitize any host adapter or filesystem exception.
         print(
@@ -101,10 +91,5 @@ def main(
             file=errors,
         )
         return 2
-    finally:
-        if store is not None:
-            store.close()
-
-
 if __name__ == "__main__":
     raise SystemExit(main())
