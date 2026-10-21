@@ -2,6 +2,13 @@
 
 ## 2026-10-22
 
+- Split project Markdown marker indexing from block classification while
+  preserving the bounded marker cap and orphan/malformed counts. All 19 focused
+  Markdown tests and the full 368-test suite pass; strict Pyright, errors-only
+  Pylint, Bandit, locked dependency audit, and `git diff --check` pass. Full
+  Pylint inventory is 289 findings (277 refactor, 12 oversized-module
+  convention); the marker-scan function no longer reports excess locals.
+  Repository-wide cleanup remains open.
 - Simplified bounded project Markdown reconciliation without changing its
   fields or read-only behavior; the project page reuses the target content and
   computes its UTF-8 scan size when constructing the result. All 19 focused

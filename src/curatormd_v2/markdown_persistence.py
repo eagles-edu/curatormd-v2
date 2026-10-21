@@ -270,8 +270,30 @@ class MarkdownPersistenceAdapter:
     ) -> tuple[tuple[str, ...], tuple[str, ...], int, int, bool]:
         """Find valid Markdown blocks whose goal IDs are absent from SQLite."""
 
-        marker_groups: dict[str, dict[str, list[int]]] = {}
         lines = content.splitlines()
+        marker_groups, unrecognized_count, inventory_complete = (
+            self._collect_project_marker_groups(lines)
+        )
+        orphan_hashes, malformed_hashes, malformed_count = (
+            self._classify_project_marker_groups(
+                lines, marker_groups, unrecognized_count
+            )
+        )
+        return (
+            tuple(sorted(orphan_hashes)),
+            tuple(sorted(malformed_hashes)),
+            malformed_count,
+            unrecognized_count,
+            inventory_complete,
+        )
+
+    @staticmethod
+    def _collect_project_marker_groups(
+        lines: list[str],
+    ) -> tuple[dict[str, dict[str, list[int]]], int, bool]:
+        """Collect a bounded marker index without interpreting block contents."""
+
+        marker_groups: dict[str, dict[str, list[int]]] = {}
         marker_count = 0
         unrecognized_count = 0
         inventory_complete = True
@@ -290,6 +312,16 @@ class MarkdownPersistenceAdapter:
             marker_groups.setdefault(marker_hash, {"start": [], "end": []})[
                 marker_side
             ].append(index)
+        return marker_groups, unrecognized_count, inventory_complete
+
+    def _classify_project_marker_groups(
+        self,
+        lines: list[str],
+        marker_groups: dict[str, dict[str, list[int]]],
+        unrecognized_count: int,
+    ) -> tuple[list[str], list[str], int]:
+        """Classify paired markers and find orphans already absent from SQLite."""
+
         malformed_count = unrecognized_count
         orphan_hashes: list[str] = []
         malformed_hashes: list[str] = []
@@ -323,13 +355,7 @@ class MarkdownPersistenceAdapter:
                 self.store.get_goal(goal_id, self.project_id)
             except NotFoundError:
                 orphan_hashes.append(marker_hash)
-        return (
-            tuple(sorted(set(orphan_hashes))),
-            tuple(sorted(set(malformed_hashes))),
-            malformed_count,
-            unrecognized_count,
-            inventory_complete,
-        )
+        return orphan_hashes, malformed_hashes, malformed_count
 
     def verify_projection(self, result: MarkdownProjectionResult) -> None:
         """Re-read the configured target before using its hash as purge proof."""
