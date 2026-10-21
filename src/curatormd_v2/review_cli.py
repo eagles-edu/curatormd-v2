@@ -370,7 +370,13 @@ def main(
         caller = AuthenticatedCaller(subject)
         api = _build_api(config, store)
         if arguments.operation == "queue":
-            _write_json(output, {"project_id": config.project_id, "pending": _queue(api, caller, config.project_id)})
+            _write_json(
+                output,
+                {
+                    "project_id": config.project_id,
+                    "pending": _queue(api, caller, config.project_id),
+                },
+            )
             return 0
         if arguments.operation == "expiry-retry":
             receipt = api.retry_expiry_purge(

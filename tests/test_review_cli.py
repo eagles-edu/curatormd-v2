@@ -16,6 +16,8 @@ from typing import Any
 import unittest
 from unittest.mock import patch
 
+from evidence_fixtures import attest_test_evidence
+
 from curatormd_v2.api import AuthenticatedCaller
 from curatormd_v2.access_cli import main as access_main
 from curatormd_v2.evidence import EvidenceVerificationContext
@@ -32,7 +34,6 @@ from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.review_cli import LocalUIDReviewAuthorizer, main
 from curatormd_v2.reviews import ReviewAuthorizationError
 from curatormd_v2.store import CuratorStore
-from evidence_fixtures import attest_test_evidence
 
 
 class _PurgeStatus(StrEnum):
@@ -126,6 +127,7 @@ class _TestEvidenceVerifier:
     def attest(
         self, evidence: EvidenceRef, context: EvidenceVerificationContext
     ):
+        """Return fixture evidence only for this test's known locator."""
         if evidence.locator != "review-cli-proof:verified":
             return None
         return attest_test_evidence(evidence, context)
@@ -139,6 +141,7 @@ class _ReviewAPI:
     def sde_review_packet(
         self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
     ) -> _Packet:
+        """Record and return the configured review packet."""
         self.calls.append(("packet", (caller.subject_id, project_id, candidate_id)))
         return self.packet
 
@@ -153,6 +156,7 @@ class _ReviewAPI:
         artifact_inventory_complete: bool,
         rationale: str,
     ) -> _Receipt:
+        """Record the exact decision request and return its fixture receipt."""
         self.calls.append(
             (
                 "confirm",
@@ -170,14 +174,23 @@ class _ReviewAPI:
         return _Receipt()
 
     def persist_goal(
-        self, caller: AuthenticatedCaller, project_id: str, goal_id: str, target: str
+        self,
+        _caller: AuthenticatedCaller,
+        project_id: str,
+        goal_id: str,
+        target: str,
     ) -> _Projection:
+        """Record the requested project-local Markdown projection."""
         self.calls.append(("persist", (project_id, goal_id, target)))
         return _Projection()
 
     def artifact_purge_status(
-        self, caller: AuthenticatedCaller, project_id: str, receipt_id: str
+        self,
+        _caller: AuthenticatedCaller,
+        project_id: str,
+        receipt_id: str,
     ) -> tuple[_Receipt, tuple[()]]:
+        """Record a status lookup and return the complete fixture receipt."""
         self.calls.append(("purge_status", (project_id, receipt_id)))
         return _Receipt(), ()
 

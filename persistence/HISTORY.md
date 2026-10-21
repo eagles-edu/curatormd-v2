@@ -2574,3 +2574,15 @@
 **Open gate:** Source-specific producer wiring, network-filesystem locking, production retention policy, scheduler deployment, authenticated Hermes reviewer identity, and live runtime remain open. No GPTMD files or V1 runtime state were changed.
 
 **Outcome:** One local implementation row is closed; the V2 goal remains active and production readiness is not claimed.
+
+## 2026-10-22 — Reduce repository-wide Pylint findings
+
+**Intent:** Continue the open V2 repository-quality cleanup with behavior-preserving fixes that remove straightforward convention findings.
+
+**Changed fact:** Reordered test-fixture imports, documented test doubles, marked intentionally unused fixture parameters, and wrapped long SQL/JSON lines. The fresh full Pylint inventory fell from 306 findings (283 refactor, 21 convention, 2 warning) to 295 (283 refactor, 12 convention, no warnings).
+
+**Verification:** Focused review-CLI and project-plugin suites pass 51 tests; strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, `uv audit --locked --preview-features audit-command`, `uv lock --check`, and `git diff --check` pass. The full suite's latest verified result before this style-only slice remains 368 passing tests.
+
+**Open gate:** Repository-wide refactor findings and the 12 oversized-module convention findings remain open; this cleanup does not close the tracked full-Pylint item. Production retention, authenticated Hermes identity, deployment, and live-runtime gates remain open.
+
+**Outcome:** Eleven non-blocking findings are removed without changing runtime behavior; the full Curator V2 goal remains active.

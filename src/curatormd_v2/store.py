@@ -1371,7 +1371,8 @@ class CuratorStore:
                 """SELECT DISTINCT r.receipt_id FROM expiry_purge_receipts AS r
                    JOIN expiry_purge_targets AS t ON t.receipt_id = r.receipt_id
                    WHERE r.project_id = ? AND r.status = ?
-                     AND t.status IN (?, ?) AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)
+                     AND t.status IN (?, ?)
+                     AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)
                    ORDER BY r.created_at, r.receipt_id LIMIT ?""",
                 (
                     project_id,

@@ -20,6 +20,7 @@ from typing import BinaryIO, cast
 from unittest.mock import patch
 
 from project_fixtures import create_consumer_repo
+from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import CuratorStore, SuccessCriterion
 from curatormd_v2.events import EventEnvelope, GoalStarted
@@ -33,7 +34,6 @@ from curatormd_v2.project_config import (
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
 from curatormd_v2.testing import assert_goal_started_event_contract
-from purge_fixtures import TestReviewAuthorizer
 
 
 class ProjectPluginTests(unittest.TestCase):
