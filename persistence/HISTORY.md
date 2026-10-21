@@ -2,6 +2,14 @@
 
 ## 2026-10-22
 
+- Split maintenance retry accounting/output from command validation and
+  isolated stable staged-file hashing from descriptor setup/closure. This
+  preserves bounded retry behavior and the no-follow, file-identity, size, and
+  mutation checks. Five maintenance CLI tests and 43 project-plugin tests pass;
+  the full 368-test suite, strict Pyright, errors-only Pylint, Bandit, locked
+  dependency audit, and `git diff --check` pass. Full Pylint inventory is 291
+  findings (279 refactor, 12 oversized-module convention); these two helpers
+  have no remaining findings. Broader cleanup remains open.
 - Refactored the review CLI regression setup into shared, typed fixture helpers
   for exact local reviewer grants and candidate/staging preparation. All eight
   focused review CLI tests and the full 368-test suite pass; strict Pyright,

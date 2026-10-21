@@ -2039,6 +2039,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       295 to 293; review-CLI file findings fell from 38 to 36. This removes two
       test-local complexity findings without suppressions; broad cleanup
       remains open.
+      Further progress (2026-10-22): extracted bounded retry execution from
+      the maintenance CLI entrypoint and separated stable descriptor-based
+      staged-file hashing into a helper, preserving no-follow reads, identity
+      checks, byte-count validation, and descriptor closure. Five maintenance
+      CLI tests and 43 project-plugin tests pass. The 368-test full suite,
+      strict Pyright, errors-only Pylint, Bandit, dependency audit, and diff
+      check pass. Full Pylint is down to 291 findings (279 refactor, 12
+      oversized-module convention); the maintenance CLI and staged-file hash
+      helper have no remaining findings. Repository-wide cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

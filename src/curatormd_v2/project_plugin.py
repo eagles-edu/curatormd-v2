@@ -1222,25 +1222,37 @@ class ProjectPlugin:
             dir_fd=directory_fd,
         )
         try:
-            before = os.fstat(file_fd)
-            observed_identity = (observed.st_dev, observed.st_ino, observed.st_size)
-            opened_identity = (before.st_dev, before.st_ino, before.st_size)
-            if not stat.S_ISREG(before.st_mode) or opened_identity != observed_identity:
-                raise ValueError("artifact changed during inventory discovery")
-            digest = hashlib.sha256()
-            bytes_read = 0
-            with os.fdopen(os.dup(file_fd), "rb") as source:
-                for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                    bytes_read += len(chunk)
-                    digest.update(chunk)
-            after = os.fstat(file_fd)
-            before_state = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
-            after_state = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-            if before_state != after_state or bytes_read != before.st_size:
-                raise ValueError("artifact changed during inventory discovery")
-            return ArtifactRef(str(absolute_path), digest.hexdigest())
+            return ProjectPlugin._hash_open_staged_file(
+                file_fd, observed, absolute_path
+            )
         finally:
             os.close(file_fd)
+
+    @staticmethod
+    def _hash_open_staged_file(
+        file_fd: int,
+        observed: os.stat_result,
+        absolute_path: Path,
+    ) -> ArtifactRef:
+        """Hash an opened file only while its identity and content stay stable."""
+
+        before = os.fstat(file_fd)
+        observed_identity = (observed.st_dev, observed.st_ino, observed.st_size)
+        opened_identity = (before.st_dev, before.st_ino, before.st_size)
+        if not stat.S_ISREG(before.st_mode) or opened_identity != observed_identity:
+            raise ValueError("artifact changed during inventory discovery")
+        digest = hashlib.sha256()
+        bytes_read = 0
+        with os.fdopen(os.dup(file_fd), "rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                bytes_read += len(chunk)
+                digest.update(chunk)
+        after = os.fstat(file_fd)
+        before_state = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        after_state = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        if before_state != after_state or bytes_read != before.st_size:
+            raise ValueError("artifact changed during inventory discovery")
+        return ArtifactRef(str(absolute_path), digest.hexdigest())
 
     def goal_list(
         self, statuses: tuple[GoalStatus, ...] = ()
