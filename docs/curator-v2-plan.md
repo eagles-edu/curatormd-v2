@@ -169,7 +169,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 127 of 153 delivery rows are complete; 26 are open. Recount the
+(2026-10-22): 128 of 153 delivery rows are complete; 25 are open. Recount the
 rows for future updates; historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
@@ -1142,7 +1142,7 @@ consumer plugin, Hermes integration, or production deployment.
       registered by the trusted host. This reference plugin exposes no action
       execution API; future execution still needs its own scoped policy and
       tests. See [project plugin config](project-plugin-v1.md).
-- [ ] Implement local ephemeral staging with bounded retention and a complete
+- [x] Implement local ephemeral staging with bounded retention and a complete
       purge inventory; do not treat local staging as canonical persistence.
       Progress (2026-10-19): review inventories now bind to
       `.curatormd-v2/staging/<goal-id>/`, carry `scope_goal_id`, treat a missing
@@ -1198,11 +1198,15 @@ consumer plugin, Hermes integration, or production deployment.
       holds, and retains content-free `purge_pending` failures for backoff
       retries. The review CLI refuses hidden prompts and can retry only a prior
       receipt; the one-shot maintenance command retries SDE and expiry receipts
-      without creating approvals. The hard age threshold remains 72 hours; no
-      seven-day window is configured. Production retention policy, scheduler
-      deployment, and Hermes-authenticated reviewer identity remain open, so
-      this row remains open.
-      Production retention policy remains a separate open gate.
+      without creating approvals. The hard age threshold is 72 hours, and
+      eligibility begins promptly after recording and related SDE disposition.
+      This local-alpha checklist item is complete: it covers goal-scoped bounded
+      staging, full fail-closed inventory, separate canonical facts, an attended
+      exact-inventory approval, and durable purge receipts with retry status.
+      Real source-producer wiring and network-filesystem locking remain open in
+      their respective integration work. Production retention policy, scheduler
+      deployment, and Hermes-authenticated reviewer identity remain separate
+      release gates; this local implementation does not close them.
 - [ ] Test two isolated consumer repositories, including cross-project access
       denial and independent configuration/persistence through real plugins and
       their configured persistence adapters. Progress (2026-10-19): the local

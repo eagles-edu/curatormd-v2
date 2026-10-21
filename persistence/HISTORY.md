@@ -2562,3 +2562,15 @@
 **Open gate:** Production scheduler/alert integration, authenticated Hermes identity, deployment, and live runtime remain open. The delivery checklist remains 127/153 complete and 26 open.
 
 **Outcome:** Local health cannot report green while an attended expiry receipt or its target remains pending; this is local aggregation evidence only.
+
+## 2026-10-22 — Close local staging and expiry checklist item
+
+**Intent:** Record the approved 72-hour local-alpha maximum accurately and count completed V2 delivery work without closing external release gates.
+
+**Changed fact:** The delivery checklist now marks local ephemeral staging complete based on bounded goal-scoped writes, complete fail-closed inventory, separation from canonical facts, attended exact-inventory approval, and durable purge receipts with retry status. The snapshot is 128/153 complete and 25 open. The local-alpha maximum remains 72 hours; the separate dirty `docs/git-1.md` was preserved unchanged.
+
+**Verification:** Curator's full locked test suite remains verified at 368 passing tests on the current implementation. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, `uv audit --locked --preview-features audit-command`, `uv lock --check`, and `git diff --check` pass.
+
+**Open gate:** Source-specific producer wiring, network-filesystem locking, production retention policy, scheduler deployment, authenticated Hermes reviewer identity, and live runtime remain open. No GPTMD files or V1 runtime state were changed.
+
+**Outcome:** One local implementation row is closed; the V2 goal remains active and production readiness is not claimed.
