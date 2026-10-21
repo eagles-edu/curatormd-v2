@@ -1889,6 +1889,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       snapshot boundary. Its focused API regression passes; strict Pyright,
       errors-only Pylint, and `git diff --check` pass. Full warning-level
       findings fall from 273 to 272; repository-wide cleanup remains open.
+      Further progress (2026-10-21): constructed the bound `ProjectPlugin`
+      directly in the local MCP API map, removing one unnecessary local from
+      `build_local_profile_mcp`. All 13 hosted-MCP tests pass, and focused
+      `R0914` Pylint, strict Pyright, repository errors-only Pylint, Bandit,
+      and `git diff --check` pass. The previous full warning inventory had 272
+      findings; it was not recomputed for this small change. Repository-wide
+      Pylint cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

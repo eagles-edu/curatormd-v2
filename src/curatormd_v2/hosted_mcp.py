@@ -107,9 +107,8 @@ def build_local_profile_mcp(
             caller, config.project_id, ProjectAction.REVIEW
         ):
             raise ValueError("requested project review grant is not active")
-        plugin = ProjectPlugin.bind(config, store)
         api = AuthenticatedCuratorAPI(
-            {config.project_id: plugin},
+            {config.project_id: ProjectPlugin.bind(config, store)},
             authorizer=authorizer,
             limiter=SQLiteTokenBucket(store),
         )
