@@ -1542,6 +1542,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       clean. Host Steward remains Hermes Core-owned; these local checks do not
       prove live root-account enablement, authenticated reviewer identity,
       production supervision, or deployment recovery.
+      Additional verification (2026-10-22, unchanged Hermes source head
+      `9b8fc71e30`): focused Host Steward and gateway-hook suites pass 39 tests,
+      and Hermes Core `python3 scripts/check` passes all 12 checks. The Hermes
+      checkout remains clean. This rechecks local integration code only; root
+      account enablement, authenticated identity, live supervision, and
+      deployment recovery remain open.
 
       Vhost alpha package update (2026-10-21): rebuilt wheel SHA-256
       `b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3`
