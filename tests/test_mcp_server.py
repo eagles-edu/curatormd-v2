@@ -720,7 +720,8 @@ class McpServerTests(unittest.TestCase):
                             report_content.text,
                         )
                         self.assertIn(
-                            "`mcp-sde-verification` — verification: The integration evidence passed",
+                            "`mcp-sde-verification` — verification: "
+                            "The integration evidence passed",
                             report_content.text,
                         )
                         self.assertIn(
@@ -898,7 +899,8 @@ class McpServerTests(unittest.TestCase):
                                     "The change establishes a broad durable production impact"
                                 ),
                                 "impact": "Expected production impact is unmeasured",
-                                "retrieval_value": "Helps distinguish claims from observed outcomes",
+                                "retrieval_value": "Helps distinguish claims from "
+                                "observed outcomes",
                                 "fact_ids": [
                                     "mcp-rejected-change",
                                     "mcp-rejected-verification",

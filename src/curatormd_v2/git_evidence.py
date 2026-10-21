@@ -29,7 +29,9 @@ MAX_GIT_DIFF_BYTES = 32 * 1024 * 1024
 MAX_TEST_OUTPUT_BYTES = 4 * 1024 * 1024
 GIT_COMMAND_TIMEOUT_SECONDS = 30
 TEST_RUN_TIMEOUT_SECONDS = 300
-_COMMIT_RANGE_RE = re.compile(r"^git-diff:([0-9a-f]{40}|[0-9a-f]{64})\.\.([0-9a-f]{40}|[0-9a-f]{64})$")
+_COMMIT_RANGE_RE = re.compile(
+    r"^git-diff:([0-9a-f]{40}|[0-9a-f]{64})\.\.([0-9a-f]{40}|[0-9a-f]{64})$"
+)
 _TEST_LOCATOR_RE = re.compile(
     r"^git-test:([A-Za-z0-9][A-Za-z0-9._:-]{0,127}):([0-9a-f]{40}|[0-9a-f]{64})$"
 )

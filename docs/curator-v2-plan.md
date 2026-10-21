@@ -1854,6 +1854,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       from 264 to 261 findings, with duplicate-code messages reduced from 27
       to 24. Repository-wide cleanup remains open; this change closes no
       checklist item.
+      Additional progress (2026-10-21): a fresh full warning-level inventory
+      at `e609fa6` reported 289 findings, including four line-length and two
+      missing-helper-docstring findings in Git evidence and privacy test files.
+      This cleanup fixes those six findings without changing behavior. The
+      affected API, MCP, and Markdown suites pass 60 tests; strict Pyright and
+      targeted Pylint for the changed files pass. Full repository-wide Pylint
+      cleanup remains open, and its total has not yet been recomputed after
+      this delta.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

@@ -731,9 +731,11 @@ class MarkdownPersistenceTests(unittest.TestCase):
                 self.source.close()
 
             def fileno(self) -> int:
+                """Expose the wrapped descriptor for the injected reader."""
                 return self.source.fileno()
 
             def read(self, _limit: int) -> bytes:
+                """Raise a private-path error to test boundary sanitization."""
                 raise OSError(f"read failed: {private_path}")
 
         def wrap_fdopen(descriptor: int, mode: str) -> object:

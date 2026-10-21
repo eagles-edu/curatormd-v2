@@ -2334,3 +2334,15 @@
 **Open gate:** Hosted CI verifies repository/package behavior for this source revision; owner-approved retention, authenticated identity, production scheduling/recovery, deployment, and live-runtime gates remain open. The delivery checklist remains 126/153 complete (27 open).
 
 **Outcome:** The staging-inventory implementation and release documentation have local and hosted repository-level verification. No consumer or Hermes runtime state changed.
+
+## 2026-10-21 — Remove targeted Curator V2 Pylint findings
+
+**Intent:** Reduce verified local lint findings without weakening the full repository Pylint policy.
+
+**Changed fact:** Fixed four line-length findings and two missing nested-helper docstrings across Git evidence and API, MCP, and Markdown tests. The broader warning-level Pylint cleanup remains open.
+
+**Verification:** The targeted C0301/C0116 Pylint run passes for all changed files, and repository-wide errors-only Pylint passes. The focused Markdown, API, and MCP suites pass 60 tests; strict Pyright reports zero diagnostics and `git diff --check` passes.
+
+**Open gate:** The full warning-level inventory at `e609fa6` contained 289 findings before this cleanup; the current repository total has not been recounted. The full Pylint checklist item remains open.
+
+**Outcome:** Six local diagnostics were removed with test coverage passing; no runtime, consumer, or external gate changed.

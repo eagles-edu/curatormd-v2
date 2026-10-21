@@ -602,7 +602,8 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertIn("staging_inventory_incomplete", health.gate_codes)
         self.assertIn("staging_adapter_unavailable", health.gate_codes)
         self.assertIn(
-            'curatormd_project_open_gate{project_id="project-a",gate="staging_adapter_unavailable"} 1',
+            'curatormd_project_open_gate{project_id="project-a",'
+            'gate="staging_adapter_unavailable"} 1',
             metrics,
         )
 
