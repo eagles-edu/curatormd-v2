@@ -302,6 +302,9 @@ def main(
         if arguments.operation == "review" and not output.isatty():
             errors.write("Refusing local SDE review without a visible interactive TTY.\n")
             return 2
+        if arguments.operation == "review" and not errors.isatty():
+            errors.write("Refusing local SDE review without a visible prompt TTY.\n")
+            return 2
         database = arguments.database.expanduser()
         if not database.is_absolute() or not database.is_file() or database.is_symlink():
             raise ValueError("database must be an existing absolute regular file")

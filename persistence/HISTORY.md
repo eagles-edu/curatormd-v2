@@ -2502,3 +2502,15 @@
 **Open gate:** These are local disposable repository/process tests. They do not authenticate Hermes identities, verify root-account registry provisioning, or establish deployment isolation. Retention, deployment, and live-runtime gates remain open.
 
 **Outcome:** This update targets local exact-grant and repository-root isolation only; no production identity or runtime gate is closed.
+
+## 2026-10-22 — Record approved local-alpha retention defaults and visible prompts
+
+**Intent:** Capture the owner's local-alpha retention decision and prevent attended SDE reviews from prompting when their error/prompt stream is hidden.
+
+**Changed fact:** The owner approved immediate expiry eligibility after compact facts are recorded and related SDE review is approved/rejected, with a 72-hour absolute maximum age for raw chat/transcript, cue, import, scratch, generated intermediate, and duplicate artifacts. The decision clears only the pending-SDE review hold; explicit legal/operational holds require separate release. The attended reviewer now requires stdin, stdout, and stderr to be TTYs before opening the database. No age-based expiry ledger or expiry-only approval workflow is implemented by this documentation/test update.
+
+**Verification:** All six focused attended-reviewer tests pass, including refusal when stderr is not a TTY. The full locked Curator suite passes 360 tests; strict Pyright reports zero diagnostics; errors-only Pylint and Bandit pass; dependency audit, lock check, and `git diff --check` pass.
+
+**Open gate:** Age-based expiry discovery, attended approval of expiry-only exact inventories, and scheduler retry remain implementation work. Production retention policy, authenticated Hermes identity, deployment, and live-runtime gates remain open.
+
+**Outcome:** Local-alpha retention policy is approved and recorded; implementation and production evidence remain distinct.

@@ -99,6 +99,11 @@ class _InteractiveOutput(StringIO):
         return True
 
 
+class _InteractiveErrors(StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
 class _PipedOutput(StringIO):
     def isatty(self) -> bool:
         return False
@@ -257,7 +262,7 @@ class ReviewCliTests(unittest.TestCase):
             )
             stdin = _InteractiveInput(f"approve\n{phrase}\nVerified and approved\n")
             stdout = _InteractiveOutput()
-            stderr = StringIO()
+            stderr = _InteractiveErrors()
             with patch("curatormd_v2.review_cli._build_api", return_value=api):
                 result = main(
                     [
@@ -310,6 +315,31 @@ class ReviewCliTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertFalse(database.exists())
             self.assertIn("interactive TTY", stderr.getvalue())
+
+    def test_review_refuses_hidden_prompts_before_opening_database(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            self._project(root)
+            database = Path(temporary) / "missing.sqlite3"
+            errors = StringIO()
+            result = main(
+                [
+                    "--project-root",
+                    str(root),
+                    "--database",
+                    str(database),
+                    "review",
+                    "candidate-a",
+                ],
+                stdin=_InteractiveInput(""),
+                stdout=_InteractiveOutput(),
+                stderr=errors,
+            )
+
+            self.assertEqual(result, 2)
+            self.assertFalse(database.exists())
+            self.assertIn("prompt TTY", errors.getvalue())
 
     def test_review_refuses_piped_output_before_opening_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -448,7 +478,7 @@ class ReviewCliTests(unittest.TestCase):
                     f"approve\n{phrase}\nVerified in the disposable suite\n"
                 ),
                 stdout=result_output,
-                stderr=result_errors,
+                stderr=_InteractiveErrors(),
             )
 
             self.assertEqual(result, 0, result_errors.getvalue())

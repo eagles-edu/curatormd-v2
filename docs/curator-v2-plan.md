@@ -169,7 +169,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-21): 126 of 153 delivery rows are complete; 27 are open. Recount the
+(2026-10-22): 127 of 153 delivery rows are complete; 26 are open. Recount the
 rows for future updates; historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
@@ -1169,7 +1169,16 @@ consumer plugin, Hermes integration, or production deployment.
       them from disappearing from the project snapshot. A regression verifies
       a complete manifest across two active goals and one orphaned directory.
       This remains read-only inventory; it does not authorize purge, define age
-      retention, or prove every producer uses the staging adapter.
+      retention, or prove every producer uses the staging adapter. Additional
+      policy decision (2026-10-22): the owner approved a local-alpha default
+      under which raw chat/transcript, cue, import, scratch, generated
+      intermediate, and duplicate artifacts become eligible for expiry once
+      compact facts are recorded and any related SDE is approved or rejected,
+      with 72 hours as the absolute maximum age. That SDE decision clears
+      only its pending-review hold; legal/operational artifact holds require
+      separate release. Age-based eligibility and an attended exact-inventory
+      expiry approval path are not implemented yet, so this row remains open.
+      Production retention policy remains a separate open gate.
 - [ ] Test two isolated consumer repositories, including cross-project access
       denial and independent configuration/persistence through real plugins and
       their configured persistence adapters. Progress (2026-10-19): the local

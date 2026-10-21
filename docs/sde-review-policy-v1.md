@@ -60,5 +60,21 @@ this workflow. Other API callers may record a decision and complete an
 inventory separately; they do not inherit the local reviewer's combined
 confirmation.
 
-This policy does not define legal holds, project-specific retention, or an
-automatic compaction policy. Those remain explicit release gates.
+## Approved local-alpha artifact retention default
+
+The owner approved this local-alpha default on 2026-10-22: raw chat/transcript,
+cue, import, scratch, generated intermediate, and duplicate artifacts become
+eligible for expiry as soon as their compact facts are recorded and any related
+SDE is approved or rejected, with 72 hours as the absolute maximum age. The
+explicit SDE decision clears only the pending-SDE review hold. Legal or
+operational artifact holds remain in force until separately released by an
+authorized reviewer. Purge still requires a complete, freshly hashed inventory
+and an explicit human approval of that exact inventory; a scheduler may retry
+only a purge already approved in a durable receipt.
+
+This is the approved policy for local alpha, not evidence that age-based expiry
+or an expiry scheduler is implemented. The SDE review path already purges its
+exact unheld inventory after canonical persistence. Age metadata, expiry
+discovery, attended approval of an expiry-only inventory, and retry scheduling
+remain implementation work. Production retention and deployment-owner policy
+remain open release gates.
