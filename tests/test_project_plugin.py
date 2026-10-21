@@ -24,7 +24,13 @@ from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import CuratorStore, SuccessCriterion
 from curatormd_v2.events import EventEnvelope, GoalStarted
-from curatormd_v2.models import FactKind, Materiality, ReviewDecision, SDECandidate
+from curatormd_v2.models import (
+    FactKind,
+    Materiality,
+    ReviewDecision,
+    SDECandidate,
+    SDEStatus,
+)
 from curatormd_v2.project_config import (
     CONFIG_FILENAME,
     PROJECT_PLUGIN_API_VERSION,
@@ -642,8 +648,8 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertEqual(after_facts.eligible_artifacts, (artifact,))
         self.assertEqual(after_facts.pending_sde_artifact_count, 0)
 
-    def test_pending_sde_pauses_expiry_even_after_the_72_hour_maximum(self) -> None:
-        """Pending SDE review blocks immediate and max-age eligibility."""
+    def test_pending_sde_cannot_extend_the_72_hour_retention_ceiling(self) -> None:
+        """Pending review delays prompt expiry but not the absolute age cap."""
 
         plugin = ProjectPlugin.bind(
             ProjectConfig.load(self.root),
@@ -660,19 +666,6 @@ class ProjectPluginTests(unittest.TestCase):
         fact, _ = plugin.service.goal_fact(
             goal_id, FactKind.RESEARCH, "A compact fact for the pending review"
         )
-        before_sde = plugin.discover_expired_staging_artifacts(
-            staged_at + timedelta(hours=73)
-        )
-        self.assertEqual(before_sde.eligible_artifacts, (artifact,))
-        manifest_sha256 = before_sde.manifest_sha256
-        if manifest_sha256 is None:
-            self.fail("complete expiry snapshot must have a manifest hash")
-        expiry_receipt = self.store.create_expiry_purge_receipt(
-            "consumer-a",
-            "test-reviewer",
-            manifest_sha256,
-            before_sde.eligible_artifacts,
-        )
         self.store.add_sde_candidate(
             SDECandidate(
                 goal_id=goal_id,
@@ -685,32 +678,43 @@ class ProjectPluginTests(unittest.TestCase):
             project_id="consumer-a",
         )
 
-        snapshot = plugin.discover_expired_staging_artifacts(
-            staged_at + timedelta(hours=73)
+        before_cap = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=71, minutes=59)
+        )
+        self.assertEqual(before_cap.eligible_artifacts, ())
+        self.assertEqual(before_cap.pending_sde_artifact_count, 1)
+
+        at_cap = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
         )
 
-        self.assertTrue(snapshot.inventory_complete)
-        self.assertEqual(snapshot.eligible_artifacts, ())
-        self.assertEqual(snapshot.pending_sde_artifact_count, 1)
+        self.assertTrue(at_cap.inventory_complete)
+        self.assertEqual(at_cap.eligible_artifacts, (artifact,))
+        self.assertEqual(at_cap.pending_sde_artifact_count, 1)
         self.assertTrue(Path(artifact.path).is_file())
-        paused_receipt = plugin.retry_expiry_purge(expiry_receipt.receipt_id)
-        self.assertEqual(paused_receipt.status.value, "purge_pending")
-        self.assertTrue(Path(artifact.path).is_file())
+        manifest_sha256 = at_cap.manifest_sha256
+        if manifest_sha256 is None:
+            self.fail("complete expiry snapshot must have a manifest hash")
+        at_cap_time = staged_at + timedelta(hours=72)
+        with patch("curatormd_v2.store.utc_now", return_value=at_cap_time.isoformat()):
+            receipt = plugin.approve_expired_staging_inventory(
+                at_cap.eligible_artifacts,
+                manifest_sha256,
+                now=at_cap_time,
+            )
+        self.assertEqual(receipt.status.value, "complete")
+        self.assertFalse(Path(artifact.path).exists())
 
         candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
+        self.assertEqual(candidate.status, SDEStatus.PENDING_REVIEW)
         plugin.service.sde_confirm(
             candidate.candidate_id,
             ReviewDecision.APPROVED,
             (),
             artifact_inventory_complete=True,
         )
-        after_decision = plugin.discover_expired_staging_artifacts(
-            staged_at + timedelta(hours=73)
-        )
-        self.assertEqual(after_decision.pending_sde_artifact_count, 0)
-        self.assertEqual(after_decision.eligible_artifacts, (artifact,))
-        completed_receipt = plugin.retry_expiry_purge(expiry_receipt.receipt_id)
-        self.assertEqual(completed_receipt.status.value, "complete")
+        reviewed_candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
+        self.assertEqual(reviewed_candidate.status, SDEStatus.APPROVED)
         self.assertFalse(Path(artifact.path).exists())
 
     def test_expired_staging_fails_closed_for_untracked_files(self) -> None:

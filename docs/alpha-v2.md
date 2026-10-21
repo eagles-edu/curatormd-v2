@@ -35,9 +35,11 @@ the exact commit only.
   Manager pilot has only the bounded lifecycle hook described below.
 - Local-alpha retention defaults and hold semantics are owner-approved: the
   listed transient artifact classes become eligible promptly after recording
-  and SDE disposition, with a 72-hour maximum-age fallback. Pending SDE review
-  pauses expiry until disposition; explicit legal/operational holds require a
-  separate release. Production retention policy, external hold discovery,
+  and SDE disposition, with a hard 72-hour maximum age. Pending SDE review
+  delays prompt expiry but does not extend that ceiling; the SDE remains
+  reviewable from canonical facts after its transient source expires. Explicit
+  legal/operational holds require a separate release and are the only local
+  alpha exception. Production retention policy, external hold discovery,
   backup/restore drills, and deployment rollback remain open.
 - The Vhost Manager local alpha pilot is installed and its seven consumer
   contracts pass, including a synthetic bounded event through the profile hook,

@@ -140,9 +140,10 @@ only the configured tree, not temporary material a producer stored elsewhere.
 
 The reviewer-only `project_expiry_inventory_discover()` operation reports
 unheld project-wide files ready for expiry. Compact facts recorded after
-publication make an artifact eligible promptly when no SDE is pending. Any
-pending SDE for that goal pauses expiry for its staged files until the decision
-is approved or rejected. The 72-hour age threshold is the maximum-age fallback.
+publication make an artifact eligible promptly when no SDE is pending. Pending
+SDE review delays prompt expiry but does not extend the hard 72-hour maximum
+age; at that ceiling, transient sources may expire while the SDE remains
+reviewable from canonical facts.
 Schema v19 records immutable
 publication time only for `stage_artifact` files; any untracked, legacy, or
 hash-mismatched file makes the snapshot incomplete and suppresses all eligible

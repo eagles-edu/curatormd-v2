@@ -2623,6 +2623,18 @@
 
 **Outcome:** Local-alpha approval and production-release evidence are described separately; the full V2 goal remains active.
 
+## 2026-10-22 — Enforce the local-alpha 72-hour hard maximum
+
+**Intent:** Apply the owner's clarification that transient-artifact retention must not exceed 72 hours in local alpha.
+
+**Changed fact:** Expiry discovery now allows age-based eligibility at 72 hours even when an SDE remains pending. Pending SDE review still delays prompt post-record expiry, but it cannot extend the hard age ceiling; the SDE remains reviewable from canonical facts after its transient source is removed. Explicit legal/operational artifact holds continue to require separate release. The policy, alpha summary, consumer instructions, and regression test now state and enforce this behavior.
+
+**Verification:** Focused project-plugin expiry tests and `git diff --check` pass.
+
+**Open gate:** The policy is local-alpha only. Production retention/hold policy, authenticated Hermes identity, external hold discovery, deployment, and live-runtime evidence remain open.
+
+**Outcome:** The local-alpha 72-hour age ceiling is enforced through pending SDE review; the V2 goal remains active.
+
 ## 2026-10-22 — Recheck the isolated Vhost alpha endpoint
 
 **Intent:** Use the owner's conditional approval to recheck the deployed V2 profile endpoint after the local backend, package, and plugin acceptance checks passed.

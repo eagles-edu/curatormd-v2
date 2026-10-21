@@ -1202,9 +1202,11 @@ consumer plugin, Hermes integration, or production deployment.
       separate release. Schema v19 stores content-free publication times for
       files written through the producer adapter. Expiry discovery hashes the
       full project inventory and marks artifacts eligible after facts are
-      recorded following staging and no SDE remains pending, or at the 72-hour
-      maximum-age threshold. Any pending SDE for that goal pauses expiry for
-      its staged files, and explicit legal/operational holds remain excluded.
+      recorded following staging and related SDE disposition. Pending SDE
+      review delays prompt expiry but never extends the 72-hour maximum age:
+      at that ceiling, transient source files may become eligible while the
+      SDE remains separately reviewable from its canonical facts. Explicit
+      legal/operational holds remain excluded until separately released.
       Unknown ages or incomplete
       scans fail closed. This
       scan is exposed through the project-review-authorized

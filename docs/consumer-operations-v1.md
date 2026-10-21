@@ -95,10 +95,11 @@ The project-review-authorized MCP operation
 `project_expiry_inventory_discover` reports and hashes the exact inventory of
 unheld staged files that are ready for expiry. Files become eligible promptly
 after compact facts are recorded following publication and any related SDE is
-approved or rejected. Any pending SDE for that goal pauses expiry for its
-staged files. If no record/disposition
-event makes an artifact ready sooner, it reaches the 72-hour maximum-age
-threshold. Every file must have matching V2 producer age metadata; any unknown
+approved or rejected. Pending SDE review delays prompt expiry but does not
+extend the hard 72-hour maximum age; at that ceiling, transient sources may
+expire while their SDE remains reviewable from canonical facts. If no
+record/disposition event makes an artifact ready sooner, it reaches that
+threshold after 72 hours. Every file must have matching V2 producer age metadata; any unknown
 age or incomplete filesystem scan withholds the entire eligible list.
 
 Run the attended local review command to display the exact inventory and

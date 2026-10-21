@@ -589,7 +589,12 @@ class ProjectPlugin:
             if pending_sde_count:
                 if age_eligible or review_ready:
                     pending_sde_artifact_count += 1
-                continue
+                # Pending review delays prompt post-record expiry, but it must
+                # not extend transient-source retention beyond the approved
+                # 72-hour ceiling. Explicit legal/operational holds are still
+                # applied below and require their own audited release.
+                if not age_eligible:
+                    continue
             if age_eligible or review_ready:
                 expired.append(artifact)
         complete = inventory.usage.inventory_complete and unknown_age_count == 0

@@ -1463,7 +1463,29 @@ class CuratorStore:
                 (project_id, goal_id, SDEStatus.PENDING_REVIEW.value),
             ).fetchone()
             if pending_sde is not None:
-                return False
+                age = connection.execute(
+                    """SELECT staged_at FROM staging_artifact_times
+                       WHERE project_id = ? AND path = ? AND sha256 = ?""",
+                    (project_id, path, target["sha256"]),
+                ).fetchone()
+                if age is None:
+                    return False
+                try:
+                    staged_at = datetime.fromisoformat(
+                        str(age["staged_at"]).replace("Z", "+00:00")
+                    )
+                    observed_at = datetime.fromisoformat(now.replace("Z", "+00:00"))
+                except ValueError:
+                    return False
+                if (
+                    staged_at.tzinfo is None
+                    or staged_at.utcoffset() is None
+                    or observed_at.tzinfo is None
+                    or observed_at.utcoffset() is None
+                    or staged_at.astimezone(UTC)
+                    > observed_at.astimezone(UTC) - timedelta(hours=72)
+                ):
+                    return False
             cursor = connection.execute(
                 """UPDATE expiry_purge_targets
                    SET attempts = attempts + 1, last_attempt_at = ?
