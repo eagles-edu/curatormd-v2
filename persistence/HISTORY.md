@@ -2651,9 +2651,9 @@
 
 **Intent:** Recheck the repository-local Vhost plugin against the just-pushed Curator V2 wheel through Hermes Core's managed MCP path.
 
-**Changed fact:** The Vhost-owned disposable harness used a fresh temporary Python 3.12 environment containing the wheel built from commit `060b325`. Hermes Core's actual `HookRegistry` and `HookContext` delivered three lifecycle events through managed stdio MCP; exact replay, failed-delivery retry, explicit goal binding, denial of premature binding and reviewer-only persistence, canonical projection reconciliation, private-metadata exclusion, and out-of-scope target preservation all passed.
+**Changed fact:** The Vhost-owned disposable harness used a fresh temporary Python 3.12 environment containing the wheel built from commit `060b325`. Hermes Core's actual `HookRegistry` and `HookContext` delivered three lifecycle events through managed stdio MCP; exact replay, failed-delivery retry, explicit goal binding, denial of premature binding and reviewer-only persistence, canonical projection reconciliation, private-metadata exclusion, and out-of-scope target preservation all passed. The seven Vhost installed-consumer contracts also pass against that wheel.
 
-**Verification:** The harness exited 0 with `result=passed`, `processed_events=3`, and all reported assertions true. The Vhost application worktree's pre-existing dirty and untracked files were preserved.
+**Verification:** The harness exited 0 with `result=passed`, `processed_events=3`, and all reported assertions true. The Vhost contract suite passes 7/7 tests. Both suites used disposable databases; the Vhost application worktree's pre-existing dirty and untracked files were preserved.
 
 **Open gate:** This is a disposable local integration, not a live Vhost application request. Authenticated human identity, production authorization, production retention/recovery, and live deployment/runtime remain unverified.
 

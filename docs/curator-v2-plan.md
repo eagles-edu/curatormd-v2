@@ -340,8 +340,9 @@ consumer plugin, Hermes integration, or production deployment.
       bounded lifecycle events, exact replay, and failed-delivery retry;
       planned-goal binding and reviewer-only persistence stayed denied, the
       Vhost projection reconciled, and private metadata/out-of-scope targets
-      remained absent/unchanged. This is current-wheel local composition, not
-      a live user request or production deployment; the item remains open.
+      remained absent/unchanged. The seven Vhost installed-consumer contracts
+      also pass against this wheel. This is current-wheel local composition,
+      not a live user request or production deployment; the item remains open.
 
 ### 2. Evidence and fact ledger
 
