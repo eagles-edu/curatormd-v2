@@ -123,11 +123,21 @@ kinds and enforce exact project/goal/criterion/hash/scope/subject binding,
 fresh revocation checks, expiry, and source-specific age/validity ceilings.
 Resolver receipts now reject unbounded or unsafe single-line fields, malformed
 SHA-256 values, naive timestamps, and non-boolean revocation flags at object
-construction; adapter tests cover these malformed-input cases. This validates
-the local receipt shape only, not the resolver's authentication claim.
-Their resolvers remain host-supplied interfaces; unit tests use synthetic
-receipts and do not prove source authentication. No real repository runner,
-service probe, browser/session, or human identity integration, deployment trust
-root, approved owner policy, or end-to-end adapter test exists. Do not enable
-broad automatic capture or mark a criterion verified from these local tests
-alone.
+construction; adapter tests cover these malformed-input cases. A local
+`GitCommitDiffResolver` also hashes a bounded diff between full commit IDs in
+one configured Git worktree and emits a path-free local receipt. Its checkout
+and runner subject are host assertions; it does not authenticate a human or a
+remote repository provider and it does not run tests. The integration test uses
+a disposable Git repository and proves exact diff hashing, cross-project
+rejection, immutable-range behavior, and the byte ceiling. These are local
+source checks only. `LocalGitTestRunnerResolver` additionally runs a
+host-configured argv in a disposable checkout of the exact commit, bounds its
+runtime and combined output, rejects nonzero exits, and returns only a digest
+bound to the runner ID and commit. Disposable-repository tests verify the exact
+revision, failure handling, output limit, and absence of output/path data in
+receipts. The local runner's command and subject remain operator assertions; it
+does not authenticate CI, establish revocation, or provide deployment trust.
+No deployment-owned repository runner, service probe, browser/session, or human
+identity integration, deployment trust root, approved owner policy, or
+end-to-end adapter test exists. Do not enable broad automatic capture or mark a
+criterion verified from these local tests alone.

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+import hashlib
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 from typing import cast
 import unittest
 
@@ -19,6 +24,10 @@ from curatormd_v2 import (
     HumanObservationEvidenceAdapter,
     RepositoryEvidenceAdapter,
     ServiceProbeEvidenceAdapter,
+)
+from curatormd_v2.git_evidence import (
+    GitCommitDiffResolver,
+    LocalGitTestRunnerResolver,
 )
 
 
@@ -236,6 +245,278 @@ class EvidenceAdapterTests(unittest.TestCase):
         self.assertIsNotNone(attestation)
         assert attestation is not None
         self.assertEqual(attestation.source_revision, "git:0123456789abcdef")
+
+    def test_local_git_diff_receipt_hashes_only_configured_immutable_commit_range(self) -> None:
+        """Attest exact Git diff bytes without returning or retaining patch text."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repository"
+            root.mkdir()
+
+            def git(*arguments: str) -> str:
+                result = subprocess.run(
+                    ["git", "-C", str(root), *arguments],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                return result.stdout.strip()
+
+            git("init", "--quiet")
+            git("config", "user.name", "Curator test")
+            git("config", "user.email", "curator-test@example.invalid")
+            source = root / "task.txt"
+            source.write_text("before\n", encoding="utf-8")
+            git("add", "task.txt")
+            git("commit", "--quiet", "-m", "base")
+            base_revision = git("rev-parse", "HEAD")
+
+            source.write_text("private diff contents\n", encoding="utf-8")
+            git("add", "task.txt")
+            git("commit", "--quiet", "-m", "change")
+            head_revision = git("rev-parse", "HEAD")
+
+            resolver = GitCommitDiffResolver(
+                root,
+                project_id="project-a",
+                source_subject="local-git-runner",
+            )
+            locator = f"git-diff:{base_revision}..{head_revision}"
+            evidence = EvidenceRef(
+                "repository_diff", locator, "a" * 64, EvidenceOutcome.PASSED
+            )
+            context = EvidenceVerificationContext(
+                "project-a", "goal-a", "criterion-a", datetime.now(UTC)
+            )
+            receipt = resolver.resolve(evidence, context)
+            self.assertIsNotNone(receipt)
+            assert receipt is not None
+            raw_diff = subprocess.run(
+                [
+                    "git", "-C", str(root), "diff", "--binary", "--no-color",
+                    "--no-ext-diff", "--no-textconv", "--no-renames",
+                    "--diff-algorithm=myers", "--unified=0", base_revision,
+                    head_revision, "--",
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            ).stdout
+            self.assertEqual(receipt.evidence_sha256, hashlib.sha256(raw_diff).hexdigest())
+            self.assertNotIn(b"private diff contents", repr(receipt).encode())
+            self.assertNotIn(str(root), repr(receipt))
+
+            source.write_text("uncommitted private content\n", encoding="utf-8")
+            replayed_receipt = resolver.resolve(evidence, context)
+            self.assertIsNotNone(replayed_receipt)
+            assert replayed_receipt is not None
+            self.assertEqual(
+                replayed_receipt.evidence_sha256, receipt.evidence_sha256
+            )
+            self.assertNotIn(b"uncommitted private content", repr(replayed_receipt).encode())
+
+            adapter = RepositoryEvidenceAdapter(
+                adapter_id="local-git-project-a",
+                scope_id=resolver.scope_id,
+                resolver=resolver,
+                allowed_projects={"project-a"},
+                allowed_subjects={"local-git-runner"},
+            )
+            attestation = adapter.attest(
+                replace(evidence, sha256=receipt.evidence_sha256), context
+            )
+            self.assertIsNotNone(attestation)
+            assert attestation is not None
+            self.assertEqual(
+                attestation.source_revision,
+                f"git:{base_revision}..{head_revision}",
+            )
+            self.assertNotIn(str(root), repr(attestation))
+
+            wrong_project = EvidenceVerificationContext(
+                "project-b", "goal-a", "criterion-a", context.now
+            )
+            self.assertIsNone(
+                resolver.resolve(
+                    replace(evidence, sha256=receipt.evidence_sha256),
+                    wrong_project,
+                )
+            )
+
+            limited_resolver = GitCommitDiffResolver(
+                root,
+                project_id="project-a",
+                source_subject="local-git-runner",
+                max_diff_bytes=1,
+            )
+            limited_adapter = RepositoryEvidenceAdapter(
+                adapter_id="bounded-local-git-project-a",
+                scope_id=limited_resolver.scope_id,
+                resolver=limited_resolver,
+                allowed_projects={"project-a"},
+                allowed_subjects={"local-git-runner"},
+            )
+            with self.assertRaises(EvidenceAdapterError):
+                limited_adapter.attest(
+                    replace(evidence, sha256=receipt.evidence_sha256), context
+                )
+
+    def test_local_git_test_runner_uses_isolated_exact_commit_checkout(self) -> None:
+        """Run a fixed test command at one commit and retain only its digest."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repository"
+            root.mkdir()
+
+            def git(*arguments: str) -> str:
+                result = subprocess.run(
+                    ["git", "-C", str(root), *arguments],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                return result.stdout.strip()
+
+            git("init", "--quiet")
+            git("config", "user.name", "Curator test")
+            git("config", "user.email", "curator-test@example.invalid")
+            marker = root / "test-marker.txt"
+            marker.write_text("pass\n", encoding="utf-8")
+            git("add", "test-marker.txt")
+            git("commit", "--quiet", "-m", "passing test input")
+            revision = git("rev-parse", "HEAD")
+            command = (
+                sys.executable,
+                "-c",
+                "from pathlib import Path; value=Path('test-marker.txt').read_text(); "
+                "print(value.strip()); raise SystemExit(value != 'pass\\n')",
+            )
+            resolver = LocalGitTestRunnerResolver(
+                root,
+                project_id="project-a",
+                runner_id="unit-tests",
+                source_subject="local-test-runner",
+                command=command,
+            )
+            context = EvidenceVerificationContext(
+                "project-a", "goal-a", "criterion-a", datetime.now(UTC)
+            )
+            evidence = EvidenceRef(
+                "repository_test",
+                f"git-test:unit-tests:{revision}",
+                "a" * 64,
+                EvidenceOutcome.PASSED,
+            )
+            receipt = resolver.resolve(evidence, context)
+            self.assertIsNotNone(receipt)
+            assert receipt is not None
+            self.assertEqual(
+                receipt.source_revision, f"git-test:unit-tests:{revision}"
+            )
+            self.assertNotIn("pass", repr(receipt))
+            self.assertNotIn(str(root), repr(receipt))
+
+            marker.write_text("uncommitted failure\n", encoding="utf-8")
+            self.assertEqual(resolver.resolve(evidence, context), receipt)
+
+            adapter = RepositoryEvidenceAdapter(
+                adapter_id="local-unit-tests",
+                scope_id=resolver.scope_id,
+                resolver=resolver,
+                allowed_projects={"project-a"},
+                allowed_subjects={"local-test-runner"},
+            )
+            self.assertIsNotNone(
+                adapter.attest(replace(evidence, sha256=receipt.evidence_sha256), context)
+            )
+
+    def test_local_git_test_runner_rejects_wrong_runner_failure_and_large_output(self) -> None:
+        """A nonpassing or unbounded runner result cannot produce an attestation."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repository"
+            root.mkdir()
+            subprocess.run(["git", "-C", str(root), "init", "--quiet"], check=True)
+            subprocess.run(
+                ["git", "-C", str(root), "config", "user.name", "Curator test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "config", "user.email", "curator-test@example.invalid"],
+                check=True,
+            )
+            marker = root / "test-marker.txt"
+            marker.write_text("fail\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "test-marker.txt"], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "commit", "--quiet", "-m", "failing input"],
+                check=True,
+            )
+            revision = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+            command = (
+                sys.executable,
+                "-c",
+                "from pathlib import Path; value=Path('test-marker.txt').read_text(); "
+                "raise SystemExit(value != 'pass\\n')",
+            )
+            resolver = LocalGitTestRunnerResolver(
+                root,
+                project_id="project-a",
+                runner_id="unit-tests",
+                source_subject="local-test-runner",
+                command=command,
+            )
+            context = EvidenceVerificationContext(
+                "project-a", "goal-a", "criterion-a", datetime.now(UTC)
+            )
+            wrong_runner = EvidenceRef(
+                "repository_test",
+                f"git-test:unapproved:{revision}",
+                "a" * 64,
+                EvidenceOutcome.PASSED,
+            )
+            self.assertIsNone(resolver.resolve(wrong_runner, context))
+            failed_run = replace(
+                wrong_runner, locator=f"git-test:unit-tests:{revision}"
+            )
+            self.assertIsNone(resolver.resolve(failed_run, context))
+
+            limited = LocalGitTestRunnerResolver(
+                root,
+                project_id="project-a",
+                runner_id="unit-tests",
+                source_subject="local-test-runner",
+                command=(sys.executable, "-c", "print('output too long')"),
+                max_output_bytes=8,
+            )
+            with self.assertRaisesRegex(RuntimeError, "output exceeds"):
+                limited.resolve(failed_run, context)
+
+            timed = LocalGitTestRunnerResolver(
+                root,
+                project_id="project-a",
+                runner_id="unit-tests",
+                source_subject="local-test-runner",
+                command=(
+                    sys.executable,
+                    "-c",
+                    "import subprocess,sys,time; "
+                    "subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); "
+                    "time.sleep(10)",
+                ),
+                timeout_seconds=1,
+            )
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                timed.resolve(failed_run, context)
 
     def test_source_specific_ttl_cannot_be_relaxed_by_configuration(self) -> None:
         with self.assertRaisesRegex(ValueError, "policy ceiling"):
