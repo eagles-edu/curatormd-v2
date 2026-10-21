@@ -14,6 +14,7 @@ from .store import CuratorStore, EventClaimError
 
 DEFAULT_MAX_DELIVERY_ATTEMPTS = 5
 MAX_ROUTER_BATCH = 1000
+MAX_ROUTER_PROJECTS = 128
 _ERROR_CODE_RE = re.compile(r"[^a-zA-Z0-9_.:-]")
 
 
@@ -48,6 +49,8 @@ class DurableEventRouter:
             raise ValueError("max_delivery_attempts must be between 1 and 100")
         if not project_services:
             raise ValueError("router requires at least one trusted project binding")
+        if len(project_services) > MAX_ROUTER_PROJECTS:
+            raise ValueError("router accepts at most 128 trusted project bindings")
         for project_id, service in project_services.items():
             if service.project_id != project_id:
                 raise ValueError("router key must match the bound service project")
@@ -61,7 +64,11 @@ class DurableEventRouter:
         if not 1 <= limit <= MAX_ROUTER_BATCH:
             raise ValueError(f"limit must be between 1 and {MAX_ROUTER_BATCH}")
         lease_owner = f"router-{uuid4().hex}"
-        events = self.store.claim_pending_events(lease_owner, limit=limit)
+        events = self.store.claim_pending_events(
+            lease_owner,
+            limit=limit,
+            project_ids=tuple(sorted(self.project_services)),
+        )
         attempted = 0
         processed = 0
         failed = 0

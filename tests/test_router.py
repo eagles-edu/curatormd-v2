@@ -58,6 +58,45 @@ class DurableEventRouterTests(unittest.TestCase):
 
         self.store.close()
 
+    def test_router_does_not_claim_events_outside_its_fixed_project_map(self) -> None:
+        """An omitted project binding stays untouched in the shared inbox."""
+
+        bound = EventEnvelope(
+            "bound-project-event",
+            "project-a",
+            GoalStarted(
+                "bound-project-goal",
+                "Route one explicitly trusted project",
+                (SuccessCriterion("routed", "The bound event is processed"),),
+                initial_status=GoalStatus.ACTIVE,
+            ),
+        )
+        unbound = EventEnvelope(
+            "unbound-project-event",
+            "project-b",
+            GoalStarted(
+                "unbound-project-goal",
+                "Keep an event for a project outside this router map",
+                (SuccessCriterion("pending", "The unbound event remains pending"),),
+                initial_status=GoalStatus.ACTIVE,
+            ),
+        )
+        self.store.ingest_event(unbound)
+        self.store.ingest_event(bound)
+
+        result = self.router.route_once()
+
+        self.assertEqual((result.attempted_count, result.processed_count), (1, 1))
+        bound_receipt = self.store.event_receipt("project-a", bound.event_id)
+        self.assertEqual(bound_receipt.status, EventInboxStatus.PROCESSED)
+        unbound_receipt = self.store.event_receipt("project-b", unbound.event_id)
+        self.assertEqual(unbound_receipt.status, EventInboxStatus.RECEIVED)
+        self.assertEqual(unbound_receipt.attempts, 0)
+        self.assertEqual(
+            self.store.pending_events(project_id="project-b"),
+            (unbound,),
+        )
+
     def test_ordered_pending_events_resume_after_store_restart_and_replay(self) -> None:
         """Recover the durable gap, route in order, and keep replay idempotent."""
 

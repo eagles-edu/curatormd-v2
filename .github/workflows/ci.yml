@@ -46,6 +46,50 @@ jobs:
             -m unittest \
             test_hosted_mcp.HostedMcpTests.test_installed_launcher_writes_and_reads_a_project_bound_goal \
             -v
+      - name: Exercise installed operational command entrypoints
+        env:
+          CURATOR_V2_SMOKE_DIR: ${{ runner.temp }}/curator-v2-storage-smoke
+        run: |
+          install -d -m 700 "$CURATOR_V2_SMOKE_DIR/backups" "$CURATOR_V2_SMOKE_DIR/recovery"
+          wheel_python="$RUNNER_TEMP/curator-v2-wheel-venv/bin/python"
+          wheel_bin="$RUNNER_TEMP/curator-v2-wheel-venv/bin"
+          "$wheel_bin/curatormd-v2-stage" --help >/dev/null
+          "$wheel_bin/curatormd-v2-maintenance" --help >/dev/null
+          "$wheel_bin/curatormd-v2-access" --help >/dev/null
+          "$wheel_bin/curatormd-v2-router" --help >/dev/null
+          "$wheel_bin/curatormd-v2-storage" --help >/dev/null
+          "$wheel_python" - <<'PY'
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          root = Path(os.environ["CURATOR_V2_SMOKE_DIR"])
+          source = root / "source.sqlite3"
+          with sqlite3.connect(source) as database:
+              database.execute("CREATE TABLE wheel_smoke (value TEXT NOT NULL)")
+              database.execute("INSERT INTO wheel_smoke VALUES ('round-trip-ok')")
+          source.chmod(0o600)
+          PY
+          "$wheel_bin/curatormd-v2-storage" backup \
+            --database "$CURATOR_V2_SMOKE_DIR/source.sqlite3" \
+            --destination "$CURATOR_V2_SMOKE_DIR/backups/snapshot.sqlite3"
+          "$wheel_bin/curatormd-v2-storage" restore \
+            --backup "$CURATOR_V2_SMOKE_DIR/backups/snapshot.sqlite3" \
+            --destination "$CURATOR_V2_SMOKE_DIR/recovery/restored.sqlite3" \
+            --restore-to-new-path
+          "$wheel_python" - <<'PY'
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          restored = Path(os.environ["CURATOR_V2_SMOKE_DIR"]) / "recovery/restored.sqlite3"
+          with sqlite3.connect(f"file:{restored}?mode=ro", uri=True) as database:
+              assert database.execute("PRAGMA quick_check").fetchone() == ("ok",)
+              assert (
+                  database.execute("SELECT value FROM wheel_smoke").fetchone()
+                  == ("round-trip-ok",)
+              )
+          PY
 
   tests:
     name: Tests (Python ${{ matrix.python-version }})

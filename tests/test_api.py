@@ -9,6 +9,7 @@ from io import BytesIO
 import tempfile
 from typing import cast
 import unittest
+from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
 from project_fixtures import create_consumer_repo
@@ -528,6 +529,54 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertTrue(health.event_capacity_available)
         self.assertTrue(health.staging_inventory_complete)
         self.assertTrue(all(item.status.value == "healthy" for item in health.dependencies))
+
+    def test_project_health_degrades_while_event_is_pending(self) -> None:
+        """Do not report green while a received event has not been processed."""
+
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+        event = EventEnvelope(
+            "health-pending-event",
+            "project-a",
+            GoalStarted(
+                "health-pending-goal",
+                "Keep the event backlog visible",
+                (SuccessCriterion("done", "The event is processed"),),
+            ),
+        )
+        self.store.ingest_event(event)
+
+        health = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertIn("event_backlog", health.gate_codes)
+        self.assertEqual(health.event_received_count, 1)
+
+    def test_project_health_degrades_when_staging_inventory_is_incomplete(self) -> None:
+        """Do not report green when bounded traversal cannot complete inventory."""
+
+        staging = self.root / ".curatormd-v2" / "staging"
+        (staging / "one.bin").write_bytes(b"one")
+        (staging / "two.bin").write_bytes(b"two")
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+
+        with patch("curatormd_v2.project_plugin.MAX_STAGING_SCAN_ENTRIES", 1):
+            health = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertFalse(health.staging_inventory_complete)
+        self.assertIn("staging_inventory_incomplete", health.gate_codes)
 
     def test_project_health_degrades_for_known_failure_or_local_backlog(self) -> None:
         readiness = DependencyReadiness(

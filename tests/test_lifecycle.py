@@ -702,7 +702,20 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertIn("readiness probe returns healthy", stored.next_action or "")
         snapshot = self.service.goal_status(self.goal.goal_id)
         self.assertTrue(any(fact.kind is FactKind.OPEN_GATE for fact in snapshot.facts))
-        self.assertFalse(any(fact.kind is FactKind.OUTCOME for fact in snapshot.facts))
+        outcome = next(
+            fact for fact in snapshot.facts if fact.kind is FactKind.OUTCOME
+        )
+        self.assertEqual(outcome.bullet, "open")
+        self.assertEqual(
+            [item.status for item in snapshot.criteria],
+            [CriterionStatus.VERIFIED, CriterionStatus.OPEN],
+        )
+        report = self.service.goal_report(self.goal.goal_id)
+        self.assertIn("- Outcome: `open`", report)
+        self.assertIn("Outcome: open", report)
+        self.assertIn("- Owner: agent", report)
+        self.assertIn("readiness probe returns healthy", report)
+        self.assertIn("unit test suite passed", report)
 
     def test_bullet_projection_separates_verified_claims_and_current_open_gates(self) -> None:
         self.verify("unit", "Unit test suite passed")
@@ -756,6 +769,13 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertGreaterEqual(verifier.calls, 6)
 
     def test_goal_report_preserves_truth_labels_and_bounds_fact_pages(self) -> None:
+        intake_report = self.service.goal_report(self.goal.goal_id)
+        self.assertIn("owner: agent", intake_report)
+        self.assertIn(
+            "suggested next action: Verify criterion `probe` against its stated "
+            "acceptance condition; goal next action: not recorded",
+            intake_report,
+        )
         self.service.goal_fact(
             self.goal.goal_id,
             FactKind.CHANGE,
@@ -780,6 +800,12 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertIn("## Open TODOs", report)
         self.assertIn("Verify criterion `probe`", report)
         self.assertIn("readiness probe returns healthy", report)
+        self.assertIn(
+            "blocker: Open: success criterion 'readiness probe returns healthy' "
+            "lacks passing evidence",
+            report,
+        )
+        self.assertIn("owner: agent", report)
         self.assertIn("More facts available: request `fact_offset=1`", report)
         self.assertNotIn("test-proof:", report)
 
@@ -799,6 +825,7 @@ class CuratorLifecycleTests(unittest.TestCase):
             "Implement the requested lifecycle report",
             (SuccessCriterion("report", "The report lists verified facts and TODOs"),),
             goal_id="goal-with-next-action",
+            owner="agent",
             initial_status=GoalStatus.PLANNED,
             next_action="Add the report's bounded next-action field",
         )
@@ -806,6 +833,13 @@ class CuratorLifecycleTests(unittest.TestCase):
 
         self.assertIn(
             "- Next action: Add the report's bounded next-action field", report
+        )
+        self.assertIn(
+            "blocker: No current passing verification fact is linked to this criterion; "
+            "owner: agent; suggested next action: Verify criterion `report` against "
+            "its stated acceptance condition; goal next action: Add the report's "
+            "bounded next-action field",
+            report,
         )
         self.assertIn(
             "Verify criterion `report`: The report lists verified facts and TODOs",
@@ -823,9 +857,23 @@ class CuratorLifecycleTests(unittest.TestCase):
             activated.next_action,
             "Add the report's bounded next-action field",
         )
+        self.service.goal_fact(
+            goal.goal_id,
+            FactKind.OPEN_GATE,
+            "The smoke test has not run on this revision",
+            criterion_id="report",
+        )
+        open_report = self.service.goal_report(goal.goal_id)
+        self.assertIn(
+            "blocker: The smoke test has not run on this revision; owner: agent; "
+            "suggested next action: Verify criterion `report` against its stated "
+            "acceptance condition; goal next action: Add the report's bounded "
+            "next-action field",
+            open_report,
+        )
         self.assertIn(
             "- Next action: Add the report's bounded next-action field",
-            self.service.goal_report(goal.goal_id),
+            open_report,
         )
 
     def test_goal_report_uses_bounded_history_pages_and_exact_child_counts(self) -> None:
@@ -1022,6 +1070,13 @@ class CuratorLifecycleTests(unittest.TestCase):
             [criterion.status for criterion in progress],
             [CriterionStatus.VERIFIED, CriterionStatus.VERIFIED],
         )
+        outcome_facts = tuple(
+            fact
+            for fact in self.store.list_facts(self.goal.goal_id)
+            if fact.kind is FactKind.OUTCOME
+        )
+        self.assertEqual(len(outcome_facts), 1)
+        self.assertTrue(outcome_facts[0].bullet.startswith("completed —"))
         with self.assertRaises(ConflictError):
             self.service.goal_fact(self.goal.goal_id, FactKind.CHANGE, "late edit")
 
@@ -1055,6 +1110,15 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertTrue(
             any(fact.kind is FactKind.REOPENED for fact in reopened_snapshot.facts)
         )
+        reopened_report = self.service.goal_report(self.goal.goal_id)
+        self.assertIn("- Outcome: `active`", reopened_report)
+        self.assertIn("- Next action: Reproduce and repair the regression", reopened_report)
+        self.assertIn("## Facts to date", reopened_report)
+        self.assertIn("Unverified claims or checks", reopened_report)
+        self.assertIn("Original unit suite passed", reopened_report)
+        self.assertIn("Required criterion remains unverified", reopened_report)
+        self.assertIn("## Open TODOs", reopened_report)
+        self.assertIn("Verify criterion `unit`", reopened_report)
 
         still_open = self.service.goal_finish(
             self.goal.goal_id, "The reopened work is complete"

@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
             source_id=args.source_id,
             allow_write=args.allow_write,
         )
-    except Exception:  # startup diagnostics must not echo arbitrary exception text
+    except Exception:  # pylint: disable=broad-exception-caught  # Keep startup errors private.
         print(
             "Curator V2 MCP startup failed (configuration or runtime error).",
             file=sys.stderr,

@@ -7,11 +7,13 @@ consumer repositories, or access production credentials.
 ## Blocking checks
 
 - A separate packaging job builds the wheel, installs it into a clean Python
-  environment, and exercises the installed stdio launcher against a temporary
-  consumer repository/config. The launcher test does not add the source tree to
-  `PYTHONPATH`; this verifies the built distribution rather than an editable
-  checkout. It remains a fixture-consumer test, not installation in a production
-  repository or Hermes identity proof.
+  environment, exercises the installed stdio launcher against a temporary
+  consumer repository/config and runs all installed operational CLI
+  entrypoints. The storage CLI smoke takes and restores an integrity-checked
+  snapshot to a new path, then verifies the restored row. These checks do not
+  add the source tree to `PYTHONPATH`; they verify the built distribution
+  rather than an editable checkout. They remain fixture-consumer checks, not
+  installation in a production repository or Hermes identity proof.
 - Unit tests run with the locked dependency graph on Python 3.12, 3.13, and
   3.14, matching the declared `>=3.12,<4` interpreter range for the current
   supported release line.

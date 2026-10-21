@@ -1093,6 +1093,8 @@ class McpServerTests(unittest.TestCase):
                         self.assertFalse(open_report_result.is_error)
                         open_report_content = open_report_result.content[0]
                         assert isinstance(open_report_content, TextContent)
+                        self.assertIn("- Outcome: `open`", open_report_content.text)
+                        self.assertIn("Outcome: open", open_report_content.text)
                         self.assertIn("## Success criteria", open_report_content.text)
                         self.assertIn("- Project: `mcp-project`", open_report_content.text)
                         self.assertIn("- Initial state: `active`", open_report_content.text)
@@ -1555,6 +1557,95 @@ class McpServerTests(unittest.TestCase):
                     self.assertIn("artifact_purge_status", tool_names)
 
             asyncio.run(exercise())
+
+    def test_sensitive_event_is_absent_from_mcp_errors_logs_and_storage(self) -> None:
+        """Keep a rejected credential-like MCP event out of errors, logs, and stores."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            create_consumer_repo(root)
+            (root / "docs" / "tasks.md").write_text("- [ ] Privacy boundary\n")
+            (root / "persistence" / "HISTORY.md").write_text("# History\n")
+            (root / ".curatormd-v2.toml").write_text(
+                """\
+                schema_version = 1
+                backend_api_version = 1
+                project_id = "mcp-project"
+
+                [scope]
+                read_paths = ["src", "docs"]
+
+                [checklists]
+                tasks = "docs/tasks.md"
+
+                [evidence]
+                adapters = []
+
+                [staging]
+                root = ".curatormd-v2/staging"
+
+                [persistence]
+                targets = ["persistence/HISTORY.md"]
+                """
+            )
+            (root / ".curatormd-v2.toml").chmod(0o600)
+            database_path = Path(temporary) / "global.sqlite3"
+            store = CuratorStore(database_path)
+            try:
+                plugin = ProjectPlugin.bind(ProjectConfig.load(root), store)
+                caller = AuthenticatedCaller("host-subject")
+                api = AuthenticatedCuratorAPI(
+                    {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
+                )
+                server = build_mcp_server(api, caller, "mcp-project", "privacy-test")
+                secret = "sk-PRIVATE_EVENT_CANARY-1234567890"
+                payload = json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": "sensitive-mcp-event",
+                        "project_id": "mcp-project",
+                        "source_id": "privacy-test",
+                        "source_sequence": 1,
+                        "occurred_at": "2026-10-20T00:00:00Z",
+                        "event_type": "goal.started",
+                        "payload": {
+                            "goal_id": "sensitive-mcp-goal",
+                            "problem": f"api_key={secret}",
+                            "success_criteria": [
+                                {"criterion_id": "done", "description": "No leak"}
+                            ],
+                        },
+                    }
+                )
+
+                async def exercise() -> None:
+                    async with Client(server, raise_exceptions=True) as client:
+                        result = await client.call_tool(
+                            "event_ingest", {"event_json": payload}
+                        )
+                        self.assertTrue(result.is_error)
+                        content = result.content[0]
+                        assert isinstance(content, TextContent)
+                        self.assertNotIn(secret, content.text)
+
+                with self.assertLogs("curatormd_v2.mcp_server", level="WARNING") as captured:
+                    asyncio.run(exercise())
+
+                self.assertTrue(captured.output)
+                self.assertNotIn(secret, "\n".join(captured.output))
+                secret_bytes = secret.encode("utf-8")
+                for suffix in ("", "-wal", "-shm", "-journal"):
+                    database_file = Path(f"{database_path}{suffix}")
+                    if database_file.exists():
+                        self.assertNotIn(secret_bytes, database_file.read_bytes())
+                history = root / "persistence" / "HISTORY.md"
+                self.assertNotIn(secret_bytes, history.read_bytes())
+                staging = root / ".curatormd-v2" / "staging"
+                for staged_file in staging.rglob("*"):
+                    if staged_file.is_file():
+                        self.assertNotIn(secret_bytes, staged_file.read_bytes())
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":

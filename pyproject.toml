@@ -14,6 +14,8 @@ curatormd-v2-mcp = "curatormd_v2.hosted_mcp:main"
 curatormd-v2-stage = "curatormd_v2.producer_cli:main"
 curatormd-v2-maintenance = "curatormd_v2.maintenance_cli:main"
 curatormd-v2-access = "curatormd_v2.access_cli:main"
+curatormd-v2-router = "curatormd_v2.router_cli:main"
+curatormd-v2-storage = "curatormd_v2.storage_cli:main"
 
 [dependency-groups]
 test = ["hypothesis>=6.135,<7", "jsonschema>=4.26,<5"]

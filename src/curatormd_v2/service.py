@@ -585,6 +585,13 @@ class CuratorService:
                             ),
                         ),
                     )
+            facts.append(
+                Fact(
+                    goal_id=goal_id,
+                    kind=FactKind.OUTCOME,
+                    bullet="open",
+                )
+            )
             return self.store.transition_goal(
                 goal_id,
                 GoalStatus.OPEN,
@@ -599,8 +606,8 @@ class CuratorService:
                 goal_id=goal_id,
                 kind=FactKind.OUTCOME,
                 bullet=(
-                    "Completed: every success criterion has a passing "
-                    "evidence reference"
+                    "completed — every success criterion has a passing evidence "
+                    "reference and all child goals and dependencies are complete"
                 ),
             )
         )
@@ -1063,6 +1070,9 @@ class CuratorService:
         if fact.kind is FactKind.OPEN_GATE:
             category = GoalBulletCategory.RECORDED
             text = f"Prior gate fact: {fact.bullet}"
+        elif fact.kind is FactKind.OUTCOME:
+            category = GoalBulletCategory.RECORDED
+            text = f"Outcome: {fact.bullet}"
         elif fact.kind is FactKind.COMPLETION_CLAIM:
             category = GoalBulletCategory.UNVERIFIED
         elif fact.kind is FactKind.VERIFICATION:

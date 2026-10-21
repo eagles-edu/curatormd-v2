@@ -4496,8 +4496,9 @@ class CuratorStore:
         *,
         limit: int = 100,
         lease_seconds: int = 300,
+        project_ids: tuple[str, ...] | None = None,
     ) -> tuple[EventEnvelope, ...]:
-        """Atomically lease due events to one router invocation across workers."""
+        """Atomically lease due events, optionally within fixed project bindings."""
 
         if not _ERROR_CODE_RE.fullmatch(lease_owner) or len(lease_owner) > 128:
             raise ValueError("lease_owner must be a bounded safe identifier")
@@ -4505,12 +4506,33 @@ class CuratorStore:
             raise ValueError("limit must be between 1 and 1000")
         if not is_exact_int(lease_seconds) or not 1 <= lease_seconds <= 86_400:
             raise ValueError("lease_seconds must be between 1 and 86400")
+        if project_ids is not None:
+            # Reject tuple subclasses so project bindings use an inert exact container.
+            # pylint: disable-next=unidiomatic-typecheck
+            if type(project_ids) is not tuple or len(project_ids) > 128:
+                raise ValueError("project_ids must be a tuple of at most 128 bindings")
+            for project_id in project_ids:
+                self._validate_access_identity(project_id, "project_id")
+            if len(set(project_ids)) != len(project_ids):
+                raise ValueError("project_ids must not contain duplicates")
+            if not project_ids:
+                return ()
         now = datetime.now(UTC)
         now_text = now.isoformat(timespec="microseconds")
         expires_text = (now + timedelta(seconds=lease_seconds)).isoformat(
             timespec="microseconds"
         )
         with self._transaction() as connection:
+            connection.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS router_project_bindings "
+                "(project_id TEXT PRIMARY KEY) WITHOUT ROWID"
+            )
+            connection.execute("DELETE FROM temp.router_project_bindings")
+            if project_ids is not None:
+                connection.executemany(
+                    "INSERT INTO temp.router_project_bindings(project_id) VALUES (?)",
+                    ((project_id,) for project_id in project_ids),
+                )
             rows = connection.execute(
                 """SELECT e.project_id, e.event_id, e.payload_json
                    FROM event_inbox AS e
@@ -4523,6 +4545,8 @@ class CuratorStore:
                        COALESCE((SELECT c.last_sequence FROM event_cursors AS c
                                  WHERE c.project_id = e.project_id
                                    AND c.source_id = e.source_id), 0) + 1)
+                     AND (? = 1 OR e.project_id IN
+                       (SELECT project_id FROM temp.router_project_bindings))
                    ORDER BY e.received_at, e.event_id LIMIT ?""",
                 (
                     EventInboxStatus.RECEIVED.value,
@@ -4530,6 +4554,7 @@ class CuratorStore:
                     EventInboxStatus.RECEIVED.value,
                     now_text,
                     now_text,
+                    1 if project_ids is None else 0,
                     limit,
                 ),
             ).fetchall()
@@ -4550,6 +4575,7 @@ class CuratorStore:
                 )
                 if cursor.rowcount == 1 and row["payload_json"] is not None:
                     claimed_payloads.append(row["payload_json"])
+            connection.execute("DELETE FROM temp.router_project_bindings")
         return tuple(EventEnvelope.from_json(payload) for payload in claimed_payloads)
 
     def assert_event_claim(

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from .models import (
     AuditReceipt,
+    FactKind,
     GoalBulletCategory,
     GoalBulletProjection,
     GoalCard,
@@ -140,6 +141,11 @@ def render_goal_report(
         "",
         "## Success criteria",
     ]
+    criterion_open_gates = {
+        fact.criterion_id: fact.bullet
+        for fact in snapshot.facts
+        if fact.kind is FactKind.OPEN_GATE and fact.criterion_id is not None
+    }
     for criterion in snapshot.criteria:
         marker = "x" if criterion.status.value == "verified" else " "
         proof = (
@@ -150,10 +156,35 @@ def render_goal_report(
             if criterion.verification_fact_ids
             else ""
         )
-        lines.append(
+        status_line = (
             f"- [{marker}] `{_inline(criterion.criterion_id, 128)}` — "
             f"{criterion.status.value}: {_inline(criterion.description)}{proof}"
         )
+        if criterion.status.value != "verified":
+            blocker = criterion_open_gates.get(
+                criterion.criterion_id,
+                "No current passing verification fact is linked to this criterion",
+            )
+            owner = (
+                _inline(intake.owner or "unassigned", 128)
+                if intake is not None
+                else "unassigned"
+            )
+            goal_next_action = (
+                _inline(goal.next_action, 500)
+                if goal.next_action is not None
+                else "not recorded"
+            )
+            suggested_action = (
+                "Verify criterion `"
+                f"{_inline(criterion.criterion_id, 128)}` against its stated acceptance condition"
+            )
+            status_line += (
+                f"; blocker: {_inline(blocker, 500)}; owner: {owner}; "
+                f"suggested next action: {suggested_action}; "
+                f"goal next action: {goal_next_action}"
+            )
+        lines.append(status_line)
 
     lines.extend(
         [
@@ -195,9 +226,17 @@ def render_goal_report(
                 if fact.source_event_id is not None
                 else ""
             )
+            fact_label = (
+                f"Outcome: {_inline(fact.bullet, 1000)}"
+                if fact.kind is FactKind.OUTCOME
+                else (
+                    f"{fact.kind.value.replace('_', ' ')}: "
+                    f"{_inline(fact.bullet, 1000)}"
+                )
+            )
             lines.append(
                 f"- `{_inline(fact.fact_id, 256)}` — "
-                f"{fact.kind.value.replace('_', ' ')}: {_inline(fact.bullet, 1000)}"
+                f"{fact_label}"
                 f"{criterion}{evidence}{source}"
             )
     if page_end < len(snapshot.facts):

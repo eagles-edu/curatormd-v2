@@ -131,8 +131,12 @@ class EventPropertyTests(unittest.TestCase):
                 state = service.goal_status("generated-goal")
                 self.assertEqual(state.goal.status, GoalStatus.OPEN)
                 self.assertEqual(
-                    len(state.facts), len(set(bullets)) + 2
-                )  # lifecycle facts plus each distinct change bullet
+                    len(state.facts), len(set(bullets)) + 3
+                )  # claim, open-gate/outcome facts, and distinct changes
+                outcomes = tuple(
+                    fact for fact in state.facts if fact.kind is FactKind.OUTCOME
+                )
+                self.assertEqual(tuple(fact.bullet for fact in outcomes), ("open",))
             finally:
                 store.close()
 
@@ -205,9 +209,10 @@ class EventPropertyTests(unittest.TestCase):
                         for fact in facts
                     )
                 )
-                self.assertFalse(
-                    any(fact.kind is FactKind.OUTCOME for fact in facts)
+                outcomes = tuple(
+                    fact for fact in facts if fact.kind is FactKind.OUTCOME
                 )
+                self.assertEqual(tuple(fact.bullet for fact in outcomes), ("open",))
             finally:
                 store.close()
 

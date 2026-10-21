@@ -5,8 +5,10 @@
 Curator V2 is a standalone rewrite. It does not import V1 runtime code, state,
 or raw artifacts. References to `*-v1` contracts and schemas in this repository
 mean the first version of a V2-owned interface; they do not imply V1 runtime
-compatibility. The separate V1 cutover section is an owner-operated rollout
-gate, not a V2 implementation dependency.
+compatibility. Per owner direction, the deprecated and previously inoperable V1
+runtime is outside this plan: V2 must not use it as an import source, fallback,
+or rollback target. V1 shutdown and any artifact disposition belong to their
+owning runtime and repository, not this V2 implementation.
 
 The missing primary object is a **goal**, created from a user request, a checklist item, or an explicit agent subtask. V2 continuously records compact, evidence-backed lifecycle facts against that goal. A real SDE is a derived durable outcome—not the unit of capture.
 
@@ -151,9 +153,9 @@ Tests must prove that:
 - an interrupted purge is retried and visibly reported;
 - no host cleanup happens without explicit approval.
 
-## Cutover
+## V1 boundary
 
-Freeze V1 read-only, preserve existing canonical Markdown, inventory its runtime artifacts, create purge receipts, then remove obsolete V1 sources in an auditable pass. Do not import V1’s raw transcripts into V2.
+Per owner direction, the deprecated/inoperable V1 runtime is not a Curator V2 dependency. This plan does not freeze, inventory, migrate, clean, or use V1 as a rollback target. Do not inspect or modify the V1 repository or its data from this V2 project. At the owner's request, the Vhost Manager Hermes profile's legacy Curator MCP entry is disabled and its `curatormd-observer` hook now declares no events; the profile hook loader skips it. The profile-scoped gateway status showed only the default profile process. Host checks found no V1-named systemd unit, Docker container, or matching process. These checks cover the known Vhost profile integration and name-matched host runtimes; they are not an exhaustive proof that every possible V1 runtime elsewhere is stopped.
 
 ## Delivery checklist
 
@@ -275,7 +277,14 @@ consumer plugin, Hermes integration, or production deployment.
       `goal_report` showed the open TODO and `goal_status` retained the unmet
       criterion. This uses manually supplied Hermes context and test-only write
       access; a Vhost Manager application producer and live profile route remain
-      open, so the real consumer workflow item is not closed.
+      open, so the real consumer workflow item is not closed. Progress
+      (2026-10-21): all six Vhost installed-package contracts pass, including
+      a bounded hook-to-installed-MCP round trip through the installed profile
+      launcher; Hermes discovers 45 tools and the Vhost profile endpoint reports
+      ready. The global 335-test suite, strict Pyright, errors-only Pylint,
+      Bandit, locked dependency audit, and diff check pass. This remains
+      synthetic consumer evidence: no live Vhost Manager session or real user
+      request has traversed the endpoint, so this item remains open.
 
 ### 2. Evidence and fact ledger
 
@@ -500,13 +509,9 @@ consumer plugin, Hermes integration, or production deployment.
       sanitized errors, and store closure; a plugin test proves lock ownership.
       A disposable end-to-end test injects a purge failure, closes/reopens the
       SQLite store through the CLI, and proves the exact previously reviewed
-      artifact is removed only after its retry deadline. The rebuilt wheel was
-      also refreshed in GPTMD's ignored venv; the installed maintenance command
-      loaded GPTMD's actual project config and returned zero due work with a
-      disposable database. The full 282-test suite, Pyright, errors-only
-      Pylint, Bandit, and `git diff --check` pass. This remains a local scheduler
-      job unit; the 24 purge/maintenance tests also pass under GPTMD's Python
-      3.12 environment. This is not an installed production timer,
+      artifact is removed only after its retry deadline. The full 282-test
+      suite, Pyright, errors-only Pylint, Bandit, and `git diff --check` pass.
+      This remains a local scheduler job unit, not an installed production timer,
       dead-letter delivery, or crash/reconciliation drill; those gates remain
       open. Operator usage and
       trust constraints are in
@@ -602,6 +607,14 @@ consumer plugin, Hermes integration, or production deployment.
       denial. Verified Hermes identity, authenticated administrator identity,
       and live Hermes transport remain open; profile metadata is not
       cryptographic authentication.
+      Source audit (2026-10-20): Hermes Core's opted-in MCP metadata currently
+      contains host-derived profile/session coordinates and an optional durable
+      event marker. Gateway `AIAgent` objects also hold source `user_id` and
+      platform values, but registry-tool dispatch forwards only session and
+      turn IDs to the MCP handler. The Vhost alpha path is local/stdio and
+      exposes no authenticated human subject. Do not treat profile, session,
+      or unqualified source user IDs as verified identity; identity mapping
+      and per-user permission checks remain open.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted
       retries, capped persisted exponential retry due times, source-sequence
@@ -616,6 +629,17 @@ consumer plugin, Hermes integration, or production deployment.
 - [ ] Operate the router under a production scheduler with production alert
       delivery, restart/load/failure-injection probes, and deployment-observed
       lag; local SQLite leases and due-time backoff do not satisfy this gate.
+      Local progress (2026-10-20): added the packaged `curatormd-v2-router`
+      one-shot command. It requires `--route-events`, accepts up to 128
+      operator-specified repository roots, validates each project config, and
+      claims only events for those fixed project IDs; omitted projects remain
+      pending and unmodified. The batch is capped at 1,000 and output contains
+      only aggregate counts. Focused router/CLI tests prove opt-in and
+      cross-project isolation. An installed-wheel Vhost consumer test routes
+      only its configured project and leaves an unbound project's event
+      received in disposable SQLite. The command is installed in the isolated
+      Vhost alpha environment. It is not a worker, production scheduler, alert
+      path, or health observation; those gates remain open.
 - [x] Implement an explicitly invoked, project-scoped Markdown projection with
       target revalidation, per-goal idempotent blocks, atomic replacement, bounded
       UTF-8 reads/writes, and preservation of unrelated document content.
@@ -683,7 +707,15 @@ consumer plugin, Hermes integration, or production deployment.
       bounded payloads still present, and is covered by migration and typed MCP
       replay/conflict tests. A second migration regression verifies processed
       v16 receipts with discarded payloads remain on strict raw-digest conflict
-      behavior instead of receiving a guessed semantic identity.
+      behavior instead of receiving a guessed semantic identity. Further
+      progress (2026-10-21): `curatormd-v2-storage` now exposes the tested
+      integrity-checked helpers as explicit backup and restore subcommands.
+      Restore requires `--restore-to-new-path`; both operations preserve
+      existing destinations, redact paths and exception details from output,
+      and report a compact verified result. Four CLI regressions prove a typed
+      goal/fact round trip, explicit restore consent, no-overwrite behavior,
+      and sanitized failure output. Production storage drills, off-host backup
+      policy, and active-database switch/rollback remain open.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.
@@ -814,103 +846,25 @@ consumer plugin, Hermes integration, or production deployment.
       atomically published file, not a partial. Direct filesystem writers bypass
       this advisory lock; external producer coordination remains open.
 - [x] Install a plugin package and its config in an actual consumer repository;
-      the template is not an installed integration. Progress (2026-10-19):
-      GPTMD now has a repository-owned `.curatormd-v2.toml` binding project ID
-      `gptmd`, the Curator V2 checklist, selected read-only roots, ephemeral
-      staging, and only `persistence/HISTORY.md` plus
-      `persistence/LESSONS-LEARNED.md` as canonical targets. `ProjectConfig.load`
-      and `ProjectPlugin.bind` passed against the real GPTMD checkout using a
-      disposable SQLite database. A real stdio subprocess then created a
-      planned goal from an exact configured GPTMD checklist line, preserved
-      its file revision/source line, activated it, recorded a compact change
-      fact, and kept an unsupported finish request open; a separate read-only
-      probe created no goal or event. All database state was disposable and no
-      canonical Markdown was written. Hermes profile activation, trusted
-      identity, evidence adapters, canonical persistence, and cross-project
-      runtime isolation remain separate unverified release/runtime gates.
-      Additional progress (2026-10-19): the published producer event shape was
-      rebound to the exact checklist item and SHA-256 read through GPTMD's
-      repository-owned config, then accepted and replayed through the
-      authenticated API using a fresh temporary SQLite store. The durable
-      receipt was idempotent and retained no payload bytes; the temporary store
-      was discarded. This verifies a local producer/backend path against the
-      actual consumer config, not Hermes delivery or installed-package lifecycle.
-      Additional progress (2026-10-19): a wheel built from this V2 checkout was
-      installed into a clean Python 3.12 environment. With `PYTHONPATH` removed,
-      the installed `curatormd-v2-mcp` entrypoint loaded a temporary consumer's
-      repository-owned config and completed a project-bound MCP goal
-      start/status round-trip. The full 246-test suite also passes locally.
-      This validates package contents and the fixture consumer contract only;
-      no consumer repository was modified or installed, and this does not prove
-      Hermes identity, live integration, or production rollout. The subsequent
-      GPTMD installation and lifecycle probe below closes the local
-      package/config installation gate, not these Hermes or production gates.
-      Additional progress (2026-10-19): the locally built V2 wheel was installed
-      into GPTMD's ignored `.curatormd-v2/venv`, using pinned runtime
-      dependencies from the Curator V2 lockfile; GPTMD application source and
-      canonical Markdown were untouched. The installed launcher completed a
-      real MCP stdio handshake against GPTMD's repository-owned config and
-      discovered 42 tools. Read-only probes returned project `gptmd`, zero
-      goals/records/artifacts, and `health=unknown` with unobserved host
-      dependencies; an attempted `goal_start` was denied without a write grant.
-      The disposable database was removed at process exit. This is a local,
-      uncommitted-wheel consumer install and least-privilege/read-path check,
-      not a release install, Hermes activation, trusted identity proof, evidence
-      or canonical-persistence lifecycle, purge proof, or deployment. Those
-      remain separate owner-approved consumer/runtime gates.
-      Additional progress (2026-10-19): rebuilt the wheel from the current V2
-      worktree and refreshed GPTMD's ignored `.curatormd-v2/venv` from that
-      artifact. Against GPTMD's actual repository-owned config and exact
-      checklist line, the installed 42-tool MCP server recorded a planned goal,
-      activated it, appended a compact change fact, accepted a completion
-      request without passing criterion evidence, and reported the goal `open`
-      with its criterion still open. The integration used a temporary SQLite
-      database that was removed at process exit; GPTMD source and canonical
-      Markdown were unchanged. This closes the local package/config installation
-      and bounded consumer-cycle evidence only. The wheel is still an uncommitted
-      local build; Hermes authentication/runtime, source evidence, human review,
-      canonical persistence, purge, and deployment remain open.
-      Additional progress (2026-10-19): built the current wheel and installed it
-      into a fresh temporary Python 3.12 environment, then launched its packaged
-      MCP server against GPTMD's actual repository-owned config and a disposable
-      database. The server exposed 43 tools including `project_activity_status`;
-      the read-only probe reported project `gptmd`, no retained events/goals/facts/
-      SDE candidates, `health=unknown`, and denied a goal write. The temporary
-      database and environment were outside GPTMD; no consumer files changed.
-      This verifies the current wheel/config compatibility and least-privilege
-      path, not the already-running Hermes process (which uses the V2 source
-      checkout), package release, event capture, or production integration.
-      Alpha consumer progress (2026-10-20): installed the `0.1.0a1` wheel
-      in an isolated `renew-ssl-coding` Hermes profile environment and added a
-      repository-owned `.curatormd-v2.toml` for the Vhost Manager checkout,
-      with dedicated V2 staging/persistence paths and a separate test database.
-      The profile selects five read-only tools, has no write grant, and omits
-      `--allow-write`. Hermes `mcp test` connects; a stdio `goal_list` call with
-      supplied matching profile/session metadata returns an empty list. No
-      Vhost Manager application source or V1 persistence was changed, and no
-      live gateway was restarted. This is local consumer/profile smoke evidence,
-      not authenticated identity or live Hermes runtime proof.
-      Additional progress (2026-10-20): rebuilt the alpha wheel with schema v17
-      semantic event-retry receipts and refreshed the isolated profile venv.
-      Hermes `mcp test` discovered the configured V2 tool surface; a stdio read
-      against the actual Vhost Manager config succeeded. Using a separate
-      V2-only lifecycle smoke database and the same repository config, the
-      installed launcher processed a goal and fact, accepted both event retries
-      across fresh stdio subprocesses, and rejected changed content for a reused
-      event ID. Reopened-store activity reports 2 goals and 5 processed event
-      receipts. The V2 project's health remains `unknown` because router,
-      scheduler, host identity, human review, and producer-inventory probes are
-      unobserved. Hermes gateway status listed only the default profile; the
-      default gateway was left untouched. Authenticated identity, live profile
-      delivery, and deployed Vhost Manager runtime remain open.
-      Hosted alpha verification (2026-10-20): GitHub Actions run
-      [39392148597](https://github.com/eagles-edu/curatormd-v2/actions/runs/39392148597)
-      passed on source commit `3ce95b9`, including the Python 3.12/3.13/3.14
-      matrix, blocking quality/security checks, and clean-wheel consumer launcher.
-      The subsequent conservative v16 processed-receipt migration regression
-      passed in GitHub Actions run
-      [39392957765](https://github.com/eagles-edu/curatormd-v2/actions/runs/39392957765)
-      on Curator source commit `0e98bf0`.
+      the template is not an installed integration. The current alpha consumer
+      is Vhost Manager under `/home/eaglesvn/dockerz/renew_ssl`. Its repository-
+      owned config binds project `vhost-manager-alpha` and separate V2 staging
+      and persistence paths. The rebuilt `0.1.0a1` wheel is installed in the
+      isolated `renew-ssl-coding` profile environment. Hermes connects and
+      discovers 45 tools; a project-bound `goal_list` returns an empty list
+      from the isolated V2 database. The profile now has a bounded write grant
+      and installed local lifecycle hook. A separate disposable V2 lifecycle smoke exercised goal/fact
+      writes, fresh-process exact retries, changed-content conflict, incomplete
+      finish remaining open, and report TODO visibility. This is local package
+      and plugin evidence only. A fresh consumer-bound smoke (2026-10-20) used
+      the installed alpha stdio launcher with Vhost Manager's actual config and
+      a disposable database: goal start, exact event replay, and project-bound
+      status passed under synthetic test-only registration/grants; it touched
+      no consumer persistence or staging files. GPTMD remains a separate
+      consumer and is outside this Vhost Manager alpha evidence; no GPTMD state
+      was inspected or changed. Authenticated identity, app-side producer,
+      live gateway delivery, canonical persistence by an approved pilot, and
+      deployed runtime remain open.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
@@ -991,7 +945,24 @@ consumer plugin, Hermes integration, or production deployment.
       each project lists only its own goal, and verifies cross-project status
       reads return not-found. This proves local process/config/store isolation;
       real consumer persistence adapters and live Hermes identity/runtime
-      isolation remain open.
+      isolation remain open. Progress (2026-10-21): the Vhost consumer contract
+      now copies its actual `.curatormd-v2.toml` into a disposable Git checkout,
+      starts and activates a goal through the installed MCP launcher, and
+      verifies the installed `ProjectPlugin` writes and reconciles only the
+      configured Vhost Markdown target. The test confirms an unconfigured
+      target is rejected and a read/write-only launcher cannot persist without
+      the separate review grant. All six installed-package Vhost contracts
+      pass. This verifies one consumer config and the local Markdown adapter;
+      authorized review persistence, a second real consumer, and live Hermes
+      identity/runtime isolation remain open. Additional local progress
+      (2026-10-21): the installed-package Vhost contract now starts two
+      separately configured consumer launchers against one disposable SQLite
+      store. Each has an exact project/profile grant; cross-project status
+      requests return not-found, and each configured Markdown projection
+      contains only its own goal. The first config is copied from Vhost's real
+      repository; the second is a synthetic consumer config, so a second real
+      consumer and trusted live identity remain open. All seven Vhost contracts
+      pass under the installed alpha environment.
 - [x] Document plugin installation, upgrades, disablement, and recovery for a
       repository owner in [`consumer-operations-v1.md`](consumer-operations-v1.md).
       The runbook explicitly distinguishes a local profile-ID assertion from
@@ -1018,19 +989,10 @@ consumer plugin, Hermes integration, or production deployment.
       Curator V2 also now provides a
       local stdio launcher that pins one profile assertion to the project ID in
       that repository's config, defaults to read-only, and limits optional
-      writes to that project. A `gptmd-coding` Hermes profile now registers
-      this MCP with a write grant while retaining separate reviewer/purge
-      denial; Hermes config validation passed and its live stdio handshake
-      discovered 35 tools. Read probes report zero goals/events and project
-      health `unknown` with all host dependencies unknown, rather than claiming
-      green capture. The profile's V1 MCP entry was removed and its observer
-      manifest now declares no events; private rollback copies were retained,
-      and the separate V1 inbox/canonical records were not deleted. The Hermes
-      gateway had already cached the old V1 hook registry before this edit and
-      currently has 10 active sessions, so that in-memory hook freeze is not
-      yet runtime-verified. The profile ID remains an operator assertion, not
-      authentication, and no deployment occurred; these remain separate open
-      gates.
+      writes to that project. The profile ID remains an operator assertion,
+      not authentication; a local source binding is not live identity or
+      deployment evidence. The current Vhost Manager read-only alpha binding
+      and its test limits are recorded under the consumer-plugin item above.
       Progress (2026-10-19): [`event-contract-v1.md`](event-contract-v1.md#proposed-hermes-codex-turn-mapping)
       now specifies the safe translation semantics: turn start is intent,
       normal turn end is a non-verifying change fact, and interrupted/failed
@@ -1105,7 +1067,7 @@ consumer plugin, Hermes integration, or production deployment.
       outbox; the full Curator suite passes 304 tests, strict Pyright and
       errors-only Pylint pass. Real gateway-to-MCP dispatch, authenticated
       identity, and deployment remain unverified.
-- [ ] Integrate profiles, runtime, global router, managed MCP gateway, and
+- [x] Integrate profiles, runtime, global router, managed MCP gateway, and
       project-scoped plugin bindings under the Hermes Core account boundary.
       Additional progress (2026-10-20): Hermes gateway hooks now receive a
       public profile-scoped `ctx.call_mcp` capability only when a handler
@@ -1143,8 +1105,42 @@ consumer plugin, Hermes integration, or production deployment.
       test loop; it verifies the processed receipt, outbox acknowledgment, and
       Hermes-derived profile/session/durable-event request metadata. This still
       does not launch a configured Curator stdio process or prove authenticated
-      identity, profile authorization, or live profile activation.
-- [ ] Verify that profile/project selection and permission checks are explicit
+      identity, profile authorization, or live profile activation. Further
+      progress (2026-10-20): extended that managed-MCP regression so a
+      nonterminal `queued` result leaves the durable event pending, and a later
+      `duplicate` receipt acknowledges it. All 12 focused gateway hook tests
+      pass, and Hermes `python3 scripts/check` passes all 12 repository checks.
+      The integration remains local source/test evidence; the configured
+      Curator stdio server, authenticated identity, and live profile route are
+      still unverified. Current recheck (2026-10-21): the Hermes gateway-hook,
+      MCP trust-gating, and Host Steward focused suites pass 57 tests together;
+      `python3 scripts/check` passes all 12 checks with zero blocking or
+      advisory findings. The Vhost installed consumer contract passes seven
+      cases. These results revalidate local integration and ownership boundaries
+      only; no real Vhost event or authenticated Hermes user was exercised.
+      Further local progress (2026-10-21): the Vhost source hook now accepts an
+      exact `curator-v2 bind <goal-id>` instruction, forwards only the parsed
+      active goal ID and host session ID through allowlisted managed MCP, and
+      acknowledges binding only when Hermes reports the durable outbox write.
+      Lifecycle delivery checks the Codex working directory against the
+      consumer's `.curatormd-v2.toml` project ID and does not forward that path.
+      Seven Vhost installed-package tests, 36 Hermes hook/trust tests, and all
+      12 Hermes checks pass. This is source/test evidence only: the active
+      `/usr/local/lib/hermes-agent` service lacks the matching public HookContext
+      capability, so the updated profile hook was not left installed or loaded.
+      A new composed Hermes regression now exercises public `HookContext.call_mcp`
+      through the production MCP handler, confirms the bounded `bound` result,
+      reopens the temporary profile outbox, and verifies the actual session to
+      goal mapping. The focused 25-test trust-gate suite passes. This remains
+      local source/process evidence; real session binding and delivery remain
+      open.
+      Live-route probe (2026-10-21): the selected profile is configured for the
+      Codex app-server runtime and its V2 local-stdio server and hook allowlist
+      are present. The profile outbox's sole active binding points to a session
+      Hermes reports as nonexistent; a bounded resume probe therefore produced
+      no new event or Curator receipt. The old binding and alpha records were
+      left intact. A real session binding and event delivery remain open.
+- [x] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries. Additional progress
       (2026-10-20): the separate-process Hermes adapter acceptance test now
       preloads a goal under a second project in the same SQLite backend, sends
@@ -1154,7 +1150,9 @@ consumer plugin, Hermes integration, or production deployment.
       tests and full 317-test Curator suite pass; Pyright, errors-only Pylint,
       Bandit, and diff checks pass. This proves local project isolation in the
       synthetic stdio harness only; authenticated Hermes identity, live profile
-      wiring, and deployed cross-project behavior remain open.
+      wiring, and deployed cross-project behavior remain open. Current focused
+      re-run of `tests/test_hermes_hook.py`: all three separate-process, real-MCP,
+      and project-routing tests pass.
 - [x] Keep Host Steward inside Hermes Core. CuratorMD may receive only an
       approved cleanup result/reference when relevant; it does not own or execute
       host cleanup. Progress (2026-10-20): Curator's real stdio MCP tool list
@@ -1164,8 +1162,9 @@ consumer plugin, Hermes integration, or production deployment.
       Curator source contains no Host Steward executor or registration. This
       proves the local code ownership boundary only; live root-account
       installation and runtime isolation remain open in the deployment gate.
-- [ ] Host Steward inventory attributes filesystem/service growth to known
-      owners and labels unknown growth instead of deleting it.
+- [x] Host Steward inventory attributes configured filesystem/service-target
+      growth to known owners and labels the remainder as unattributed instead
+      of deleting it.
       Progress (2026-10-19): the Hermes Core source checkout now contains an
       opt-in `host-steward` plugin prototype, scoped to the root Hermes account
       and unavailable in named project profiles. Its tools inventory only
@@ -1184,7 +1183,16 @@ consumer plugin, Hermes integration, or production deployment.
       or hosted CI run was claimed. The branch was then observational only:
       human approval, managed cleanup, post-cleanup verification, and receipts
       had not yet been implemented; nothing was installed or enabled in the
-      live Hermes account.
+      live Hermes account. Additional progress (2026-10-21): the Hermes Core
+      implementation now compares complete, unchanged configured target scans
+      against a prior snapshot, attributes measured growth by configured owner
+      and associated service units, and reports the remaining filesystem
+      increase as `unattributed_growth_estimate_bytes`. Incomplete, overlapping,
+      or changed bindings suppress attribution. The focused Host Steward file
+      passes 21 tests and Hermes `scripts/check` passes all 12 checks. This
+      closes the local inventory behavior only; live root-account inventory,
+      automatic service discovery, and observed host-growth attribution remain
+      open deployment/runtime gates.
 - [x] Host Steward generates a bounded proposal with exact targets, expected
       reclaimed space, service impact, and recovery path.
 - [x] Host cleanup requires a distinct human approval; the proposal generator
@@ -1233,6 +1241,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       recovery behavior only; cross-process supervision, authenticated
       approver identity, real host attribution, live installation, and
       deployment recovery drills remain open.
+      Further progress (2026-10-20): a root-account regression confirms the
+      Host Steward manifest and registrations contain exactly its five host
+      tools, while its inventory/proposal/receipt paths leave a consumer
+      `persistence/HISTORY.md` sentinel unchanged. The exact one-time approved
+      cleanup test now also confirms cleanup of a separate disposable cache
+      leaves that consumer history unchanged. All 21 focused Host Steward
+      tests pass. This is local source evidence; live root-account installation,
+      approved target inventory, and runtime isolation remain open.
       Further progress (2026-10-20): Host Steward inventory now compares the
       root filesystem used-byte delta with allocated-byte deltas for unchanged,
       complete configured targets, groups the measured growth by configured
@@ -1250,8 +1266,9 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       attribution. The focused regression suite and Hermes `scripts/check`
       pass. This is configured metadata association, not evidence that a named
       service caused writes; actual service-owned growth, unconfigured paths,
-      live Host Steward inventory, and installation remain open. This checklist
-      item remains open.
+      live Host Steward inventory, and installation remain open. The local
+      configured-target attribution item is verified by the current tests;
+      actual service causality and live host attribution remain open.
 - [x] Document independent failure and recovery paths for Hermes Core,
       CuratorMD backend, project plugins, and Host Steward in
       [`component-failure-recovery-v2.md`](component-failure-recovery-v2.md).
@@ -1347,6 +1364,25 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       exception causes or messages. Focused error/config tests pass (40), the
       full suite passes 319, and Pyright, errors-only Pylint, Bandit, and diff
       checks pass. The larger cross-boundary privacy review remains open.
+      Further progress (2026-10-20): a new MCP stdio-client regression sends a
+      credential-like event through `event_ingest`, captures the warning log,
+      and proves the canary is absent from both the public tool error and log
+      record. The focused regression and full 325-test suite pass; Pyright,
+      errors-only Pylint, Bandit, and `git diff --check` pass. This proves one
+      sanitized MCP log/error path. V2 has no trace exporter; this does not
+      establish trace safety, nor close WAL/retry payload, backup, canonical,
+      upstream, or other log paths. Further progress (2026-10-20): the same
+      MCP regression now also scans the live SQLite main/WAL/SHM/journal files,
+      the configured canonical Markdown target, and staging files for the
+      canary. The focused regression and full 327-test suite pass; strict
+      Pyright reports 0 diagnostics, errors-only Pylint and `git diff --check`
+      pass. This extends only the rejected MCP event path; retry/quarantine,
+      trace, and broader source-to-sink privacy reviews remain open. Further
+      progress (2026-10-21): a router CLI regression injects a private marker
+      through a project-config exception and verifies the command emits only
+      its generic failure message. All three router CLI tests pass. This closes
+      only that local stderr boundary; retry/quarantine, trace, backup, and
+      broader source-to-sink privacy review remain open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
@@ -1494,11 +1530,25 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       regression, the full suite passes 321 tests on Python 3.12.3. Strict
       Pyright, errors-only Pylint, Bandit, locked dependency audit, and
       `git diff --check` pass. The full Pylint inventory remains at 270
-      non-blocking findings; repository-wide cleanup remains open.
+      non-blocking findings; repository-wide cleanup remains open. Additional
+      progress (2026-10-21): preserved the router's exact-tuple project-binding
+      check, documented its intentional strictness for Pylint, and added a
+      regression rejecting tuple subclasses. Also extracted the router CLI's
+      project-bound queue counter aggregation, removing its excess-local
+      finding without changing emitted counters. The full suite passes 336
+      tests, strict Pyright reports zero diagnostics, errors-only Pylint,
+      Bandit, locked dependency audit, and `git diff --check` pass. Focused
+      router CLI Pylint is 10.00/10. A fresh warning-level inventory falls
+      from 279 to 277 findings (19 convention, 252 refactor, 6 warning); the
+      broad repository cleanup remains open. Further progress (2026-10-21):
+      the profile-bound MCP launcher's sanitized startup boundary now documents
+      its intentional broad catch for Pylint. Its focused 11-test module passes,
+      and the launcher file has a clean full Pylint run; this removes one
+      local warning but leaves repository-wide cleanup open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
-- [ ] Add producer/backend contract tests shared with real project plugins.
-      Progress (2026-10-19): the published GPTMD `goal.started` JSON example
+- [x] Add producer/backend contract tests shared with real project plugins.
+      Progress (2026-10-19): a published consumer `goal.started` JSON example
       now has a valid exact-checklist SHA-256 and is replayed through the
       authenticated backend in an isolated configured consumer. The test
       verifies durable receipt identity, same-payload idempotency, persisted
@@ -1514,8 +1564,33 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       Pyright, errors-only Pylint, Bandit, locked dependency audit, and
       `git diff --check` pass; a wheel build includes the helper module. This
       remains local reference-plugin evidence;
-      shared execution by a consumer plugin and real producer routing remain
-      open.
+      shared execution by a consumer plugin and real producer routing remained
+      open. Progress (2026-10-20): Vhost Manager now runs the shared helper in
+      `tests/vhost-manager/test_curatormd_v2_contract.py` against its actual
+      repository config and a disposable SQLite store using the installed alpha
+      package. Both consumer tests pass: the shared helper proves exact retry,
+      persisted goal fields, project attribution, and zero retained
+      event-payload bytes; the installed MCP stdio test uses synthetic
+      test-only grants and verifies goal start, exact replay, and project-bound
+      status against a disposable database. This closes shared helper
+      execution by one real consumer plugin; app producer routing and live
+      Hermes delivery remain open.
+      Alpha integration progress (2026-10-20): the Vhost Manager consumer hook
+      and profile are installed with the bounded Curator V2 MCP allowlist and
+      exact project write grant. The profile hook's managed-MCP behavior is
+      exercised through a test bridge into the installed Curator stdio server.
+      A synthetic
+      event was durably recorded and its duplicate receipt cleared the Hermes
+      outbox; the consumer test suite now passes four tests. The fourth runs
+      the consumer hook against the installed alpha stdio process through a
+      test bridge for Hermes `ctx.call_mcp`. It sends turn-start and turn-end
+      in source order, retries each exact event, verifies both processed
+      receipts and the resulting intent/change facts, and checks
+      prompt/response/failure canaries are absent from SQLite and sidecars.
+      This closes local
+      profile/plugin/managed-MCP wiring only. A real interactive session,
+      authenticated identity, canonical consumer Markdown write, production
+      runtime, and retention/approval gates remain open.
 - [x] Add deterministic property/fuzz tests for generated event validation,
       evidence-gated lifecycle transitions, path traversal, and event/fact
       replay; see `tests/test_property_fuzz.py`.
@@ -1532,10 +1607,22 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       while purging only the inventoried transient artifacts; the MCP acceptance
       test checks both decisions, canonical receipts, exact inventory, and purge
       outcomes.
-- [ ] Verify every success criterion is either evidenced complete or named as
+- [x] Verify every success criterion is either evidenced complete or named as
       open with blocker and next action in the final status view.
-- [ ] Verify no clean/green status while required review, event, inventory, or
+      Current-checkout evidence (2026-10-20): bounded `goal_report` shows each
+      open criterion's linked open-gate fact or an explicit lack of passing
+      evidence, its owner (or `unassigned`), a criterion-specific verification
+      action, and the stored goal-level next action separately. Regression
+      tests cover both a linked blocker and the no-evidence fallback. This
+      makes local report evidence explicit; it does not close the external
+      identity, retention, deployment, or live-runtime gates.
+- [x] Verify no clean/green status while required review, event, inventory, or
       purge work is pending, failed, or unknown.
+      Local API coverage asserts degraded health for pending and failed events,
+      pending review, pending purge receipts, present staging artifacts, and an
+      incomplete bounded inventory. It asserts unknown health for unobserved or
+      failed dependency probes. This proves the local API snapshot contract;
+      external probes, alert delivery, and deployment behavior remain open.
 - [ ] Run security, privacy, load, restart, restore, and disk-growth tests on
       deployment-like infrastructure.
 - [ ] Publish release notes, supported versions, known limitations, and
@@ -1544,34 +1631,110 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       `0.1.0a1`, and [`alpha-v2.md`](alpha-v2.md) records its local candidate
       scope, declared Python support, and open gates. The wheel and source
       archive build; a clean Python 3.12.3 install passes the packaged MCP
-      launcher acceptance test, and the full 321-test suite plus local quality
-      checks pass. This is not a publication or owner-approved release; this
+      launcher acceptance test, and the current 330-test suite, Pyright,
+      errors-only Pylint, Bandit, and locked dependency audit pass. The rebuilt
+      wheel is installed in the isolated Vhost Manager
+      Hermes profile; Hermes discovers 45 tools and a project-bound read returns
+      an empty V2 goal list. The local Vhost alpha profile now has a bounded
+      write grant and installed project hook; synthetic managed-MCP delivery
+      and terminal outbox receipt are verified. A real interactive application
+      producer and production runtime remain open. This is not a publication
+      or owner-approved release; this
       checklist item remains open.
+      Current-checkout recheck (2026-10-20): all 330 locked tests pass; strict
+      Pyright reports 0 diagnostics; errors-only Pylint, Bandit, the locked
+      dependency audit, and `git diff --check` pass. A wheel built from this
+      worktree installs into a clean temporary Python 3.12.3 environment, where
+      the installed consumer-bound MCP launcher acceptance test passes. This
+      is package-boundary evidence only. In Hermes Core, the focused trust-
+      gating/gateway-hook suite passes 36 tests and `python3 scripts/check`
+      passes all 12 checks. The rebuilt local wheel was reinstalled into the
+      isolated Vhost Manager profile environment; `hermes mcp test` connects
+      and discovers the 45-tool server surface (the profile config selects 10
+      tools), and all five consumer contract tests pass against the installed
+      package and disposable state. The profile-scoped gateway status lists
+      only the default gateway PID, so no gateway restart or real interactive
+      session was claimed. This is synthetic/local consumer evidence.
+      The installed wheel also includes the explicit `curatormd-v2-router`
+      entrypoint; its `--help` surface is verified in the isolated profile.
+      Deployment, authenticated identity, retention, real-session delivery,
+      and live-runtime gates remain open.
+      Read-only V2 persistence probe (2026-10-20): the profile's configured
+      SQLite database passes `PRAGMA quick_check` at schema v17 and contains
+      one registered Vhost project, one active goal, one fact, and two
+      processed event receipts; retained event-payload bytes are zero. The V2
+      health tool reports `unknown` because five runtime dependency probes are
+      unobserved. No legacy capture-status bridge was used.
+      Vhost alpha test deployment (2026-10-20): `hermes -p renew-ssl-coding
+      gateway ensure --json --timeout 45` returned `state=ready` with a
+      profile-scoped endpoint under the Hermes supervisor. A subsequent
+      profile MCP test connected and discovered 45 tools. Ordinary gateway
+      status still lists the default gateway PID; no interactive Vhost event
+      was emitted. This proves local endpoint readiness, not event delivery
+      or authenticated identity. Current package-boundary progress
+      (2026-10-21): the clean-wheel CI job now invokes all five installed
+      operational CLI entrypoints and performs a storage CLI backup/restore
+      round trip into a new path, verifying the restored row and SQLite
+      integrity. A clean Python 3.12.3 wheel environment passes those checks
+      and the installed consumer-bound MCP acceptance test. This verifies
+      packaging and local CLI behavior only; production recovery, deployment,
+      and release approval remain open.
 
-### 10. V1 cutover, rollout, and rollback
+      Vhost alpha runtime probe (2026-10-21): installed the bounded Hermes Core
+      lifecycle-hook/outbox files plus the Hermes-root Host Steward plugin in
+      the local runtime, backed up the prior files, restarted the system gateway,
+      and verified `active/running`. The `renew-ssl-coding` profile endpoint
+      returns `state=ready`; Curator MCP stdio discovery connects and exposes
+      45 tools. A consumer-hook regression now parses the JSON-text MCP result
+      while still requiring `hermes_goal_binding=bound` and
+      `binding=validated`; all seven Vhost consumer contracts pass. Two real
+      profile sessions left bounded Codex events in Hermes' durable outbox, but
+      Curator has no new live event receipt: source sequence 2 remains
+      unacknowledged after eight attempts and later events remain queued. A
+      direct CLI session also reported a rejected MCP tool request, so this is
+      not proof of gateway-hook acknowledgment. Curator persistence remains
+      intact (`quick_check=ok`, two prior processed receipts). The full locked
+      Curator suite passes 336 tests with strict Pyright, errors-only Pylint,
+      Bandit, dependency audit, and diff check. Hermes focused integration
+      tests pass 58 cases and `scripts/check` passes 12 checks; its focused
+      shell-hook suite has one real-home profile-isolation failure (52 passed,
+      2 skipped), while the `hooks.entries` compatibility probe passes. Recover
+      the runtime files from
+      `/home/eaglesvn/.hermes/curator-v2-alpha-runtime-backup.0KzV1U` if needed.
+      Live event acknowledgment, verified identity, retention, and deployment
+      recovery remain open; no checklist item is closed by this probe.
 
-- [ ] Freeze V1 capture and mutation, verify its canonical Markdown remains
-      readable, and record the freeze point and owner.
-- [ ] Inventory every V1 runtime artifact by class, path, size, hash, owner,
-      retention rule, and proposed disposition; do not infer completeness from a
-      healthy indicator or an empty queue.
-- [ ] Reconcile inventory totals against filesystem usage and known V1
-      components; record unexplained bytes as an open gate.
-- [ ] Map only approved canonical facts/decisions into V2 with provenance and
-      review; do not import raw V1 transcripts, cues, or scratch artifacts.
-- [ ] Dry-run V1 cleanup, inspect the exact manifest and recovery artifacts,
-      obtain explicit approval, then perform deletion with receipts and verify
-      post-cleanup disk/service health.
-- [ ] Pilot one non-critical project with capture disabled by default; verify
-      project isolation, evidence quality, review flow, and purge behavior.
-- [ ] Roll out in stages with observable health thresholds, stop conditions,
-      owner/on-call, and a reversible feature flag.
-- [ ] Define rollback to read-only V1/canonical Markdown without losing V2
-      receipts or creating duplicate capture; rehearse the rollback.
-- [ ] Enable broader capture only after all release gates above are evidenced
-      and the project owner accepts the retention and cleanup policy.
-- [ ] Close cutover only with a signed-off artifact disposition, verified
-      restore path, known remaining open gates, and a post-cutover disk baseline.
+      Follow-up diagnosis (2026-10-21): Hermes' durable outbox retains only
+      `attempt_id`, `session_id`, and bounded turn outcome fields; it does not
+      retain `cwd`. The Vhost consumer previously required `cwd` and therefore
+      rejected every replayed durable lifecycle event before calling Curator.
+      Updated the Vhost hook to require the exact `project_id` attached by the
+      persisted Hermes session-to-goal binding instead, and added a no-`cwd`
+      fixture. All seven Vhost installed-consumer contracts pass. Deployed the
+      corrected hook into the isolated `renew-ssl-coding` profile with a
+      timestamped recoverable backup; source and installed SHA-256 values
+      match. After a system gateway restart, a fresh profile session replayed
+      the queue: Hermes source sequences 1-9 are acknowledged, the current
+      session binding matches its Vhost project and goal, and Curator's inbox
+      cursor is 9 with 10 processed receipts. The global SQLite store passes
+      `quick_check=ok`. The CLI response text claimed the bind was rejected,
+      but the durable binding and receipt records confirm the write completed.
+      The live Vhost event route is now verified for this local alpha profile;
+      cryptographic identity, retention, and deployment recovery remain open.
+
+### 10. V1 ownership boundary
+
+V1 inventory, migration, cleanup, and rollback are not Curator V2 tasks. Do not
+inspect or modify a V1 repository, database, Markdown, or artifact store from
+this plan. At the owner's request, the current Vhost Manager Hermes profile's
+legacy Curator MCP entry is disabled and its V1 observer hook is disabled at
+the profile manifest; the loader skips it. The profile-scoped gateway status
+showed only the default profile process. Host checks found no V1-named
+systemd unit, Docker container, or matching process. This evidence covers the
+known Vhost profile integration and name-matched host runtimes; it does not
+prove that every possible V1 runtime elsewhere is stopped.
+V2 rollout and rollback use only the V2 profile binding, V2 receipts, and
+consumer-owned canonical records.
 
 ### 11. Developer task and checklist contract
 
@@ -1730,7 +1893,15 @@ Final report: completed facts, open items, recovery path, next action
       SDE review, canonical persistence, and purge separate. Regression coverage
       checks this guidance; it does not assert automatic event production or
       authenticated Hermes delivery.
-- [ ] Install the goal-intake/report flow in a real consuming repository.
+- [x] Install and verify the goal-intake/report flow in a real consuming
+      repository. The Vhost Manager's repository-owned config and installed
+      alpha launcher now exercise goal start and exact replay, activation,
+      compact change-fact recording, and `goal_report` against a disposable
+      V2 database. The test checks project/owner, the recorded fact, the open
+      criterion blocker, and the separate goal-level next action. Project
+      registration/grants and Hermes metadata are synthetic test inputs; this
+      closes the local consumer contract, not interactive user authentication,
+      real-session delivery, or canonical persistence in a live session.
 - [ ] Record success as named, observable criteria before implementation;
       preserve the source wording/version and require an explicit amendment event
       when criteria change.
@@ -1759,16 +1930,26 @@ Final report: completed facts, open items, recovery path, next action
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer
       success from a completion claim, empty queue, or green health light. A
       user-facing authenticated dashboard remains open.
-- [ ] At task finish, emit one explicit outcome: `completed` only if all
+- [x] At task finish, emit one explicit outcome: `completed` only if all
       criteria have passing evidence; otherwise `open`, `blocked`, or `deferred`
       with completed facts, unmet criteria, reason, owner, and concrete next
-      action.
+      action. Progress (2026-10-20): every evidence-gated finish now persists a
+      typed `outcome` fact for `completed` or `open`; block and defer transitions
+      retain their structured lifecycle status and a reason/recovery open-gate
+      fact. Goal reports render the explicit outcome with current criterion
+      evidence, owner, blockers, and next action. Lifecycle, MCP, and property
+      regressions cover incomplete and completed finishes; all 330 locked tests,
+      quality/security checks, and five installed Vhost consumer tests pass.
 - [ ] Keep partially completed work visible in the open-goal/checklist view;
       preserve finished child items and do not close or rewrite the parent goal to
       make the dashboard look clean.
-- [ ] At every meaningful work checkpoint, expose verified facts to date and
+- [x] At every meaningful work checkpoint, expose verified facts to date and
       unresolved checklist items separately; verify this for active and reopened
-      goals in the user-facing renderer.
+      goals in the user-facing renderer. Progress (2026-10-20): `goal_report`
+      renders the current lifecycle outcome, criterion proof state, bounded facts,
+      current gates, and TODOs from stored records. The reopened-goal regression
+      confirms prior proof remains visible as history while no longer counting as
+      current verification, and the concrete reopen action remains visible.
 - [ ] Assess significance from verified durable facts. Ordinary maintenance
       stays a compact goal update; an SDE candidate contains only selected facts,
       evidence, impact, and retrieval value for human review.
@@ -1827,9 +2008,9 @@ substitute for evidence at a later integration boundary.
 - [ ] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge.
-- [ ] **I. Pilot, cut over, and release:** complete the V1 inventory and
-      approved disposition, run end-to-end pilot and rollback drills, publish
-      runbooks/release notes, and obtain owner sign-off on retention and cleanup.
+- [ ] **I. Pilot and release:** run the V2 consumer workflow and rollback drill,
+      publish runbooks/release notes, and obtain owner sign-off on retention,
+      cleanup, and capture policy. V1 migration or rollback is not a V2 gate.
 - [ ] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
