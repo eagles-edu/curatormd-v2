@@ -2063,6 +2063,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       locked dependency audit, and `git diff --check` pass. Full Pylint is 289
       findings (277 refactor, 12 oversized-module convention); the marker scan
       no longer reports excess locals. Repository-wide cleanup remains open.
+      Further progress (2026-10-22): factored trusted-receipt scope matching
+      and timestamp/revocation freshness checks into explicit adapter helpers.
+      All 13 evidence-adapter tests and the full 368-test suite pass; strict
+      Pyright, errors-only Pylint, Bandit, dependency audit, and diff check
+      pass. The full Pylint inventory is 287 findings (275 refactor, 12
+      oversized-module convention). Deployment-owned source credentials, trust
+      roots, and end-to-end source probes remain open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

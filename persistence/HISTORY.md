@@ -2,6 +2,13 @@
 
 ## 2026-10-22
 
+- Split evidence receipt scope matching from timestamp, expiry, and revocation
+  freshness checks inside the fail-closed adapter. The 13 focused evidence
+  tests and full 368-test suite pass; strict Pyright, errors-only Pylint,
+  Bandit, locked dependency audit, and `git diff --check` pass. Full Pylint is
+  down from 289 to 287 findings (275 refactor, 12 oversized-module convention).
+  Deployment-owned credentials, trust roots, and real source probes remain
+  unverified.
 - Split project Markdown marker indexing from block classification while
   preserving the bounded marker cap and orphan/malformed counts. All 19 focused
   Markdown tests and the full 368-test suite pass; strict Pyright, errors-only

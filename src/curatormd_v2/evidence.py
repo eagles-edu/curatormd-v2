@@ -254,41 +254,9 @@ class ReceiptEvidenceAdapter:
             if not isinstance(receipt, EvidenceSourceReceipt):
                 return None
             now = context.now_utc
-            observed_at = _parse_time(receipt.observed_at)
-            valid_until = _parse_time(receipt.valid_until)
-            revocation_checked_at = _parse_time(receipt.revocation_checked_at)
-            if observed_at is None or valid_until is None or revocation_checked_at is None:
+            if not self._receipt_matches_binding(receipt, evidence, context):
                 return None
-            if not is_exact_bool(receipt.revoked) or receipt.revoked:
-                return None
-            if (
-                receipt.evidence_kind != evidence.evidence_kind
-                or receipt.locator != evidence.locator
-                or receipt.evidence_sha256 != evidence.sha256
-                or receipt.project_id != context.project_id
-                or receipt.goal_id != context.goal_id
-                or receipt.criterion_id != context.criterion_id
-                or receipt.scope_id != self.scope_id
-                or receipt.authenticated_subject not in self.allowed_subjects
-            ):
-                return None
-            if observed_at > now or revocation_checked_at > now or valid_until <= now:
-                return None
-            if revocation_checked_at < observed_at:
-                return None
-            if now - revocation_checked_at > timedelta(
-                seconds=self.max_revocation_age_seconds
-            ):
-                return None
-            if self.max_observation_age_seconds is not None and (
-                now - observed_at
-                > timedelta(seconds=self.max_observation_age_seconds)
-            ):
-                return None
-            if self.max_validity_seconds is not None and (
-                valid_until - observed_at
-                > timedelta(seconds=self.max_validity_seconds)
-            ):
+            if not self._receipt_times_are_current(receipt, now):
                 return None
             return EvidenceAttestation(
                 evidence_kind=evidence.evidence_kind,
@@ -308,6 +276,64 @@ class ReceiptEvidenceAdapter:
             # Distinguish a broken trusted adapter from an ordinary bad proof,
             # but never expose the resolver's exception or message.
             raise EvidenceAdapterError() from None
+
+    def _receipt_matches_binding(
+        self,
+        receipt: EvidenceSourceReceipt,
+        evidence: EvidenceRef,
+        context: EvidenceVerificationContext,
+    ) -> bool:
+        """Match a resolved receipt to its exact proof and host-owned scope."""
+
+        return not any(
+            (
+                receipt.evidence_kind != evidence.evidence_kind,
+                receipt.locator != evidence.locator,
+                receipt.evidence_sha256 != evidence.sha256,
+                receipt.project_id != context.project_id,
+                receipt.goal_id != context.goal_id,
+                receipt.criterion_id != context.criterion_id,
+                receipt.scope_id != self.scope_id,
+                receipt.authenticated_subject not in self.allowed_subjects,
+            )
+        )
+
+    def _receipt_times_are_current(
+        self, receipt: EvidenceSourceReceipt, now: datetime
+    ) -> bool:
+        """Enforce revocation, freshness, expiry, and source age ceilings."""
+
+        observed_at = _parse_time(receipt.observed_at)
+        valid_until = _parse_time(receipt.valid_until)
+        revocation_checked_at = _parse_time(receipt.revocation_checked_at)
+        if (
+            observed_at is None
+            or valid_until is None
+            or revocation_checked_at is None
+            or not is_exact_bool(receipt.revoked)
+            or receipt.revoked
+        ):
+            return False
+        if any(
+            (
+                observed_at > now,
+                revocation_checked_at > now,
+                valid_until <= now,
+                revocation_checked_at < observed_at,
+                now - revocation_checked_at
+                > timedelta(seconds=self.max_revocation_age_seconds),
+            )
+        ):
+            return False
+        if self.max_observation_age_seconds is not None and (
+            now - observed_at > timedelta(seconds=self.max_observation_age_seconds)
+        ):
+            return False
+        if self.max_validity_seconds is not None and (
+            valid_until - observed_at > timedelta(seconds=self.max_validity_seconds)
+        ):
+            return False
+        return True
 
 
 class RepositoryEvidenceAdapter(ReceiptEvidenceAdapter):
