@@ -164,7 +164,7 @@ The successful hosted runs on `8733875`, `3ce95b9`, and `0e98bf0` close hosted s
 binding are installed locally. The local Hermes-to-Curator route has processed
 12 receipts, while the Vhost application workflow and live canonical target
 write remain unverified. Production deployment, authenticated identity,
-retention policy, recovery, and owner-approval gates remain open.
+production retention policy, recovery, and owner-approval gates remain open.
 
 The new local restart regression,
 `DurableEventRouterTests.test_ordered_pending_events_resume_after_store_restart_and_replay`,
@@ -199,7 +199,7 @@ The current locked CI quality/security commands are documented in
 | F | Local Vhost Manager alpha binding is active with a bounded write grant and installed consumer hook; real app producer, canonical persistence, and rollback remain unverified. | Disable only the V2 project binding, retaining V2 receipts, staged evidence, and consumer records; then repair and repeat the alpha checks. | Pilot owner confirms the live workflow, persistence targets, retention policy, and rollback path. |
 | G | Vhost Manager local alpha route passes synthetic hook-to-managed-MCP delivery and terminal outbox acknowledgment; real interactive identity and production routing remain open. | Keep the bounded V2 binding disabled if its exact project/profile route cannot be verified; preserve pending events for replay after repair. | Hermes profile owner approves event scope and project binding; raw transcript persistence remains prohibited. |
 | H | Host Steward is a Hermes Core concern and is absent from this repository. | Use the existing managed host cleanup workflow or leave disk findings pending; do not substitute Curator purge for host cleanup. | A human approves each exact host cleanup proposal; the executor cannot self-approve. |
-| I | Vhost Manager's alpha package and bounded project write grant are installed in its local profile; synthetic delivery passes, while live profile delivery, real application workflow, and release gates remain open. V1 is outside V2 scope. | Disable only the V2 project binding; retain V2 receipts, staged evidence, and consumer canonical records for owner-directed recovery. | Pilot owner confirms real-session workflow, exact persistence targets, retention policy, and rollback path before broader use. |
+| I | Vhost Manager's alpha package and bounded project write grant are installed in its local profile; synthetic delivery passes, while live profile delivery, real application workflow, and release gates remain open. V1 is outside V2 scope. | Disable only the V2 project binding; retain V2 receipts, staged evidence, and consumer canonical records for owner-directed recovery. | Pilot owner confirms real-session workflow, exact persistence targets, production retention policy, and rollback path before broader use. |
 
 The per-slice owner, concrete probe, expected result, observed result, and linked
 code/test evidence are recorded in the status table above. Where no deployment

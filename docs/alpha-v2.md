@@ -33,9 +33,12 @@ the exact commit only.
 - No production router, scheduler, monitoring/alert delivery, or real
   interactive capture event is established by this alpha. The local Vhost
   Manager pilot has only the bounded lifecycle hook described below.
-- Retention policy, legal/operational holds, production backup/restore and
-  recovery drills, and deployment rollback have not received owner approval or
-  deployment-like verification.
+- Local-alpha retention defaults and hold semantics are owner-approved: the
+  listed transient artifact classes become eligible promptly after recording
+  and SDE disposition, with a 72-hour maximum-age fallback. Pending SDE review
+  pauses expiry until disposition; explicit legal/operational holds require a
+  separate release. Production retention policy, external hold discovery,
+  backup/restore drills, and deployment rollback remain open.
 - The Vhost Manager local alpha pilot is installed and its seven consumer
   contracts pass, including a synthetic bounded event through the profile hook,
   installed MCP launcher, Curator V2 store, and Hermes outbox receipt path. On

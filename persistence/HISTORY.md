@@ -2610,3 +2610,15 @@
 **Open gate:** This is local test/source evidence. Live provider capture, complete project-wide token coverage, authenticated profile identity, production budgets/retention/alerts, and live runtime remain unverified.
 
 **Outcome:** The local Hermes usage integration is testable without real-home manifest access; no production or live-provider gate is closed.
+
+## 2026-10-22 — Align alpha gate docs with approved local retention
+
+**Intent:** Remove stale statements that implied local-alpha retention and hold defaults were still awaiting owner approval.
+
+**Changed fact:** The alpha limitations and release-gate summary now distinguish the approved local 72-hour maximum-age rule and explicit hold exceptions from the still-open production retention policy, external hold discovery, and deployment recovery requirements. The V2 delivery checklist count remains 129/153 complete and 24 open.
+
+**Verification:** Reviewed the changed policy language against the owner-approved local-alpha policy and current hold/expiry implementation; `git diff --check` passes. No runtime or source behavior changed.
+
+**Open gate:** Production retention/hold policy, authenticated identity, deployment recovery, and live-runtime evidence remain open.
+
+**Outcome:** Local-alpha approval and production-release evidence are described separately; the full V2 goal remains active.
