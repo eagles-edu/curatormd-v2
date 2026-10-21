@@ -2646,3 +2646,15 @@
 **Open gate:** Profile tool-call approval, authenticated identity, real Vhost application request/canonical write, production retention/recovery, and live production runtime remain unverified. Only the exact local UID-reviewed purge path is approved for local alpha.
 
 **Outcome:** The isolated endpoint is ready and the installed stdio tool surface is discoverable; application workflow and production readiness remain open.
+
+## 2026-10-22 — Reverify Vhost composition with the current wheel
+
+**Intent:** Recheck the repository-local Vhost plugin against the just-pushed Curator V2 wheel through Hermes Core's managed MCP path.
+
+**Changed fact:** The Vhost-owned disposable harness used a fresh temporary Python 3.12 environment containing the wheel built from commit `060b325`. Hermes Core's actual `HookRegistry` and `HookContext` delivered three lifecycle events through managed stdio MCP; exact replay, failed-delivery retry, explicit goal binding, denial of premature binding and reviewer-only persistence, canonical projection reconciliation, private-metadata exclusion, and out-of-scope target preservation all passed.
+
+**Verification:** The harness exited 0 with `result=passed`, `processed_events=3`, and all reported assertions true. The Vhost application worktree's pre-existing dirty and untracked files were preserved.
+
+**Open gate:** This is a disposable local integration, not a live Vhost application request. Authenticated human identity, production authorization, production retention/recovery, and live deployment/runtime remain unverified.
+
+**Outcome:** The current Curator wheel composes locally with Hermes Core managed MCP and the Vhost plugin; the live workflow/release gate remains open.

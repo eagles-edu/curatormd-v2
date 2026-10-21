@@ -333,7 +333,15 @@ consumer plugin, Hermes integration, or production deployment.
       remained one, all 12 existing receipts remained processed, and SQLite
       `quick_check` remained `ok`. No direct-MCP or database-write workaround
       was used. The live consumer workflow remains open pending an allowed
-      profile tool call.
+      profile tool call. Additional verification (2026-10-22): built the
+      current Curator source as a wheel, installed it into a disposable Python
+      3.12 environment, and reran the Vhost-owned Hermes managed-MCP harness.
+      The actual Hermes `HookRegistry`/`HookContext` acknowledged three
+      bounded lifecycle events, exact replay, and failed-delivery retry;
+      planned-goal binding and reviewer-only persistence stayed denied, the
+      Vhost projection reconciled, and private metadata/out-of-scope targets
+      remained absent/unchanged. This is current-wheel local composition, not
+      a live user request or production deployment; the item remains open.
 
 ### 2. Evidence and fact ledger
 
