@@ -29,6 +29,7 @@ from .models import (
     ArtifactRef,
     ArtifactStatus,
     AuditReceipt,
+    ExpiryPurgeReceipt,
     EvidenceAttestation,
     EvidenceOutcome,
     EvidenceRef,
@@ -46,6 +47,7 @@ from .models import (
     GoalStatusStorageUsage,
     GlobalEventInboxUsage,
     MAX_CRITERIA_REVISIONS,
+    MAX_ARTIFACTS_PER_RECEIPT,
     MAX_FACTS_PER_GOAL,
     MAX_FACT_BYTES_PER_GOAL,
     MAX_FACTS_PER_PROJECT,
@@ -1228,6 +1230,319 @@ class CuratorStore:
                 (project_id, artifact.path, artifact.sha256, staged_at),
             )
             return staged_at
+
+    def active_staging_artifact_holds(
+        self, project_id: str, artifacts: tuple[ArtifactRef, ...]
+    ) -> dict[str, RetentionHoldKind]:
+        """Read project-scoped unreleased holds for exact path/hash pairs."""
+
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id):
+            raise ValueError("project_id must be a bounded opaque identifier")
+        held: dict[str, RetentionHoldKind] = {}
+        for offset in range(0, len(artifacts), 400):
+            page = artifacts[offset : offset + 400]
+            if not page:
+                continue
+            requested = json.dumps(
+                [{"path": item.path, "sha256": item.sha256} for item in page],
+                separators=(",", ":"),
+            )
+            with self._lock:
+                rows = self._connection.execute(
+                    """WITH requested AS (
+                           SELECT json_extract(value, '$.path') AS path,
+                                  json_extract(value, '$.sha256') AS sha256
+                           FROM json_each(?)
+                       )
+                       SELECT p.path, p.retention_hold FROM purge_targets AS p
+                       JOIN audit_receipts AS r ON r.receipt_id = p.receipt_id
+                       JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                       JOIN goals AS g ON g.goal_id = s.goal_id
+                       JOIN requested AS q ON q.path = p.path AND q.sha256 = p.sha256
+                       WHERE g.project_id = ? AND p.retention_hold IS NOT NULL
+                         AND p.hold_released_at IS NULL""",
+                    (requested, project_id),
+                ).fetchall()
+            for row in rows:
+                held[row["path"]] = RetentionHoldKind(row["retention_hold"])
+        return held
+
+    def create_expiry_purge_receipt(
+        self,
+        project_id: str,
+        reviewer_id: str,
+        manifest_sha256: str,
+        artifacts: tuple[ArtifactRef, ...],
+    ) -> ExpiryPurgeReceipt:
+        """Record exact attended expiry approval before the first unlink."""
+
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id):
+            raise ValueError("project_id must be a bounded opaque identifier")
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", reviewer_id):
+            raise ValueError("reviewer_id must be a bounded opaque identifier")
+        if not 1 <= len(artifacts) <= MAX_ARTIFACTS_PER_RECEIPT:
+            raise ValueError("expiry inventory must contain 1-500 artifacts")
+        if len({item.path for item in artifacts}) != len(artifacts):
+            raise ValueError("expiry inventory paths must be unique")
+        canonical = json.dumps(
+            [(item.path, item.sha256) for item in sorted(artifacts, key=lambda item: item.path)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        observed_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if manifest_sha256 != observed_hash:
+            raise ConflictError("expiry manifest hash does not match the exact inventory")
+        if self.active_staging_artifact_holds(project_id, artifacts):
+            raise ConflictError("held artifacts must be separately released before expiry")
+        receipt_id = new_id()
+        created_at = utc_now()
+        with self._transaction() as connection:
+            connection.execute(
+                """INSERT INTO expiry_purge_receipts
+                   (receipt_id, project_id, reviewer_id, manifest_sha256,
+                    status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    receipt_id,
+                    project_id,
+                    reviewer_id,
+                    manifest_sha256,
+                    PurgeStatus.PURGE_PENDING.value,
+                    created_at,
+                    created_at,
+                ),
+            )
+            connection.executemany(
+                """INSERT INTO expiry_purge_targets
+                   (receipt_id, path, sha256, status, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    (
+                        receipt_id,
+                        item.path,
+                        item.sha256,
+                        ArtifactStatus.PENDING.value,
+                        created_at,
+                    )
+                    for item in artifacts
+                ),
+            )
+        return self.expiry_purge_receipt(receipt_id, project_id)
+
+    def expiry_purge_receipt(
+        self, receipt_id: str, project_id: str
+    ) -> ExpiryPurgeReceipt:
+        """Read one durable expiry approval and its exact target inventory."""
+
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM expiry_purge_receipts "
+                "WHERE receipt_id = ? AND project_id = ?",
+                (receipt_id, project_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("expiry purge receipt not found")
+            targets = self._connection.execute(
+                "SELECT path, sha256 FROM expiry_purge_targets "
+                "WHERE receipt_id = ? ORDER BY path",
+                (receipt_id,),
+            ).fetchall()
+        return ExpiryPurgeReceipt(
+            receipt_id=row["receipt_id"],
+            project_id=row["project_id"],
+            reviewer_id=row["reviewer_id"],
+            manifest_sha256=row["manifest_sha256"],
+            artifacts=tuple(ArtifactRef(target["path"], target["sha256"]) for target in targets),
+            status=PurgeStatus(row["status"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def due_expiry_purge_receipts(
+        self, project_id: str, limit: int = 100
+    ) -> tuple[str, ...]:
+        """Select only previously approved expiry receipts with due targets."""
+
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        now = utc_now()
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT DISTINCT r.receipt_id FROM expiry_purge_receipts AS r
+                   JOIN expiry_purge_targets AS t ON t.receipt_id = r.receipt_id
+                   WHERE r.project_id = ? AND r.status = ?
+                     AND t.status IN (?, ?) AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)
+                   ORDER BY r.created_at, r.receipt_id LIMIT ?""",
+                (
+                    project_id,
+                    PurgeStatus.PURGE_PENDING.value,
+                    ArtifactStatus.PENDING.value,
+                    ArtifactStatus.FAILED.value,
+                    now,
+                    limit,
+                ),
+            ).fetchall()
+        return tuple(row["receipt_id"] for row in rows)
+
+    def expiry_purge_targets(
+        self, receipt_id: str, project_id: str
+    ) -> tuple[tuple[ArtifactRef, int], ...]:
+        """Read due, unheld targets from one approved expiry receipt."""
+
+        now = utc_now()
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT t.path, t.sha256, t.attempts FROM expiry_purge_targets AS t
+                   JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
+                   WHERE r.receipt_id = ? AND r.project_id = ? AND t.status IN (?, ?)
+                     AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM purge_targets AS p
+                       JOIN audit_receipts AS ar ON ar.receipt_id = p.receipt_id
+                       JOIN sde_candidates AS s ON s.candidate_id = ar.candidate_id
+                       JOIN goals AS g ON g.goal_id = s.goal_id
+                       WHERE g.project_id = r.project_id AND p.path = t.path
+                         AND p.sha256 = t.sha256 AND p.retention_hold IS NOT NULL
+                         AND p.hold_released_at IS NULL
+                     ) ORDER BY t.path""",
+                (
+                    receipt_id,
+                    project_id,
+                    ArtifactStatus.PENDING.value,
+                    ArtifactStatus.FAILED.value,
+                    now,
+                ),
+            ).fetchall()
+        return tuple(
+            (ArtifactRef(row["path"], row["sha256"]), int(row["attempts"]))
+            for row in rows
+        )
+
+    def begin_expiry_purge_attempt(
+        self, receipt_id: str, path: str, project_id: str
+    ) -> bool:
+        """Claim one approved target only when due and not under an active hold."""
+
+        now = utc_now()
+        with self._transaction() as connection:
+            target = connection.execute(
+                """SELECT t.sha256 FROM expiry_purge_targets AS t
+                   JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
+                   WHERE t.receipt_id = ? AND t.path = ? AND r.project_id = ?
+                     AND t.status IN (?, ?)
+                     AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)""",
+                (
+                    receipt_id,
+                    path,
+                    project_id,
+                    ArtifactStatus.PENDING.value,
+                    ArtifactStatus.FAILED.value,
+                    now,
+                ),
+            ).fetchone()
+            if target is None:
+                return False
+            held = connection.execute(
+                """SELECT 1 FROM purge_targets AS p
+                   JOIN audit_receipts AS ar ON ar.receipt_id = p.receipt_id
+                   JOIN sde_candidates AS s ON s.candidate_id = ar.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE g.project_id = ? AND p.path = ? AND p.sha256 = ?
+                     AND p.retention_hold IS NOT NULL AND p.hold_released_at IS NULL
+                   LIMIT 1""",
+                (project_id, path, target["sha256"]),
+            ).fetchone()
+            if held is not None:
+                return False
+            cursor = connection.execute(
+                """UPDATE expiry_purge_targets
+                   SET attempts = attempts + 1, last_attempt_at = ?
+                   WHERE receipt_id = ? AND path = ? AND status IN (?, ?)""",
+                (
+                    now,
+                    receipt_id,
+                    path,
+                    ArtifactStatus.PENDING.value,
+                    ArtifactStatus.FAILED.value,
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def record_expiry_purge_result(
+        self,
+        receipt_id: str,
+        path: str,
+        status: ArtifactStatus,
+        error: str | None,
+        project_id: str,
+    ) -> ExpiryPurgeReceipt:
+        """Persist retry-safe deletion outcome and clear age after success."""
+
+        if status not in {ArtifactStatus.FAILED, ArtifactStatus.PURGED}:
+            raise ValueError("expiry purge result must be failed or purged")
+        allowed_errors = {
+            code.value
+            for code in PurgeFailureCode
+            if code is not PurgeFailureCode.LEGACY_FAILURE_DETAIL_REDACTED
+        }
+        if (status is ArtifactStatus.FAILED and error not in allowed_errors) or (
+            status is ArtifactStatus.PURGED and error is not None
+        ):
+            raise ValueError("expiry purge result has an invalid content-free error")
+        with self._transaction() as connection:
+            target = connection.execute(
+                """SELECT t.sha256 FROM expiry_purge_targets AS t
+                   JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
+                   WHERE t.receipt_id = ? AND t.path = ? AND r.project_id = ?""",
+                (receipt_id, path, project_id),
+            ).fetchone()
+            if target is None:
+                raise NotFoundError("expiry purge target not found")
+            next_attempt_at = None
+            if status is ArtifactStatus.FAILED:
+                attempts = int(
+                    connection.execute(
+                        "SELECT attempts FROM expiry_purge_targets "
+                        "WHERE receipt_id = ? AND path = ?",
+                        (receipt_id, path),
+                    ).fetchone()["attempts"]
+                )
+                delay = min(
+                    PURGE_RETRY_BASE_SECONDS * (2 ** min(max(attempts - 1, 0), 16)),
+                    PURGE_RETRY_MAX_SECONDS,
+                )
+                next_attempt_at = (
+                    datetime.now(UTC) + timedelta(seconds=delay)
+                ).isoformat(timespec="microseconds")
+            connection.execute(
+                """UPDATE expiry_purge_targets SET status = ?, error = ?,
+                   next_attempt_at = ? WHERE receipt_id = ? AND path = ?""",
+                (status.value, error, next_attempt_at, receipt_id, path),
+            )
+            if status is ArtifactStatus.PURGED:
+                connection.execute(
+                    "DELETE FROM staging_artifact_times "
+                    "WHERE project_id = ? AND path = ? AND sha256 = ?",
+                    (project_id, path, target["sha256"]),
+                )
+            pending = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM expiry_purge_targets "
+                    "WHERE receipt_id = ? AND status != ?",
+                    (receipt_id, ArtifactStatus.PURGED.value),
+                ).fetchone()[0]
+            )
+            connection.execute(
+                "UPDATE expiry_purge_receipts SET status = ?, updated_at = ? "
+                "WHERE receipt_id = ? AND project_id = ?",
+                (
+                    PurgeStatus.PURGE_PENDING.value if pending else PurgeStatus.COMPLETE.value,
+                    utc_now(),
+                    receipt_id,
+                    project_id,
+                ),
+            )
+        return self.expiry_purge_receipt(receipt_id, project_id)
 
     def staging_artifact_times(
         self, project_id: str, artifacts: tuple[ArtifactRef, ...]

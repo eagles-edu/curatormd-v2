@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `19`.
+`SQLITE_SCHEMA_VERSION` and is `20`.
 
 ## Version 1 migration
 
@@ -260,3 +260,15 @@ v18-to-v19 fixture checks the new schema while preserving legacy SDE proposal
 fields. This local metadata and read-only 72-hour eligibility scan do not
 authorize file deletion, implement expiry scheduling, or approve production
 migration/rollback.
+
+## Version 20 migration
+
+Version 20 adds project-scoped expiry purge receipts and exact path/hash
+targets. An attended local reviewer must approve the complete 72-hour inventory
+hash before a receipt is recorded; the receipt is durable before the first
+unlink. Failed targets retain content-free error codes and bounded retry
+backoff. Retries can process only targets from an existing approval receipt,
+and recheck active artifact holds before every attempt. Successful deletion
+clears only the matching age metadata. The v19-to-v20 fixture verifies the
+new tables and preservation of age records. This local migration does not
+approve production database upgrade/rollback or a production retention policy.

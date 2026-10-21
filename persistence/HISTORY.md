@@ -2526,3 +2526,15 @@
 **Open gate:** An attended expiry-only exact-inventory approval flow, its durable receipt and hold integration, and scheduler retry remain unimplemented. Production retention, identity, deployment, and live-runtime gates remain open.
 
 **Outcome:** Trusted age eligibility is available locally; destructive expiry still requires implementation of the complete attended receipt path.
+
+## 2026-10-22 — Persist attended 72-hour expiry approvals and retries
+
+**Intent:** Implement the approved local-alpha 72-hour ceiling with an explicit exact-inventory decision and a durable receipt before any deletion.
+
+**Changed fact:** Schema v20 adds project-scoped expiry receipts and hash-bound targets. The attended local-UID review CLI displays and confirms the complete eligible inventory, records reviewer/hash/targets before unlink, rechecks active legal/operational holds before each purge, and leaves failures visibly `purge_pending` with retry backoff. The one-shot maintenance command now retries both SDE and expiry receipts that already have human approval. The local policy draft now says 72 hours maximum; the seven-day draft value is superseded. Immediate eligibility after compact facts and related SDE disposition is not yet implemented.
+
+**Verification:** The full locked Curator suite passes 365 tests; strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, `uv audit`, `uv lock --check`, and `git diff --check` pass. The v19-to-v20 migration regression preserves age metadata. The persistence MCP returned `unauthenticated` because trusted Hermes profile context was unavailable, so live ledger capture status remains unverified.
+
+**Open gate:** Immediate post-record/SDE-disposition eligibility, production retention policy, authenticated Hermes identity, deployment, and live runtime remain open. The V2 delivery checklist stays at 127/153 complete and 26 open; its expiry row remains open.
+
+**Outcome:** The local attended approval and retry path is implemented and locally verified under the approved 72-hour maximum; no production or live-runtime gate is closed.

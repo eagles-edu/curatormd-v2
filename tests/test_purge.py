@@ -496,7 +496,9 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             output.getvalue(),
-            '{"complete":1,"pending":0,"processed":1,"project_id":"default"}\n',
+            '{"complete":1,"expiry_complete":0,"expiry_pending":0,'
+            '"expiry_processed":0,"pending":0,"processed":1,'
+            '"project_id":"default"}\n',
         )
         self.store = CuratorStore(self.root / "curator.sqlite3")
         recovered = self.store.get_receipt(receipt.receipt_id)

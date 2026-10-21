@@ -78,6 +78,17 @@ class TestReviewAuthorizer:
         del project_id, receipt_id, path, rationale, authenticated_subject
         return "test-reviewer"
 
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Return the test identity for one exact expiry approval."""
+
+        del project_id, manifest_sha256, authenticated_subject
+        return "test-reviewer"
+
 
 class FlakyPurger(ArtifactPurger):  # pylint: disable=too-few-public-methods
     """Fail its first delete attempt, then enforce the real exact-file purge."""

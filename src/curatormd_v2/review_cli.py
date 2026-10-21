@@ -76,6 +76,17 @@ class LocalUIDReviewAuthorizer:
         del project_id, receipt_id, path, rationale
         return self._subject(authenticated_subject)
 
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Bind expiry approval to the invoking local UID."""
+
+        del project_id, manifest_sha256
+        return self._subject(authenticated_subject)
+
     @staticmethod
     def _subject(authenticated_subject: str | None) -> str:
         """Reject absent, substituted, or setuid caller identity."""
@@ -114,6 +125,13 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser("queue", help="show pending SDE candidates")
     review = commands.add_parser("review", help="review and disposition one candidate")
     review.add_argument("candidate_id")
+    commands.add_parser(
+        "expire", help="approve and purge the current complete 72-hour expiry inventory"
+    )
+    retry_expiry = commands.add_parser(
+        "expiry-retry", help="retry due targets from one approved expiry receipt"
+    )
+    retry_expiry.add_argument("receipt_id")
     return parser
 
 
@@ -281,6 +299,41 @@ def _review(
     return True
 
 
+def _expire(
+    api: AuthenticatedCuratorAPI,
+    caller: AuthenticatedCaller,
+    config: ProjectConfig,
+    input_stream: TextIO,
+    output: TextIO,
+    errors: TextIO,
+) -> int:
+    """Display then approve only the complete, exact 72-hour inventory."""
+
+    snapshot = api.discover_project_expiry_inventory(caller, config.project_id)
+    _write_json(output, {"expiry_snapshot": asdict(snapshot)})
+    if not snapshot.inventory_complete or snapshot.manifest_sha256 is None:
+        errors.write("Refusing expiry approval because staging age inventory is incomplete.\n")
+        return 2
+    if not snapshot.eligible_artifacts:
+        errors.write("No unheld artifacts have reached the 72-hour expiry threshold.\n")
+        return 0
+    if len(snapshot.eligible_artifacts) > 500:
+        errors.write("Expiry inventory exceeds the 500-artifact receipt limit.\n")
+        return 2
+    phrase = f"PURGE EXPIRED INVENTORY {snapshot.manifest_sha256}"
+    if not _confirm(phrase, input_stream, errors):
+        errors.write("Expiry cleanup cancelled; no approval receipt was recorded.\n")
+        return 2
+    receipt = api.approve_project_expiry_inventory(
+        caller,
+        config.project_id,
+        snapshot.eligible_artifacts,
+        snapshot.manifest_sha256,
+    )
+    _write_json(output, {"expiry_purge_receipt": asdict(receipt)})
+    return 0 if receipt.status.value == "complete" else 1
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -296,14 +349,14 @@ def main(
     errors = stderr or sys.stderr
     try:
         subject = _local_subject()
-        if arguments.operation == "review" and not input_stream.isatty():
-            errors.write("Refusing local SDE review without an interactive TTY.\n")
+        if arguments.operation in {"review", "expire"} and not input_stream.isatty():
+            errors.write("Refusing attended review without an interactive TTY.\n")
             return 2
-        if arguments.operation == "review" and not output.isatty():
-            errors.write("Refusing local SDE review without a visible interactive TTY.\n")
+        if arguments.operation in {"review", "expire"} and not output.isatty():
+            errors.write("Refusing attended review without a visible interactive TTY.\n")
             return 2
-        if arguments.operation == "review" and not errors.isatty():
-            errors.write("Refusing local SDE review without a visible prompt TTY.\n")
+        if arguments.operation in {"review", "expire"} and not errors.isatty():
+            errors.write("Refusing attended review without a visible prompt TTY.\n")
             return 2
         database = arguments.database.expanduser()
         if not database.is_absolute() or not database.is_file() or database.is_symlink():
@@ -319,6 +372,14 @@ def main(
         if arguments.operation == "queue":
             _write_json(output, {"project_id": config.project_id, "pending": _queue(api, caller, config.project_id)})
             return 0
+        if arguments.operation == "expiry-retry":
+            receipt = api.retry_expiry_purge(
+                caller, config.project_id, arguments.receipt_id
+            )
+            _write_json(output, {"expiry_purge_receipt": asdict(receipt)})
+            return 0 if receipt.status.value == "complete" else 1
+        if arguments.operation == "expire":
+            return _expire(api, caller, config, input_stream, output, errors)
         if _review(arguments, api, caller, config, input_stream, output, errors):
             return 0
         return 2

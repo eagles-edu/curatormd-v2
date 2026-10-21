@@ -92,22 +92,50 @@ canonical persistence still completes before purge begins.
 ## Inspect 72-hour expiry eligibility
 
 The project-review-authorized MCP operation
-`project_expiry_inventory_discover` reports staged files at least 72 hours old
-and hashes their exact inventory. It is read-only and never authorizes purge.
-Every inventoried file must have matching age metadata from the V2 producer
-adapter; any unknown age or incomplete filesystem scan withholds the entire
-eligible list. An attended expiry-only approval and durable receipt are not yet
-implemented, so operators must not treat an expiry result as deletion approval.
+`project_expiry_inventory_discover` reports unheld staged files at least 72
+hours old and hashes their exact inventory. Every inventoried file must have
+matching age metadata from the V2 producer adapter; any unknown age or
+incomplete filesystem scan withholds the entire eligible list. The 72-hour
+threshold is the local-alpha maximum age, not a seven-day retention period.
+
+Run the attended local review command to display the exact inventory and
+confirm its hash. It requires visible input, output, and error terminals, and
+the current Linux UID must hold project `read` and `review` grants. The same
+explicit confirmation approves only the displayed inventory; V2 records the
+reviewer and receipt before deleting any file. Active legal or operational
+holds are omitted from eligibility and checked again before each deletion.
+Failed deletions remain `purge_pending` with retry backoff.
+
+```sh
+curatormd-v2-review \
+  --project-root /path/to/consumer \
+  --database /path/to/private/curator-v2.sqlite3 \
+  expire
+```
+
+To retry a prior approval receipt, pass its ID. This command cannot authorize a
+new inventory:
+
+```sh
+curatormd-v2-review \
+  --project-root /path/to/consumer \
+  --database /path/to/private/curator-v2.sqlite3 \
+  expiry-retry RECEIPT_ID
+```
+
+This flow is local-alpha behavior. Immediate expiry after compact facts and SDE
+disposition, authenticated Hermes reviewer identity, production retention
+policy, and live scheduling remain separate gates.
 
 ## Run one due-purge retry pass
 
-The package includes a one-shot scheduler entrypoint for transient purge
-failures. It can process only targets whose immutable review receipt exists,
-whose complete artifact inventory and canonical-persistence proof are recorded,
-whose retry deadline has elapsed, and whose retention hold is absent or
-explicitly released. The project plugin serializes the pass with its staging
-lock. It does not create or change review decisions, override backoff, inspect
-other projects, or run the host router.
+The package includes a one-shot scheduler entrypoint for transient SDE and
+expiry purge failures. It can process only targets whose immutable attended
+receipt exists, whose retry deadline has elapsed, and whose retention hold is
+absent or explicitly released. The project plugin serializes each pass with its
+staging lock. It does not create or change review decisions, override backoff,
+inspect other projects, or run the host router. Output reports separate
+aggregate SDE and expiry counts without paths or receipt contents.
 
 An operator-controlled service or timer may invoke the command with the
 repository and shared-backend database paths pinned explicitly:

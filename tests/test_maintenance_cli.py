@@ -62,7 +62,10 @@ class MaintenanceCliTests(unittest.TestCase):
                         SimpleNamespace(purge_status=PurgeStatus.COMPLETE),
                         SimpleNamespace(purge_status=PurgeStatus.PURGE_PENDING),
                     )
-                )
+                ),
+                retry_due_expiry_purges=Mock(
+                    return_value=(SimpleNamespace(status=PurgeStatus.PURGE_PENDING),)
+                ),
             )
             output = StringIO()
             errors = StringIO()
@@ -96,10 +99,13 @@ class MaintenanceCliTests(unittest.TestCase):
 
         self.assertEqual(result, 1)
         plugin.retry_due_purges.assert_called_once_with(7)
+        plugin.retry_due_expiry_purges.assert_called_once_with(7)
         store.close.assert_called_once_with()
         self.assertEqual(
             output.getvalue(),
-            '{"complete":1,"pending":1,"processed":2,"project_id":"project-a"}\n',
+            '{"complete":1,"expiry_complete":0,"expiry_pending":1,'
+            '"expiry_processed":1,"pending":1,"processed":2,'
+            '"project_id":"project-a"}\n',
         )
         self.assertEqual(errors.getvalue(), "")
         self.assertNotIn("receipt", output.getvalue())
@@ -108,7 +114,10 @@ class MaintenanceCliTests(unittest.TestCase):
     def test_clean_batch_returns_zero(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             store = self._store_context()
-            plugin = SimpleNamespace(retry_due_purges=Mock(return_value=()))
+            plugin = SimpleNamespace(
+                retry_due_purges=Mock(return_value=()),
+                retry_due_expiry_purges=Mock(return_value=()),
+            )
             output = StringIO()
             with (
                 patch(
@@ -138,7 +147,9 @@ class MaintenanceCliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(
             output.getvalue(),
-            '{"complete":0,"pending":0,"processed":0,"project_id":"project-a"}\n',
+            '{"complete":0,"expiry_complete":0,"expiry_pending":0,'
+            '"expiry_processed":0,"pending":0,"processed":0,'
+            '"project_id":"project-a"}\n',
         )
         store.close.assert_called_once_with()
 

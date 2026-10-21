@@ -33,7 +33,9 @@ from .markdown_persistence import (
 from .models import (
     MAX_ARTIFACTS_PER_RECEIPT,
     ArtifactRef,
+    ArtifactStatus,
     AuditReceipt,
+    ExpiryPurgeReceipt,
     FactArchiveReceipt,
     FactCompactionProposal,
     GoalCard,
@@ -45,6 +47,7 @@ from .models import (
     Materiality,
     ProjectStorageUsage,
     ProjectOperationalCounts,
+    PurgeFailureCode,
     ReviewDecision,
     SDECandidate,
     SDECorrection,
@@ -60,7 +63,7 @@ from .models import (
     SuccessCriterion,
 )
 from .project_config import ProjectConfig, ProjectConfigError
-from .purge import ArtifactPurger
+from .purge import ArtifactPurger, PurgeError
 from .reviews import ReviewAuthorizer
 from .service import CuratorService, PurgeTargetStatus
 from .store import ConflictError, CuratorStore, NotFoundError
@@ -73,6 +76,15 @@ MAX_GOAL_STAGING_FILES = MAX_ARTIFACTS_PER_RECEIPT
 _STAGING_SCOPE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _STAGING_CLASS_RE = re.compile(r"^(raw-chat|cue|import|scratch|generated|duplicate)$")
 STAGING_MAX_AGE = timedelta(hours=72)
+
+
+def _aware_utc_now(value: datetime | None = None) -> datetime:
+    """Normalize one injectable, timezone-aware clock reading to UTC."""
+
+    observed = value or datetime.now(UTC)
+    if observed.tzinfo is None or observed.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    return observed.astimezone(UTC)
 
 
 class ProjectPlugin:
@@ -518,58 +530,182 @@ class ProjectPlugin:
         the snapshot incomplete and therefore unusable for a purge decision.
         """
 
-        observed_at = now or datetime.now(UTC)
-        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
-            raise ValueError("now must be timezone-aware")
-        observed_at = observed_at.astimezone(UTC)
-        cutoff = observed_at - STAGING_MAX_AGE
+        observed_at = _aware_utc_now(now)
         with self._locked_staging_root() as root_fd:
-            inventory = self._scan_staging_tree(
-                discover_artifacts=True, staging_root_fd=root_fd
+            return self._expiry_snapshot_locked(root_fd, observed_at)
+
+    def _expiry_snapshot_locked(
+        self, root_fd: int, observed_at: datetime
+    ) -> StagingExpirySnapshot:
+        """Build a complete age and active-hold view under the staging lock."""
+
+        cutoff = observed_at - STAGING_MAX_AGE
+        inventory = self._scan_staging_tree(
+            discover_artifacts=True, staging_root_fd=root_fd
+        )
+        timestamps = self.service.store.staging_artifact_times(
+            self.config.project_id, inventory.artifacts
+        )
+        expired: list[ArtifactRef] = []
+        unknown_age_count = 0
+        for artifact in inventory.artifacts:
+            staged_at = timestamps.get(artifact.path)
+            if staged_at is None:
+                unknown_age_count += 1
+                continue
+            try:
+                parsed = datetime.fromisoformat(staged_at.replace("Z", "+00:00"))
+            except ValueError:
+                unknown_age_count += 1
+                continue
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                unknown_age_count += 1
+                continue
+            if parsed.astimezone(UTC) <= cutoff:
+                expired.append(artifact)
+        complete = inventory.usage.inventory_complete and unknown_age_count == 0
+        if not complete:
+            expired.clear()
+        active_holds = self.service.store.active_staging_artifact_holds(
+            self.config.project_id, tuple(expired)
+        )
+        held = tuple(
+            ArtifactRef(item.path, item.sha256, active_holds[item.path])
+            for item in sorted(expired, key=lambda item: item.path)
+            if item.path in active_holds
+        )
+        eligible = tuple(
+            item
+            for item in sorted(expired, key=lambda item: item.path)
+            if item.path not in active_holds
+        )
+        manifest_sha256 = None
+        if complete:
+            manifest = json.dumps(
+                [(item.path, item.sha256) for item in eligible],
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
-            timestamps = self.service.store.staging_artifact_times(
-                self.config.project_id, inventory.artifacts
-            )
-            expired: list[ArtifactRef] = []
-            unknown_age_count = 0
-            for artifact in inventory.artifacts:
-                staged_at = timestamps.get(artifact.path)
-                if staged_at is None:
-                    unknown_age_count += 1
-                    continue
-                try:
-                    parsed = datetime.fromisoformat(staged_at.replace("Z", "+00:00"))
-                except ValueError:
-                    unknown_age_count += 1
-                    continue
-                if parsed.tzinfo is None or parsed.utcoffset() is None:
-                    unknown_age_count += 1
-                    continue
-                if parsed.astimezone(UTC) <= cutoff:
-                    expired.append(artifact)
-            complete = inventory.usage.inventory_complete and unknown_age_count == 0
-            if not complete:
-                expired.clear()
-            manifest_sha256 = None
-            if complete:
-                manifest = json.dumps(
-                    [
-                        (item.path, item.sha256)
-                        for item in sorted(expired, key=lambda item: item.path)
-                    ],
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-                manifest_sha256 = hashlib.sha256(
-                    manifest.encode("utf-8")
-                ).hexdigest()
-            return StagingExpirySnapshot(
-                tuple(sorted(expired, key=lambda item: item.path)),
-                complete,
-                unknown_age_count,
-                cutoff.isoformat(timespec="microseconds"),
+            manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+        return StagingExpirySnapshot(
+            eligible,
+            held,
+            complete,
+            unknown_age_count,
+            cutoff.isoformat(timespec="microseconds"),
+            manifest_sha256,
+        )
+
+    def approve_expired_staging_inventory(
+        self,
+        artifacts: tuple[ArtifactRef, ...],
+        manifest_sha256: str,
+        *,
+        authenticated_subject: str | None = None,
+        now: datetime | None = None,
+    ) -> ExpiryPurgeReceipt:
+        """Authorize, receipt, then purge one exact current expiry inventory."""
+
+        observed_at = _aware_utc_now(now)
+        with self._locked_staging_root() as root_fd:
+            snapshot = self._expiry_snapshot_locked(root_fd, observed_at)
+            if not snapshot.inventory_complete or snapshot.manifest_sha256 is None:
+                raise ConflictError("expiry inventory is incomplete")
+            if not artifacts or artifacts != snapshot.eligible_artifacts:
+                raise ConflictError("expiry inventory does not match current eligibility")
+            if manifest_sha256 != snapshot.manifest_sha256:
+                raise ConflictError("expiry manifest changed before approval")
+            reviewer_id = self.service.review_authorizer.authorize_expiry_purge(
+                self.config.project_id,
                 manifest_sha256,
+                authenticated_subject,
             )
+            receipt = self.service.store.create_expiry_purge_receipt(
+                self.config.project_id,
+                reviewer_id,
+                manifest_sha256,
+                artifacts,
+            )
+            return self._process_expiry_purge(receipt.receipt_id)
+
+    def expiry_purge_receipt(self, receipt_id: str) -> ExpiryPurgeReceipt:
+        """Read the durable project-scoped result of an expiry approval."""
+
+        return self.service.store.expiry_purge_receipt(
+            receipt_id, self.config.project_id
+        )
+
+    def retry_due_expiry_purges(self, limit: int = 100) -> tuple[ExpiryPurgeReceipt, ...]:
+        """Retry only due targets from durable attended expiry approvals."""
+
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        with self._locked_staging_root():
+            receipts = self.service.store.due_expiry_purge_receipts(
+                self.config.project_id, limit
+            )
+            return tuple(self._process_expiry_purge(item) for item in receipts)
+
+    def retry_expiry_purge(self, receipt_id: str) -> ExpiryPurgeReceipt:
+        """Retry due targets from one exact, previously approved receipt."""
+
+        with self._locked_staging_root():
+            self.service.store.expiry_purge_receipt(
+                receipt_id, self.config.project_id
+            )
+            return self._process_expiry_purge(receipt_id)
+
+    def _process_expiry_purge(self, receipt_id: str) -> ExpiryPurgeReceipt:
+        """Attempt due exact targets from an already approved expiry receipt."""
+
+        targets = self.service.store.expiry_purge_targets(
+            receipt_id, self.config.project_id
+        )
+        for artifact, _attempts in targets:
+            if not self.service.store.begin_expiry_purge_attempt(
+                receipt_id, artifact.path, self.config.project_id
+            ):
+                continue
+            try:
+                self.service.purger.purge(artifact)
+            except PurgeError as exc:
+                error_code = exc.code.value
+                self.service.store.record_expiry_purge_result(
+                    receipt_id,
+                    artifact.path,
+                    ArtifactStatus.FAILED,
+                    error_code,
+                    self.config.project_id,
+                )
+            except OSError:
+                error_code = PurgeFailureCode.FILESYSTEM_ERROR.value
+                self.service.store.record_expiry_purge_result(
+                    receipt_id,
+                    artifact.path,
+                    ArtifactStatus.FAILED,
+                    error_code,
+                    self.config.project_id,
+                )
+            except ValueError:
+                error_code = PurgeFailureCode.INVALID_ARTIFACT.value
+                self.service.store.record_expiry_purge_result(
+                    receipt_id,
+                    artifact.path,
+                    ArtifactStatus.FAILED,
+                    error_code,
+                    self.config.project_id,
+                )
+            else:
+                self.service.store.record_expiry_purge_result(
+                    receipt_id,
+                    artifact.path,
+                    ArtifactStatus.PURGED,
+                    None,
+                    self.config.project_id,
+                )
+        return self.service.store.expiry_purge_receipt(
+            receipt_id, self.config.project_id
+        )
 
     def stage_artifact(
         self,

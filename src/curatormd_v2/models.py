@@ -1116,6 +1116,7 @@ class StagingExpirySnapshot:
     """Age-based purge candidates; completeness does not imply approval."""
 
     eligible_artifacts: tuple[ArtifactRef, ...]
+    held_artifacts: tuple[ArtifactRef, ...]
     inventory_complete: bool
     unknown_age_count: int
     cutoff_at: str
@@ -1133,11 +1134,51 @@ class StagingExpirySnapshot:
             raise ValueError("complete expiry inventory cannot have unknown ages")
         if self.inventory_complete != (self.manifest_sha256 is not None):
             raise ValueError("only complete expiry snapshots have a manifest")
+        if {item.path for item in self.eligible_artifacts} & {
+            item.path for item in self.held_artifacts
+        }:
+            raise ValueError("eligible and held expiry artifacts must be disjoint")
+        if any(item.retention_hold is None for item in self.held_artifacts):
+            raise ValueError("held expiry artifacts must declare their hold class")
         if self.manifest_sha256 is not None and not _SHA256_RE.fullmatch(
             self.manifest_sha256
         ):
             raise ValueError("manifest_sha256 must be a lowercase SHA-256")
         _parse_aware_timestamp("cutoff_at", self.cutoff_at)
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryPurgeReceipt:
+    """Durable local-human approval for one exact expired artifact inventory."""
+
+    receipt_id: str
+    project_id: str
+    reviewer_id: str
+    manifest_sha256: str
+    artifacts: tuple[ArtifactRef, ...]
+    status: PurgeStatus
+    created_at: str
+    updated_at: str
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("receipt_id", self.receipt_id),
+            ("project_id", self.project_id),
+            ("reviewer_id", self.reviewer_id),
+        ):
+            if not _REVIEWER_ID_RE.fullmatch(value):
+                raise ValueError(f"{name} must be a bounded opaque identifier")
+        if not _SHA256_RE.fullmatch(self.manifest_sha256):
+            raise ValueError("manifest_sha256 must be a lowercase SHA-256")
+        if not self.artifacts or len(self.artifacts) > MAX_ARTIFACTS_PER_RECEIPT:
+            raise ValueError("expiry receipt must contain 1-500 exact artifacts")
+        paths = tuple(item.path for item in self.artifacts)
+        if len(paths) != len(set(paths)):
+            raise ValueError("expiry receipt artifacts must have unique paths")
+        if self.status not in {PurgeStatus.COMPLETE, PurgeStatus.PURGE_PENDING}:
+            raise ValueError("expiry purge receipt has an invalid status")
+        _parse_aware_timestamp("created_at", self.created_at)
+        _parse_aware_timestamp("updated_at", self.updated_at)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1183,9 +1183,15 @@ consumer plugin, Hermes integration, or production deployment.
       eligible subset; unknown ages or incomplete scans fail closed. This
       scan is exposed through the project-review-authorized
       `project_expiry_inventory_discover` API/MCP tool; it does not approve or
-      delete files. An attended expiry-only decision with its own durable
-      receipt, hold integration, and scheduler retry are still missing, so
-      this row remains open.
+      delete files. Local progress (2026-10-22): schema v20 adds an attended
+      local-UID decision for the exact displayed inventory, persists the
+      reviewer/hash/target receipt before unlink, skips and rechecks active
+      holds, and retains content-free `purge_pending` failures for backoff
+      retries. The review CLI refuses hidden prompts and can retry only a prior
+      receipt. The hard age threshold remains 72 hours; no seven-day window is
+      configured. Immediate eligibility after compact facts and SDE
+      disposition, integration into the one-shot maintenance scheduler, and
+      production retention policy remain open, so this row remains open.
       Production retention policy remains a separate open gate.
 - [ ] Test two isolated consumer repositories, including cross-project access
       denial and independent configuration/persistence through real plugins and

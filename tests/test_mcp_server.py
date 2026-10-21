@@ -135,6 +135,19 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
             raise PermissionError("MCP hold-release reviewer is not authenticated")
         return authenticated_subject
 
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Return the authenticated host identity for an expiry approval."""
+
+        del project_id, manifest_sha256
+        if authenticated_subject != "host-subject":
+            raise PermissionError("MCP expiry reviewer is not authenticated")
+        return authenticated_subject
+
 
 class McpServerTests(unittest.TestCase):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""

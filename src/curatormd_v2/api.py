@@ -37,6 +37,7 @@ from .models import (
     utc_now,
     StagingArtifactInventory,
     StagingExpirySnapshot,
+    ExpiryPurgeReceipt,
     ReviewDecision,
     SDECandidate,
     SDECorrection,
@@ -802,6 +803,35 @@ class AuthenticatedCuratorAPI:
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).discover_expired_staging_artifacts()
+
+    def approve_project_expiry_inventory(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        artifacts: tuple[ArtifactRef, ...],
+        manifest_sha256: str,
+    ) -> ExpiryPurgeReceipt:
+        """Record human-authorized expiry approval before exact cleanup."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).approve_expired_staging_inventory(
+            artifacts,
+            manifest_sha256,
+            authenticated_subject=caller.subject_id,
+        )
+
+    def retry_expiry_purge(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        receipt_id: str,
+    ) -> ExpiryPurgeReceipt:
+        """Retry due targets from one previously approved expiry receipt."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).retry_expiry_purge(receipt_id)
 
     def sde_review_queue(
         self, caller: AuthenticatedCaller, project_id: str, limit: int = 100

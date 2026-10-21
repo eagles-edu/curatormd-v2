@@ -6,7 +6,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 19
+SQLITE_SCHEMA_VERSION = 20
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -408,6 +408,42 @@ def migrate_staging_artifact_age_v19(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 19")
 
 
+def migrate_expiry_purge_receipts_v20(connection: sqlite3.Connection) -> None:
+    """Persist attended expiry approvals and their retryable exact targets."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS expiry_purge_receipts (
+               receipt_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL,
+               reviewer_id TEXT NOT NULL,
+               manifest_sha256 TEXT NOT NULL,
+               status TEXT NOT NULL CHECK(status IN ('complete', 'purge_pending')),
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS expiry_purge_targets (
+               receipt_id TEXT NOT NULL,
+               path TEXT NOT NULL,
+               sha256 TEXT NOT NULL,
+               status TEXT NOT NULL CHECK(status IN ('pending', 'purged', 'failed')),
+               attempts INTEGER NOT NULL DEFAULT 0,
+               error TEXT,
+               created_at TEXT NOT NULL,
+               last_attempt_at TEXT,
+               next_attempt_at TEXT,
+               PRIMARY KEY(receipt_id, path),
+               FOREIGN KEY(receipt_id) REFERENCES expiry_purge_receipts(receipt_id)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS expiry_purge_targets_due "
+        "ON expiry_purge_targets(status, next_attempt_at, receipt_id)"
+    )
+    connection.execute("PRAGMA user_version = 20")
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -475,6 +511,9 @@ def apply_schema_migrations(
         schema_version = 18
     if schema_version == 18:
         migrate_staging_artifact_age_v19(connection)
+        schema_version = 19
+    if schema_version == 19:
+        migrate_expiry_purge_receipts_v20(connection)
         return
     if schema_version != 0:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
@@ -501,3 +540,4 @@ def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     migrate_semantic_event_replay_v17(connection)
     migrate_sde_proposal_context_v18(connection)
     migrate_staging_artifact_age_v19(connection)
+    migrate_expiry_purge_receipts_v20(connection)

@@ -66,10 +66,15 @@ def main(
         with CuratorStore(database) as store:
             plugin = ProjectPlugin.bind(config, store)
             receipts = plugin.retry_due_purges(arguments.batch_limit)
+            expiry_receipts = plugin.retry_due_expiry_purges(arguments.batch_limit)
             completed = sum(
                 receipt.purge_status is PurgeStatus.COMPLETE for receipt in receipts
             )
             pending = len(receipts) - completed
+            expiry_complete = sum(
+                receipt.status is PurgeStatus.COMPLETE for receipt in expiry_receipts
+            )
+            expiry_pending = len(expiry_receipts) - expiry_complete
             output.write(
                 json.dumps(
                     {
@@ -77,13 +82,16 @@ def main(
                         "processed": len(receipts),
                         "complete": completed,
                         "pending": pending,
+                        "expiry_processed": len(expiry_receipts),
+                        "expiry_complete": expiry_complete,
+                        "expiry_pending": expiry_pending,
                     },
                     separators=(",", ":"),
                     sort_keys=True,
                 )
                 + "\n"
             )
-            return 1 if pending else 0
+            return 1 if pending or expiry_pending else 0
     except Exception:  # pylint: disable=broad-exception-caught
         # The boundary must sanitize any host adapter or filesystem exception.
         print(

@@ -139,12 +139,15 @@ conflicts. The original hold class remains in the audit record. This covers
 only the configured tree, not temporary material a producer stored elsewhere.
 
 The reviewer-only `project_expiry_inventory_discover()` operation reports
-project-wide files at least 72 hours old. Schema v19 records immutable
+unheld project-wide files at least 72 hours old. Schema v19 records immutable
 publication time only for `stage_artifact` files; any untracked, legacy, or
 hash-mismatched file makes the snapshot incomplete and suppresses all eligible
-candidates. The result includes the exact candidate inventory hash, but the
-operation is read-only and cannot create a receipt, release a hold, or delete
-files. An attended expiry-only approval flow remains open work.
+candidates. An attended local-UID reviewer confirms the exact inventory hash.
+Schema v20 records that decision and exact path/hash targets before deletion.
+Retries use only that prior receipt, respect backoff, recheck active holds, and
+clear age metadata only after successful deletion. The 72-hour maximum applies
+to local-alpha expiry discovery; production retention and Hermes-authenticated
+reviewer identity remain open.
 
 The local producer surface is `ProjectPlugin.stage_artifact(goal_id,
 artifact_class, artifact_id, source)`. It accepts a binary stream, validates
@@ -155,8 +158,10 @@ are removed on failure; callers receive only the path and SHA-256, never the
 artifact contents. Hard technical ceilings are 64 MiB per file, 256 MiB and
 500 files per goal. Writes fail closed if the existing goal inventory is
 incomplete. These ceilings are safety bounds, not retention budgets. V2
-records publication age and exposes read-only 72-hour expiry discovery, but it
-does not automatically delete artifacts based on age or capacity. The
+records publication age and exposes 72-hour expiry discovery; attended
+approval records the exact inventory before deletion, and the one-shot
+maintenance command retries only those prior approvals. It does not
+automatically delete artifacts based on age or capacity. The
 supported producer APIs are this local plugin method and the stdin command
 below; source-specific integrations and a complete producer audit remain
 release gates.

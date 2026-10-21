@@ -162,6 +162,19 @@ class ReviewHost:  # pylint: disable=too-few-public-methods
             raise PermissionError("hold-release subject is not authenticated")
         return authenticated_subject
 
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Attribute exact expiry cleanup to the authenticated reviewer."""
+
+        del project_id, manifest_sha256
+        if authenticated_subject != "hermes-user-1":
+            raise PermissionError("expiry reviewer is not authenticated")
+        return authenticated_subject
+
 
 class ApiFacadeTests(unittest.TestCase):
     """Prove authz, project binding, envelope validation, and rate limits."""

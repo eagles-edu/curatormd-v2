@@ -49,6 +49,15 @@ class ReviewAuthorizer(Protocol):
         """Authorize release of an exact held artifact and return its actor."""
         ...
 
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Authorize a local human's approval of one expired manifest."""
+        ...
+
 
 class RejectUnauthenticatedReview:
     """Default until Hermes Core supplies an authenticated review adapter."""
@@ -98,6 +107,17 @@ class RejectUnauthenticatedReview:
         """Reject destructive hold releases until a trusted host is supplied."""
 
         del project_id, receipt_id, path, rationale, authenticated_subject
+        raise ReviewAuthorizationError("no authenticated reviewer is configured")
+
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Reject expiry purges until the trusted host authenticates a human."""
+
+        del project_id, manifest_sha256, authenticated_subject
         raise ReviewAuthorizationError("no authenticated reviewer is configured")
 
 

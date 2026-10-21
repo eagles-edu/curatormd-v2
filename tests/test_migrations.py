@@ -93,6 +93,17 @@ class MigrationReviewAuthorizer:
         del project_id, receipt_id, path, rationale
         return authenticated_subject or "migration-operator"
 
+    def authorize_expiry_purge(
+        self,
+        project_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Attribute an expiry decision to the migration fixture reviewer."""
+
+        del project_id, manifest_sha256
+        return authenticated_subject or "migration-operator"
+
 
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
@@ -140,6 +151,63 @@ class SchemaMigrationTests(unittest.TestCase):
             )
         finally:
             connection.close()
+
+    def test_v19_migration_adds_expiry_receipts_and_preserves_staging_ages(self) -> None:
+        """Add approval receipt tables without changing trusted age records."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v19.sqlite3"
+            store = CuratorStore(database_path)
+            with store.transaction() as connection:
+                connection.execute(
+                    """INSERT INTO staging_artifact_times
+                       (project_id, path, sha256, staged_at)
+                       VALUES (?, ?, ?, ?)""",
+                    (
+                        "migration-project",
+                        "goal-a/scratch/item-a",
+                        "a" * 64,
+                        "2026-10-20T00:00:00+00:00",
+                    ),
+                )
+                connection.execute("DROP TABLE expiry_purge_targets")
+                connection.execute("DROP TABLE expiry_purge_receipts")
+                connection.execute("PRAGMA user_version = 19")
+            store.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+                    self.assertEqual(
+                        tuple(connection.execute(
+                            "SELECT path, sha256, staged_at FROM staging_artifact_times"
+                        ).fetchone()),
+                        ("goal-a/scratch/item-a", "a" * 64, "2026-10-20T00:00:00+00:00"),
+                    )
+                    self.assertIn(
+                        "receipt_id",
+                        {
+                            row["name"]
+                            for row in connection.execute(
+                                "PRAGMA table_info(expiry_purge_receipts)"
+                            )
+                        },
+                    )
+                    self.assertIn(
+                        "next_attempt_at",
+                        {
+                            row["name"]
+                            for row in connection.execute(
+                                "PRAGMA table_info(expiry_purge_targets)"
+                            )
+                        },
+                    )
+            finally:
+                migrated.close()
 
     def test_v15_migration_redacts_legacy_purge_failure_details(self) -> None:
         """Remove potentially sensitive exception text without clearing retry state."""

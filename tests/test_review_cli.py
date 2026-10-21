@@ -8,6 +8,7 @@ from enum import StrEnum
 import io
 from io import StringIO
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -509,6 +510,136 @@ class ReviewCliTests(unittest.TestCase):
             self.assertIn("Implemented the bounded change", history)
             self.assertNotIn("TRANSIENT REVIEW CLI CANARY", history)
             self.assertIn('"purge_status": "complete"', result_output.getvalue())
+
+    def test_local_expiry_review_persists_exact_receipt_before_purge(self) -> None:
+        """Require an attended exact manifest and retain its receipt after cleanup."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            self._project(root)
+            database = Path(temporary) / "curator.sqlite3"
+            subject = f"local-uid:{os.geteuid()}"
+            for operation, phrase, extra in (
+                ("register", "REGISTER review-cli-project", ()),
+                (
+                    "grant",
+                    f"GRANT read review-cli-project {subject}",
+                    ("--subject-id", subject, "--action", "read"),
+                ),
+                (
+                    "grant",
+                    f"GRANT review review-cli-project {subject}",
+                    ("--subject-id", subject, "--action", "review"),
+                ),
+            ):
+                result = access_main(
+                    [
+                        operation,
+                        "--project-root",
+                        str(root),
+                        "--database",
+                        str(database),
+                        *extra,
+                        "--rationale",
+                        "Authorize the disposable expiry fixture",
+                    ],
+                    stdin=_InteractiveInput(phrase + "\n"),
+                    stdout=StringIO(),
+                    stderr=StringIO(),
+                )
+                self.assertEqual(result, 0)
+
+            config = ProjectConfig.load(root)
+            store = CuratorStore(database)
+            plugin = ProjectPlugin.bind(
+                config, store, review_authorizer=LocalUIDReviewAuthorizer()
+            )
+            goal = plugin.service.goal_start(
+                "Expire one old local artifact",
+                (SuccessCriterion("verified", "The artifact is temporary"),),
+                goal_id="expiry-cli-goal",
+            )
+            staged_at = datetime.now(UTC) - timedelta(hours=73)
+            with patch(
+                "curatormd_v2.store.utc_now", return_value=staged_at.isoformat()
+            ):
+                artifact = plugin.stage_artifact(
+                    goal.goal_id,
+                    "scratch",
+                    "old-scratch",
+                    io.BytesIO(b"EXPIRED TRANSIENT CANARY"),
+                )
+            snapshot = plugin.discover_expired_staging_artifacts()
+            self.assertTrue(snapshot.inventory_complete)
+            self.assertEqual(snapshot.eligible_artifacts, (artifact,))
+            self.assertIsNotNone(snapshot.manifest_sha256)
+            manifest_hash = snapshot.manifest_sha256
+            store.close()
+
+            output = _InteractiveOutput()
+            result = main(
+                [
+                    "--project-root",
+                    str(root),
+                    "--database",
+                    str(database),
+                    "expire",
+                ],
+                stdin=_InteractiveInput(
+                    f"PURGE EXPIRED INVENTORY {manifest_hash}\n"
+                ),
+                stdout=output,
+                stderr=_InteractiveErrors(),
+            )
+
+            self.assertEqual(result, 0, output.getvalue())
+            self.assertFalse(Path(artifact.path).exists())
+            emitted = json.loads(output.getvalue().splitlines()[-1])[
+                "expiry_purge_receipt"
+            ]
+            reopened = CuratorStore(database)
+            receipt = reopened.expiry_purge_receipt(
+                emitted["receipt_id"], "review-cli-project"
+            )
+            self.assertEqual(receipt.reviewer_id, subject)
+            self.assertEqual(receipt.manifest_sha256, manifest_hash)
+            self.assertEqual(receipt.status.value, "complete")
+            self.assertEqual(
+                reopened.staging_artifact_times(
+                    "review-cli-project", (artifact,)
+                ),
+                {},
+            )
+            self.assertEqual(
+                (root / "persistence" / "HISTORY.md").read_text(), "# History\n"
+            )
+            reopened.close()
+
+    def test_expiry_refuses_hidden_prompts_before_opening_database(self) -> None:
+        """An expiry receipt cannot be authorized when its confirmation is hidden."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            root.mkdir()
+            self._project(root)
+            database = Path(temporary) / "missing.sqlite3"
+            errors = StringIO()
+            result = main(
+                [
+                    "--project-root",
+                    str(root),
+                    "--database",
+                    str(database),
+                    "expire",
+                ],
+                stdin=_InteractiveInput(""),
+                stdout=_InteractiveOutput(),
+                stderr=errors,
+            )
+            self.assertEqual(result, 2)
+            self.assertFalse(database.exists())
+            self.assertIn("visible prompt TTY", errors.getvalue())
 
 
 if __name__ == "__main__":
