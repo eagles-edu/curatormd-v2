@@ -168,7 +168,9 @@ Checkboxes describe verified repository state, not architectural intent:
 
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
-delivery items and are excluded from the numerator and denominator.
+delivery items and are excluded from the numerator and denominator. Snapshot
+(2026-10-21): 126 of 153 delivery rows are complete; 27 are open. Recount the
+rows for future updates; historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -934,9 +936,9 @@ consumer plugin, Hermes integration, or production deployment.
       suites pass 24 tests; Hermes `scripts/check` passes all 12 checks. The
       full Curator suite passes 336 tests, strict Pyright reports zero
       diagnostics, and errors-only Pylint, Bandit, dependency audit, lock, and
-      diff checks pass. Checklist progress remains 133/211; budget policy,
-      retention thresholds, alert delivery, billing reconciliation, and live
-      provider capture remain open. Further progress (2026-10-21): the
+      diff checks pass. Budget policy, retention thresholds, alert delivery,
+      billing reconciliation, and live provider capture remain open. Further
+      progress (2026-10-21): the
       read-only Hermes `project_usage` response now separates captured-row
       token completeness from project-wide coverage completeness. It reports
       `coverage_complete=false` and names auxiliary calls outside the active-turn
@@ -2080,7 +2082,7 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       `0.1.0a1` wheel installs with its declared dependencies into a disposable
       target and imports the packaged Git evidence resolvers. This verifies
       package inclusion and importability, not a live consumer workflow or
-      deployment trust. Checklist remains 136/211 complete (75 open).
+      deployment trust.
       Vhost alpha install (2026-10-21): rebuilt the wheel from pushed Curator
       commit `aa12cd8` and installed it only in the isolated
       `renew-ssl-coding` profile environment. All 34 installed Python modules
@@ -2153,7 +2155,7 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       route are ready for an application smoke test, but the interactive goal
       operation and Vhost application workflow remain open. `project_health`
       remains `unknown`; identity, retention, recovery, and release gates stay
-      open. Checklist progress remains 135/211 (76 open).
+      open.
 
       Local package recheck (2026-10-21): extracted the shared strict positive-
       integer CLI limit parser into `src/curatormd_v2/cli_args.py`, preserving
@@ -2166,9 +2168,9 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       The rebuilt wheel SHA-256 is
       `ad6ee0e214757e007765dafa806539be3fcea6fdfb2134a48484ad08dcfa1192`.
       This verifies the installed local package boundary; no Vhost application
-      request or canonical application-target write was exercised. Checklist
-      progress remains 135/211 (76 open); identity, retention, production
-      scheduling/recovery, and release approval remain open.
+      request or canonical application-target write was exercised. Identity,
+      retention, production scheduling/recovery, and release approval remain
+      open.
 
       Profile-mediated alpha smoke attempt (2026-10-21): an unattended Hermes
       session launched from the Vhost Manager checkout reached the configured
@@ -2178,7 +2180,7 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       configs active and valid; it does not exercise a Curator-backed
       application request or canonical target write. No approval was bypassed.
       The profile approval path remains open; this attempt closes no checklist
-      item. Progress remains 135/211 (76 open).
+      item.
 
       Current alpha package after the privacy follow-up (2026-10-21): rebuilt
       wheel SHA-256 is
@@ -2209,7 +2211,7 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       persistence, and project-plugin module hashes match source. No checklist
       item closes from this local verification; the profile approval,
       application workflow, identity, retention, recovery, and release gates
-      remain open. Progress remains 135/211 (76 open).
+      remain open.
 
       Hermes lifecycle privacy follow-up (2026-10-21): the Codex event producer
       now emits only the fixed failure labels `exception`,
@@ -2230,9 +2232,8 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       persistence, and reconciled Markdown projection all remain verified.
       Neither the synthetic consumer run nor this local privacy regression
       closes a checklist item; application workflow, identity, retention,
-      recovery, live runtime, and release gates remain open. Checklist progress
-      remains 135/211 (76 open). A read-only Curator `goal_list` call from this
-      Codex session returned `unauthenticated` because trusted Hermes profile
+      recovery, live runtime, and release gates remain open. A read-only Curator
+      `goal_list` call from this Codex session returned `unauthenticated` because trusted Hermes profile
       context was unavailable; current backend goal persistence therefore
       remains unverified in this session.
 
@@ -2248,7 +2249,7 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       pass. This closes the final-summary consistency checklist item for this
       local MCP flow only. Authenticated reviewer identity, real application
       workflow, retention, production recovery, live runtime, and release gates
-      remain open. Checklist progress is now 136/211 (75 open).
+      remain open.
 
 ### 10. V1 ownership boundary
 

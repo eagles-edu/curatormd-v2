@@ -2370,3 +2370,15 @@
 **Open gate:** The repository-wide warning-level cleanup remains open. Production filesystem behavior, retention policy, authenticated review, and live runtime remain unverified.
 
 **Outcome:** The local purge implementation has simpler resource and control-flow boundaries with lifecycle tests intact. No deployment or user data changed.
+
+## 2026-10-21 — Reconcile plan progress reporting and hosted purge verification
+
+**Intent:** Keep Curator V2 progress reporting tied to the defined delivery-checklist section and record the latest repository-level verification.
+
+**Changed fact:** Removed stale `/211` progress snapshots from the plan narrative and added a dated delivery-only snapshot of 126/153 complete (27 open). Recorded the hosted run result for the pushed purge refactor.
+
+**Verification:** Directly counted checked/open rows only between `## Delivery checklist` and `#### Repeatable work-cycle checklist`: 126 complete, 27 open. Hosted GitHub Actions run [39633706427](https://github.com/eagles-edu/curatormd-v2/actions/runs/39633706427) passed Python 3.12, 3.13, and 3.14 tests, strict typing, blocking Pylint, Bandit, locked dependency audit, and clean installed-wheel acceptance. `git diff --check` passes.
+
+**Open gate:** Authenticated identity, owner-approved retention/hold rules, production scheduling/recovery, the real Vhost application workflow, and live goal-ledger persistence remain unverified. The user selected that they will provide identity and retention decisions, but no mapping or policy values are recorded yet; these gates remain open.
+
+**Outcome:** The plan now has one authoritative progress definition and the latest hosted result is recorded. No delivery row changed status; no V1, GPTMD, or consumer source/state changed.
