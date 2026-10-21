@@ -1459,6 +1459,17 @@ class McpServerTests(unittest.TestCase):
                         )
                         self.assertIsNone(project_inventory_value["scope_goal_id"])
 
+                        expiry_result = await client.call_tool(
+                            "project_expiry_inventory_discover", {}
+                        )
+                        self.assertFalse(expiry_result.is_error)
+                        expiry_content = expiry_result.content[0]
+                        assert isinstance(expiry_content, TextContent)
+                        expiry_value = json.loads(expiry_content.text)
+                        self.assertTrue(expiry_value["inventory_complete"])
+                        self.assertEqual(expiry_value["eligible_artifacts"], [])
+                        self.assertIsNotNone(expiry_value["manifest_sha256"])
+
                         planned_start = await client.call_tool(
                             "goal_start",
                             {
@@ -1545,6 +1556,7 @@ class McpServerTests(unittest.TestCase):
                 self.assertIn("project_storage_usage", names)
                 self.assertIn("artifact_inventory_discover", names)
                 self.assertIn("project_artifact_inventory_discover", names)
+                self.assertIn("project_expiry_inventory_discover", names)
                 self.assertIn("sde_review_packet", names)
                 self.assertIn("goal_reopen", names)
                 self.assertIn("goal_amend_criteria", names)

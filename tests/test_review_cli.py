@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+import io
 from io import StringIO
 import hashlib
 import os
@@ -444,16 +446,13 @@ class ReviewCliTests(unittest.TestCase):
             )
             if candidate is None:
                 self.fail("verified implementation was not assessed as an SDE")
-            staged = (
-                root
-                / ".curatormd-v2"
-                / "staging"
-                / goal.goal_id
-                / "import"
-                / "transient-canary.txt"
+            staged_artifact = plugin.stage_artifact(
+                goal.goal_id,
+                "import",
+                "transient-canary",
+                io.BytesIO(b"TRANSIENT REVIEW CLI CANARY\n"),
             )
-            staged.parent.mkdir(parents=True)
-            staged.write_text("TRANSIENT REVIEW CLI CANARY\n")
+            staged = Path(staged_artifact.path)
             inventory = plugin.discover_staging_artifacts(goal.goal_id)
             manifest_hash = inventory.manifest_sha256
             self.assertIsNotNone(manifest_hash)
@@ -483,6 +482,29 @@ class ReviewCliTests(unittest.TestCase):
 
             self.assertEqual(result, 0, result_errors.getvalue())
             self.assertFalse(staged.exists())
+            reopened = CuratorStore(database)
+            self.assertEqual(
+                reopened.staging_artifact_times(
+                    "review-cli-project", (staged_artifact,)
+                ),
+                {},
+            )
+            reopened_plugin = ProjectPlugin.bind(
+                ProjectConfig.load(root), reopened
+            )
+            replacement = reopened_plugin.stage_artifact(
+                goal.goal_id,
+                "import",
+                "transient-canary",
+                io.BytesIO(b"replacement transient bytes"),
+            )
+            replacement_age = reopened_plugin.discover_expired_staging_artifacts(
+                datetime.now(UTC) + timedelta(hours=71)
+            )
+            self.assertTrue(replacement_age.inventory_complete)
+            self.assertEqual(replacement_age.eligible_artifacts, ())
+            self.assertEqual(replacement.path, staged_artifact.path)
+            reopened.close()
             history = (root / "persistence" / "HISTORY.md").read_text()
             self.assertIn("Implemented the bounded change", history)
             self.assertNotIn("TRANSIENT REVIEW CLI CANARY", history)

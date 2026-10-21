@@ -1112,6 +1112,35 @@ class StagingArtifactInventory:
 
 
 @dataclass(frozen=True, slots=True)
+class StagingExpirySnapshot:
+    """Age-based purge candidates; completeness does not imply approval."""
+
+    eligible_artifacts: tuple[ArtifactRef, ...]
+    inventory_complete: bool
+    unknown_age_count: int
+    cutoff_at: str
+    manifest_sha256: str | None
+
+    def __post_init__(self) -> None:
+        if type(self.inventory_complete) is not bool:  # pylint: disable=unidiomatic-typecheck
+            raise ValueError("inventory_complete must be boolean")
+        if (
+            type(self.unknown_age_count) is not int  # pylint: disable=unidiomatic-typecheck
+            or self.unknown_age_count < 0
+        ):
+            raise ValueError("unknown_age_count must be a non-negative integer")
+        if self.inventory_complete and self.unknown_age_count:
+            raise ValueError("complete expiry inventory cannot have unknown ages")
+        if self.inventory_complete != (self.manifest_sha256 is not None):
+            raise ValueError("only complete expiry snapshots have a manifest")
+        if self.manifest_sha256 is not None and not _SHA256_RE.fullmatch(
+            self.manifest_sha256
+        ):
+            raise ValueError("manifest_sha256 must be a lowercase SHA-256")
+        _parse_aware_timestamp("cutoff_at", self.cutoff_at)
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectStorageUsage:
     """Project record/staging estimates plus separate global SQLite file sizes."""
 

@@ -6,7 +6,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 18
+SQLITE_SCHEMA_VERSION = 19
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -389,6 +389,25 @@ def migrate_sde_proposal_context_v18(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 18")
 
 
+def migrate_staging_artifact_age_v19(connection: sqlite3.Connection) -> None:
+    """Store content-free publication times for files written by the V2 adapter."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS staging_artifact_times (
+               project_id TEXT NOT NULL,
+               path TEXT NOT NULL,
+               sha256 TEXT NOT NULL,
+               staged_at TEXT NOT NULL,
+               PRIMARY KEY(project_id, path)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS staging_artifact_times_project_age "
+        "ON staging_artifact_times(project_id, staged_at)"
+    )
+    connection.execute("PRAGMA user_version = 19")
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -453,6 +472,9 @@ def apply_schema_migrations(
         schema_version = 17
     if schema_version == 17:
         migrate_sde_proposal_context_v18(connection)
+        schema_version = 18
+    if schema_version == 18:
+        migrate_staging_artifact_age_v19(connection)
         return
     if schema_version != 0:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
@@ -478,3 +500,4 @@ def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     migrate_content_free_purge_errors_v16(connection)
     migrate_semantic_event_replay_v17(connection)
     migrate_sde_proposal_context_v18(connection)
+    migrate_staging_artifact_age_v19(connection)

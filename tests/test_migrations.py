@@ -97,8 +97,8 @@ class MigrationReviewAuthorizer:
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
 
-    def test_v17_migration_adds_nullable_sde_proposal_context(self) -> None:
-        """Keep old proposals readable without inventing impact metadata."""
+    def test_v17_migration_adds_sde_context_and_staging_age_metadata(self) -> None:
+        """Keep old proposals readable and add empty staging-age metadata."""
 
         connection = sqlite3.connect(":memory:")
         connection.row_factory = sqlite3.Row
@@ -129,7 +129,14 @@ class SchemaMigrationTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(tuple(candidate), (None, None))
             self.assertEqual(
-                connection.execute("PRAGMA user_version").fetchone()[0], 18
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                SQLITE_SCHEMA_VERSION,
+            )
+            self.assertEqual(
+                connection.execute(
+                    "PRAGMA table_info(staging_artifact_times)"
+                ).fetchall()[0]["name"],
+                "project_id",
             )
         finally:
             connection.close()

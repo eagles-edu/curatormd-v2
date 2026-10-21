@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `18`.
+`SQLITE_SCHEMA_VERSION` and is `19`.
 
 ## Version 1 migration
 
@@ -12,8 +12,8 @@ with `CuratorStore` runs the legacy table/column creation, column additions,
 criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
-v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, and v18 migrations below before
-the store is exposed.
+v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, and v19 migrations
+below before the store is exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
 closes its SQLite connection before propagating the error. On the next open, the
@@ -247,3 +247,16 @@ Version 18 adds nullable `impact` and `retrieval_value` columns to
 existing rows remain readable with null values and are not retroactively
 rewritten. The v17-to-v18 fixture covers the migration. This local behavior is
 not production upgrade/rollback approval.
+
+## Version 19 migration
+
+Version 19 adds a content-free `staging_artifact_times` ledger keyed by project
+and exact staged path, with the SHA-256 and immutable publication timestamp.
+Only files published through the V2 producer adapter receive trusted age
+metadata; legacy or direct-writer files remain visible in normal inventories
+but make an expiry scan incomplete. Purging an exact receipt target removes
+its matching age record so safe path reuse begins with a fresh timestamp. The
+v18-to-v19 fixture checks the new schema while preserving legacy SDE proposal
+fields. This local metadata and read-only 72-hour eligibility scan do not
+authorize file deletion, implement expiry scheduling, or approve production
+migration/rollback.

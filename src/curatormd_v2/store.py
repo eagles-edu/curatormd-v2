@@ -1202,6 +1202,66 @@ class CuratorStore:
             connection.execute("PRAGMA user_version = 1")
             finish_unversioned_migrations(connection)
 
+    def record_staging_artifact_time(
+        self, project_id: str, artifact: ArtifactRef
+    ) -> str:
+        """Persist immutable V2 publication time without retaining file content."""
+
+        if not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id
+        ):
+            raise ValueError("project_id must be a bounded opaque identifier")
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT sha256, staged_at FROM staging_artifact_times "
+                "WHERE project_id = ? AND path = ?",
+                (project_id, artifact.path),
+            ).fetchone()
+            if row is not None:
+                if row["sha256"] != artifact.sha256:
+                    raise ConflictError("staging path already has different age metadata")
+                return str(row["staged_at"])
+            staged_at = utc_now()
+            connection.execute(
+                "INSERT INTO staging_artifact_times "
+                "(project_id, path, sha256, staged_at) VALUES (?, ?, ?, ?)",
+                (project_id, artifact.path, artifact.sha256, staged_at),
+            )
+            return staged_at
+
+    def staging_artifact_times(
+        self, project_id: str, artifacts: tuple[ArtifactRef, ...]
+    ) -> dict[str, str]:
+        """Return trusted timestamps only for exact project/path/hash matches."""
+
+        if not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id
+        ):
+            raise ValueError("project_id must be a bounded opaque identifier")
+        timestamps: dict[str, str] = {}
+        with self._lock:
+            for offset in range(0, len(artifacts), 400):
+                page = artifacts[offset : offset + 400]
+                if not page:
+                    continue
+                paths = tuple(item.path for item in page)
+                paths_json = json.dumps(paths, separators=(",", ":"))
+                rows = self._connection.execute(
+                    "SELECT path, sha256, staged_at FROM staging_artifact_times "
+                    "WHERE project_id = ? AND path IN "
+                    "(SELECT value FROM json_each(?))",
+                    (project_id, paths_json),
+                ).fetchall()
+                known = {
+                    row["path"]: (row["sha256"], row["staged_at"])
+                    for row in rows
+                }
+                for artifact in page:
+                    match = known.get(artifact.path)
+                    if match is not None and match[0] == artifact.sha256:
+                        timestamps[artifact.path] = str(match[1])
+        return timestamps
+
     def add_goal(
         self, goal: GoalCard, *, source_event_id: str | None = None
     ) -> None:
@@ -3987,7 +4047,12 @@ class CuratorStore:
             ).fetchone() is None:
                 raise NotFoundError(f"audit receipt not found: {receipt_id}")
             target = connection.execute(
-                "SELECT attempts FROM purge_targets WHERE receipt_id = ? AND path = ?",
+                """SELECT p.attempts, p.sha256, g.project_id
+                   FROM purge_targets AS p
+                   JOIN audit_receipts AS r ON r.receipt_id = p.receipt_id
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE p.receipt_id = ? AND p.path = ?""",
                 (receipt_id, path),
             ).fetchone()
             if target is None:
@@ -4019,6 +4084,12 @@ class CuratorStore:
             )
             if cursor.rowcount != 1:
                 raise NotFoundError("purge target not found in receipt")
+            if status is ArtifactStatus.PURGED:
+                connection.execute(
+                    "DELETE FROM staging_artifact_times "
+                    "WHERE project_id = ? AND path = ? AND sha256 = ?",
+                    (target["project_id"], path, target["sha256"]),
+                )
             attempted_at = utc_now()
             unfinished = connection.execute(
                 "SELECT COUNT(*) FROM purge_targets WHERE receipt_id = ? AND status != ?",

@@ -72,9 +72,11 @@ authorized reviewer. Purge still requires a complete, freshly hashed inventory
 and an explicit human approval of that exact inventory; a scheduler may retry
 only a purge already approved in a durable receipt.
 
-This is the approved policy for local alpha, not evidence that age-based expiry
-or an expiry scheduler is implemented. The SDE review path already purges its
-exact unheld inventory after canonical persistence. Age metadata, expiry
-discovery, attended approval of an expiry-only inventory, and retry scheduling
-remain implementation work. Production retention and deployment-owner policy
-remain open release gates.
+This is the approved policy for local alpha, not evidence that expiry is fully
+operational. The SDE review path already purges its exact unheld inventory
+after canonical persistence. V2 records publication time for producer-staged
+files and exposes a read-only 72-hour candidate scan that fails closed on
+unknown age or incomplete inventory. Attended approval of an expiry-only
+inventory, its durable receipt, hold integration, and retry scheduling remain
+implementation work. Production retention and deployment-owner policy remain
+open release gates.

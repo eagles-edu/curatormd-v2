@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 import fcntl
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import stat
@@ -566,6 +568,72 @@ class ProjectPluginTests(unittest.TestCase):
         inventory = plugin.discover_staging_artifacts(goal_id)
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.artifacts, (artifact,))
+
+    def test_expired_staging_uses_durable_publication_time_and_72_hour_cap(self) -> None:
+        """Only producer files older than 72 hours are expiry eligible."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-age-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            expired = plugin.stage_artifact(
+                goal_id, "cue", "expired-cue", io.BytesIO(b"old transient")
+            )
+            fresh = plugin.stage_artifact(
+                goal_id, "import", "fresh-import", io.BytesIO(b"new transient")
+            )
+
+        before_cap = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=71, minutes=59)
+        )
+        self.assertTrue(before_cap.inventory_complete)
+        self.assertEqual(before_cap.eligible_artifacts, ())
+        self.assertEqual(before_cap.unknown_age_count, 0)
+
+        at_cap = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
+        )
+        self.assertTrue(at_cap.inventory_complete)
+        self.assertEqual(
+            at_cap.eligible_artifacts,
+            tuple(sorted((expired, fresh), key=lambda item: item.path)),
+        )
+        self.assertEqual(
+            at_cap.manifest_sha256,
+            hashlib.sha256(
+                json.dumps(
+                    [(item.path, item.sha256) for item in at_cap.eligible_artifacts],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        )
+
+    def test_expired_staging_fails_closed_for_untracked_files(self) -> None:
+        """A direct filesystem writer cannot borrow another file's age proof."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-unknown-age-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            tracked = plugin.stage_artifact(
+                goal_id, "cue", "tracked-cue", io.BytesIO(b"old transient")
+            )
+        untracked_path = self.stage / goal_id / "scratch" / "direct-writer.bin"
+        untracked_path.parent.mkdir(parents=True)
+        untracked_path.write_bytes(b"unknown age")
+
+        snapshot = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=73)
+        )
+
+        self.assertFalse(snapshot.inventory_complete)
+        self.assertEqual(snapshot.unknown_age_count, 1)
+        self.assertIsNone(snapshot.manifest_sha256)
+        self.assertEqual(snapshot.eligible_artifacts, ())
+        self.assertTrue(Path(tracked.path).is_file())
 
     def test_producer_api_stages_every_supported_temporary_artifact_class(self) -> None:
         """Inventory every temporary class after publication through the producer API."""

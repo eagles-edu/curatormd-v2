@@ -89,6 +89,16 @@ purge are not automatic consequences of a goal update. In the local attended
 review CLI, one decision authorizes cleanup of the displayed exact inventory;
 canonical persistence still completes before purge begins.
 
+## Inspect 72-hour expiry eligibility
+
+The project-review-authorized MCP operation
+`project_expiry_inventory_discover` reports staged files at least 72 hours old
+and hashes their exact inventory. It is read-only and never authorizes purge.
+Every inventoried file must have matching age metadata from the V2 producer
+adapter; any unknown age or incomplete filesystem scan withholds the entire
+eligible list. An attended expiry-only approval and durable receipt are not yet
+implemented, so operators must not treat an expiry result as deletion approval.
+
 ## Run one due-purge retry pass
 
 The package includes a one-shot scheduler entrypoint for transient purge

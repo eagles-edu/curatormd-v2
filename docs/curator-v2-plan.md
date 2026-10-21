@@ -1176,8 +1176,16 @@ consumer plugin, Hermes integration, or production deployment.
       compact facts are recorded and any related SDE is approved or rejected,
       with 72 hours as the absolute maximum age. That SDE decision clears
       only its pending-review hold; legal/operational artifact holds require
-      separate release. Age-based eligibility and an attended exact-inventory
-      expiry approval path are not implemented yet, so this row remains open.
+      separate release. Schema v19 now stores content-free publication times
+      for files written through the producer adapter. A read-only 72-hour
+      expiry scan hashes the full project inventory, returns candidates only
+      when every file has matching age metadata, and supplies a hash of the
+      eligible subset; unknown ages or incomplete scans fail closed. This
+      scan is exposed through the project-review-authorized
+      `project_expiry_inventory_discover` API/MCP tool; it does not approve or
+      delete files. An attended expiry-only decision with its own durable
+      receipt, hold integration, and scheduler retry are still missing, so
+      this row remains open.
       Production retention policy remains a separate open gate.
 - [ ] Test two isolated consumer repositories, including cross-project access
       denial and independent configuration/persistence through real plugins and

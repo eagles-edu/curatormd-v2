@@ -1378,6 +1378,13 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertIn(
             str(orphan), {item.path for item in project_inventory.artifacts}
         )
+        expiry_inventory = api.discover_project_expiry_inventory(
+            self.caller, "project-a"
+        )
+        self.assertFalse(expiry_inventory.inventory_complete)
+        self.assertEqual(expiry_inventory.unknown_age_count, 3)
+        self.assertEqual(expiry_inventory.eligible_artifacts, ())
+        self.assertIsNone(expiry_inventory.manifest_sha256)
 
         read_only_api = AuthenticatedCuratorAPI(
             {"project-a": plugin},
@@ -1385,6 +1392,10 @@ class ApiFacadeTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(PermissionError, "project is not authorized"):
             read_only_api.discover_project_artifact_inventory(
+                self.caller, "project-a"
+            )
+        with self.assertRaisesRegex(PermissionError, "project is not authorized"):
+            read_only_api.discover_project_expiry_inventory(
                 self.caller, "project-a"
             )
 

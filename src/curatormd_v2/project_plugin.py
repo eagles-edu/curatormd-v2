@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 import fcntl
 import hashlib
 import json
@@ -11,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import sqlite3
 import stat
 from typing import BinaryIO, Generator
 
@@ -52,6 +54,7 @@ from .models import (
     SDEReviewDetail,
     StagingArtifactClass,
     StagingArtifactInventory,
+    StagingExpirySnapshot,
     StagingClassUsage,
     StagingUsage,
     SuccessCriterion,
@@ -69,6 +72,7 @@ MAX_GOAL_STAGING_BYTES = 256 * 1024**2
 MAX_GOAL_STAGING_FILES = MAX_ARTIFACTS_PER_RECEIPT
 _STAGING_SCOPE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _STAGING_CLASS_RE = re.compile(r"^(raw-chat|cue|import|scratch|generated|duplicate)$")
+STAGING_MAX_AGE = timedelta(hours=72)
 
 
 class ProjectPlugin:
@@ -504,6 +508,69 @@ class ProjectPlugin:
                 discover_artifacts=True, staging_root_fd=root_fd
             )
 
+    def discover_expired_staging_artifacts(
+        self, now: datetime | None = None
+    ) -> StagingExpirySnapshot:
+        """Find over-age artifacts from complete scans and exact durable age data.
+
+        This is eligibility discovery only. It neither approves deletion nor
+        creates a purge receipt. Any file without matching V2 age metadata makes
+        the snapshot incomplete and therefore unusable for a purge decision.
+        """
+
+        observed_at = now or datetime.now(UTC)
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise ValueError("now must be timezone-aware")
+        observed_at = observed_at.astimezone(UTC)
+        cutoff = observed_at - STAGING_MAX_AGE
+        with self._locked_staging_root() as root_fd:
+            inventory = self._scan_staging_tree(
+                discover_artifacts=True, staging_root_fd=root_fd
+            )
+            timestamps = self.service.store.staging_artifact_times(
+                self.config.project_id, inventory.artifacts
+            )
+            expired: list[ArtifactRef] = []
+            unknown_age_count = 0
+            for artifact in inventory.artifacts:
+                staged_at = timestamps.get(artifact.path)
+                if staged_at is None:
+                    unknown_age_count += 1
+                    continue
+                try:
+                    parsed = datetime.fromisoformat(staged_at.replace("Z", "+00:00"))
+                except ValueError:
+                    unknown_age_count += 1
+                    continue
+                if parsed.tzinfo is None or parsed.utcoffset() is None:
+                    unknown_age_count += 1
+                    continue
+                if parsed.astimezone(UTC) <= cutoff:
+                    expired.append(artifact)
+            complete = inventory.usage.inventory_complete and unknown_age_count == 0
+            if not complete:
+                expired.clear()
+            manifest_sha256 = None
+            if complete:
+                manifest = json.dumps(
+                    [
+                        (item.path, item.sha256)
+                        for item in sorted(expired, key=lambda item: item.path)
+                    ],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                manifest_sha256 = hashlib.sha256(
+                    manifest.encode("utf-8")
+                ).hexdigest()
+            return StagingExpirySnapshot(
+                tuple(sorted(expired, key=lambda item: item.path)),
+                complete,
+                unknown_age_count,
+                cutoff.isoformat(timespec="microseconds"),
+                manifest_sha256,
+            )
+
     def stage_artifact(
         self,
         goal_id: str,
@@ -653,7 +720,7 @@ class ProjectPlugin:
             )
             os.unlink(temp_name, dir_fd=class_fd)
             os.fsync(class_fd)
-            return ArtifactRef(
+            artifact = ArtifactRef(
                 str(
                     self.config.staging_root
                     / goal_id
@@ -662,6 +729,15 @@ class ProjectPlugin:
                 ),
                 digest.hexdigest(),
             )
+            try:
+                self.service.store.record_staging_artifact_time(
+                    self.config.project_id, artifact
+                )
+            except (sqlite3.Error, ConflictError, ValueError):
+                os.unlink(final_name, dir_fd=class_fd)
+                os.fsync(class_fd)
+                raise
+            return artifact
         finally:
             if temp_fd >= 0:
                 os.close(temp_fd)

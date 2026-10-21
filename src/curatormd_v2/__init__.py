@@ -115,6 +115,7 @@ from .models import (
     StagingArtifactClass,
     StagingArtifactInventory,
     StagingClassUsage,
+    StagingExpirySnapshot,
     StagingUsage,
     SuccessCriterion,
 )
@@ -306,6 +307,7 @@ __all__ = [
     "StagingArtifactClass",
     "StagingArtifactInventory",
     "StagingClassUsage",
+    "StagingExpirySnapshot",
     "StagingUsage",
     "RejectUnauthenticatedReview",
     "RejectUnverifiedEvidence",

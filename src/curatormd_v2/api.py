@@ -36,6 +36,7 @@ from .models import (
     DependencyProbeObservation,
     utc_now,
     StagingArtifactInventory,
+    StagingExpirySnapshot,
     ReviewDecision,
     SDECandidate,
     SDECorrection,
@@ -792,6 +793,15 @@ class AuthenticatedCuratorAPI:
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).discover_project_staging_artifacts()
+
+    def discover_project_expiry_inventory(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> StagingExpirySnapshot:
+        """Read 72-hour expiry eligibility; this operation never authorizes purge."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).discover_expired_staging_artifacts()
 
     def sde_review_queue(
         self, caller: AuthenticatedCaller, project_id: str, limit: int = 100

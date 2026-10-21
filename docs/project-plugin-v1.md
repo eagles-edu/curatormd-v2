@@ -138,6 +138,14 @@ purge resumes. Exact retries are idempotent; a changed actor or rationale
 conflicts. The original hold class remains in the audit record. This covers
 only the configured tree, not temporary material a producer stored elsewhere.
 
+The reviewer-only `project_expiry_inventory_discover()` operation reports
+project-wide files at least 72 hours old. Schema v19 records immutable
+publication time only for `stage_artifact` files; any untracked, legacy, or
+hash-mismatched file makes the snapshot incomplete and suppresses all eligible
+candidates. The result includes the exact candidate inventory hash, but the
+operation is read-only and cannot create a receipt, release a hold, or delete
+files. An attended expiry-only approval flow remains open work.
+
 The local producer surface is `ProjectPlugin.stage_artifact(goal_id,
 artifact_class, artifact_id, source)`. It accepts a binary stream, validates
 opaque path components and the six temporary classes (`raw-chat`, `cue`,
@@ -146,11 +154,12 @@ no-clobber `0600` file under `<staging.root>/<goal-id>/<class>/`. Partial files
 are removed on failure; callers receive only the path and SHA-256, never the
 artifact contents. Hard technical ceilings are 64 MiB per file, 256 MiB and
 500 files per goal. Writes fail closed if the existing goal inventory is
-incomplete. These ceilings are safety bounds, not retention budgets: V2 does
-not infer an age policy and does not automatically delete artifacts based on
-age or capacity. The supported producer APIs are this local plugin method and
-the stdin command below; source-specific integrations and a complete producer
-audit remain release gates.
+incomplete. These ceilings are safety bounds, not retention budgets. V2
+records publication age and exposes read-only 72-hour expiry discovery, but it
+does not automatically delete artifacts based on age or capacity. The
+supported producer APIs are this local plugin method and the stdin command
+below; source-specific integrations and a complete producer audit remain
+release gates.
 The package also exposes `curatormd-v2-stage` for a local producer process that
 cannot import the Python plugin directly. It accepts the project root, global
 database, existing goal ID, one of the six artifact classes, and a bounded opaque

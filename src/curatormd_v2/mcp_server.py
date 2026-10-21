@@ -777,6 +777,18 @@ def build_mcp_server(
             api.discover_project_artifact_inventory(caller, project_id)
         )
 
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True, destructive_hint=False, open_world_hint=False
+        )
+    )
+    def project_expiry_inventory_discover() -> str:
+        """Discover 72-hour staging candidates without authorizing deletion."""
+
+        return _json_result(
+            api.discover_project_expiry_inventory(caller, project_id)
+        )
+
     @_safe_tool()
     def sde_review_detail(candidate_id: str) -> str:
         """Inspect the selected facts and evidence for a review candidate."""

@@ -2514,3 +2514,15 @@
 **Open gate:** Age-based expiry discovery, attended approval of expiry-only exact inventories, and scheduler retry remain implementation work. Production retention policy, authenticated Hermes identity, deployment, and live-runtime gates remain open.
 
 **Outcome:** Local-alpha retention policy is approved and recorded; implementation and production evidence remain distinct.
+
+## 2026-10-22 — Add trusted local staging ages and expiry discovery
+
+**Intent:** Implement the approved 72-hour local-alpha expiry threshold without allowing age eligibility to authorize destructive cleanup.
+
+**Changed fact:** SQLite schema v19 now records project-scoped publication timestamps and hashes for producer-adapter artifacts. The project plugin and REVIEW-authorized API/MCP expose read-only 72-hour expiry discovery. Incomplete filesystem inventories, untracked files, and missing or mismatched age records suppress the entire eligible list. Successful receipt purge removes matching age metadata so a later file at the same path receives a new timestamp. The scan creates no purge receipt and cannot delete files.
+
+**Verification:** The full locked Curator suite passes 362 tests. Focused project-plugin, migration, API, MCP, and reviewer suites pass; strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, dependency audit, lock check, and `git diff --check` pass.
+
+**Open gate:** An attended expiry-only exact-inventory approval flow, its durable receipt and hold integration, and scheduler retry remain unimplemented. Production retention, identity, deployment, and live-runtime gates remain open.
+
+**Outcome:** Trusted age eligibility is available locally; destructive expiry still requires implementation of the complete attended receipt path.
