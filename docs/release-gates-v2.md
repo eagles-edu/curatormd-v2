@@ -5,19 +5,28 @@ claim. Statuses describe the strongest evidence currently present in this
 checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
-Current source snapshot (2026-10-21): Curator commit `e4c8724` is pushed to
-`main`; the locked local suite passes 354 tests and the GitHub Actions run
-[39629987710](https://github.com/eagles-edu/curatormd-v2/actions/runs/39629987710)
-passes the Python 3.12/3.13/3.14 matrix, strict typing, errors-only Pylint,
-Bandit, dependency audit, and clean-wheel acceptance. Hermes Core source head
-`9b8fc71e30` is clean; the focused lifecycle-hook, profile-usage, and
-Codex-app-server integration files pass 61 tests, and `python3 scripts/check`
-passes all 12 checks. The V2 checklist is 138/211 complete (73 open).
-The authenticated Curator V2 goal-list call currently returns
+Current source snapshot (2026-10-21): Curator commit `3a4314b` is pushed to
+`main`; GitHub Actions run
+[39638397374](https://github.com/eagles-edu/curatormd-v2/actions/runs/39638397374)
+passes the Python 3.12/3.13/3.14 matrix, strict typing, blocking Pylint,
+Bandit, dependency audit, and clean-wheel acceptance. The Curator **Delivery
+checklist** is 126/153 complete (27 open), using the progress definition in
+[`curator-v2-plan.md`](curator-v2-plan.md); reusable work-cycle and acceptance
+templates are excluded. The isolated `renew-ssl-coding` V2 database was read
+with SQLite read-only mode: schema 18, `quick_check=ok`, one active registered
+project, one active goal, two facts, 12 processed event receipts, zero retained
+event payload JSON bytes, and no SDE or purge rows. This is local persistence
+evidence, not an authenticated goal-list call or health probe. The last
+authenticated goal-list attempt returned
 `unauthenticated: Trusted Hermes profile context is required`; live tracker
-persistence is unverified. These source checks do not close authenticated
-identity, owner retention policy, production scheduling/recovery, or live
-application workflow gates.
+persistence remains unverified. Authenticated identity, owner retention
+policy, production scheduling/recovery, and live application workflow gates
+remain open.
+
+Hermes Core source head `9b8fc71e30` is clean; the focused lifecycle-hook,
+profile-usage, and Codex-app-server integration files pass 61 tests, and
+`python3 scripts/check` passes all 12 checks. These source checks do not close
+the Curator identity, retention, deployment, or live-runtime gates.
 
 The clean-wheel acceptance now also starts the installed MCP launcher and
 asserts `sde_assess` exposes optional `impact` and `retrieval_value` fields

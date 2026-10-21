@@ -2442,3 +2442,15 @@
 **Open gate:** Synthetic project registration/grants and profile metadata do not prove authenticated human identity. The test does not exercise the interactive Vhost application workflow, live canonical Vhost persistence, deployment, retention approval, or production runtime.
 
 **Outcome:** Local Hermes-to-Curator-to-Vhost-plugin transport and projection behavior are verified in a disposable integration; no user project data or release gate changed.
+
+## 2026-10-21 — Reconcile delivery progress and recheck alpha persistence
+
+**Intent:** Keep the release snapshot on the plan's canonical delivery-checklist denominator and refresh the isolated V2 profile's persisted-state evidence.
+
+**Changed fact:** The release ledger now reports only the Curator V2 Delivery checklist count: 126/153 complete and 27 open. It explicitly excludes reusable work-cycle and acceptance templates. A read-only SQLite query of the isolated `renew-ssl-coding` V2 database found one active project registration, one active goal, two facts, 12 processed event receipts, zero retained event payload JSON bytes, and no SDE or purge rows.
+
+**Verification:** SQLite schema version is 18 and `PRAGMA quick_check` returns `ok`. GitHub Actions run [39638397374](https://github.com/eagles-edu/curatormd-v2/actions/runs/39638397374) passes the Python 3.12/3.13/3.14 matrix, strict typing, blocking Pylint, Bandit, dependency audit, and clean-wheel acceptance on Curator commit `3a4314b`. `git diff --check` passes for this documentation update.
+
+**Open gate:** This local database inspection does not authenticate Hermes identity, establish live goal-tracker persistence, or prove project health. The last authenticated Curator goal-list attempt returned `unauthenticated: Trusted Hermes profile context is required`. Identity, owner-approved retention, production scheduling/recovery, and the Vhost application workflow remain open.
+
+**Outcome:** Progress reporting has one explicit delivery-only denominator and current local persistence evidence. No checklist row was closed; no V1, GPTMD, Vhost application data, or runtime configuration changed.
