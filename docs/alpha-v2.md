@@ -39,23 +39,29 @@ the exact commit only.
 - The Vhost Manager local alpha pilot is installed and its seven consumer
   contracts pass, including a synthetic bounded event through the profile hook,
   installed MCP launcher, Curator V2 store, and Hermes outbox receipt path. On
-  2026-10-21, the matching Hermes Core hook/outbox files and root-owned
-  Host Steward plugin were installed into the local runtime with a recoverable
-  file backup, and `hermes-gateway.service` restarted successfully. The
-  `renew-ssl-coding` profile endpoint reports `state=ready`; MCP discovery
-  connects and exposes 45 tools. Two real profile sessions created Hermes
-  session-to-goal bindings and bounded Codex lifecycle outbox entries. The
-  earliest unacknowledged event has eight delivery attempts; Curator still has
-  only the two earlier processed receipts, so live event delivery is not
-  verified. The first session exposed a JSON-text result parsing bug in the
-  consumer hook; the handler now parses that bounded result and all seven
-  consumer contracts pass. A focused Hermes suite passes 58 tests and
+  2026-10-21, the matching Hermes Core lifecycle-hook/outbox files and
+  root-owned Host Steward plugin were installed into the local runtime with a
+  recoverable file backup, and `hermes-gateway.service` restarted successfully.
+  The `renew-ssl-coding` profile MCP test connects and discovers 45 tools. The
+  Vhost hook was corrected to gate on the bound project ID because Hermes'
+  durable outbox intentionally omits `cwd`; the installed source/profile hook
+  hashes match. A fresh profile session replayed Hermes source sequences 1-9,
+  including the previously stuck sequence 2, and all were acknowledged. The
+  current session's persisted project/goal binding matches; Curator's Vhost
+  inbox cursor is 9 with 10 processed receipts, and its SQLite store passes
+  `PRAGMA quick_check=ok`. The Curator payload rows for those source events do
+  not retain raw payload JSON. This verifies live event delivery for the local
+  alpha profile, not cryptographic identity or production authorization. A
+  natural-language CLI response claimed the bind failed, but persisted Hermes
+  binding and Curator receipt records confirm it completed. The consumer test
+  suite passes seven contracts. A focused Hermes suite passes 58 tests and
   `python3 scripts/check` passes 12 checks. The focused shell-hook suite has one
   known profile-isolation failure (52 passed, 2 skipped); its direct config
   compatibility probe passes. Curator's 336-test suite, strict Pyright,
   errors-only Pylint, Bandit, dependency audit, and diff check pass. This is a
-  local alpha deployment with an open live-delivery and rollback gate, not an
-  owner-approved release.
+  local alpha deployment; identity, retention, backup/recovery, and release
+  approval remain open.
+
 - V1 is outside this V2 alpha and is not an import source or rollback target.
   In the Vhost Manager Hermes profile, the legacy Curator MCP entry is disabled
   and the `curatormd-observer` hook now declares no events; the profile hook
