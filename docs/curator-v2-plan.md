@@ -169,7 +169,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 128 of 153 delivery rows are complete; 25 are open. Recount the
+(2026-10-22): 129 of 153 delivery rows are complete; 24 are open. Recount the
 rows for future updates; historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
@@ -581,14 +581,22 @@ consumer plugin, Hermes integration, or production deployment.
       declared complete inventory can release purge. The packet carries the
       goal scope, and tests prove another goal's artifacts cannot enter its
       manifest; producer routing and out-of-root coverage remain open.
-- [ ] Define retention exceptions and legal/operational holds; ensure held
+- [x] Define retention exceptions and legal/operational holds; ensure held
       artifacts cannot be accidentally purged. Local v9 storage now accepts
       reviewer-selected `legal` and `operational` holds, exposes `held` state,
       excludes held targets from explicit and scheduled retries, and keeps the
       receipt pending. Local v10 adds exact authorized release with durable
       actor/time/rationale audit and resumes purge only after release commits.
-      There is no implicit expiry or release. Owner retention policy and
-      staging-adapter hold discovery remain open.
+      There is no implicit expiry or release. The owner approved the local-alpha
+      rule that SDE disposition clears only its review hold; legal/operational
+      artifact holds require a separate release. Purge and retry tests prove a
+      held file remains present with zero purge attempts through store reopen,
+      then is deleted only after the separate audited release. The MCP lifecycle
+      test also keeps a held artifact while purging an unheld artifact after
+      canonical persistence. This local-alpha checklist item is complete.
+      Production retention policy, discovery of holds from external source
+      systems, authenticated Hermes reviewer identity, and deployed operations
+      remain separate open gates.
 - [x] Implement persisted per-artifact capped exponential backoff, a bounded
       scheduler-facing due-retry pass, and status visibility for each retry
       deadline; preserve the authenticated explicit retry as an immediate

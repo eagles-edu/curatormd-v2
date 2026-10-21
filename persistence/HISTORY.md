@@ -2586,3 +2586,15 @@
 **Open gate:** Repository-wide refactor findings and the 12 oversized-module convention findings remain open; this cleanup does not close the tracked full-Pylint item. Production retention, authenticated Hermes identity, deployment, and live-runtime gates remain open.
 
 **Outcome:** Eleven non-blocking findings are removed without changing runtime behavior; the full Curator V2 goal remains active.
+
+## 2026-10-22 — Record local-alpha hold policy and enforcement
+
+**Intent:** Apply the approved local-alpha retention and reviewer decisions to the policy documentation and verify that explicit legal/operational holds cannot be purged implicitly.
+
+**Changed fact:** The policy document now records `eaglesvn` as the sole local UID-bound project admin/reviewer, the 72-hour maximum-age fallback and prompt post-record eligibility, and the rule that pending SDE review and explicit legal/operational holds pause deletion until their authorized resolution. It records that the same attended review approves only the exact displayed purge inventory. The delivery checklist now counts the local hold-policy/enforcement row complete: 129/153 complete and 24 open. Hermes-authenticated identity, production policy, and external hold-source discovery remain open.
+
+**Verification:** All 23 purge tests and all 6 MCP server tests pass. They cover hold visibility, zero purge attempts while held, state survival across store reopen, separate audited release, and simultaneous retention of a held artifact with purge of an unheld artifact after canonical persistence. `git diff --check` passes.
+
+**Open gate:** The approved policy applies to local alpha only. The `renew-ssl-coding` profile still reports `auth=none`; production role provisioning, retention policy, external legal/operational hold discovery, scheduling, alerting, and live runtime remain unverified.
+
+**Outcome:** The local hold rule and enforcement evidence are recorded; no production or live-identity gate is closed.

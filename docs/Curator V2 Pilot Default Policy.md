@@ -1,8 +1,17 @@
 # Curator V2 Pilot Default Policy
 
-Here’s a proposed pilot default for review, not an applied policy:
-- Identity: Trust only the subject Hermes Core supplies from its authenticated context. Keep that opaque subject separate from the profile and project IDs; treat missing identity or auth=none as denied. For renew-ssl-coding, leave the human subject unassigned until you identify the verified subject to bind. Hermes represents authenticated subjects separately from profile IDs in [session_identity.py (line 281)](/home/eaglesvn/.hermes/hermes-agent/gateway/session_identity.py:281).
-- Project access: A Hermes Core root-account operator provisions exact subject, profile, project, and action grants. No wildcard or self-registration. For the pilot, scope grants to renew-ssl-coding and vhost-manager-alpha.
-- Roles: Give one verified, owner-selected subject project admin and reviewer rights for the pilot. That reviewer can decide SDEs and release holds. Destructive cleanup still requires an approved decision and complete inventory. Host Steward administration stays with Hermes Core’s root account.
-- Retention (approved for local alpha): Raw chat/transcript, cue, import, scratch, generated intermediate, and duplicate artifacts become eligible as soon as compact facts are recorded and any related SDE is approved or rejected, with a 72-hour absolute maximum age. That SDE decision clears only the pending-SDE review hold; explicit legal or operational holds require separate release. Human approval of the exact inventory is required before deletion; a scheduler may retry only already-approved purges and cannot authorize new ones. Production retention policy remains open.
-The current renew-ssl-coding subject and the owner-selected reviewer still need exact values from you. Approve this draft or tell me what to change; I’ll keep the identity and retention gates open until then. The Curator V2 goal remains active.
+## Approved for local alpha
+
+- **Local reviewer/admin:** `eaglesvn` is the sole local project admin and SDE reviewer through the attended CLI bound to the current Linux UID. This does not establish a Hermes-authenticated subject. The `renew-ssl-coding` profile reports `auth=none` and cannot approve, reject, release holds, or purge through a trusted Hermes identity until Hermes supplies an authenticated human identity.
+- **Review and purge:** The same explicit human review action approves disposition and purge of only the exact displayed artifact inventory, after canonical facts/decision receipts are durable. Retries may repeat only that previously approved inventory; they cannot create a new approval.
+- **Retention:** Raw chat/transcript, cue, import, scratch, generated intermediate, and duplicate artifacts become eligible promptly after compact facts are recorded and any related SDE is approved or rejected, with a 72-hour maximum-age fallback. Pending SDE review pauses expiry until an authorized reviewer decides. The SDE decision clears only that review hold; explicit legal or operational artifact holds require a separate release. A maximum-age threshold does not override those holds.
+- **Hold handling:** Hold placement and release are attached to the exact artifact inventory and recorded with reviewer, time, and rationale. Held artifacts stay visible and excluded from purge/retry until a separate authorized release.
+- **Host Steward:** Host Steward administration and host cleanup remain under the Hermes Core root account; CuratorMD does not execute host cleanup.
+
+## Still open
+
+- Hermes-authenticated user/project identity and production role provisioning. Missing identity or `auth=none` is denied for trusted Hermes review actions. Hermes keeps authenticated subjects separate from profile IDs in [session_identity.py](/home/eaglesvn/.hermes/hermes-agent/gateway/session_identity.py).
+- Production retention policy, hold discovery from deployment-owned sources, scheduled purge operations, alerting, and live-runtime evidence.
+- Exact project/profile grant provisioning for a production deployment; no wildcard grants or self-registration are proposed.
+
+The approved values above apply to local alpha only and do not close production release gates. The Curator V2 goal remains active.
