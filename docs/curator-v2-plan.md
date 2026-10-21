@@ -724,6 +724,17 @@ consumer plugin, Hermes integration, or production deployment.
       46 tools. Hermes reports transport auth as `none`; this proves profile
       configuration and tool discovery only, not an authenticated identity or
       a tool-call authorization round trip. Identity and permission checks
+      remain open. Additional disposable consumer acceptance (2026-10-21):
+      `/home/eaglesvn/dockerz/renew_ssl/tests/vhost-manager/test_curatormd_v2_hermes_managed_integration.py`
+      passed against Hermes Core's actual `HookContext`, managed stdio MCP,
+      and the installed Curator launcher. Three events were processed; exact
+      replay was acknowledged, a failed delivery retried, explicit active-goal
+      binding passed while planned-goal binding failed, and the configured
+      Vhost Markdown projection reconciled. The private model canary and cwd
+      path were absent from Markdown, the out-of-scope target stayed unchanged,
+      and review-authorized persistence remained denied. This disposable run
+      uses synthetic registration/grants and profile metadata; authenticated
+      identity, the interactive Vhost application workflow, and deployment
       remain open.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted

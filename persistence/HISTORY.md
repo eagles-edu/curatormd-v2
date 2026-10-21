@@ -2430,3 +2430,15 @@
 **Open gate:** This is a local persistence/status observation, not live Hermes authenticated identity, production readiness, owner-approved retention policy, or deployment evidence. Repository-wide warning-level Pylint cleanup remains open.
 
 **Outcome:** The local alpha state is freshly observed and project health remains correctly unknown; no policy or release gate changed.
+
+## 2026-10-21 — Verify disposable Hermes-managed Vhost integration
+
+**Intent:** Verify the local Vhost consumer hook through Hermes Core's managed MCP transport without touching Vhost application or persistence data.
+
+**Changed fact:** The disposable integration script in the dirty Vhost checkout exercised the actual Hermes `HookContext`, managed stdio MCP, installed Curator V2 launcher, and repository-owned Vhost projection adapter. It processed three lifecycle events, acknowledged exact replay, retried a failed delivery, accepted explicit binding only for an active goal, reconciled the configured Vhost Markdown target, kept the private model/cwd canaries out of Markdown, preserved an out-of-scope target, and denied reviewer-only persistence.
+
+**Verification:** `/home/eaglesvn/.hermes/hermes-agent/.venv/bin/python /home/eaglesvn/dockerz/renew_ssl/tests/vhost-manager/test_curatormd_v2_hermes_managed_integration.py --hermes-root /home/eaglesvn/.hermes/hermes-agent --curator-python /home/eaglesvn/.hermes/profiles/renew-ssl-coding/curator-v2-alpha-venv/bin/python` exits 0 with `result=passed`. The script creates its profile, config, database, consumer repository, and Markdown files under a disposable temporary directory. The Vhost worktree status is unchanged.
+
+**Open gate:** Synthetic project registration/grants and profile metadata do not prove authenticated human identity. The test does not exercise the interactive Vhost application workflow, live canonical Vhost persistence, deployment, retention approval, or production runtime.
+
+**Outcome:** Local Hermes-to-Curator-to-Vhost-plugin transport and projection behavior are verified in a disposable integration; no user project data or release gate changed.
