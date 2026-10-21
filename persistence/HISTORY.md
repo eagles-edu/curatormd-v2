@@ -2423,9 +2423,9 @@
 
 **Intent:** Recheck the Vhost alpha's persisted V2 state after the canonical-write-before-purge regression and make a bounded local quality improvement.
 
-**Changed fact:** The local profile-bound MCP reports 12 processed event receipts, one goal, two facts, and no failed, received, or quarantined events for `vhost-manager-alpha`. `build_local_profile_mcp` now binds its `ProjectPlugin` directly in the API map without an intermediate variable. The status call used explicit profile/session metadata in a local probe; it does not establish authenticated human identity.
+**Changed fact:** The local profile-bound MCP reports 12 processed event receipts, one goal, two facts, and no failed, received, or quarantined events for `vhost-manager-alpha`. Hermes Core's `renew-ssl-coding` profile connects to the installed local stdio server and discovers 46 tools; Hermes reports transport auth as `none`. `build_local_profile_mcp` now binds its `ProjectPlugin` directly in the API map without an intermediate variable. The status call used explicit profile/session metadata in a local probe; it does not establish authenticated human identity.
 
-**Verification:** The local MCP reports project health `unknown`; event router, purge scheduler, host identity, human review, and artifact producer inventory probes are all unknown. All 13 hosted-MCP tests pass. Focused `R0914` Pylint, strict Pyright, repository errors-only Pylint, Bandit, and `git diff --check` pass. Direct Codex Curator V2 status calls without Hermes context remain unauthenticated.
+**Verification:** The local MCP reports project health `unknown`; event router, purge scheduler, host identity, human review, and artifact producer inventory probes are all unknown. Hermes `mcp test` proves profile config and tool discovery only. All 13 hosted-MCP tests pass. Focused `R0914` Pylint, strict Pyright, repository errors-only Pylint, Bandit, and `git diff --check` pass. Direct Codex Curator V2 status calls without Hermes context remain unauthenticated.
 
 **Open gate:** This is a local persistence/status observation, not live Hermes authenticated identity, production readiness, owner-approved retention policy, or deployment evidence. Repository-wide warning-level Pylint cleanup remains open.
 

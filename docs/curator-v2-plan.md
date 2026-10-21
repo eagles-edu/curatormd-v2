@@ -719,6 +719,12 @@ consumer plugin, Hermes integration, or production deployment.
       exposes no authenticated human subject. Do not treat profile, session,
       or unqualified source user IDs as verified identity; identity mapping
       and per-user permission checks remain open.
+      Current verification (2026-10-21): `hermes -p renew-ssl-coding mcp test
+      curator_v2` connects to the installed local stdio server and discovers
+      46 tools. Hermes reports transport auth as `none`; this proves profile
+      configuration and tool discovery only, not an authenticated identity or
+      a tool-call authorization round trip. Identity and permission checks
+      remain open.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted
       retries, capped persisted exponential retry due times, source-sequence
