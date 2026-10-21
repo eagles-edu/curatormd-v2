@@ -206,8 +206,7 @@ class MarkdownPersistenceAdapter:
         total_goals, goal_page = self.store.list_goal_page(
             self.project_id, offset, limit
         )
-        content, _mode = self._read_target(target)
-        encoded_size = len(content.encode("utf-8"))
+        content = self._read_target(target)[0]
         goals = tuple(
             self._reconcile_goal_from_content(goal, target, content)
             for goal in goal_page
@@ -237,7 +236,7 @@ class MarkdownPersistenceAdapter:
             malformed_marker_count=malformed_count,
             unrecognized_marker_count=unrecognized_count,
             inventory_complete=inventory_complete,
-            scanned_bytes=encoded_size,
+            scanned_bytes=len(content.encode("utf-8")),
         )
 
     def _reconcile_goal_from_content(

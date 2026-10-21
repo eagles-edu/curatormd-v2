@@ -2048,6 +2048,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       check pass. Full Pylint is down to 291 findings (279 refactor, 12
       oversized-module convention); the maintenance CLI and staged-file hash
       helper have no remaining findings. Repository-wide cleanup remains open.
+      Additional progress (2026-10-22): simplified bounded project Markdown
+      reconciliation by using the target reader's content directly and
+      calculating scanned UTF-8 bytes at the result boundary. All 19 focused
+      Markdown tests and the 368-test full suite pass; strict Pyright,
+      errors-only Pylint, Bandit, locked dependency audit, and diff check pass.
+      Full warning-level findings are now 290 (278 refactor, 12 oversized-
+      module convention), with no remaining reconciliation locals finding.
+      Broader cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

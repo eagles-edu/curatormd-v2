@@ -2,6 +2,14 @@
 
 ## 2026-10-22
 
+- Simplified bounded project Markdown reconciliation without changing its
+  fields or read-only behavior; the project page reuses the target content and
+  computes its UTF-8 scan size when constructing the result. All 19 focused
+  Markdown tests and the full 368-test suite pass; strict Pyright, errors-only
+  Pylint, Bandit, locked dependency audit, and `git diff --check` pass. Full
+  Pylint inventory is 290 findings (278 refactor, 12 oversized-module
+  convention); the reconciliation method has no remaining local-count finding.
+  Repository-wide cleanup remains open.
 - Split maintenance retry accounting/output from command validation and
   isolated stable staged-file hashing from descriptor setup/closure. This
   preserves bounded retry behavior and the no-follow, file-identity, size, and
