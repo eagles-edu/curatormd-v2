@@ -1489,13 +1489,15 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       This is local implementation guidance; production authority, identity,
       retention, backup, deployment, and recovery drills remain open.
 
-      Fresh Hermes Core verification (2026-10-21): the repository-owned
-      runner passes the focused gateway-hook, project-usage outbox, and
-      Host Steward plugin suites (42 tests across three files); `python3
-      scripts/check` passes all 12 checks. This revalidates the dirty Hermes
-      integration checkout. Host Steward remains Hermes Core-owned; these
-      local checks do not prove live root-account enablement, authenticated
-      reviewer identity, production supervision, or deployment recovery.
+      Fresh Hermes Core verification (2026-10-21, source head
+      `9b8fc71e30`): repository `scripts/run_tests.sh` passes 61 tests across
+      `tests/gateway/test_hooks.py`,
+      `tests/agent/test_profile_usage_accounting.py`, and
+      `tests/agent/test_codex_app_server_integration.py`; `python3
+      scripts/check` passes all 12 checks. The Hermes integration checkout is
+      clean. Host Steward remains Hermes Core-owned; these local checks do not
+      prove live root-account enablement, authenticated reviewer identity,
+      production supervision, or deployment recovery.
 
 ### 8. Security, privacy, token, and disk controls
 

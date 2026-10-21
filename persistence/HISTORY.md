@@ -2240,3 +2240,15 @@
 **Open gate:** Tests use a test review authorizer and disposable local state. Live authenticated reviewer UX, approved retention policy, production cleanup scheduling/recovery, and live runtime remain open. Checklist is 138/211 complete (73 open).
 
 **Outcome:** The local canonical-write-before-purge and retry lifecycle row is closed; this does not close deployment, identity, retention, or live-runtime gates.
+
+## 2026-10-21 — Reverify Hermes Core lifecycle integration
+
+**Intent:** Refresh the V2 release evidence for Hermes Core's locally implemented Codex lifecycle outbox and managed MCP hook path.
+
+**Changed fact:** Curator's plan and release ledger now record current evidence from Hermes source head `9b8fc71e30` and the successful Curator CI run on `94bb816`. The Hermes checkout was clean after verification. No Hermes source or runtime configuration changed.
+
+**Verification:** `scripts/run_tests.sh` passes 61 tests across gateway hooks, profile usage accounting, and Codex app-server integration. Hermes `python3 scripts/check` passes all 12 checks. Curator GitHub Actions run [39628941504](https://github.com/eagles-edu/curatormd-v2/actions/runs/39628941504) passes quality/security checks, clean-wheel acceptance, and Python 3.12/3.13/3.14 suites. Curator's local suite passes 353 tests.
+
+**Open gate:** Read-only Curator V2 goal listing returns `unauthenticated: Trusted Hermes profile context is required`; live tracker persistence is unverified. These checks do not prove cryptographic Hermes identity, production scheduling/recovery, owner-approved retention, or the Vhost application workflow. Checklist remains 138/211 complete (73 open).
+
+**Outcome:** Local Hermes Core integration and Curator package/repository checks are current and verified. Deployment, identity, retention-policy, and live-runtime gates remain open.
