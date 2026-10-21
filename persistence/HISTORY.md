@@ -2264,3 +2264,15 @@
 **Open gate:** Hosted CI for the new wheel-schema assertion is pending. Consumer profile reinstallation and live Hermes identity/runtime remain separate gates. Checklist remains 138/211 complete (73 open).
 
 **Outcome:** The packaged alpha now has a direct regression for the installed SDE MCP input contract. No consumer repository or runtime was changed.
+
+## 2026-10-21 — Pass hosted clean-wheel SDE schema acceptance
+
+**Intent:** Confirm the new installed-launcher SDE contract passes on the pushed Curator V2 alpha source.
+
+**Changed fact:** The release ledger now records Curator commit `e4c8724` and its completed hosted workflow, including the clean-wheel launcher test for optional SDE `impact`/`retrieval_value` fields and consumer-bound `project_id`.
+
+**Verification:** GitHub Actions run [39629987710](https://github.com/eagles-edu/curatormd-v2/actions/runs/39629987710) succeeds across Python 3.12, 3.13, and 3.14; strict typing, errors-only Pylint, Bandit, dependency audit, clean installed-wheel acceptance, and all test jobs pass. The local suite has 354 passing tests. Hermes Core separately passes 61 focused integration tests and all 12 `scripts/check` checks at source head `9b8fc71e30`.
+
+**Open gate:** Hermes hosted CI, authenticated identity, owner retention policy, production scheduling/recovery, Vhost application workflow, and live Curator goal-tracker persistence remain unverified. Checklist is 138/211 complete (73 open).
+
+**Outcome:** The alpha wheel's new SDE MCP schema is verified both locally and in hosted CI. No consumer install or live runtime was changed.
