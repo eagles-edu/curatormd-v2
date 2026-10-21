@@ -2538,3 +2538,15 @@
 **Open gate:** Immediate post-record/SDE-disposition eligibility, production retention policy, authenticated Hermes identity, deployment, and live runtime remain open. The V2 delivery checklist stays at 127/153 complete and 26 open; its expiry row remains open.
 
 **Outcome:** The local attended approval and retry path is implemented and locally verified under the approved 72-hour maximum; no production or live-runtime gate is closed.
+
+## 2026-10-22 — Make fact-reviewed artifacts eligible promptly
+
+**Intent:** Honor the approved local-alpha rule that transient files become expiry-eligible promptly after compact facts and related SDE review, while preserving the 72-hour maximum-age fallback and pending-review pause.
+
+**Changed fact:** Expiry discovery now checks durable fact and SDE receipt timestamps against each artifact's publication time. Post-publication facts or a completed related review make the file immediately eligible when no SDE remains pending for that goal. Pending SDE review blocks both discovery and retry, including after 72 hours; explicit legal/operational holds continue to block deletion. Files without post-publication record/disposition evidence reach the 72-hour fallback.
+
+**Verification:** The full locked suite passes 367 tests, including immediate fact eligibility, pending-SDE pause beyond the cap, receipt retry blocking during review, and resumption after the decision. Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, `uv audit`, `uv lock --check`, and `git diff --check` pass. Focused project-plugin, API, and MCP suites also pass.
+
+**Open gate:** Production retention policy, authenticated Hermes reviewer identity, deployment and scheduled runtime remain open. The delivery checklist stays at 127/153 complete and 26 open.
+
+**Outcome:** The local alpha now implements both prompt post-record eligibility and the 72-hour maximum-age fallback without granting unattended deletion authority.

@@ -126,7 +126,7 @@ def _parser() -> argparse.ArgumentParser:
     review = commands.add_parser("review", help="review and disposition one candidate")
     review.add_argument("candidate_id")
     commands.add_parser(
-        "expire", help="approve and purge the current complete 72-hour expiry inventory"
+        "expire", help="approve and purge the current complete expiry inventory"
     )
     retry_expiry = commands.add_parser(
         "expiry-retry", help="retry due targets from one approved expiry receipt"
@@ -315,7 +315,7 @@ def _expire(
         errors.write("Refusing expiry approval because staging age inventory is incomplete.\n")
         return 2
     if not snapshot.eligible_artifacts:
-        errors.write("No unheld artifacts have reached the 72-hour expiry threshold.\n")
+        errors.write("No unheld artifacts are ready for expiry.\n")
         return 0
     if len(snapshot.eligible_artifacts) > 500:
         errors.write("Expiry inventory exceeds the 500-artifact receipt limit.\n")

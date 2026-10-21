@@ -546,8 +546,26 @@ class ProjectPlugin:
         timestamps = self.service.store.staging_artifact_times(
             self.config.project_id, inventory.artifacts
         )
+        artifact_goal_times: dict[str, tuple[str, str]] = {}
+        staging_root = self.config.validated_staging_root()
+        for artifact in inventory.artifacts:
+            staged_at = timestamps.get(artifact.path)
+            try:
+                path_parts = Path(artifact.path).relative_to(staging_root).parts
+            except ValueError:
+                path_parts = ()
+            if (
+                staged_at is not None
+                and len(path_parts) == 3
+                and _STAGING_SCOPE_ID_RE.fullmatch(path_parts[0])
+            ):
+                artifact_goal_times[artifact.path] = (path_parts[0], staged_at)
+        readiness = self.service.store.staging_artifact_expiry_readiness(
+            self.config.project_id, artifact_goal_times
+        )
         expired: list[ArtifactRef] = []
         unknown_age_count = 0
+        pending_sde_artifact_count = 0
         for artifact in inventory.artifacts:
             staged_at = timestamps.get(artifact.path)
             if staged_at is None:
@@ -561,7 +579,18 @@ class ProjectPlugin:
             if parsed.tzinfo is None or parsed.utcoffset() is None:
                 unknown_age_count += 1
                 continue
-            if parsed.astimezone(UTC) <= cutoff:
+            state = readiness.get(artifact.path)
+            if state is None:
+                unknown_age_count += 1
+                continue
+            fact_after_stage, review_after_stage, pending_sde_count = state
+            age_eligible = parsed.astimezone(UTC) <= cutoff
+            review_ready = fact_after_stage or review_after_stage
+            if pending_sde_count:
+                if age_eligible or review_ready:
+                    pending_sde_artifact_count += 1
+                continue
+            if age_eligible or review_ready:
                 expired.append(artifact)
         complete = inventory.usage.inventory_complete and unknown_age_count == 0
         if not complete:
@@ -594,6 +623,7 @@ class ProjectPlugin:
             unknown_age_count,
             cutoff.isoformat(timespec="microseconds"),
             manifest_sha256,
+            pending_sde_artifact_count,
         )
 
     def approve_expired_staging_inventory(
@@ -661,9 +691,16 @@ class ProjectPlugin:
         targets = self.service.store.expiry_purge_targets(
             receipt_id, self.config.project_id
         )
+        staging_root = self.config.validated_staging_root()
         for artifact, _attempts in targets:
+            try:
+                path_parts = Path(artifact.path).relative_to(staging_root).parts
+            except ValueError:
+                continue
+            if len(path_parts) != 3:
+                continue
             if not self.service.store.begin_expiry_purge_attempt(
-                receipt_id, artifact.path, self.config.project_id
+                receipt_id, artifact.path, self.config.project_id, path_parts[0]
             ):
                 continue
             try:

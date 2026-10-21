@@ -1419,7 +1419,7 @@ class CuratorStore:
         )
 
     def begin_expiry_purge_attempt(
-        self, receipt_id: str, path: str, project_id: str
+        self, receipt_id: str, path: str, project_id: str, goal_id: str
     ) -> bool:
         """Claim one approved target only when due and not under an active hold."""
 
@@ -1453,6 +1453,15 @@ class CuratorStore:
                 (project_id, path, target["sha256"]),
             ).fetchone()
             if held is not None:
+                return False
+            pending_sde = connection.execute(
+                """SELECT 1 FROM sde_candidates AS s
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE g.project_id = ? AND s.goal_id = ? AND s.status = ?
+                   LIMIT 1""",
+                (project_id, goal_id, SDEStatus.PENDING_REVIEW.value),
+            ).fetchone()
+            if pending_sde is not None:
                 return False
             cursor = connection.execute(
                 """UPDATE expiry_purge_targets
@@ -1576,6 +1585,81 @@ class CuratorStore:
                     if match is not None and match[0] == artifact.sha256:
                         timestamps[artifact.path] = str(match[1])
         return timestamps
+
+    def staging_artifact_expiry_readiness(
+        self,
+        project_id: str,
+        artifact_goal_times: dict[str, tuple[str, str]],
+    ) -> dict[str, tuple[bool, bool, int]]:
+        """Read post-publication fact/review evidence and pending SDE counts.
+
+        The returned tuple is `(fact_after_stage, review_after_stage,
+        pending_sde_count)`, keyed by the exact staged path. Only compact
+        ledger timestamps and project/goal identifiers enter this query.
+        """
+
+        if not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id
+        ):
+            raise ValueError("project_id must be a bounded opaque identifier")
+        requested_items: list[dict[str, str]] = []
+        for path, (goal_id, staged_at) in artifact_goal_times.items():
+            if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", goal_id):
+                raise ValueError("goal_id must be a bounded opaque identifier")
+            if not path or len(path) > 1024 or len(staged_at) > 64:
+                raise ValueError("staged artifact readiness fields exceed their bounds")
+            requested_items.append(
+                {"path": path, "goal_id": goal_id, "staged_at": staged_at}
+            )
+        readiness: dict[str, tuple[bool, bool, int]] = {}
+        for offset in range(0, len(requested_items), 400):
+            page = requested_items[offset : offset + 400]
+            if not page:
+                continue
+            requested = json.dumps(page, separators=(",", ":"))
+            with self._lock:
+                rows = self._connection.execute(
+                    """WITH requested AS (
+                           SELECT json_extract(value, '$.path') AS path,
+                                  json_extract(value, '$.goal_id') AS goal_id,
+                                  json_extract(value, '$.staged_at') AS staged_at
+                           FROM json_each(?)
+                       )
+                       SELECT q.path,
+                         EXISTS (
+                           SELECT 1 FROM facts AS f
+                           JOIN goals AS g ON g.goal_id = f.goal_id
+                           WHERE f.goal_id = q.goal_id AND g.project_id = ?
+                             AND f.created_at >= q.staged_at
+                         ) AS fact_after_stage,
+                         EXISTS (
+                           SELECT 1 FROM audit_receipts AS r
+                           JOIN sde_candidates AS s
+                             ON s.candidate_id = r.candidate_id
+                           JOIN goals AS g ON g.goal_id = s.goal_id
+                           WHERE s.goal_id = q.goal_id AND g.project_id = ?
+                             AND r.created_at >= q.staged_at
+                         ) AS review_after_stage,
+                         (SELECT COUNT(*) FROM sde_candidates AS s
+                          JOIN goals AS g ON g.goal_id = s.goal_id
+                          WHERE s.goal_id = q.goal_id AND g.project_id = ?
+                            AND s.status = ?) AS pending_sde_count
+                       FROM requested AS q""",
+                    (
+                        requested,
+                        project_id,
+                        project_id,
+                        project_id,
+                        SDEStatus.PENDING_REVIEW.value,
+                    ),
+                ).fetchall()
+            for row in rows:
+                readiness[str(row["path"])] = (
+                    bool(row["fact_after_stage"]),
+                    bool(row["review_after_stage"]),
+                    int(row["pending_sde_count"]),
+                )
+        return readiness
 
     def add_goal(
         self, goal: GoalCard, *, source_event_id: str | None = None

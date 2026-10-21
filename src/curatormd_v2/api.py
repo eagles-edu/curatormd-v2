@@ -798,7 +798,7 @@ class AuthenticatedCuratorAPI:
     def discover_project_expiry_inventory(
         self, caller: AuthenticatedCaller, project_id: str
     ) -> StagingExpirySnapshot:
-        """Read 72-hour expiry eligibility; this operation never authorizes purge."""
+        """Read record-ready or 72-hour-max expiry eligibility, without purge authority."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW

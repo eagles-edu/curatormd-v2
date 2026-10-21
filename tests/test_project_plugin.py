@@ -23,6 +23,7 @@ from project_fixtures import create_consumer_repo
 
 from curatormd_v2 import CuratorStore, SuccessCriterion
 from curatormd_v2.events import EventEnvelope, GoalStarted
+from curatormd_v2.models import FactKind, Materiality, ReviewDecision, SDECandidate
 from curatormd_v2.project_config import (
     CONFIG_FILENAME,
     PROJECT_PLUGIN_API_VERSION,
@@ -32,6 +33,7 @@ from curatormd_v2.project_config import (
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
 from curatormd_v2.testing import assert_goal_started_event_contract
+from purge_fixtures import TestReviewAuthorizer
 
 
 class ProjectPluginTests(unittest.TestCase):
@@ -569,8 +571,8 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.artifacts, (artifact,))
 
-    def test_expired_staging_uses_durable_publication_time_and_72_hour_cap(self) -> None:
-        """Only producer files older than 72 hours are expiry eligible."""
+    def test_expired_staging_uses_72_hour_max_age_when_no_record_is_ready(self) -> None:
+        """Unrecorded producer files reach the hard 72-hour age ceiling."""
 
         plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
         goal_id = "expiry-age-goal"
@@ -609,6 +611,107 @@ class ProjectPluginTests(unittest.TestCase):
                 ).encode("utf-8")
             ).hexdigest(),
         )
+
+    def test_expiry_becomes_eligible_after_post_stage_facts_are_recorded(self) -> None:
+        """Do not make reviewers wait 72 hours after facts are already recorded."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-immediate-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime.now(UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "raw-chat", "source-chat", io.BytesIO(b"temporary source")
+            )
+
+        before_facts = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(minutes=1)
+        )
+        self.assertEqual(before_facts.eligible_artifacts, ())
+
+        plugin.service.goal_fact(
+            goal_id,
+            FactKind.RESEARCH,
+            "Compact facts were recorded from the temporary source",
+        )
+        after_facts = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(minutes=1)
+        )
+
+        self.assertTrue(after_facts.inventory_complete)
+        self.assertEqual(after_facts.eligible_artifacts, (artifact,))
+        self.assertEqual(after_facts.pending_sde_artifact_count, 0)
+
+    def test_pending_sde_pauses_expiry_even_after_the_72_hour_maximum(self) -> None:
+        """Pending SDE review blocks immediate and max-age eligibility."""
+
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root),
+            self.store,
+            review_authorizer=TestReviewAuthorizer(),
+        )
+        goal_id = "expiry-pending-sde-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "pending-sde-cue", io.BytesIO(b"temporary source")
+            )
+        fact, _ = plugin.service.goal_fact(
+            goal_id, FactKind.RESEARCH, "A compact fact for the pending review"
+        )
+        before_sde = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=73)
+        )
+        self.assertEqual(before_sde.eligible_artifacts, (artifact,))
+        manifest_sha256 = before_sde.manifest_sha256
+        if manifest_sha256 is None:
+            self.fail("complete expiry snapshot must have a manifest hash")
+        expiry_receipt = self.store.create_expiry_purge_receipt(
+            "consumer-a",
+            "test-reviewer",
+            manifest_sha256,
+            before_sde.eligible_artifacts,
+        )
+        self.store.add_sde_candidate(
+            SDECandidate(
+                goal_id=goal_id,
+                materiality=Materiality.IMPLEMENTATION,
+                rationale="Review a material outcome before expiry",
+                fact_ids=(fact.fact_id,),
+                impact="The source may contain a durable implementation decision",
+                retrieval_value="A reviewer must decide whether the outcome is useful",
+            ),
+            project_id="consumer-a",
+        )
+
+        snapshot = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=73)
+        )
+
+        self.assertTrue(snapshot.inventory_complete)
+        self.assertEqual(snapshot.eligible_artifacts, ())
+        self.assertEqual(snapshot.pending_sde_artifact_count, 1)
+        self.assertTrue(Path(artifact.path).is_file())
+        paused_receipt = plugin.retry_expiry_purge(expiry_receipt.receipt_id)
+        self.assertEqual(paused_receipt.status.value, "purge_pending")
+        self.assertTrue(Path(artifact.path).is_file())
+
+        candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
+        plugin.service.sde_confirm(
+            candidate.candidate_id,
+            ReviewDecision.APPROVED,
+            (),
+            artifact_inventory_complete=True,
+        )
+        after_decision = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=73)
+        )
+        self.assertEqual(after_decision.pending_sde_artifact_count, 0)
+        self.assertEqual(after_decision.eligible_artifacts, (artifact,))
+        completed_receipt = plugin.retry_expiry_purge(expiry_receipt.receipt_id)
+        self.assertEqual(completed_receipt.status.value, "complete")
+        self.assertFalse(Path(artifact.path).exists())
 
     def test_expired_staging_fails_closed_for_untracked_files(self) -> None:
         """A direct filesystem writer cannot borrow another file's age proof."""

@@ -1176,11 +1176,14 @@ consumer plugin, Hermes integration, or production deployment.
       compact facts are recorded and any related SDE is approved or rejected,
       with 72 hours as the absolute maximum age. That SDE decision clears
       only its pending-review hold; legal/operational artifact holds require
-      separate release. Schema v19 now stores content-free publication times
-      for files written through the producer adapter. A read-only 72-hour
-      expiry scan hashes the full project inventory, returns candidates only
-      when every file has matching age metadata, and supplies a hash of the
-      eligible subset; unknown ages or incomplete scans fail closed. This
+      separate release. Schema v19 stores content-free publication times for
+      files written through the producer adapter. Expiry discovery hashes the
+      full project inventory and marks artifacts eligible after facts are
+      recorded following staging and no SDE remains pending, or at the 72-hour
+      maximum-age threshold. Any pending SDE for that goal pauses expiry for
+      its staged files, and explicit legal/operational holds remain excluded.
+      Unknown ages or incomplete
+      scans fail closed. This
       scan is exposed through the project-review-authorized
       `project_expiry_inventory_discover` API/MCP tool; it does not approve or
       delete files. Local progress (2026-10-22): schema v20 adds an attended
@@ -1188,10 +1191,11 @@ consumer plugin, Hermes integration, or production deployment.
       reviewer/hash/target receipt before unlink, skips and rechecks active
       holds, and retains content-free `purge_pending` failures for backoff
       retries. The review CLI refuses hidden prompts and can retry only a prior
-      receipt. The hard age threshold remains 72 hours; no seven-day window is
-      configured. Immediate eligibility after compact facts and SDE
-      disposition, integration into the one-shot maintenance scheduler, and
-      production retention policy remain open, so this row remains open.
+      receipt; the one-shot maintenance command retries SDE and expiry receipts
+      without creating approvals. The hard age threshold remains 72 hours; no
+      seven-day window is configured. Production retention policy, scheduler
+      deployment, and Hermes-authenticated reviewer identity remain open, so
+      this row remains open.
       Production retention policy remains a separate open gate.
 - [ ] Test two isolated consumer repositories, including cross-project access
       denial and independent configuration/persistence through real plugins and

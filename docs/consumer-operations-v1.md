@@ -89,14 +89,17 @@ purge are not automatic consequences of a goal update. In the local attended
 review CLI, one decision authorizes cleanup of the displayed exact inventory;
 canonical persistence still completes before purge begins.
 
-## Inspect 72-hour expiry eligibility
+## Inspect expiry eligibility
 
 The project-review-authorized MCP operation
-`project_expiry_inventory_discover` reports unheld staged files at least 72
-hours old and hashes their exact inventory. Every inventoried file must have
-matching age metadata from the V2 producer adapter; any unknown age or
-incomplete filesystem scan withholds the entire eligible list. The 72-hour
-threshold is the local-alpha maximum age, not a seven-day retention period.
+`project_expiry_inventory_discover` reports and hashes the exact inventory of
+unheld staged files that are ready for expiry. Files become eligible promptly
+after compact facts are recorded following publication and any related SDE is
+approved or rejected. Any pending SDE for that goal pauses expiry for its
+staged files. If no record/disposition
+event makes an artifact ready sooner, it reaches the 72-hour maximum-age
+threshold. Every file must have matching V2 producer age metadata; any unknown
+age or incomplete filesystem scan withholds the entire eligible list.
 
 Run the attended local review command to display the exact inventory and
 confirm its hash. It requires visible input, output, and error terminals, and

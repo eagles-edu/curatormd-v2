@@ -1113,7 +1113,7 @@ class StagingArtifactInventory:
 
 @dataclass(frozen=True, slots=True)
 class StagingExpirySnapshot:
-    """Age-based purge candidates; completeness does not imply approval."""
+    """Fact/SDE-ready or max-age purge candidates; no approval is implied."""
 
     eligible_artifacts: tuple[ArtifactRef, ...]
     held_artifacts: tuple[ArtifactRef, ...]
@@ -1121,6 +1121,7 @@ class StagingExpirySnapshot:
     unknown_age_count: int
     cutoff_at: str
     manifest_sha256: str | None
+    pending_sde_artifact_count: int = 0
 
     def __post_init__(self) -> None:
         if type(self.inventory_complete) is not bool:  # pylint: disable=unidiomatic-typecheck
@@ -1132,6 +1133,11 @@ class StagingExpirySnapshot:
             raise ValueError("unknown_age_count must be a non-negative integer")
         if self.inventory_complete and self.unknown_age_count:
             raise ValueError("complete expiry inventory cannot have unknown ages")
+        if (
+            type(self.pending_sde_artifact_count) is not int  # pylint: disable=unidiomatic-typecheck
+            or self.pending_sde_artifact_count < 0
+        ):
+            raise ValueError("pending_sde_artifact_count must be non-negative")
         if self.inventory_complete != (self.manifest_sha256 is not None):
             raise ValueError("only complete expiry snapshots have a manifest")
         if {item.path for item in self.eligible_artifacts} & {

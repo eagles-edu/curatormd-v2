@@ -783,7 +783,7 @@ def build_mcp_server(
         )
     )
     def project_expiry_inventory_discover() -> str:
-        """Discover 72-hour staging candidates without authorizing deletion."""
+        """Discover record-ready or 72-hour-max staging candidates, without deletion authority."""
 
         return _json_result(
             api.discover_project_expiry_inventory(caller, project_id)
