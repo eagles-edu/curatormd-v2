@@ -77,82 +77,101 @@ class ArtifactPurger:
                 "platform lacks safe descriptor-relative purge support",
             )
 
-        root_fd = -1
-        opened_directories: list[int] = []
-        file_fd = -1
         filesystem_failed = False
         try:
-            try:
-                root_fd = os.open(
-                    self.staging_root,
-                    os.O_RDONLY | directory | no_follow,
-                )
-                parent_fd = root_fd
-                for part in relative.parts[:-1]:
-                    try:
-                        child_fd = os.open(
-                            part,
-                            os.O_RDONLY | directory | no_follow,
-                            dir_fd=parent_fd,
-                        )
-                    except FileNotFoundError:
-                        return True
-                    opened_directories.append(child_fd)
-                    parent_fd = child_fd
-                filename = relative.parts[-1]
-                try:
-                    file_fd = os.open(
-                        filename,
-                        os.O_RDONLY | no_follow | getattr(os, "O_NONBLOCK", 0),
-                        dir_fd=parent_fd,
-                    )
-                except FileNotFoundError:
-                    return True
-                before = os.fstat(file_fd)
-                if not stat.S_ISREG(before.st_mode):
-                    raise PurgeError(
-                        PurgeFailureCode.NOT_REGULAR_FILE,
-                        "only regular files are eligible for purge",
-                    )
-                digest = hashlib.sha256()
-                with os.fdopen(os.dup(file_fd), "rb") as source:
-                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                after = os.fstat(file_fd)
-                if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
-                    after.st_dev,
-                    after.st_ino,
-                    after.st_size,
-                    after.st_mtime_ns,
-                ):
-                    raise PurgeError(
-                        PurgeFailureCode.ARTIFACT_CHANGED,
-                        "artifact changed while its hash was being verified",
-                    )
-                if digest.hexdigest() != artifact.sha256:
-                    raise PurgeError(
-                        PurgeFailureCode.HASH_MISMATCH,
-                        "artifact hash does not match the approved reference",
-                    )
-                named = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
-                if (named.st_dev, named.st_ino) != (after.st_dev, after.st_ino):
-                    raise PurgeError(
-                        PurgeFailureCode.PATH_CHANGED,
-                        "artifact path changed while its hash was being verified"
-                    )
-                os.unlink(filename, dir_fd=parent_fd)
-            except OSError:
-                filesystem_failed = True
-        finally:
-            if file_fd >= 0:
-                os.close(file_fd)
-            for directory_fd in reversed(opened_directories):
-                os.close(directory_fd)
-            if root_fd >= 0:
-                os.close(root_fd)
+            self._remove_target(relative, no_follow, directory, artifact)
+        except OSError:
+            filesystem_failed = True
         if filesystem_failed:
             raise PurgeError(
                 PurgeFailureCode.FILESYSTEM_ERROR,
                 "cannot safely inspect or remove artifact",
             )
         return True
+
+    def _remove_target(
+        self,
+        relative: Path,
+        no_follow: int,
+        directory: int,
+        artifact: ArtifactRef,
+    ) -> None:
+        """Open, verify, and unlink one exact staged file with pinned parents."""
+
+        root_fd = -1
+        directory_fds: list[int] = []
+        file_fd = -1
+        try:
+            root_fd = os.open(
+                self.staging_root,
+                os.O_RDONLY | directory | no_follow,
+            )
+            parent_fd = root_fd
+            for part in relative.parts[:-1]:
+                try:
+                    child_fd = os.open(
+                        part,
+                        os.O_RDONLY | directory | no_follow,
+                        dir_fd=parent_fd,
+                    )
+                except FileNotFoundError:
+                    return
+                directory_fds.append(child_fd)
+                parent_fd = child_fd
+            filename = relative.parts[-1]
+            try:
+                file_fd = os.open(
+                    filename,
+                    os.O_RDONLY | no_follow | getattr(os, "O_NONBLOCK", 0),
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                return
+            self._verify_target(file_fd, parent_fd, filename, artifact)
+            os.unlink(filename, dir_fd=parent_fd)
+        finally:
+            if file_fd >= 0:
+                os.close(file_fd)
+            for directory_fd in reversed(directory_fds):
+                os.close(directory_fd)
+            if root_fd >= 0:
+                os.close(root_fd)
+
+    @staticmethod
+    def _verify_target(
+        file_fd: int,
+        parent_fd: int,
+        filename: str,
+        artifact: ArtifactRef,
+    ) -> None:
+        """Verify the opened file and its directory entry before unlink."""
+
+        before = os.fstat(file_fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise PurgeError(
+                PurgeFailureCode.NOT_REGULAR_FILE,
+                "only regular files are eligible for purge",
+            )
+        digest = hashlib.sha256()
+        with os.fdopen(os.dup(file_fd), "rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        after = os.fstat(file_fd)
+        before_identity = before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns
+        after_identity = after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns
+        if before_identity != after_identity:
+            raise PurgeError(
+                PurgeFailureCode.ARTIFACT_CHANGED,
+                "artifact changed while its hash was being verified",
+            )
+        if digest.hexdigest() != artifact.sha256:
+            raise PurgeError(
+                PurgeFailureCode.HASH_MISMATCH,
+                "artifact hash does not match the approved reference",
+            )
+        named = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+        if (named.st_dev, named.st_ino) != (after.st_dev, after.st_ino):
+            raise PurgeError(
+                PurgeFailureCode.PATH_CHANGED,
+                "artifact path changed while its hash was being verified",
+            )

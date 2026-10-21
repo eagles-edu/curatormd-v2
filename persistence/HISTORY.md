@@ -2358,3 +2358,15 @@
 **Open gate:** Repository-wide warning-level Pylint cleanup remains open; this hosted workflow enforces errors/fatal diagnostics only. Deployment, identity, retention, and live-runtime gates remain open.
 
 **Outcome:** The targeted cleanup is verified in hosted CI without changing the warning policy or runtime behavior.
+
+## 2026-10-21 — Refactor Curator purge descriptor lifecycle
+
+**Intent:** Reduce local control-flow complexity in the hash-verified purge adapter while preserving path confinement, verification order, idempotent absence, and sanitized failures.
+
+**Changed fact:** Split descriptor-relative traversal, descriptor cleanup, hash/identity verification, and final unlink into private helpers. Missing targets still succeed idempotently; all eligible files still require exact digest and inode checks before unlink.
+
+**Verification:** The full suite passes 354 tests, including all 23 purge lifecycle tests. Strict Pyright, repository errors-only Pylint, focused `R0914` Pylint for `purge.py`, Bandit, locked dependency audit, lock check, and `git diff --check` pass. The full warning-level Pylint inventory falls from 283 to 280 findings.
+
+**Open gate:** The repository-wide warning-level cleanup remains open. Production filesystem behavior, retention policy, authenticated review, and live runtime remain unverified.
+
+**Outcome:** The local purge implementation has simpler resource and control-flow boundaries with lifecycle tests intact. No deployment or user data changed.

@@ -1862,6 +1862,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       targeted Pylint for the changed files pass. Full repository-wide Pylint
       cleanup remains open, and its total has not yet been recomputed after
       this delta.
+      Further progress (2026-10-21): split the hash-verified purge adapter's
+      path traversal, descriptor lifetime, file verification, and unlink steps
+      into private helpers without changing the check order or safe error
+      boundary. All 354 tests pass, including the 23 purge lifecycle tests;
+      strict Pyright, repository errors-only Pylint, focused purge complexity
+      Pylint, Bandit, and `git diff --check` pass. The refreshed full warning
+      inventory falls from 283 to 280; repository-wide cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
