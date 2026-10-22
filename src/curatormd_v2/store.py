@@ -4904,15 +4904,9 @@ class CuratorStore:
                 (attempted_at, receipt_id),
             )
 
-    def record_purge_result(
-        self,
-        receipt_id: str,
-        path: str,
-        status: ArtifactStatus,
-        error: str | None,
-        project_id: str | None = None,
-    ) -> AuditReceipt:
-        """Persist one idempotent artifact purge result and refresh receipt state."""
+    @staticmethod
+    def _validate_purge_result(status: ArtifactStatus, error: str | None) -> None:
+        """Accept only terminal purge states and fixed content-free failures."""
 
         if status not in (ArtifactStatus.FAILED, ArtifactStatus.PURGED):
             raise ValueError("a purge result must be failed or purged")
@@ -4926,6 +4920,54 @@ class CuratorStore:
                 raise ValueError("purge failure requires a known content-free error code")
         elif error is not None:
             raise ValueError("successful purge results cannot include an error")
+
+    @staticmethod
+    def _purge_retry_at(status: ArtifactStatus, attempts: int) -> str | None:
+        """Schedule bounded retry backoff only for failed purge attempts."""
+
+        if status is not ArtifactStatus.FAILED:
+            return None
+        delay_seconds = min(
+            PURGE_RETRY_BASE_SECONDS * (2 ** min(max(attempts - 1, 0), 16)),
+            PURGE_RETRY_MAX_SECONDS,
+        )
+        return (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat(
+            timespec="microseconds"
+        )
+
+    @staticmethod
+    def _refresh_purge_receipt_status(
+        connection: sqlite3.Connection, receipt_id: str
+    ) -> None:
+        """Keep the receipt pending until every inventoried artifact is purged."""
+
+        updated_at = utc_now()
+        unfinished = connection.execute(
+            "SELECT COUNT(*) FROM purge_targets WHERE receipt_id = ? AND status != ?",
+            (receipt_id, ArtifactStatus.PURGED.value),
+        ).fetchone()[0]
+        receipt_status = (
+            PurgeStatus.PURGE_PENDING if unfinished else PurgeStatus.COMPLETE
+        )
+        cursor = connection.execute(
+            "UPDATE audit_receipts SET purge_status = ?, updated_at = ? "
+            "WHERE receipt_id = ?",
+            (receipt_status.value, updated_at, receipt_id),
+        )
+        if cursor.rowcount != 1:
+            raise NotFoundError(f"audit receipt not found: {receipt_id}")
+
+    def record_purge_result(
+        self,
+        receipt_id: str,
+        path: str,
+        status: ArtifactStatus,
+        error: str | None,
+        project_id: str | None = None,
+    ) -> AuditReceipt:
+        """Persist one idempotent artifact purge result and refresh receipt state."""
+
+        self._validate_purge_result(status, error)
 
         with self._transaction() as connection:
             if project_id is not None and connection.execute(
@@ -4957,16 +4999,9 @@ class CuratorStore:
                 and held["hold_released_at"] is None
             ):
                 raise ConflictError("held artifacts cannot record a purge result")
-            next_attempt_at = None
-            if status is ArtifactStatus.FAILED:
-                delay_seconds = min(
-                    PURGE_RETRY_BASE_SECONDS
-                    * (2 ** min(max(int(target["attempts"]) - 1, 0), 16)),
-                    PURGE_RETRY_MAX_SECONDS,
-                )
-                next_attempt_at = (
-                    datetime.now(UTC) + timedelta(seconds=delay_seconds)
-                ).isoformat(timespec="microseconds")
+            next_attempt_at = self._purge_retry_at(
+                status, int(target["attempts"])
+            )
             cursor = connection.execute(
                 """UPDATE purge_targets SET status = ?, error = ?, next_attempt_at = ?
                    WHERE receipt_id = ? AND path = ?""",
@@ -4980,21 +5015,7 @@ class CuratorStore:
                     "WHERE project_id = ? AND path = ? AND sha256 = ?",
                     (target["project_id"], path, target["sha256"]),
                 )
-            attempted_at = utc_now()
-            unfinished = connection.execute(
-                "SELECT COUNT(*) FROM purge_targets WHERE receipt_id = ? AND status != ?",
-                (receipt_id, ArtifactStatus.PURGED.value),
-            ).fetchone()[0]
-            receipt_status = (
-                PurgeStatus.PURGE_PENDING if unfinished else PurgeStatus.COMPLETE
-            )
-            cursor = connection.execute(
-                "UPDATE audit_receipts SET purge_status = ?, updated_at = ? "
-                "WHERE receipt_id = ?",
-                (receipt_status.value, attempted_at, receipt_id),
-            )
-            if cursor.rowcount != 1:
-                raise NotFoundError(f"audit receipt not found: {receipt_id}")
+            self._refresh_purge_receipt_status(connection, receipt_id)
         return self.get_receipt(receipt_id, project_id)
 
     def pending_receipts(

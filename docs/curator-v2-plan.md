@@ -3235,6 +3235,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       and errors-only Pylint pass. The focused `R0914` scan no longer reports
       `mark_event_failed`; `record_purge_result` remains flagged. No checklist
       item or release gate changed.
+      Further progress (2026-10-22): split purge-result validation, bounded
+      retry scheduling, and receipt-state refresh from
+      `CuratorStore.record_purge_result`. All remain inside the original
+      caller transaction; held-target rejection, target update, staging-time
+      removal, and receipt-state ordering are unchanged. Five focused purge
+      retry, hold, missing-target, and idempotency tests pass; strict Pyright
+      and errors-only Pylint pass. The full store `R0914` scan now reports no
+      findings. No checklist item or release gate changed.
 
 ### 10. V1 ownership boundary
 

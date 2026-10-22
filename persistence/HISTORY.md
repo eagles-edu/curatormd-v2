@@ -4051,3 +4051,15 @@
 **Open gate:** Full Curator suite and whole-tree warning-level Pylint were not rerun. Deployment, authenticated identity, retention-policy ownership, production scheduling/alerts, and live-runtime evidence remain open.
 
 **Outcome:** Event failure state handling is easier to audit without changing local retry, claim, or payload cleanup behavior; no checklist item was closed.
+
+## 2026-10-22 — Decompose purge-result persistence
+
+**Intent:** Reduce `CuratorStore.record_purge_result` complexity while preserving exact purge retry and receipt-state behavior.
+
+**Changed fact:** Extracted terminal-result validation, bounded failure retry scheduling, and receipt-state refresh. Helpers run inside the original transaction; held-target rejection, result update, staging-artifact timestamp removal, and receipt pending/complete transition remain in their prior order.
+
+**Verification:** Five focused purge retry, hold, missing-target, and idempotency tests pass. Strict Pyright and repository errors-only Pylint pass. A full store `R0914` scan reports no findings; `git diff --check` passes.
+
+**Open gate:** The full Curator suite and repository-wide warning-level Pylint inventory were not rerun. Production scheduler, deployment, authenticated identity, retention-policy ownership, alerts, and live-runtime evidence remain open.
+
+**Outcome:** Purge result handling is divided into smaller auditable phases without changing deletion authority or `purge_pending` semantics; no checklist item was closed.
