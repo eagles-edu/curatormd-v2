@@ -2801,3 +2801,15 @@
 **Open gate:** The installed Vhost alpha wheel has not yet been updated to use the separate cleanup tool. Hermes authenticated identity, production retention/recovery, deployment, and live-runtime evidence remain open.
 
 **Outcome:** Canonical goal reports now expose cleanup authorization separately from SDE disposition and purge status.
+
+## 2026-10-22 — Record owner-approved local alpha policy
+
+**Intent:** Close the local policy-recording item using the owner's approved values without applying them to production.
+
+**Changed fact:** The V2 pilot policy now records the local UID-bound reviewer, two-step SDE/cleanup decisions, compact-facts-only canonical data, prompt expiry with a 72-hour maximum, explicit hold handling, fail-closed missing identity/inventory/approval, and Hermes Core root-account ownership of Host Steward. The plan now counts 132/174 delivery rows complete and 42 open; production identity, retention, external hold discovery, deployment recovery, and live runtime remain open.
+
+**Verification:** Compared the policy text with the owner's local-alpha decisions and existing fail-closed implementation; checklist counting reports 132 complete, 42 open, 174 total. `git diff --check` passes. No runtime test was needed for this documentation-only change.
+
+**Open gate:** These defaults do not establish production identity, production retention, deployment-owned hold discovery, or live runtime behavior.
+
+**Outcome:** Local alpha owner requirements are recorded; production release policy remains open.

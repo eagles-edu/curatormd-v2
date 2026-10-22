@@ -187,7 +187,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 131 of 174 delivery rows are complete; 43 are open. The count
+(2026-10-22): 132 of 174 delivery rows are complete; 42 are open. The count
 includes implementation rows in sections 0–10, 12, and Definition of done. It
 excludes section 11's reusable execution templates; their per-task checkboxes
 are not delivery progress. Historical narrative counts below are not current.
@@ -210,8 +210,14 @@ consumer plugin, Hermes integration, or production deployment.
 - [x] Publish versioned event, goal, fact, SDE, receipt, error, and plugin
       data-shape contracts with compatibility and migration rules; validate
       runtime events and records against the machine-readable schema bundle.
-- [ ] Record supported data-retention, privacy, threat-model, and operator
-      requirements from the actual deployment owners.
+- [x] Record supported data-retention, privacy, threat-model, and operator
+      requirements from the actual deployment owners. The owner-approved local
+      alpha policy records the eaglesvn UID-bound reviewer, separate exact-
+      inventory cleanup approval, 72-hour maximum and prompt expiry, artifact
+      holds, privacy/canonical-data boundary, fail-closed missing identity, and
+      Hermes Core root-account ownership of Host Steward. Production identity,
+      retention, external hold discovery, deployment recovery, and live runtime
+      remain separate open gates.
 - [x] Record boundary-changing decisions in architecture decision records.
       [`ADR 0001`](adr/0001-managed-markdown-projection-integrity.md) documents
       the managed Markdown checksum, legacy behavior, and why it does not settle
