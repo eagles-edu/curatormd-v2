@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `20`.
+`SQLITE_SCHEMA_VERSION` and is `21`.
 
 ## Version 1 migration
 
@@ -272,3 +272,16 @@ and recheck active artifact holds before every attempt. Successful deletion
 clears only the matching age metadata. The v19-to-v20 fixture verifies the
 new tables and preservation of age records. This local migration does not
 approve production database upgrade/rollback or a production retention policy.
+
+## Version 21 migration
+
+Version 21 adds `cleanup_authorizations`, a separate reviewer decision bound
+to an SDE receipt, project, and exact path/hash manifest. It records the
+reviewer and approval time plus a distinct canonical target/hash proof for the
+projection containing that authorization. SDE disposition, canonical facts,
+and expiry eligibility cannot authorize deletion. Retry selection requires a
+cleanup authorization whose canonical projection proof is durable. The
+v20-to-v21 migration creates the table without inventing authorizations for
+existing SDE receipts; those receipts therefore remain pending until explicitly
+reviewed under the new workflow. This local migration does not approve
+production database upgrade/rollback.

@@ -10,6 +10,7 @@ from .models import (
     ArtifactRef,
     ArtifactStatus,
     AuditReceipt,
+    CleanupAuthorizationReceipt,
     CriterionProgress,
     CriterionStatus,
     EvidenceAttestation,
@@ -1422,7 +1423,7 @@ class CuratorService:
         rationale: str | None = None,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
-        """Record an authorized human decision and begin receipt-gated cleanup."""
+        """Record SDE disposition; destructive cleanup requires separate approval."""
 
         reviewer_id = self.review_authorizer.authorize(
             self.project_id, candidate_id, decision, authenticated_subject
@@ -1443,12 +1444,38 @@ class CuratorService:
         )
         # This commit is the deletion gate: no artifact is touched before it.
         durable_receipt = self.store.create_receipt(receipt, self.project_id)
-        if (
-            not durable_receipt.artifact_inventory_complete
-            or not durable_receipt.canonical_persisted
-        ):
-            return durable_receipt
-        return self._process_purge(durable_receipt.receipt_id)
+        return durable_receipt
+
+    def authorize_artifact_cleanup(
+        self,
+        receipt_id: str,
+        manifest_sha256: str,
+        *,
+        authenticated_subject: str | None = None,
+    ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
+        """Record a separate human approval without authorizing immediate deletion."""
+
+        reviewer_id = self.review_authorizer.authorize_cleanup(
+            self.project_id, receipt_id, manifest_sha256, authenticated_subject
+        )
+        if authenticated_subject is not None and reviewer_id != authenticated_subject:
+            raise PermissionError(
+                "review authorizer returned a different authenticated subject"
+            )
+        authorization = self.store.create_cleanup_authorization(
+            receipt_id, self.project_id, reviewer_id, manifest_sha256
+        )
+        return authorization, self.store.get_receipt(receipt_id, self.project_id)
+
+    def mark_cleanup_authorization_canonical_persisted(
+        self, receipt_id: str, target: str, sha256: str
+    ) -> AuditReceipt:
+        """Record the projection containing cleanup approval before deletion."""
+
+        self.store.mark_cleanup_authorization_canonical_persisted(
+            receipt_id, self.project_id, target, sha256
+        )
+        return self._process_purge(receipt_id)
 
     def artifact_inventory_complete(
         self,
@@ -1457,7 +1484,7 @@ class CuratorService:
         *,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
-        """Commit the complete staged-file manifest, then purge its exact files."""
+        """Commit the complete staged-file manifest without authorizing deletion."""
 
         receipt = self.store.complete_artifact_inventory(
             receipt_id,
@@ -1477,7 +1504,7 @@ class CuratorService:
         *,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
-        """Authorize and audit a hold release before retrying exact-file purge."""
+        """Authorize a hold release; retry only if cleanup was separately approved."""
 
         reviewer_id = self.review_authorizer.authorize_hold_release(
             self.project_id,
@@ -1504,7 +1531,7 @@ class CuratorService:
     def mark_canonical_persisted(
         self, receipt_id: str, target: str, sha256: str
     ) -> AuditReceipt:
-        """Record the configured Markdown proof, then release the purge gate."""
+        """Record the configured Markdown proof without granting cleanup authority."""
 
         receipt = self.store.mark_receipt_canonical_persisted(
             receipt_id, target, sha256, self.project_id
@@ -1518,6 +1545,9 @@ class CuratorService:
     ) -> AuditReceipt:
         receipt = self.store.get_receipt(receipt_id, self.project_id)
         if not receipt.artifact_inventory_complete or not receipt.canonical_persisted:
+            return receipt
+        authorization = self.store.cleanup_authorization(receipt_id, self.project_id)
+        if authorization is None or not authorization.canonical_persisted:
             return receipt
         targets = self.store.get_purge_targets(
             receipt_id,

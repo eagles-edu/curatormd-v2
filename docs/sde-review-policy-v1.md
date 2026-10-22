@@ -50,15 +50,13 @@ it never rewrites the candidate or its decision receipt. Pending decisions do
 not authorize cleanup. Canonical project facts and the receipt must be durable
 before purge of the exact unchanged transient manifest begins.
 
-The local attended reviewer may combine disposition and cleanup approval in
-one explicit action when it displays a complete, freshly hashed inventory.
-The reviewer must type the decision, candidate ID, and inventory hash. The
-plugin re-scans the exact inventory before storing the receipt, then persists
-canonical facts and the receipt before attempting eligible purge. Any held
-artifact remains held. Incomplete inventories cannot authorize cleanup through
-this workflow. Other API callers may record a decision and complete an
-inventory separately; they do not inherit the local reviewer's combined
-confirmation.
+The local attended reviewer uses separate decisions. It first records the SDE
+disposition and persists canonical facts and that receipt. It then displays
+the complete freshly hashed inventory and requires a second confirmation bound
+to its manifest. The plugin re-scans the exact inventory, records a separate
+cleanup receipt, projects it canonically, and only then attempts deletion. Any
+held artifact remains held. Incomplete or changed inventories cannot authorize
+cleanup.
 
 ## Approved local-alpha artifact retention default
 
@@ -73,8 +71,10 @@ and an explicit human approval of that exact inventory; a scheduler may retry
 only a purge already approved in a durable receipt.
 
 This is the approved policy for local alpha, not evidence that expiry is fully
-operational. The SDE review path already purges its exact unheld inventory
-after canonical persistence. V2 records publication time for producer-staged
+operational. SDE disposition alone never authorizes cleanup. A separate
+cleanup-authorization receipt must bind the exact current inventory and be
+canonically projected before the SDE review path can purge unheld artifacts.
+V2 records publication time for producer-staged
 files and exposes a read-only 72-hour candidate scan that fails closed on
 unknown age or incomplete inventory. Attended approval of an expiry-only
 inventory, its durable receipt, hold integration, and retry scheduling remain

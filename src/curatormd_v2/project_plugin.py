@@ -35,6 +35,7 @@ from .models import (
     ArtifactRef,
     ArtifactStatus,
     AuditReceipt,
+    CleanupAuthorizationReceipt,
     ExpiryPurgeReceipt,
     FactArchiveReceipt,
     FactCompactionProposal,
@@ -185,7 +186,22 @@ class ProjectPlugin:
                     projection.target.relative_to(self.config.project_root).as_posix(),
                     projection.sha256,
                 )
-            if unpersisted:
+            cleanup_unpersisted = tuple(
+                receipt
+                for receipt in self.service.store.receipts_for_goal(
+                    goal_id, self.config.project_id
+                )
+                if receipt.cleanup_authorized
+                and not receipt.cleanup_canonical_persisted
+            )
+            for receipt in cleanup_unpersisted:
+                adapter.verify_projection(projection)
+                self.service.mark_cleanup_authorization_canonical_persisted(
+                    receipt.receipt_id,
+                    projection.target.relative_to(self.config.project_root).as_posix(),
+                    projection.sha256,
+                )
+            if unpersisted or cleanup_unpersisted:
                 projection = adapter.persist_goal(goal_id)
             return projection
 
@@ -1433,6 +1449,42 @@ class ProjectPlugin:
                 authenticated_subject=authenticated_subject,
             )
 
+    def authorize_artifact_cleanup(
+        self,
+        receipt_id: str,
+        artifacts: tuple[ArtifactRef, ...],
+        manifest_sha256: str,
+        target: str | Path,
+        *,
+        authenticated_subject: str | None = None,
+    ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
+        """Recheck the displayed manifest and record a separate cleanup decision."""
+
+        with self._locked_staging_root() as root_fd:
+            receipt = self.service.store.get_receipt(
+                receipt_id, self.config.project_id
+            )
+            candidate = self.sde_review_detail(receipt.candidate_id).candidate
+            self._require_current_artifact_inventory(
+                candidate.goal_id, artifacts, staging_root_fd=root_fd
+            )
+            current_manifest = _artifact_manifest_sha256(artifacts)
+            if current_manifest != manifest_sha256:
+                raise ConflictError("cleanup manifest changed before approval")
+            authorization, _receipt = self.service.authorize_artifact_cleanup(
+                receipt_id,
+                manifest_sha256,
+                authenticated_subject=authenticated_subject,
+            )
+        self.persist_goal(candidate.goal_id, target)
+        receipt, _targets = self.service.artifact_purge_status(receipt_id)
+        authorization = self.service.store.cleanup_authorization(
+            receipt_id, self.config.project_id
+        )
+        if authorization is None:
+            raise RuntimeError("cleanup authorization receipt was not persisted")
+        return authorization, receipt
+
     def artifact_purge_status(
         self, receipt_id: str
     ) -> tuple[AuditReceipt, tuple[PurgeTargetStatus, ...]]:
@@ -1469,3 +1521,14 @@ class ProjectPlugin:
 
         with self._locked_staging_root():
             return self.service.retry_pending_purges()
+
+
+def _artifact_manifest_sha256(artifacts: tuple[ArtifactRef, ...]) -> str:
+    """Hash the sorted exact path/hash inventory shown for approval."""
+
+    manifest = json.dumps(
+        [(item.path, item.sha256) for item in sorted(artifacts, key=lambda item: item.path)],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(manifest.encode("utf-8")).hexdigest()

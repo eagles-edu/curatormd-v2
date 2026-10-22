@@ -104,6 +104,18 @@ class MigrationReviewAuthorizer:
         del project_id, manifest_sha256
         return authenticated_subject or "migration-operator"
 
+    def authorize_cleanup(
+        self,
+        project_id: str,
+        receipt_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Attribute a cleanup decision to the migration fixture reviewer."""
+
+        del project_id, receipt_id, manifest_sha256
+        return authenticated_subject or "migration-operator"
+
 
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""

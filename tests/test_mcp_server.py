@@ -148,6 +148,20 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
             raise PermissionError("MCP expiry reviewer is not authenticated")
         return authenticated_subject
 
+    def authorize_cleanup(
+        self,
+        project_id: str,
+        receipt_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Return the authenticated host identity for cleanup approval."""
+
+        del project_id, receipt_id, manifest_sha256
+        if authenticated_subject != "host-subject":
+            raise PermissionError("MCP cleanup reviewer is not authenticated")
+        return authenticated_subject
+
 
 class McpServerTests(unittest.TestCase):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""
@@ -417,8 +431,8 @@ class McpServerTests(unittest.TestCase):
                     "record deduplicated compact fact bullets",
                     "healthy readiness are not proof",
                     "verified criteria separately from open criteria",
-                    "Write approved compact bullets and the durable receipt",
-                    "incomplete or failed cleanup visibly pending",
+                    "Require a separate human approval and durable receipt",
+                    "unapproved or failed cleanup visibly pending",
                 ):
                     self.assertIn(required_guidance, instructions)
                 staged = (
@@ -658,6 +672,30 @@ class McpServerTests(unittest.TestCase):
                                 "target": "persistence/HISTORY.md",
                             },
                         )
+                        self.assertTrue(staged.exists())
+                        self.assertTrue(unheld_staged.exists())
+                        unheld_staged.write_bytes(b"changed after review")
+                        stale_cleanup = await client.call_tool(
+                            "artifact_cleanup_approve",
+                            {
+                                "receipt_id": receipt["receipt_id"],
+                                "artifacts": reviewed_manifest,
+                                "manifest_sha256": inventory["manifest_sha256"],
+                                "target": "persistence/HISTORY.md",
+                            },
+                        )
+                        self.assertTrue(stale_cleanup.is_error)
+                        unheld_staged.write_bytes(unheld_payload)
+                        cleanup = await call_json(
+                            "artifact_cleanup_approve",
+                            {
+                                "receipt_id": receipt["receipt_id"],
+                                "artifacts": reviewed_manifest,
+                                "manifest_sha256": inventory["manifest_sha256"],
+                                "target": "persistence/HISTORY.md",
+                            },
+                        )
+                        self.assertTrue(cleanup["authorization"]["approved_at"])
                         self.assertTrue(staged.exists())
                         self.assertFalse(unheld_staged.exists())
                         self.assertIn("Added the reviewed SDE assessment path", history.read_text())
@@ -969,6 +1007,19 @@ class McpServerTests(unittest.TestCase):
                                 "goal_id": "mcp-rejected-goal",
                                 "target": "persistence/HISTORY.md",
                             },
+                        )
+                        rejected_cleanup = await call_json(
+                            "artifact_cleanup_approve",
+                            {
+                                "receipt_id": rejected_receipt["receipt_id"],
+                                "artifacts": rejected_manifest,
+                                "manifest_sha256": rejected_inventory["manifest_sha256"],
+                                "target": "persistence/HISTORY.md",
+                            },
+                        )
+                        self.assertEqual(
+                            rejected_cleanup["authorization"]["receipt_id"],
+                            rejected_receipt["receipt_id"],
                         )
                         reconciliation = await call_json(
                             "goal_reconcile",
@@ -1692,6 +1743,7 @@ class McpServerTests(unittest.TestCase):
                     self.assertIn("goal_reconcile", tool_names)
                     self.assertIn("project_reconcile", tool_names)
                     self.assertIn("artifact_purge_status", tool_names)
+                    self.assertIn("artifact_cleanup_approve", tool_names)
 
             asyncio.run(exercise())
 

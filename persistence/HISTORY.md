@@ -2777,3 +2777,15 @@
 **Open gate:** No live Vhost application request or interactive authenticated profile call was verified; Hermes reported `auth=none` and listed only the default gateway PID. Production identity, retention/recovery, deployment recovery, and live-runtime acceptance remain open. Vhost source files and their pre-existing dirty state were preserved; no GPTMD or V1 repository/state was touched.
 
 **Outcome:** The current V2 wheel and repository-owned Vhost plugin compose locally through Hermes Core's managed MCP path. This is local alpha evidence, not production readiness or a closed lifecycle checklist item.
+
+## 2026-10-22 — Separate SDE disposition from cleanup authorization
+
+**Intent:** Implement the plan's separate human approval gate so SDE approval/rejection and expiry eligibility cannot authorize destructive deletion.
+
+**Changed fact:** Curator now records SDE disposition without starting purge. Schema v21 adds a project-scoped cleanup authorization receipt bound to the exact path/hash manifest, reviewer, approval time, and a separate Markdown projection proof. The plugin rechecks the live staging inventory before accepting a new approval; it projects the authorization before processing deletion. Scheduler retry selection requires that durable projection proof. Local review CLI and MCP now expose a second explicit cleanup decision, and policy/API documentation describes the two-step flow. Delivery progress is 131/174 complete with 43 open, excluding reusable section 11 templates.
+
+**Verification:** Four focused lifecycle, local-review CLI, and MCP tests pass, covering no deletion before approval, mismatched and changed-manifest refusal, exact approval, projection-before-delete, and retry after an approved purge failure. Strict Pyright reports zero diagnostics; `git diff --check` passes. The full suite was not rerun.
+
+**Open gate:** The Vhost consumer's installed alpha wheel and repository-owned workflow have not yet been updated or reverified against the new approval tool. Hermes profile identity remains `auth=none`; production identity, retention/recovery, deployment, and live-runtime gates remain open. Existing dirty `docs/git-1.md` is preserved; no GPTMD or V1 runtime/repository state was touched.
+
+**Outcome:** The local Curator backend now enforces separate canonicalized cleanup approval; the full Curator V2 goal remains active.

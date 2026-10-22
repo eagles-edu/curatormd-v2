@@ -87,6 +87,18 @@ class LocalUIDReviewAuthorizer:
         del project_id, manifest_sha256
         return self._subject(authenticated_subject)
 
+    def authorize_cleanup(
+        self,
+        project_id: str,
+        receipt_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Bind cleanup authorization to the invoking local UID."""
+
+        del project_id, receipt_id, manifest_sha256
+        return self._subject(authenticated_subject)
+
     @staticmethod
     def _subject(authenticated_subject: str | None) -> str:
         """Reject absent, substituted, or setuid caller identity."""
@@ -171,10 +183,11 @@ def _target(config: ProjectConfig, requested: str | None) -> Path:
 def _confirmation_phrase(
     decision: ReviewDecision, candidate_id: str, manifest_sha256: str
 ) -> str:
-    """Bind the human confirmation to both disposition and exact file manifest."""
+    """Bind the human confirmation to the SDE disposition only."""
 
     action = "APPROVE" if decision is ReviewDecision.APPROVED else "REJECT"
-    return f"{action} {candidate_id} AND PURGE INVENTORY {manifest_sha256}"
+    del manifest_sha256
+    return f"{action} SDE {candidate_id}"
 
 
 def _confirm(
@@ -183,7 +196,7 @@ def _confirm(
     """Require the exact displayed phrase on an interactive terminal."""
 
     if not input_stream.isatty():
-        errors.write("Refusing SDE review without an interactive TTY.\n")
+        errors.write("Refusing human approval without an interactive TTY.\n")
         return False
     errors.write(f"Type exactly: {phrase}\n> ")
     errors.flush()
@@ -241,8 +254,8 @@ def _review(
             "review_packet": asdict(packet),
             "canonical_target": str(target),
             "cleanup_authorization": (
-                "The exact listed inventory may be purged after canonical persistence; "
-                "held artifacts remain held."
+                "A separate cleanup approval is required after canonical persistence; "
+                "SDE disposition does not authorize deletion."
             ),
         },
     )
@@ -282,6 +295,32 @@ def _review(
         packet.detail.goal.goal_id,
         str(target),
     )
+    _write_json(
+        output,
+        {
+            "cleanup_inventory": [asdict(item) for item in inventory.artifacts],
+            "manifest_sha256": inventory.manifest_sha256,
+            "canonical_target": str(projection.target),
+            "canonical_sha256": projection.sha256,
+            "consequence": "Approval permits deletion of only these unheld exact files.",
+        },
+    )
+    errors.write("Approve cleanup of this exact inventory (yes/no): ")
+    errors.flush()
+    cleanup_authorization = None
+    if input_stream.readline(8).strip().lower() == "yes":
+        cleanup_phrase = (
+            f"PURGE INVENTORY {inventory.manifest_sha256}"
+        )
+        if _confirm(cleanup_phrase, input_stream, errors):
+            cleanup_authorization, receipt = api.authorize_artifact_cleanup(
+                caller,
+                config.project_id,
+                receipt.receipt_id,
+                inventory.artifacts,
+                inventory.manifest_sha256,
+                str(target),
+            )
     final_receipt, purge_targets = api.artifact_purge_status(
         caller, config.project_id, receipt.receipt_id
     )
@@ -293,6 +332,7 @@ def _review(
             "canonical_target": str(projection.target),
             "canonical_sha256": projection.sha256,
             "purge_status": final_receipt.purge_status.value,
+            "cleanup_authorization": cleanup_authorization,
             "artifacts": [asdict(item) for item in purge_targets],
         },
     )

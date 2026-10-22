@@ -29,6 +29,7 @@ from .models import (
     ArtifactRef,
     ArtifactStatus,
     AuditReceipt,
+    CleanupAuthorizationReceipt,
     ExpiryPurgeReceipt,
     EvidenceAttestation,
     EvidenceOutcome,
@@ -1266,6 +1267,138 @@ class CuratorStore:
             for row in rows:
                 held[row["path"]] = RetentionHoldKind(row["retention_hold"])
         return held
+
+    def create_cleanup_authorization(
+        self,
+        receipt_id: str,
+        project_id: str,
+        reviewer_id: str,
+        manifest_sha256: str,
+    ) -> CleanupAuthorizationReceipt:
+        """Durably authorize the exact complete, canonicalized SDE inventory."""
+
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", reviewer_id):
+            raise ValueError("cleanup reviewer must be a bounded opaque identifier")
+        if not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256):
+            raise ValueError("cleanup manifest must be a lowercase SHA-256")
+        approved_at = utc_now()
+        with self._transaction() as connection:
+            receipt = connection.execute(
+                """SELECT r.artifact_inventory_complete, r.canonical_persisted
+                   FROM audit_receipts AS r
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE r.receipt_id = ? AND g.project_id = ?""",
+                (receipt_id, project_id),
+            ).fetchone()
+            if receipt is None:
+                raise NotFoundError("audit receipt not found")
+            if not bool(receipt["artifact_inventory_complete"]):
+                raise ConflictError("cleanup requires a complete artifact inventory")
+            if not bool(receipt["canonical_persisted"]):
+                raise ConflictError("cleanup requires verified canonical persistence")
+            rows = connection.execute(
+                "SELECT path, sha256 FROM purge_targets WHERE receipt_id = ? ORDER BY path",
+                (receipt_id,),
+            ).fetchall()
+            canonical = json.dumps(
+                [(row["path"], row["sha256"]) for row in rows],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            observed = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            if observed != manifest_sha256:
+                raise ConflictError("cleanup manifest does not match the exact inventory")
+            existing = connection.execute(
+                "SELECT * FROM cleanup_authorizations WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["project_id"] != project_id
+                    or existing["manifest_sha256"] != manifest_sha256
+                ):
+                    raise ConflictError("cleanup authorization is bound to another manifest")
+                if existing["reviewer_id"] != reviewer_id:
+                    raise ConflictError("cleanup authorization reviewer is immutable")
+                return CleanupAuthorizationReceipt(
+                    receipt_id=receipt_id,
+                    project_id=project_id,
+                    reviewer_id=existing["reviewer_id"],
+                    manifest_sha256=manifest_sha256,
+                    approved_at=existing["approved_at"],
+                    canonical_persisted=bool(existing["canonical_persisted"]),
+                    canonical_target=existing["canonical_target"],
+                    canonical_sha256=existing["canonical_sha256"],
+                    canonical_persisted_at=existing["canonical_persisted_at"],
+                )
+            connection.execute(
+                """INSERT INTO cleanup_authorizations
+                   (receipt_id, project_id, reviewer_id, manifest_sha256, approved_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (receipt_id, project_id, reviewer_id, manifest_sha256, approved_at),
+            )
+        return CleanupAuthorizationReceipt(
+            receipt_id, project_id, reviewer_id, manifest_sha256, approved_at
+        )
+
+    def mark_cleanup_authorization_canonical_persisted(
+        self,
+        receipt_id: str,
+        project_id: str,
+        target: str,
+        sha256: str,
+    ) -> CleanupAuthorizationReceipt:
+        """Record the projection containing the separate cleanup receipt."""
+
+        if not target.strip() or len(target) > 2000 or "\n" in target or "\r" in target:
+            raise ValueError("cleanup canonical target must be bounded and one line")
+        if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise ValueError("cleanup canonical hash must be lowercase SHA-256")
+        persisted_at = utc_now()
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT canonical_persisted, canonical_target, canonical_sha256
+                   FROM cleanup_authorizations
+                   WHERE receipt_id = ? AND project_id = ?""",
+                (receipt_id, project_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("cleanup authorization receipt not found")
+            if bool(row["canonical_persisted"]):
+                if row["canonical_target"] != target or row["canonical_sha256"] != sha256:
+                    raise ConflictError("cleanup canonical proof is immutable")
+            else:
+                connection.execute(
+                    """UPDATE cleanup_authorizations SET canonical_persisted = 1,
+                       canonical_target = ?, canonical_sha256 = ?,
+                       canonical_persisted_at = ? WHERE receipt_id = ?""",
+                    (target, sha256, persisted_at, receipt_id),
+                )
+        authorization = self.cleanup_authorization(receipt_id, project_id)
+        if authorization is None:
+            raise NotFoundError("cleanup authorization receipt not found")
+        return authorization
+
+    def cleanup_authorization(
+        self, receipt_id: str, project_id: str
+    ) -> CleanupAuthorizationReceipt | None:
+        """Read the separate exact-inventory approval for one project receipt."""
+
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT * FROM cleanup_authorizations
+                   WHERE receipt_id = ? AND project_id = ?""",
+                (receipt_id, project_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return CleanupAuthorizationReceipt(
+            row["receipt_id"], row["project_id"], row["reviewer_id"],
+            row["manifest_sha256"], row["approved_at"],
+            bool(row["canonical_persisted"]), row["canonical_target"],
+            row["canonical_sha256"], row["canonical_persisted_at"]
+        )
 
     def create_expiry_purge_receipt(
         self,
@@ -3991,14 +4124,27 @@ class CuratorStore:
         with self._lock:
             if project_id is None:
                 row = self._connection.execute(
-                    "SELECT * FROM audit_receipts WHERE receipt_id = ?",
+                    """SELECT r.*, c.reviewer_id AS cleanup_reviewer_id,
+                              c.manifest_sha256 AS cleanup_manifest_sha256,
+                              c.approved_at AS cleanup_approved_at,
+                              c.canonical_persisted AS cleanup_canonical_persisted
+                       FROM audit_receipts AS r
+                       LEFT JOIN cleanup_authorizations AS c
+                         ON c.receipt_id = r.receipt_id
+                       WHERE r.receipt_id = ?""",
                     (receipt_id,),
                 ).fetchone()
             else:
                 row = self._connection.execute(
-                    """SELECT r.* FROM audit_receipts AS r
+                    """SELECT r.*, c.reviewer_id AS cleanup_reviewer_id,
+                              c.manifest_sha256 AS cleanup_manifest_sha256,
+                              c.approved_at AS cleanup_approved_at,
+                              c.canonical_persisted AS cleanup_canonical_persisted
+                       FROM audit_receipts AS r
                        JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
                        JOIN goals AS g ON g.goal_id = s.goal_id
+                       LEFT JOIN cleanup_authorizations AS c
+                         ON c.receipt_id = r.receipt_id
                        WHERE r.receipt_id = ? AND g.project_id = ?""",
                     (receipt_id, project_id),
                 ).fetchone()
@@ -4033,6 +4179,11 @@ class CuratorStore:
             purge_status=PurgeStatus(row["purge_status"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            cleanup_authorized=row["cleanup_reviewer_id"] is not None,
+            cleanup_reviewer_id=row["cleanup_reviewer_id"],
+            cleanup_manifest_sha256=row["cleanup_manifest_sha256"],
+            cleanup_approved_at=row["cleanup_approved_at"],
+            cleanup_canonical_persisted=bool(row["cleanup_canonical_persisted"]),
         )
 
     def complete_artifact_inventory(
@@ -4582,6 +4733,12 @@ class CuratorStore:
                    JOIN goals AS g ON g.goal_id = s.goal_id
                    WHERE r.purge_status = ? AND r.artifact_inventory_complete = 1
                      AND r.canonical_persisted = 1 AND g.project_id = ?
+                     AND EXISTS (
+                       SELECT 1 FROM cleanup_authorizations AS c
+                       WHERE c.receipt_id = r.receipt_id
+                         AND c.project_id = g.project_id
+                         AND c.canonical_persisted = 1
+                     )
                      AND EXISTS (
                        SELECT 1 FROM purge_targets AS p
                        WHERE p.receipt_id = r.receipt_id

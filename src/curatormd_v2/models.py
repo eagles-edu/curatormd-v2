@@ -730,6 +730,11 @@ class AuditReceipt:
     purge_status: PurgeStatus = PurgeStatus.PURGE_PENDING
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
+    cleanup_authorized: bool = False
+    cleanup_reviewer_id: str | None = None
+    cleanup_manifest_sha256: str | None = None
+    cleanup_approved_at: str | None = None
+    cleanup_canonical_persisted: bool = False
 
     def __post_init__(self) -> None:
         if self.review_rationale is not None:
@@ -737,6 +742,27 @@ class AuditReceipt:
         _validate_receipt_artifact_manifest(self)
         _validate_receipt_reviewer_and_rationale(self)
         _validate_receipt_canonical_proof(self)
+        if self.cleanup_authorized:
+            if self.cleanup_reviewer_id is None or self.cleanup_manifest_sha256 is None:
+                raise ValueError("cleanup authorization requires reviewer and manifest")
+            if not _REVIEWER_ID_RE.fullmatch(self.cleanup_reviewer_id):
+                raise ValueError("cleanup reviewer must be a bounded opaque identifier")
+            if not _SHA256_RE.fullmatch(self.cleanup_manifest_sha256):
+                raise ValueError("cleanup manifest must be a lowercase SHA-256")
+            if self.cleanup_approved_at is None:
+                raise ValueError("cleanup authorization requires its approval timestamp")
+            _parse_aware_timestamp("cleanup_approved_at", self.cleanup_approved_at)
+            if self.cleanup_canonical_persisted and not self.canonical_persisted:
+                raise ValueError("cleanup projection cannot precede canonical facts")
+        elif any(
+            value is not None
+            for value in (
+                self.cleanup_reviewer_id,
+                self.cleanup_manifest_sha256,
+                self.cleanup_approved_at,
+            ) or self.cleanup_canonical_persisted
+        ):
+            raise ValueError("cleanup authorization metadata requires authorization")
 
 
 def _validate_receipt_artifact_manifest(receipt: AuditReceipt) -> None:
@@ -1185,6 +1211,43 @@ class ExpiryPurgeReceipt:
             raise ValueError("expiry purge receipt has an invalid status")
         _parse_aware_timestamp("created_at", self.created_at)
         _parse_aware_timestamp("updated_at", self.updated_at)
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupAuthorizationReceipt:
+    """Separate human approval bound to one reviewed SDE inventory."""
+
+    receipt_id: str
+    project_id: str
+    reviewer_id: str
+    manifest_sha256: str
+    approved_at: str
+    canonical_persisted: bool = False
+    canonical_target: str | None = None
+    canonical_sha256: str | None = None
+    canonical_persisted_at: str | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (("receipt_id", self.receipt_id),
+                            ("project_id", self.project_id),
+                            ("reviewer_id", self.reviewer_id)):
+            if not _REVIEWER_ID_RE.fullmatch(value):
+                raise ValueError(f"{name} must be a bounded opaque identifier")
+        if not _SHA256_RE.fullmatch(self.manifest_sha256):
+            raise ValueError("manifest_sha256 must be a lowercase SHA-256")
+        _parse_aware_timestamp("approved_at", self.approved_at)
+        if self.canonical_persisted:
+            if self.canonical_target is None or self.canonical_sha256 is None:
+                raise ValueError("persisted cleanup approval requires target and hash")
+            if not self.canonical_target.strip() or len(self.canonical_target) > 2000:
+                raise ValueError("cleanup canonical target must be bounded")
+            if not _SHA256_RE.fullmatch(self.canonical_sha256):
+                raise ValueError("cleanup canonical hash must be lowercase SHA-256")
+            if self.canonical_persisted_at is None:
+                raise ValueError("persisted cleanup approval requires a timestamp")
+            _parse_aware_timestamp(
+                "canonical_persisted_at", self.canonical_persisted_at
+            )
 
 
 @dataclass(frozen=True, slots=True)

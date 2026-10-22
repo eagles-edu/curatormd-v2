@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from io import StringIO
 import os
 from pathlib import Path
@@ -183,11 +184,70 @@ targets = ["persistence/HISTORY.md"]
         """Record a verified test projection before allowing purge to proceed."""
 
         active_service = service or self.service
-        return active_service.mark_canonical_persisted(
+        active_service.mark_canonical_persisted(
             receipt.receipt_id,
             "/consumer/persistence/HISTORY.md",
             hashlib.sha256(receipt.receipt_id.encode()).hexdigest(),
         )
+        manifest = json.dumps(
+            [(item.path, item.sha256) for item in sorted(receipt.artifacts, key=lambda item: item.path)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        _authorization, _pending_receipt = active_service.authorize_artifact_cleanup(
+            receipt.receipt_id,
+            hashlib.sha256(manifest.encode("utf-8")).hexdigest(),
+        )
+        return active_service.mark_cleanup_authorization_canonical_persisted(
+            receipt.receipt_id,
+            "/consumer/persistence/HISTORY.md",
+            hashlib.sha256(receipt.receipt_id.encode()).hexdigest(),
+        )
+
+    def test_sde_disposition_and_canonical_write_do_not_authorize_cleanup(self) -> None:
+        candidate_id = self.candidate("separate cleanup authorization")
+        artifact_path, artifact = self.artifact("separate-approval.json")
+        receipt = self.service.sde_confirm(
+            candidate_id,
+            ReviewDecision.APPROVED,
+            (artifact,),
+            artifact_inventory_complete=True,
+        )
+        self.service.mark_canonical_persisted(
+            receipt.receipt_id,
+            "/consumer/persistence/HISTORY.md",
+            hashlib.sha256(receipt.receipt_id.encode()).hexdigest(),
+        )
+        self.assertTrue(artifact_path.exists())
+        self.assertIsNone(
+            self.store.cleanup_authorization(receipt.receipt_id, "default")
+        )
+        self.service.retry_pending_purges()
+        self.service.retry_due_purges()
+        self.assertTrue(artifact_path.exists())
+        manifest = json.dumps(
+            [(artifact.path, artifact.sha256)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+        with self.assertRaises(ConflictError):
+            self.service.authorize_artifact_cleanup(
+                receipt.receipt_id, "0" * 64
+            )
+        self.assertTrue(artifact_path.exists())
+        authorization, _pending_receipt = self.service.authorize_artifact_cleanup(
+            receipt.receipt_id, manifest_sha256
+        )
+        self.assertEqual(authorization.manifest_sha256, manifest_sha256)
+        self.assertEqual(authorization.reviewer_id, "test-reviewer")
+        purged = self.service.mark_cleanup_authorization_canonical_persisted(
+            receipt.receipt_id,
+            "/consumer/persistence/HISTORY.md",
+            hashlib.sha256(b"cleanup projection").hexdigest(),
+        )
+        self.assertFalse(artifact_path.exists())
+        self.assertEqual(purged.purge_status, PurgeStatus.COMPLETE)
 
     def test_receipt_is_committed_before_purge_for_approve_and_reject(self) -> None:
         for decision in (ReviewDecision.APPROVED, ReviewDecision.REJECTED):

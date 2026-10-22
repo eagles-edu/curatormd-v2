@@ -89,6 +89,18 @@ class TestReviewAuthorizer:
         del project_id, manifest_sha256, authenticated_subject
         return "test-reviewer"
 
+    def authorize_cleanup(
+        self,
+        project_id: str,
+        receipt_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Return the test identity for one exact reviewed cleanup inventory."""
+
+        del project_id, receipt_id, manifest_sha256, authenticated_subject
+        return "test-reviewer"
+
 
 class FlakyPurger(ArtifactPurger):  # pylint: disable=too-few-public-methods
     """Fail its first delete attempt, then enforce the real exact-file purge."""

@@ -758,6 +758,16 @@ def _render_receipts(
                 + f"`{_markdown_text(receipt.canonical_target or '')}`; "
                 + f"projection SHA-256 `{receipt.canonical_sha256}`"
             )
+        if receipt.cleanup_authorized:
+            lines.append(
+                "    - Separate cleanup approval: reviewer `"
+                + _markdown_text(receipt.cleanup_reviewer_id or "")
+                + "`; manifest SHA-256 `"
+                + _markdown_text(receipt.cleanup_manifest_sha256 or "")
+                + "`; approved at `"
+                + _markdown_text(receipt.cleanup_approved_at or "")
+                + "`"
+            )
         lines.extend(
             "    - Artifact SHA-256 "
             + f"`{artifact.sha256}`; `{status.value}`; attempts `{attempts}`"

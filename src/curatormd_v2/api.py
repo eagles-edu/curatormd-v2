@@ -20,6 +20,7 @@ from .errors import RateLimitExceeded
 from .models import (
     ArtifactRef,
     AuditReceipt,
+    CleanupAuthorizationReceipt,
     FactArchiveReceipt,
     FactCompactionProposal,
     GoalListPage,
@@ -1033,6 +1034,27 @@ class AuthenticatedCuratorAPI:
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
         ).artifact_purge_status(receipt_id)
+
+    def authorize_artifact_cleanup(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        receipt_id: str,
+        artifacts: tuple[ArtifactRef, ...],
+        manifest_sha256: str,
+        target: str,
+    ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
+        """Record a separate reviewer decision for one exact current manifest."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).authorize_artifact_cleanup(
+            receipt_id,
+            artifacts,
+            manifest_sha256,
+            target,
+            authenticated_subject=caller.subject_id,
+        )
 
     def release_artifact_hold(
         self,

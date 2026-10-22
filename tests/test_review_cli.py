@@ -203,6 +203,22 @@ class _ReviewAPI:
         self.calls.append(("purge_status", (project_id, receipt_id)))
         return _Receipt(), ()
 
+    def authorize_artifact_cleanup(
+        self,
+        _caller: AuthenticatedCaller,
+        project_id: str,
+        receipt_id: str,
+        artifacts: tuple[_Artifact, ...],
+        manifest_sha256: str,
+        target: str,
+    ) -> tuple[object, _Receipt]:
+        """Record the separate exact cleanup authorization call."""
+
+        self.calls.append(
+            ("cleanup_approve", (project_id, receipt_id, artifacts, manifest_sha256, target))
+        )
+        return object(), _Receipt()
+
 
 class ReviewCliTests(unittest.TestCase):
     """Bind human disposition to the visible inventory and local OS identity."""
@@ -377,11 +393,14 @@ class ReviewCliTests(unittest.TestCase):
                 ),
             )
             api = _ReviewAPI(packet)
-            phrase = (
-                f"APPROVE candidate-a AND PURGE INVENTORY "
+            phrase = "APPROVE SDE candidate-a"
+            cleanup_phrase = (
+                f"PURGE INVENTORY "
                 f"{packet.artifact_inventory.manifest_sha256}"
             )
-            stdin = _InteractiveInput(f"approve\n{phrase}\nVerified and approved\n")
+            stdin = _InteractiveInput(
+                f"approve\n{phrase}\nVerified and approved\nyes\n{cleanup_phrase}\n"
+            )
             stdout = _InteractiveOutput()
             stderr = _InteractiveErrors()
             with patch("curatormd_v2.review_cli._build_api", return_value=api):
@@ -410,6 +429,9 @@ class ReviewCliTests(unittest.TestCase):
                 next(i for i, (name, _) in enumerate(api.calls) if name == "persist"),
             )
             self.assertIn('"purge_status": "complete"', stdout.getvalue())
+            self.assertIn(
+                "cleanup_approve", [name for name, _ in api.calls]
+            )
 
     def test_review_refuses_noninteractive_input_before_opening_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -485,7 +507,7 @@ class ReviewCliTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertFalse(database.exists())
 
-    def test_local_cli_reviews_real_store_and_purges_after_canonical_write(self) -> None:
+    def test_local_cli_requires_separate_exact_cleanup_approval(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             root.mkdir()
@@ -499,8 +521,9 @@ class ReviewCliTests(unittest.TestCase):
             prepared = self._prepare_local_review(root, database)
             staged = Path(prepared.staged_artifact.path)
 
-            phrase = (
-                f"APPROVE {prepared.candidate_id} AND PURGE INVENTORY "
+            phrase = f"APPROVE SDE {prepared.candidate_id}"
+            cleanup_phrase = (
+                f"PURGE INVENTORY "
                 f"{prepared.manifest_hash}"
             )
             result_output = _InteractiveOutput()
@@ -516,6 +539,7 @@ class ReviewCliTests(unittest.TestCase):
                 ],
                 stdin=_InteractiveInput(
                     f"approve\n{phrase}\nVerified in the disposable suite\n"
+                    f"yes\n{cleanup_phrase}\n"
                 ),
                 stdout=result_output,
                 stderr=result_errors,

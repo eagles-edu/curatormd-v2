@@ -70,30 +70,38 @@ flowchart TB
   subgraph Decision["5. Decision and cleanup"]
     NSDE[Ordinary goal update\nretain compact facts only]
     SDE[Candidate SDE card\nselected bullets only]
-    HC{Human confirms?}
-    REC[Audit receipt\nIDs, hashes, decision, purge result]
-    PURGE[Purge all raw cue,\nthread, scratch and import artifacts]
+    SDEC{Human decides SDE disposition?}
+    REC[Durable goal facts and\nSDE disposition receipt if applicable]
+    INV[Complete exact temporary\nartifact inventory]
+    CA{Human separately approves\ncleanup of this inventory?}
+    CAR[Durable cleanup authorization receipt\nexact manifest and approval]
+    PURGE[Delete only artifacts in\nthe approved inventory]
+    CREC[Per-artifact cleanup receipt\nsuccess or purge_pending]
+    WAIT[Cleanup approval pending\nor rejected; no deletion]
   end
 
   SG -->|No| NSDE
   SG -->|Yes| SDE
-  SDE --> HC
-  HC -->|Approve| REC
-  HC -->|Reject| REC
-  REC --> PURGE
+  SDE --> SDEC
+  SDEC -->|Approve| REC
+  SDEC -->|Reject| REC
+  REC --> INV --> CA
+  CA -->|Approve exact inventory| CAR --> PURGE --> CREC
+  CA -->|No approval| WAIT
   NSDE --> REC
 
   subgraph Views["6. Truthful status"]
     DASH[Goal dashboard]
-    TODO[Open goals / checklist gates]
+    TODO[Open goals / checklist / cleanup-approval gates]
     DONE[Completed goals]
-    PEND[Purge-pending failures]
+    PEND[Authorized purge failures]
   end
 
   Ledger --> DASH
   FB3 --> TODO
   FB2 --> DONE
-  PURGE --> PEND
+  WAIT --> TODO
+  CREC --> PEND
 
   subgraph Steward["Separate host steward: approval-gated"]
     DI[Disk inventory] --> GR[Growth attribution]
@@ -126,7 +134,13 @@ flowchart TB
   cancellation, and supersession require separate explicit lifecycle events.
 - A significance gate derives an SDE only when evidence supports a durable implementation, decision, recovery, or lesson. Routine progress remains a goal update.
 - Every durable record is short bullets, separating observed facts from planned or unverified claims.
-- After approval or rejection, V2 retains the compact goal facts and an audit receipt, then removes all transient artifacts. Failed deletion is visible as `purge_pending`, never hidden behind green health.
+- An SDE approval or rejection records only the SDE disposition; it does not
+  authorize destructive cleanup. After compact facts and the disposition
+  receipt are durable, V2 must present the complete exact artifact inventory
+  for a separate human cleanup approval. Neither SDE disposition nor expiry
+  eligibility authorizes deletion. Purge only the approved inventory; report
+  failed deletion as `purge_pending` and never hide it behind green health.
+  Waiting for cleanup approval is a separate state, not a purge failure.
 
 ## Token and disk discipline
 
@@ -141,6 +155,8 @@ flowchart TB
 - `goal.start`, `goal.fact`, `goal.finish`, `goal.defer`, `goal.status`,
   `goal.reopen`, `goal.criteria_amended`
 - `sde.assess`, `sde.confirm`, `artifact.purge_status`
+- `artifact.purge_approve` (proposed; human approval bound to a complete,
+  exact inventory and recorded separately from SDE disposition)
 - `steward.inventory`, `steward.propose_cleanup`, `steward.execute_cleanup`
 
 Tests must prove that:
@@ -149,7 +165,9 @@ Tests must prove that:
 - an incomplete task stays open with a concrete next action;
 - unsupported agent claims cannot close a goal;
 - ordinary updates do not become SDEs;
-- confirmed/rejected SDEs purge transient artifacts while preserving bullet facts and receipts;
+- confirmed/rejected SDEs preserve compact facts and disposition receipts; no
+  transient artifact is deleted until a separate human cleanup approval binds
+  the exact complete inventory;
 - an interrupted purge is retried and visibly reported;
 - no host cleanup happens without explicit approval.
 
@@ -169,7 +187,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 130 of 173 delivery rows are complete; 43 are open. The count
+(2026-10-22): 131 of 174 delivery rows are complete; 43 are open. The count
 includes implementation rows in sections 0–10, 12, and Definition of done. It
 excludes section 11's reusable execution templates; their per-task checkboxes
 are not delivery progress. Historical narrative counts below are not current.
@@ -512,7 +530,9 @@ consumer plugin, Hermes integration, or production deployment.
       no authenticated human subject and remains unable to review or purge.
       A disposable end-to-end CLI test now exercises its actual grant ledger,
       pending SDE, exact staged inventory, canonical write, and purge. This
-      local adapter does not close the Hermes identity gate.
+      is evidence of the current direct SDE-to-purge path, not the separate
+      cleanup-approval gate required by this contract; it also does not close
+      the Hermes identity gate.
       Additional verification (2026-10-22): the current Codex client attempted
       the read-only Curator V2 `goal_list` tool without Hermes profile context;
       the server returned `unauthenticated` / trusted Hermes context required,
@@ -552,6 +572,16 @@ consumer plugin, Hermes integration, or production deployment.
 - [x] Gate purge on a project plugin's successful canonical Markdown write;
       record the allowlisted target and projection hash immutably before releasing
       cleanup, and leave the receipt pending if the write fails.
+- [x] Require a distinct, explicit human cleanup approval for every destructive
+      purge, bound to the complete exact inventory and recorded in its own
+      durable receipt. SDE approval/rejection and expiry eligibility do not
+      authorize deletion. Schema v21 stores the separate approval and its
+      canonical projection proof; the plugin rechecks the live complete
+      inventory before accepting it, persists the approval before deletion,
+      and retries only approvals whose projection proof is durable. Focused
+      lifecycle and MCP tests prove no deletion before approval, rejection of a
+      changed file/manifest, exact-manifest approval, and retry after an approved
+      purge failure. The attended expiry approval remains a separate path.
 - [x] Require the adapter to mark the full artifact inventory complete before
       deleting any artifact, including an explicitly confirmed empty inventory.
 - [x] Restrict purge to exact regular files below the configured staging root;
@@ -578,7 +608,9 @@ consumer plugin, Hermes integration, or production deployment.
       content canary is absent from Markdown. The current full V2 suite passes
       336 tests; strict Pyright, errors-only Pylint, Bandit, locked dependency
       audit, and `git diff --check` pass. This remains local synthetic-reviewer
-      evidence, not production purge scheduling or retention approval.
+      evidence of the current SDE-to-purge behavior, not evidence of the
+      separately approved cleanup gate required by this contract, production
+      purge scheduling, or retention approval.
 - [x] Implement inventory discovery in each staging adapter and prove it
       accounts for every temporary artifact class (raw chat, cue, import, scratch,
       generated intermediate, and duplicate). Progress (2026-10-18): the
@@ -712,6 +744,9 @@ consumer plugin, Hermes integration, or production deployment.
       database-file permissions and atomic transitions.
 - [x] Expose in-process goal start/fact/finish/defer/block/status/list and
       SDE assess/confirm/purge-status operations.
+      The current SDE-confirm path starts purge after its review receipt and
+      canonical write without a distinct cleanup authorization; it does not
+      satisfy the separate cleanup-approval gate above.
 - [x] Expose an authenticated, project-scoped paginated goal-card list that
       reports total/next offset, supports lifecycle filters, and avoids loading
       fact/review histories for overview reads. Keep the legacy full-snapshot
@@ -1247,7 +1282,9 @@ consumer plugin, Hermes integration, or production deployment.
       compact facts are recorded and any related SDE is approved or rejected,
       with 72 hours as the absolute maximum age. That SDE decision clears
       only its pending-review hold; legal/operational artifact holds require
-      separate release. Schema v19 stores content-free publication times for
+      separate release. Expiry eligibility is not authorization to delete;
+      cleanup still requires a separate human approval bound to the exact
+      complete inventory. Schema v19 stores content-free publication times for
       files written through the producer adapter. Expiry discovery hashes the
       full project inventory and marks artifacts eligible after facts are
       recorded following staging and related SDE disposition. Pending SDE
@@ -1269,7 +1306,9 @@ consumer plugin, Hermes integration, or production deployment.
       eligibility begins promptly after recording and related SDE disposition.
       This local-alpha checklist item is complete: it covers goal-scoped bounded
       staging, full fail-closed inventory, separate canonical facts, an attended
-      exact-inventory approval, and durable purge receipts with retry status.
+      exact-inventory approval for expiry, and durable purge receipts with retry
+      status. That expiry approval does not gate the current SDE-confirm purge
+      path; the separate approval requirement for that path remains open.
       Real source-producer wiring and network-filesystem locking remain open in
       their respective integration work. Production retention policy, scheduler
       deployment, and Hermes-authenticated reviewer identity remain separate
@@ -2529,11 +2568,14 @@ replaying the full session:
       facts completed to date, name the remaining checklist/TODO item, and give a
       concrete next action. Do not erase partial progress or mark the source
       checklist item done merely because the agent stopped.
-- [ ] **Resolve review and cleanup separately.** Show SDE state, canonical
-      write/receipt state, artifact-inventory completeness, and purge state as
-      independent fields. Purge only after required human approval and durable
-      canonical facts/receipt; leave incomplete or failed cleanup visibly pending
-      with a safe retry owner/action. Cleanup success must not mark unfinished
+- [ ] **Resolve review and cleanup separately.** Show SDE state, cleanup
+      authorization, canonical write/receipt state, artifact-inventory
+      completeness, and purge state as independent fields. SDE disposition and
+      destructive-cleanup approval are separate human decisions; neither
+      substitutes for the other. Persist canonical facts and both applicable
+      decision receipts before deletion. Leave unapproved cleanup visibly
+      awaiting authorization and failed cleanup visibly `purge_pending`, with a
+      safe retry owner/action. Cleanup success must not mark unfinished
       development complete.
 - [ ] **Keep the update efficient.** Emit a bounded bullet delta and current
       status, not another narrative recap. Apply configured per-event, per-goal,
@@ -2591,22 +2633,28 @@ verified work.
       keep routine updates on the goal. For a candidate SDE, select only
       material, durable facts and passing evidence, with concise impact and
       retrieval value. Label planned, inferred, and measured impact distinctly.
-- [ ] **Present the human-review packet.** Before a decision, show the proposed
-      bullet record, selected fact/evidence references, project scope, decision
-      consequences, and complete eligible temporary-artifact inventory. Record
-      reviewer identity, decision, time, and optional rationale in an immutable
-      receipt; pending review permits no review-gated purge.
+- [ ] **Present separate human decisions.** For SDE disposition, show the
+      proposed bullet record, selected fact/evidence references, project scope,
+      and decision consequences. For destructive cleanup, separately show the
+      complete exact eligible artifact inventory, hashes, target, and deletion
+      consequences. A single SDE approve/reject decision never authorizes
+      cleanup. Record each decision, reviewer, time, and rationale in its own
+      immutable receipt; no purge is allowed before the exact cleanup
+      authorization receipt is durable.
 - [ ] **Persist before purging.** Write the approved compact facts (or the
       required rejection/goal facts) and durable receipt to the configured
-      canonical target, verify the resulting projection/hash, then purge only
-      the exact allowlisted inventory. Keep evidence needed for unresolved
-      criteria only when policy explicitly permits it; never delete source,
-      canonical, or unrelated user files.
+      canonical target, verify the resulting projection/hash, then persist a
+      separate human cleanup-authorization receipt bound to the complete exact
+      inventory before purging only that allowlisted inventory. Keep evidence
+      needed for unresolved criteria only when policy explicitly permits it;
+      never delete source, canonical, or unrelated user files.
 - [ ] **Close the cleanup loop.** Report per-artifact deleted, already absent,
       held, changed, or failed state. Retry safe failures idempotently. Any
-      incomplete inventory, persistence/receipt failure, or failed deletion
-      remains visible as `purge_pending` with owner and recovery action; it must
-      not be hidden by a green service-health indicator.
+      missing, rejected, or stale cleanup approval prevents deletion and stays
+      visible as awaiting authorization. An incomplete inventory,
+      persistence/receipt failure, or failed deletion remains visible as
+      `purge_pending` with owner and recovery action; it must not be hidden by a
+      green service-health indicator.
 - [ ] **Reconcile and report.** Compare the final user-facing summary with the
       stored goal, criteria, verified fact IDs, open gates, SDE decision, receipt,
       checklist state, and purge status. Include what is done, what remains,
@@ -2630,8 +2678,10 @@ Criterion status:
 Goal outcome: planned | active | complete | open | blocked | deferred | cancelled | superseded
 SDE disposition: not-assessed | ordinary-update | pending | approved | rejected
 Canonical write: not-started | pending | verified | failed (target/hash)
-Artifact inventory/purge: not-started | incomplete | pending | purged | purge_pending
-Receipt: decision ID, reviewer, timestamp, fact/projection hashes, purge results
+Cleanup authorization: not-requested | pending | approved | rejected | stale
+Artifact inventory/purge: not-started | incomplete | awaiting-authorization | purged | purge_pending
+SDE disposition receipt: decision ID, reviewer, timestamp, fact/projection hashes
+Cleanup receipt: approver, timestamp, exact manifest hash, per-artifact purge results
 Final report: completed facts, open items, recovery path, next action
 ```
 
@@ -2732,17 +2782,16 @@ Final report: completed facts, open items, recovery path, next action
       are denied before details are fetched. Inventory is point-in-time and
       decision-time manifest checks remain required; live authenticated reviewer
       UX is still open.
-- [x] After an immutable approval or rejection receipt and a verified canonical
-      bullet projection, purge only the complete, allowlisted temporary inventory;
-      preserve compact facts and receipt, and expose every failed or incomplete
-      purge as pending with a retry path. `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end`
-      verifies incomplete inventory blocks deletion, canonical goal/receipt
-      persistence precedes purge, only the complete reviewed manifest is
-      considered, an operational hold is retained, an unheld artifact is
-      purged, and injected purge failure remains `purge_pending` until retry
-      succeeds. `test_interrupted_purge_is_visible_and_retryable` verifies
-      recovery after store reopen. The reviewer in these tests is a test
-      authorizer; live authenticated reviewer UX remains open.
+- [x] Require a separate human cleanup-authorization receipt bound to the
+      complete exact manifest before any SDE-triggered purge. SDE disposition
+      and initial canonical persistence leave the files untouched. Schema v21
+      records the cleanup reviewer, manifest hash, approval time, and separate
+      canonical projection proof. The plugin rescans the staging inventory,
+      rejects stale/changed files, persists the approval receipt, then starts
+      purge. The end-to-end MCP test covers changed-file refusal and approved
+      retry; the focused lifecycle test covers missing and mismatched approval.
+      `test_interrupted_purge_is_visible_and_retryable` continues to verify
+      recovery after store reopen.
 - [x] Verify the final user-facing summary against stored state: problem,
       success criteria, verified facts, outcome, remaining gates, purge status,
       and next action must agree. The MCP end-to-end SDE/purge regression now
@@ -2820,9 +2869,11 @@ substitute for evidence at a later integration boundary.
       claims remain open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable.
-- [ ] The decision and canonical facts are durable before cleanup starts;
-      every transient artifact is inventoried, safely purged or visibly pending,
-      and retryable.
+- [ ] SDE disposition and destructive-cleanup approval are separate human
+      decisions. Canonical facts, the applicable decision receipts, and a
+      cleanup-authorization receipt bound to the complete exact inventory are
+      durable before deletion; every transient artifact is inventoried, safely
+      purged or visibly pending, and retryable.
 - [ ] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health.

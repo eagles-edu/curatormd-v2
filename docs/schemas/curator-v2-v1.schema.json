@@ -233,7 +233,7 @@
     "auditReceipt": {
       "description": "Canonical JSON-compatible shape of curatormd_v2.models.AuditReceipt.",
       "type": "object",
-      "required": ["candidate_id", "decision", "facts_sha256", "artifacts", "artifact_inventory_complete", "reviewer_id", "review_rationale", "canonical_persisted", "canonical_target", "canonical_sha256", "canonical_persisted_at", "receipt_id", "purge_status", "created_at", "updated_at"],
+      "required": ["candidate_id", "decision", "facts_sha256", "artifacts", "artifact_inventory_complete", "reviewer_id", "review_rationale", "canonical_persisted", "canonical_target", "canonical_sha256", "canonical_persisted_at", "receipt_id", "purge_status", "created_at", "updated_at", "cleanup_authorized", "cleanup_reviewer_id", "cleanup_manifest_sha256", "cleanup_approved_at", "cleanup_canonical_persisted"],
       "properties": {
         "candidate_id": {"type": "string", "minLength": 1},
         "decision": {"enum": ["approved", "rejected"]},
@@ -249,13 +249,27 @@
         "receipt_id": {"type": "string", "minLength": 1},
         "purge_status": {"enum": ["purge_pending", "complete"]},
         "created_at": {"type": "string"},
-        "updated_at": {"type": "string"}
+        "updated_at": {"type": "string"},
+        "cleanup_authorized": {"type": "boolean"},
+        "cleanup_reviewer_id": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
+        "cleanup_manifest_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "cleanup_approved_at": {"type": ["string", "null"]},
+        "cleanup_canonical_persisted": {"type": "boolean"}
       },
       "allOf": [
         {
           "if": {"properties": {"canonical_persisted": {"const": true}}},
           "then": {"properties": {"canonical_target": {"type": "string", "minLength": 1}, "canonical_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "canonical_persisted_at": {"type": "string", "minLength": 1}}},
           "else": {"properties": {"canonical_target": {"type": "null"}, "canonical_sha256": {"type": "null"}, "canonical_persisted_at": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"cleanup_authorized": {"const": true}}},
+          "then": {"properties": {"cleanup_reviewer_id": {"type": "string", "minLength": 1}, "cleanup_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "cleanup_approved_at": {"type": "string", "minLength": 1}}},
+          "else": {"properties": {"cleanup_reviewer_id": {"type": "null"}, "cleanup_manifest_sha256": {"type": "null"}, "cleanup_approved_at": {"type": "null"}, "cleanup_canonical_persisted": {"const": false}}}
+        },
+        {
+          "if": {"properties": {"cleanup_canonical_persisted": {"const": true}}},
+          "then": {"properties": {"cleanup_authorized": {"const": true}, "canonical_persisted": {"const": true}}}
         }
       ],
       "additionalProperties": false

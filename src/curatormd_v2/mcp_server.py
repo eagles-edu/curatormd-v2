@@ -67,11 +67,12 @@ Curator V2 work protocol:
    criteria, facts to date, TODOs, blocker/owner, and next action. Finish only
    when every criterion has passing evidence; otherwise leave the goal open,
    blocked, or deferred with the exact unmet work.
-4. Keep SDE review, canonical persistence, and artifact cleanup separate from
-   goal completion. Present selected facts and evidence for human review. Write
-   approved compact bullets and the durable receipt before purging only a
-   complete approved inventory. Keep incomplete or failed cleanup visibly
-   pending; never equate a zero SDE count with failed capture or health.
+4. Keep SDE review, canonical persistence, cleanup authorization, and artifact
+   deletion as separate steps. SDE disposition and expiry eligibility never
+   authorize deletion. Require a separate human approval and durable receipt
+   bound to the complete exact inventory after canonical facts are persisted.
+   Keep unapproved or failed cleanup visibly pending; never equate a zero SDE
+   count with failed capture or health.
 """
 
 
@@ -900,6 +901,31 @@ def build_mcp_server(
                 receipt_id,
                 _artifacts(artifacts),
             )
+        )
+
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            destructive_hint=True, idempotent_hint=True, open_world_hint=False
+        )
+    )
+    def artifact_cleanup_approve(
+        receipt_id: str,
+        artifacts: list[ArtifactInput],
+        manifest_sha256: str,
+        target: str,
+    ) -> str:
+        """Record a separate human approval bound to the exact cleanup manifest."""
+
+        authorization, receipt = api.authorize_artifact_cleanup(
+            caller,
+            project_id,
+            receipt_id,
+            _artifacts(artifacts),
+            manifest_sha256,
+            target,
+        )
+        return _json_result(
+            {"authorization": authorization, "receipt": receipt}
         )
 
     @_safe_tool()

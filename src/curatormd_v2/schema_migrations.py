@@ -6,7 +6,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 20
+SQLITE_SCHEMA_VERSION = 21
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -444,6 +444,26 @@ def migrate_expiry_purge_receipts_v20(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 20")
 
 
+def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
+    """Record separate human cleanup approval for reviewed SDE inventories."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS cleanup_authorizations (
+               receipt_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL,
+               reviewer_id TEXT NOT NULL,
+               manifest_sha256 TEXT NOT NULL,
+               approved_at TEXT NOT NULL,
+               canonical_persisted INTEGER NOT NULL DEFAULT 0,
+               canonical_target TEXT,
+               canonical_sha256 TEXT,
+               canonical_persisted_at TEXT,
+               FOREIGN KEY(receipt_id) REFERENCES audit_receipts(receipt_id)
+           )"""
+    )
+    connection.execute("PRAGMA user_version = 21")
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -514,6 +534,9 @@ def apply_schema_migrations(
         schema_version = 19
     if schema_version == 19:
         migrate_expiry_purge_receipts_v20(connection)
+        schema_version = 20
+    if schema_version == 20:
+        migrate_cleanup_authorizations_v21(connection)
         return
     if schema_version != 0:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
@@ -541,3 +564,4 @@ def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     migrate_sde_proposal_context_v18(connection)
     migrate_staging_artifact_age_v19(connection)
     migrate_expiry_purge_receipts_v20(connection)
+    migrate_cleanup_authorizations_v21(connection)

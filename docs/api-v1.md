@@ -49,7 +49,8 @@ an HTTP or MCP server, and it does not authenticate credentials.
 The `curatormd-v2-review` local CLI binds attended review to the current
 non-setuid Linux UID (`local-uid:<euid>`), exact project grants, and a visible
 terminal. It displays selected facts and the complete hashed artifact
-inventory; one explicit decision can authorize cleanup of that exact inventory.
+inventory; SDE disposition and cleanup each require an explicit decision, and
+cleanup approval is bound to the exact inventory.
 This is a local-alpha host adapter, not a Hermes authenticator. Hermes-
 authenticated human identity remains a separate integration gate.
 

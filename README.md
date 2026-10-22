@@ -42,11 +42,14 @@ or project records.
   and exact project grants. Hermes profile review remains denied until Hermes
   Core supplies an authenticated human identity; the local CLI is not that
   production identity binding. See the [consumer operations guide](docs/consumer-operations-v1.md#review-one-local-alpha-candidate).
-- Post-review purge records its decision and artifact hashes before deletion.
+- SDE disposition and destructive cleanup require separate human decisions.
+  Cleanup approval binds the complete exact artifact manifest and is projected
+  canonically before deletion.
   Purge is restricted to exact regular files under a configured staging root;
   hash mismatches, symlinks, directories, and outside paths are retained and
   reported as `purge_pending` for retry. Deletion stays blocked until the
-  project adapter marks the full artifact inventory complete.
+  project adapter marks the full artifact inventory complete and the separate
+  cleanup authorization receipt is durable.
 - `curatormd-v2-maintenance` provides an explicit one-shot retry of due,
   already-reviewed and canonically persisted purge targets. It respects target
   backoff and retention holds, acquires the project's staging lock, emits only

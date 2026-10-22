@@ -176,6 +176,20 @@ class ReviewHost:  # pylint: disable=too-few-public-methods
             raise PermissionError("expiry reviewer is not authenticated")
         return authenticated_subject
 
+    def authorize_cleanup(
+        self,
+        project_id: str,
+        receipt_id: str,
+        manifest_sha256: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Attribute exact SDE cleanup approval to the authenticated reviewer."""
+
+        del project_id, receipt_id, manifest_sha256
+        if authenticated_subject != "hermes-user-1":
+            raise PermissionError("cleanup reviewer is not authenticated")
+        return authenticated_subject
+
 
 class ApiFacadeTests(unittest.TestCase):
     """Prove authz, project binding, envelope validation, and rate limits."""
