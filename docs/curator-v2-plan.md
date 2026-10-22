@@ -188,7 +188,9 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 132 of 174 delivery rows are complete; 42 are open. The count
+(2026-10-22): 133 of 175 delivery rows are complete; 42 are open. One row was
+added for the owner's separately requested V2-owned VS Code status-bar
+integration; the prior 174-row scope remains intact. The count
 includes implementation rows in sections 0–10, 12, and Definition of done. It
 excludes section 11's reusable execution templates; their per-task checkboxes
 are not delivery progress. Historical narrative counts below are not current.
@@ -1199,6 +1201,12 @@ consumer plugin, Hermes integration, or production deployment.
       all 32 installed Python module hashes match this source tree. Fresh MCP
       discovery and all seven Vhost contracts pass. The Vhost application
       workflow and production gates remain open.
+- [x] Ship and install a Curator V2-owned VS Code status-bar extension labeled
+      `CuratorMD V2`; its tooltip and click action state that health, capture,
+      persistence, and identity are not checked. `node --check` passes, VS Code
+      lists version `0.1.0`, and the installed extension source hash matches
+      this repository. This is a local editor label, not runtime or readiness
+      evidence.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects

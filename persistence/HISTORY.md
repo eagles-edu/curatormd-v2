@@ -2837,3 +2837,15 @@
 **Open gate:** Repository-wide Pylint cleanup and production retention/scheduler evidence remain open. No delivery checkbox changed.
 
 **Outcome:** Current local expiry status and the focused lint result are recorded without implying production readiness.
+
+## 2026-10-22 — Track the installed V2 VS Code status label
+
+**Intent:** Record the owner's separately requested V2-owned VS Code status-bar integration in the delivery checklist.
+
+**Changed fact:** Added one delivery row for the `CuratorMD V2` status extension. The label and its click action explicitly state that they do not check service health, capture, persistence, or identity. The delivery checklist now reports 133/175 complete with 42 open; the denominator increased by one for this newly tracked user request.
+
+**Verification:** `node --check integrations/vscode-status/extension.js` passes. VS Code lists `curatormd.curatormd-v2-status@0.1.0`, and SHA-256 for the repository and installed `extension.js` both equals `01ef7ba8ade4e43a7f1aca7b686e37ec01bf47cb4f5c725bb22010bc02d8f08a`.
+
+**Open gate:** This informational editor label does not establish authenticated identity, runtime health, or deployment readiness. No tests were run.
+
+**Outcome:** The separately requested V2 editor integration is visible in the V2 plan with directly checked local installation evidence.
