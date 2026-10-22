@@ -2117,6 +2117,17 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       establish live application delivery. Old transcript rows, WAL/recovery,
       all backup variants, traces, provider retention, and broader
       source-to-sink review remain open; this privacy item stays unchecked.
+      Follow-up (2026-10-22): Hermes gateway `tool.started` progress now
+      replaces Curator V2 previews with a fixed marker and drops arguments
+      before log-mode persistence, live-status rendering, or progress-message
+      construction. The focused canary regression passes; targeted Ruff and
+      Hermes `scripts/check` (12 checks) pass, and both worktrees pass
+      `git diff --check`. The full gateway progress test module was attempted
+      but 45 existing cases fail at the test home-I/O guard when importing the
+      real `~/.hermes/manifest.json`; the isolated new test passes. This closes
+      that specific diagnostic sink only; historical records, WAL/recovery,
+      other traces/backups, provider retention, and the broader source-to-sink
+      review remain open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth. The local-alpha
       72-hour maximum and prompt post-record/disposition expiry are implemented;

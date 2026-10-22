@@ -3586,3 +3586,15 @@
 **Open gate:** Historical raw transcript rows, WAL/recovery, all backup variants, traces, provider-side retention, and the complete source-to-sink audit remain open. Production identity, retention, deployment, and live-runtime gates remain open.
 
 **Outcome:** The tested local Hermes sinks retain no Curator V2 argument/result canaries while preserving call identity; no checklist item is marked complete and no production claim is made.
+
+## 2026-10-22 — Redact Curator V2 gateway progress previews
+
+**Intent:** Close a remaining Hermes diagnostic sink in gateway log-mode tool-start progress.
+
+**Changed fact:** `GatewayTurnProgressMixin.progress_callback` now replaces a Curator V2 tool-start preview with the fixed redaction marker and removes its arguments before the progress log queue, live-status projection, or progress-message builder can retain them. The regression lives in a focused gateway test file to respect Hermes' code-health file-size limit.
+
+**Verification:** The focused canary regression passes; targeted Ruff and Hermes `scripts/check` pass, including all 12 checks, and both repositories' `git diff --check` pass. A broader attempt to run `test_run_progress_topics.py` had 45 failures in existing cases because the home-I/O guard rejects import-time access to the real `/home/eaglesvn/.hermes/manifest.json`; this unrelated test-isolation issue remains open.
+
+**Open gate:** This closes one progress-log/status sink only. The broader privacy review remains open for historical transcript rows, WAL/recovery, other traces and backups, and provider-side retention. No live gateway or Vhost application workflow was exercised.
+
+**Outcome:** Curator V2 call previews no longer reach the tested Hermes gateway progress log or status projections; the privacy and runtime gates remain open.
