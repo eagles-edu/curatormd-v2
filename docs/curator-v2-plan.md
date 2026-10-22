@@ -1866,6 +1866,16 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       Bandit, dependency audit, and lock check pass. This closes only the
       dynamic exception-label path; retry payloads, traces, backup/WAL,
       canonical and upstream flows, and broader log review remain open.
+      Progress (2026-10-22): Hermes Core now replaces argument excerpts with a
+      fixed redaction marker for Curator V2 MCP tools in verbose tool-call
+      diagnostics, malformed-argument repair warnings, trajectory conversion
+      warnings, and corrupt-call repair warnings. A focused Hermes regression
+      verifies a unique content canary is absent from repair logs while the
+      repaired arguments remain usable; non-Curator diagnostics retain their
+      bounded excerpts. This is local source/test evidence only. Other Hermes
+      logging paths, traces, backups, replay/trajectory content, and the wider
+      source-to-sink review remain open, so this privacy checklist item stays
+      unchecked.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
