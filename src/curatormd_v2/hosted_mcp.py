@@ -22,6 +22,7 @@ import sys
 from mcp.server import MCPServer
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
+from .evidence import EvidenceVerifier
 from .mcp_server import build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
@@ -61,6 +62,7 @@ def build_local_profile_mcp(
     source_id: str | None = None,
     allow_write: bool = False,
     allow_review: bool = False,
+    evidence_verifier: EvidenceVerifier | None = None,
 ) -> LocalProfileMCP:
     """Bind one local profile to the project declared by its repo config.
 
@@ -69,7 +71,9 @@ def build_local_profile_mcp(
     and exact action grants must already exist; this project plugin never
     self-registers or grants access. No tool argument can choose a caller or
     project. The repository-owned config is validated by ``ProjectConfig.load``
-    before any plugin is bound.
+    before any plugin is bound. A supplied verifier must be built from
+    host-owned trust configuration, never the consumer repository config.
+    Omitting it preserves the reject-all evidence default.
     """
 
     if not _PROFILE_ID_RE.fullmatch(profile_id):
@@ -109,7 +113,11 @@ def build_local_profile_mcp(
         ):
             raise ValueError("requested project review grant is not active")
         api = AuthenticatedCuratorAPI(
-            {config.project_id: ProjectPlugin.bind(config, store)},
+            {
+                config.project_id: ProjectPlugin.bind(
+                    config, store, evidence_verifier=evidence_verifier
+                )
+            },
             authorizer=authorizer,
             limiter=SQLiteTokenBucket(store),
         )

@@ -446,6 +446,15 @@ consumer plugin, Hermes integration, or production deployment.
       `git diff --check` pass. The configured local subject is a host assertion;
       service credentials, deployment trust roots, revocation, and live probes
       remain open, so this does not close either source-integration gate.
+      Host-wiring progress (2026-10-22): `build_local_profile_mcp` now accepts
+      an optional verifier constructed by the trusted host and passes it into
+      the project plugin; omitting the argument still selects reject-all, and
+      consumer repository config cannot select this verifier. A disposable
+      profile-builder integration test drives a verification event through
+      the API and confirms the matching criterion becomes verified. The
+      launcher CLI and installed Vhost profile remain reject-all until a
+      separate host-owned probe configuration is provided; no service or
+      deployment credentials are configured here.
 - [x] Bound immutable fact history to 512 facts/512 KiB per goal and 10,000
       facts/16 MiB per project; reject over-limit appends atomically without
       pruning, expose capacity gates in goal/project status, and test count/byte

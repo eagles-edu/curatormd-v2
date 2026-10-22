@@ -3610,3 +3610,15 @@
 **Open gate:** Deployment credentials/trust roots, independent service identity and revocation, and a live service probe remain unverified. The source-specific evidence integration items remain open.
 
 **Outcome:** Curator V2 can locally verify bounded output from an exact host-configured service probe without persisting the output; production trust and runtime are not claimed.
+
+## 2026-10-22 — Wire host-owned evidence verifier into profile builder
+
+**Intent:** Make a locally configured evidence resolver usable by the profile-bound API without letting a consumer repository choose trust policy.
+
+**Changed fact:** `build_local_profile_mcp` accepts an optional host-created `EvidenceVerifier` and injects it into the bound `ProjectPlugin`. Omitting the argument retains the fail-closed reject-all verifier. The consumer TOML remains unable to select adapters, identities, commands, or credentials.
+
+**Verification:** The disposable profile-builder integration test passes: a verification event travels through the bound API and its criterion becomes verified by the host-injected local service probe. Strict Pyright reports zero diagnostics; repository errors-only Pylint, Bandit, and `git diff --check` pass. No full suite was rerun.
+
+**Open gate:** The production CLI remains reject-all absent a separately implemented host-owned probe configuration; the installed Vhost profile was not changed. This test does not establish service authentication, a live probe, deployment identity, or runtime readiness.
+
+**Outcome:** The host factory now exposes a tested trust-injection seam while preserving consumer-config isolation and the fail-closed default.
