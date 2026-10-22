@@ -1205,8 +1205,9 @@ consumer plugin, Hermes integration, or production deployment.
       `CuratorMD V2`; its tooltip and click action state that health, capture,
       persistence, and identity are not checked. `node --check` passes, VS Code
       lists version `0.1.0`, and the installed extension source hash matches
-      this repository. This is a local editor label, not runtime or readiness
-      evidence.
+      this repository. A cropped screenshot of the active Curator V2 VS Code
+      window visibly shows `CuratorMD V2` in the bottom status bar. This is a
+      local editor label, not runtime or readiness evidence.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
