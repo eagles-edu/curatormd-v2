@@ -2825,3 +2825,15 @@
 **Open gate:** The installed Vhost consumer remains on an older alpha package. Hermes authenticated identity, production retention/recovery, deployment, and live-runtime gates remain open.
 
 **Outcome:** The plan no longer claims SDE confirmation begins purge.
+
+## 2026-10-22 — Refresh local expiry policy status and clear one lint finding
+
+**Intent:** Keep the local-alpha retention record aligned with the implemented attended expiry workflow and make a small, behavior-preserving step on repository-wide Pylint cleanup.
+
+**Changed fact:** The policy documentation now describes the implemented expiry-only approval, durable pre-unlink receipt, hold integration, and approval-bound retry command, while retaining production scheduling and retention gates. Wrapped the purge-test manifest comprehension that the latest full Pylint inventory flagged for line length.
+
+**Verification:** The pre-change full Pylint output lists 291 non-blocking findings, including the `C0301` line in `tests/test_purge.py`. The targeted `C0301` check passes after the edit. No tests or full Pylint rerun were performed.
+
+**Open gate:** Repository-wide Pylint cleanup and production retention/scheduler evidence remain open. No delivery checkbox changed.
+
+**Outcome:** Current local expiry status and the focused lint result are recorded without implying production readiness.

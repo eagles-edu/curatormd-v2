@@ -190,7 +190,10 @@ targets = ["persistence/HISTORY.md"]
             hashlib.sha256(receipt.receipt_id.encode()).hexdigest(),
         )
         manifest = json.dumps(
-            [(item.path, item.sha256) for item in sorted(receipt.artifacts, key=lambda item: item.path)],
+            [
+                (item.path, item.sha256)
+                for item in sorted(receipt.artifacts, key=lambda item: item.path)
+            ],
             ensure_ascii=False,
             separators=(",", ":"),
         )

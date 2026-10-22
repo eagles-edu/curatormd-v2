@@ -2147,6 +2147,12 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       inventory is 285 findings (273 refactor, 12 oversized-module convention);
       `_read_target` no longer reports too-many-branches. Broad cleanup remains
       open.
+      Additional progress (2026-10-22): the current full Pylint run reported
+      291 non-blocking findings, including one overlong manifest-construction
+      line in `tests/test_purge.py`. Wrapped that comprehension without changing
+      behavior; the targeted `C0301` check now passes. The full inventory was
+      not rerun after the formatting change, and no tests were rerun. Broad
+      repository cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

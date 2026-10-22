@@ -71,12 +71,13 @@ and an explicit human approval of that exact inventory; a scheduler may retry
 only a purge already approved in a durable receipt.
 
 This is the approved policy for local alpha, not evidence that expiry is fully
-operational. SDE disposition alone never authorizes cleanup. A separate
-cleanup-authorization receipt must bind the exact current inventory and be
-canonically projected before the SDE review path can purge unheld artifacts.
-V2 records publication time for producer-staged
-files and exposes a read-only 72-hour candidate scan that fails closed on
-unknown age or incomplete inventory. Attended approval of an expiry-only
-inventory, its durable receipt, hold integration, and retry scheduling remain
-implementation work. Production retention and deployment-owner policy remain
-open release gates.
+operational in production. SDE disposition alone never authorizes cleanup. A
+separate cleanup-authorization receipt binds the exact current inventory and
+canonical projection before the SDE review path can purge unheld artifacts.
+V2 records publication time for producer-staged files and exposes a read-only
+72-hour candidate scan that fails closed on unknown age or incomplete
+inventory. The local implementation now supports attended approval of an
+expiry-only inventory, a durable receipt before unlink, hold integration, and a
+one-shot retry command that can process only existing approvals. Production
+retention policy, deployed scheduling/alerting, and deployment-owner policy
+remain open release gates.
