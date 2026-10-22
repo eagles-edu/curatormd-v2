@@ -1884,6 +1884,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       aggregate string, and aggregate multimodal-text paths. This closes those
       Hermes spillover paths only; broader logging, traces, old transcript rows,
       WAL/recovery, other backup paths, and provider retention remain open.
+      TUI follow-up (2026-10-22): Hermes tool-start/tool-complete events and
+      restart-preview callbacks now replace Curator V2 arguments and results
+      with fixed markers before event replay or preview emission; argument-
+      derived labels, summaries, and edit metadata are suppressed. Two focused
+      TUI regressions pass, targeted Ruff passes, and `git diff --check` passes.
+      This closes only these TUI sinks; the repository-wide privacy item stays
+      open and no checklist count changes.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with

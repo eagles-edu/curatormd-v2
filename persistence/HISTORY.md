@@ -2,6 +2,25 @@
 
 ## 2026-10-22
 
+- **Intent:** Close the Hermes TUI replay and restart-preview sinks in the
+  Curator V2 content-safety review.
+  **Changed fact:** Curator V2 tool-start/tool-complete events and restart
+  previews now replace arguments and results with fixed markers before event
+  replay or preview emission; argument-derived labels, summaries, and edit
+  metadata are suppressed.
+  **Verification:** The focused Hermes TUI regression file passes (2 tests);
+  targeted Hermes Ruff and `git diff --check` pass, and Hermes `scripts/check`
+  passes all 12 checks. The opted-in `renew-ssl-coding` local-stdio probe
+  discovers 48 Curator tools and returns 12 processed event receipts, one goal,
+  two facts, and zero failed/quarantined events or pending SDEs. Direct Codex
+  Curator MCP calls still return `unauthenticated`. Curator's locked Pyright,
+  errors-only Pylint, Bandit, and `git diff --check` checks pass.
+  **Open gate:** This covers these TUI sinks only. Other log, trace, backup,
+  recovery, and provider paths remain in the broader source-to-sink review;
+  authenticated identity, deployment, retention policy, and live runtime also
+  remain open. The privacy checklist item remains unchecked.
+  **Outcome:** Recorded a bounded local privacy improvement without changing
+  checklist progress or claiming end-to-end privacy.
 - **Intent:** Complete the pending Curator V2 quality verification without
   rerunning the test suite. **Changed fact:** no delivery checklist status or
   source behavior changed. **Verification:** the documented locked quality
