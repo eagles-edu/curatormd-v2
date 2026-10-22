@@ -2880,9 +2880,17 @@ substitute for evidence at a later integration boundary.
 - [ ] **G. Integrate Hermes Core:** map real app-server lifecycle events through
       the global router and managed gateway; prove profile/project authorization
       and that no raw session transcript is retained.
-- [ ] **H. Validate Host Steward separately:** test inventory attribution,
+- [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
-      inability to write Curator project knowledge.
+      inability to write Curator project knowledge. Progress (2026-10-22): the
+      Hermes Core Host Steward suite passes 15 focused tests, including explicit
+      reconciliation of interrupted cleanup receipts; Hermes Core `scripts/check`
+      passes all 12 checks. Earlier focused regressions cover bounded inventory,
+      exact-target approval, managed cleanup, post-cleanup checks, durable
+      receipts, and the consumer-history sentinel. This closes local validation
+      only; root-account activation, live host attribution, authenticated
+      approver identity, cross-process supervision, and production recovery
+      remain open in the release gate.
 - [ ] **I. Pilot and release:** run the V2 consumer workflow and rollback drill,
       publish runbooks/release notes, and obtain owner sign-off on retention,
       cleanup, and capture policy. V1 migration or rollback is not a V2 gate.
@@ -2911,9 +2919,11 @@ substitute for evidence at a later integration boundary.
 - [ ] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health.
-- [ ] Hermes Core and Host Steward remain separate owners; Host Steward
+- [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
-      knowledge.
+      knowledge. Local Hermes Core tests verify the root-account plugin boundary
+      and confirm that an approved disposable cleanup leaves Curator project
+      history unchanged; live root-account activation remains a deployment gate.
 - [ ] Per-project plugins are isolated and configurable without copying global
       backend state or mixing repository roots.
 - [ ] Operational, security, retention, disk, token, upgrade, backup, restore,

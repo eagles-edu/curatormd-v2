@@ -2869,3 +2869,15 @@
 **Open gate:** This informational editor label does not establish authenticated identity, runtime health, or deployment readiness. No tests were run.
 
 **Outcome:** The separately requested V2 editor integration is visible in the V2 plan with directly checked local installation evidence.
+
+## 2026-10-22 — Close local Host Steward validation slice
+
+**Intent:** Close the local Host Steward validation slice while keeping its Hermes Core ownership and deployment boundary explicit.
+
+**Changed fact:** Updated the ordered plan to mark local Host Steward validation and the separate-owner safety criterion complete. The release-gate record now distinguishes local validation from root-account activation and production recovery; no Hermes Core source, Host Steward state, host files, or cleanup targets were changed.
+
+**Verification:** The latest Hermes Core Host Steward focused suite passes 15 tests, including interrupted-cleanup receipt reconciliation, and `python3 scripts/check` passes all 12 checks. Existing focused regressions cover bounded inventory, exact approval, managed cleanup, post-cleanup verification, receipts, tool ownership, and the unchanged Curator history sentinel after disposable cleanup. Curator and Hermes `git diff --check` pass for this documentation update.
+
+**Open gate:** Live root-account activation, measured live host/service attribution, authenticated approver identity, cross-process supervision, and production recovery remain open. Direct Curator MCP access remains unauthenticated in this Codex session; no goal-ledger mutation is claimed.
+
+**Outcome:** Two locally evidenced delivery checklist items are closed; deployment, identity, and live-runtime gates remain open.
