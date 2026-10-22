@@ -14,6 +14,7 @@ from curatormd_v2 import (
     ProjectAccessManager,
     ProjectAction,
     ProjectAdministrationAction,
+    ProjectRegistrationRequest,
     SQLiteProjectGrantAuthorizer,
 )
 
@@ -58,15 +59,28 @@ class DurableProjectAccessTests(unittest.TestCase):
     def _allow_admin(self, action: ProjectAdministrationAction) -> None:
         self.admin.allowed.add((self.operator.subject_id, self.project_id, action))
 
+    def _registration_request(
+        self,
+        rationale: str,
+        *,
+        project_id: str | None = None,
+        config_sha256: str | None = None,
+    ) -> ProjectRegistrationRequest:
+        """Build a typed host registration request for one test case."""
+
+        return ProjectRegistrationRequest(
+            project_id=project_id or self.project_id,
+            repository_fingerprint=self.repository_fingerprint,
+            config_sha256=config_sha256 or self.config_sha256,
+            backend_api_version=1,
+            rationale=rationale,
+        )
+
     def _register(self) -> None:
         self._allow_admin(ProjectAdministrationAction.REGISTER)
         self.manager.register_project(
             self.operator,
-            self.project_id,
-            self.repository_fingerprint,
-            self.config_sha256,
-            1,
-            "Approve the pilot repository binding",
+            self._registration_request("Approve the pilot repository binding"),
         )
 
     def _grant(self, action: ProjectAction = ProjectAction.READ):
@@ -83,11 +97,7 @@ class DurableProjectAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             self.manager.register_project(
                 self.operator,
-                self.project_id,
-                self.repository_fingerprint,
-                self.config_sha256,
-                1,
-                "Unapproved registration attempt",
+                self._registration_request("Unapproved registration attempt"),
             )
         with self.assertRaises(NotFoundError):
             self.store.get_project_registration(self.project_id)
@@ -108,22 +118,17 @@ class DurableProjectAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(ConflictError, "already registered"):
             self.manager.register_project(
                 self.operator,
-                self.project_id,
-                self.repository_fingerprint,
-                self.config_sha256,
-                1,
-                "Duplicate registration",
+                self._registration_request("Duplicate registration"),
             )
 
         updated_sha = hashlib.sha256(b"config-v2").hexdigest()
         self._allow_admin(ProjectAdministrationAction.UPDATE)
         updated = self.manager.update_project_registration(
             self.operator,
-            self.project_id,
-            self.repository_fingerprint,
-            updated_sha,
-            1,
-            "Approve the reviewed plugin configuration update",
+            self._registration_request(
+                "Approve the reviewed plugin configuration update",
+                config_sha256=updated_sha,
+            ),
         )
         self.assertEqual(updated.config_sha256, updated_sha)
 
@@ -168,11 +173,10 @@ class DurableProjectAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(ConflictError, "already registered"):
             self.manager.register_project(
                 other_project_admin,
-                "project-b",
-                self.repository_fingerprint,
-                self.config_sha256,
-                1,
-                "Attempt to bind the same repository twice",
+                self._registration_request(
+                    "Attempt to bind the same repository twice",
+                    project_id="project-b",
+                ),
             )
 
     def test_exact_grant_survives_restart_and_revocation_denies_immediately(self) -> None:

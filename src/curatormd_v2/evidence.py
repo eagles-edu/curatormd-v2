@@ -143,6 +143,74 @@ class EvidenceAdapterError(RuntimeError):
     """A trusted evidence adapter failed operationally, without source detail."""
 
 
+@dataclass(frozen=True, slots=True)
+class EvidenceAdapterPolicy:
+    """Host-owned project, subject, and freshness policy for one adapter."""
+
+    allowed_projects: Collection[str]
+    allowed_subjects: Collection[str]
+    max_observation_age_seconds: int | None = None
+    max_validity_seconds: int | None = None
+    max_revocation_age_seconds: int = 60
+
+    def __post_init__(self) -> None:
+        """Freeze validated allowlists and reject malformed policy limits."""
+
+        object.__setattr__(
+            self, "allowed_projects", _validated_allowlist(self.allowed_projects, "project")
+        )
+        object.__setattr__(
+            self, "allowed_subjects", _validated_allowlist(self.allowed_subjects, "subject")
+        )
+        for name, value in (
+            ("max observation age seconds", self.max_observation_age_seconds),
+            ("max validity seconds", self.max_validity_seconds),
+        ):
+            _validated_policy_limit(name, value)
+        _validated_revocation_limit(self.max_revocation_age_seconds)
+
+
+def _validated_allowlist(values: Collection[str], name: str) -> frozenset[str]:
+    """Return a nonempty immutable allowlist of bounded host identifiers."""
+
+    allowed = frozenset(values)
+    if not allowed:
+        raise ValueError(f"trusted adapters require a {name} allowlist")
+    if any(not _valid_identifier(value, 128) for value in allowed):
+        raise ValueError(f"adapter {name} allowlist contains an invalid value")
+    return allowed
+
+
+def _validated_policy_limit(
+    name: str,
+    value: int | None,
+    ceiling: int | None = None,
+) -> int | None:
+    """Validate a nonnegative age and enforce any source-specific maximum."""
+
+    if value is not None and (not is_exact_int(value) or value < 0):
+        raise ValueError(f"{name} must be a nonnegative integer or None")
+    if ceiling is None:
+        return value
+    if value is None:
+        return ceiling
+    if value > ceiling:
+        raise ValueError(f"{name} exceeds source policy ceiling")
+    return value
+
+
+def _validated_revocation_limit(value: int) -> int:
+    """Keep revocation evidence within its global freshness ceiling."""
+
+    if not is_exact_int(value) or value < 0:
+        raise ValueError(
+            "max_revocation_age_seconds must be a nonnegative integer or None"
+        )
+    if value > 60:
+        raise ValueError("max revocation age exceeds the 60-second policy ceiling")
+    return value
+
+
 class RejectUnverifiedEvidence:
     """Safe default until trusted source adapters are explicitly configured."""
 
@@ -189,52 +257,32 @@ class ReceiptEvidenceAdapter:
         adapter_id: str,
         scope_id: str,
         resolver: EvidenceSourceResolver,
-        allowed_projects: Collection[str],
-        allowed_subjects: Collection[str],
-        max_observation_age_seconds: int | None = None,
-        max_validity_seconds: int | None = None,
-        max_revocation_age_seconds: int = 60,
+        policy: EvidenceAdapterPolicy,
     ) -> None:
         if not adapter_id.strip() or len(adapter_id) > 128:
             raise ValueError("adapter_id must contain 1-128 characters")
         if not scope_id.strip() or len(scope_id) > 500:
             raise ValueError("scope_id must contain 1-500 characters")
-        projects = frozenset(allowed_projects)
-        subjects = frozenset(allowed_subjects)
-        if not projects or not subjects:
-            raise ValueError("trusted adapters require project and subject allowlists")
-        for value in projects | subjects:
-            if not _valid_identifier(value, 128):
-                raise ValueError("adapter allowlists cannot contain empty values")
-        for name, value in (
-            ("max_observation_age_seconds", max_observation_age_seconds),
-            ("max_validity_seconds", max_validity_seconds),
-            ("max_revocation_age_seconds", max_revocation_age_seconds),
-        ):
-            if value is not None and (not is_exact_int(value) or value < 0):
-                raise ValueError(f"{name} must be a nonnegative integer or None")
-        if max_revocation_age_seconds > 60:
-            raise ValueError("max revocation age exceeds the 60-second policy ceiling")
-        observation_ceiling = type(self).max_observation_age_ceiling_seconds
-        validity_ceiling = type(self).max_validity_ceiling_seconds
-        if observation_ceiling is not None:
-            if max_observation_age_seconds is None:
-                max_observation_age_seconds = observation_ceiling
-            elif max_observation_age_seconds > observation_ceiling:
-                raise ValueError("max observation age exceeds source policy ceiling")
-        if validity_ceiling is not None:
-            if max_validity_seconds is None:
-                max_validity_seconds = validity_ceiling
-            elif max_validity_seconds > validity_ceiling:
-                raise ValueError("max validity exceeds source policy ceiling")
+        max_observation_age_seconds = _validated_policy_limit(
+            "max observation age seconds",
+            policy.max_observation_age_seconds,
+            type(self).max_observation_age_ceiling_seconds,
+        )
+        max_validity_seconds = _validated_policy_limit(
+            "max validity seconds",
+            policy.max_validity_seconds,
+            type(self).max_validity_ceiling_seconds,
+        )
         self.adapter_id = adapter_id
         self.scope_id = scope_id
         self.resolver = resolver
-        self.allowed_projects = projects
-        self.allowed_subjects = subjects
-        self.max_observation_age_seconds = max_observation_age_seconds
-        self.max_validity_seconds = max_validity_seconds
-        self.max_revocation_age_seconds = max_revocation_age_seconds
+        self.policy = EvidenceAdapterPolicy(
+            allowed_projects=policy.allowed_projects,
+            allowed_subjects=policy.allowed_subjects,
+            max_observation_age_seconds=max_observation_age_seconds,
+            max_validity_seconds=max_validity_seconds,
+            max_revocation_age_seconds=policy.max_revocation_age_seconds,
+        )
 
     def attest(
         self,
@@ -246,7 +294,7 @@ class ReceiptEvidenceAdapter:
         if (
             evidence.outcome is not EvidenceOutcome.PASSED
             or evidence.evidence_kind not in self.evidence_kinds
-            or context.project_id not in self.allowed_projects
+            or context.project_id not in self.policy.allowed_projects
         ):
             return None
         try:
@@ -294,7 +342,7 @@ class ReceiptEvidenceAdapter:
                 receipt.goal_id != context.goal_id,
                 receipt.criterion_id != context.criterion_id,
                 receipt.scope_id != self.scope_id,
-                receipt.authenticated_subject not in self.allowed_subjects,
+                receipt.authenticated_subject not in self.policy.allowed_subjects,
             )
         )
 
@@ -321,16 +369,17 @@ class ReceiptEvidenceAdapter:
                 valid_until <= now,
                 revocation_checked_at < observed_at,
                 now - revocation_checked_at
-                > timedelta(seconds=self.max_revocation_age_seconds),
+                > timedelta(seconds=self.policy.max_revocation_age_seconds),
             )
         ):
             return False
-        if self.max_observation_age_seconds is not None and (
-            now - observed_at > timedelta(seconds=self.max_observation_age_seconds)
+        if self.policy.max_observation_age_seconds is not None and (
+            now - observed_at
+            > timedelta(seconds=self.policy.max_observation_age_seconds)
         ):
             return False
-        if self.max_validity_seconds is not None and (
-            valid_until - observed_at > timedelta(seconds=self.max_validity_seconds)
+        if self.policy.max_validity_seconds is not None and (
+            valid_until - observed_at > timedelta(seconds=self.policy.max_validity_seconds)
         ):
             return False
         return True
@@ -393,24 +442,14 @@ class EvidenceAdapterRegistry:
 
 def evidence_has_current_attestations(
     verifier: EvidenceVerifier,
-    *,
-    project_id: str,
-    goal_id: str,
-    criterion_id: str,
+    context: EvidenceVerificationContext,
     evidence: tuple[EvidenceRef, ...],
     stored: tuple[EvidenceAttestation, ...],
-    now: datetime | None = None,
 ) -> bool:
     """Revalidate provenance outside write transactions and reject drift."""
 
     if not evidence or len(evidence) != len(stored):
         return False
-    context = EvidenceVerificationContext(
-        project_id=project_id,
-        goal_id=goal_id,
-        criterion_id=criterion_id,
-        now=now or datetime.now(UTC),
-    )
     try:
         fresh_items = tuple(verifier.attest(item, context) for item in evidence)
     except Exception:  # pylint: disable=broad-exception-caught
@@ -424,19 +463,49 @@ def evidence_has_current_attestations(
         strict=True,
     ):
         if (
-            current.evidence_kind != reference.evidence_kind
-            or current.evidence_sha256 != reference.sha256
-            or current.project_id != project_id
-            or current.goal_id != goal_id
-            or current.criterion_id != criterion_id
-            or original.evidence_kind != reference.evidence_kind
-            or original.evidence_sha256 != reference.sha256
-            or original.project_id != project_id
-            or original.goal_id != goal_id
-            or original.criterion_id != criterion_id
-            or current.source_revision != original.source_revision
-            or current.adapter_id != original.adapter_id
-            or current.authenticated_subject != original.authenticated_subject
+            not _attestation_matches_reference(current, reference)
+            or not _attestation_matches_context(current, context)
+            or not _attestation_matches_reference(original, reference)
+            or not _attestation_matches_context(original, context)
+            or not _attestations_share_source(current, original)
         ):
             return False
     return True
+
+
+def _attestation_matches_reference(
+    attestation: EvidenceAttestation,
+    reference: EvidenceRef,
+) -> bool:
+    """Require the attested content identity to match its stored reference."""
+
+    return (
+        attestation.evidence_kind == reference.evidence_kind
+        and attestation.evidence_sha256 == reference.sha256
+    )
+
+
+def _attestation_matches_context(
+    attestation: EvidenceAttestation,
+    context: EvidenceVerificationContext,
+) -> bool:
+    """Require provenance to remain bound to the exact goal criterion scope."""
+
+    return (
+        attestation.project_id == context.project_id
+        and attestation.goal_id == context.goal_id
+        and attestation.criterion_id == context.criterion_id
+    )
+
+
+def _attestations_share_source(
+    current: EvidenceAttestation,
+    original: EvidenceAttestation,
+) -> bool:
+    """Require source revision, adapter, and authenticated subject to be stable."""
+
+    return (
+        current.source_revision == original.source_revision
+        and current.adapter_id == original.adapter_id
+        and current.authenticated_subject == original.authenticated_subject
+    )

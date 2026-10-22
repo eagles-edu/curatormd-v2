@@ -12,8 +12,8 @@ with `CuratorStore` runs the legacy table/column creation, column additions,
 criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
-v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, and v19 migrations
-below before the store is exposed.
+v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, and v21
+migrations below before the store is exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
 closes its SQLite connection before propagating the error. On the next open, the
@@ -283,5 +283,9 @@ and expiry eligibility cannot authorize deletion. Retry selection requires a
 cleanup authorization whose canonical projection proof is durable. The
 v20-to-v21 migration creates the table without inventing authorizations for
 existing SDE receipts; those receipts therefore remain pending until explicitly
-reviewed under the new workflow. This local migration does not approve
+reviewed under the new workflow. A focused v20-to-v21 fixture preserves a
+legacy receipt and verifies that migration creates no cleanup authorization for
+it. A conflicting pre-existing object with the same name but an incompatible
+columns, defaults, nullability, primary key, or receipt foreign key now fails
+closed without advancing the schema version. These local tests do not approve
 production database upgrade/rollback.

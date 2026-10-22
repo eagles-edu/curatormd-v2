@@ -433,13 +433,20 @@ class MarkdownPersistenceTests(unittest.TestCase):
         )
         self.assertIsNotNone(candidate)
         assert candidate is not None
-        artifact_path = self.root / ".curatormd-v2" / "staging" / "scratch.json"
+        artifact_path = (
+            self.root
+            / ".curatormd-v2"
+            / "staging"
+            / self.goal.goal_id
+            / "scratch.json"
+        )
+        artifact_path.parent.mkdir(parents=True)
         artifact_path.write_text("temporary test artifact")
         artifact = ArtifactRef(
             str(artifact_path),
             hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
         )
-        receipt = self.plugin.service.sde_confirm(
+        receipt = self.plugin.sde_confirm(
             candidate.candidate_id,
             ReviewDecision.APPROVED,
             (artifact,),

@@ -11,10 +11,8 @@ import json
 import os
 from pathlib import Path
 import re
-import secrets
-import sqlite3
 import stat
-from typing import BinaryIO, Generator
+from typing import BinaryIO, Generator, Mapping
 
 from .evidence import EvidenceVerifier
 from .events import (
@@ -56,12 +54,19 @@ from .models import (
     SDEQualityFeedbackLabel,
     SDEQualityFeedbackSummary,
     SDEReviewDetail,
-    StagingArtifactClass,
     StagingArtifactInventory,
     StagingExpirySnapshot,
-    StagingClassUsage,
-    StagingUsage,
     SuccessCriterion,
+)
+from .staging_models import (
+    MAX_STAGING_SCAN_ENTRIES,
+    StagingUsage,
+)
+from .staging_scan import StagingTreeScanner
+from .staging_write import (
+    StagingArtifactWriteRequest,
+    StagingWriteLimits,
+    write_staged_artifact,
 )
 from .project_config import ProjectConfig, ProjectConfigError
 from .purge import ArtifactPurger, PurgeError
@@ -69,7 +74,6 @@ from .reviews import ReviewAuthorizer
 from .service import CuratorService, PurgeTargetStatus
 from .store import ConflictError, CuratorStore, NotFoundError
 
-MAX_STAGING_SCAN_ENTRIES = 10_000
 MAX_STAGING_HASH_BYTES = 8 * 1024**3
 MAX_STAGED_ARTIFACT_BYTES = 64 * 1024**2
 MAX_GOAL_STAGING_BYTES = 256 * 1024**2
@@ -86,6 +90,98 @@ def _aware_utc_now(value: datetime | None = None) -> datetime:
     if observed.tzinfo is None or observed.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
     return observed.astimezone(UTC)
+
+
+def _staged_artifact_goal_times(
+    config: ProjectConfig,
+    artifacts: tuple[ArtifactRef, ...],
+    timestamps: Mapping[str, str],
+) -> dict[str, tuple[str, str]]:
+    """Select exact staged files that can be joined to goal review evidence."""
+
+    staging_root = config.validated_staging_root()
+    result: dict[str, tuple[str, str]] = {}
+    for artifact in artifacts:
+        staged_at = timestamps.get(artifact.path)
+        try:
+            path_parts = Path(artifact.path).relative_to(staging_root).parts
+        except ValueError:
+            path_parts = ()
+        if (
+            staged_at is not None
+            and len(path_parts) == 3
+            and _STAGING_SCOPE_ID_RE.fullmatch(path_parts[0])
+        ):
+            result[artifact.path] = (path_parts[0], staged_at)
+    return result
+
+
+def _select_expiry_eligible_artifacts(
+    artifacts: tuple[ArtifactRef, ...],
+    timestamps: Mapping[str, str],
+    readiness: Mapping[str, tuple[bool, bool, int]],
+    cutoff: datetime,
+) -> tuple[tuple[ArtifactRef, ...], int, int]:
+    """Apply exact-age and post-stage record rules without mutating storage."""
+
+    eligible: list[ArtifactRef] = []
+    unknown_age_count = 0
+    pending_sde_artifact_count = 0
+    for artifact in artifacts:
+        expiry_state = _artifact_expiry_state(
+            artifact.path, timestamps, readiness, cutoff
+        )
+        if expiry_state is None:
+            unknown_age_count += 1
+            continue
+        age_eligible, review_ready, pending_sde_count = expiry_state
+        if pending_sde_count:
+            if age_eligible or review_ready:
+                pending_sde_artifact_count += 1
+            # Pending review delays prompt post-record expiry, but it must not
+            # extend transient-source retention beyond the approved 72 hours.
+            if not age_eligible:
+                continue
+        if age_eligible or review_ready:
+            eligible.append(artifact)
+    return tuple(eligible), unknown_age_count, pending_sde_artifact_count
+
+
+def _artifact_expiry_state(
+    path: str,
+    timestamps: Mapping[str, str],
+    readiness: Mapping[str, tuple[bool, bool, int]],
+    cutoff: datetime,
+) -> tuple[bool, bool, int] | None:
+    """Return age, post-stage readiness, and pending-SDE state for one file."""
+
+    staged_at = timestamps.get(path)
+    state = readiness.get(path)
+    if staged_at is None or state is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(staged_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    fact_after_stage, review_after_stage, pending_sde_count = state
+    return (
+        parsed.astimezone(UTC) <= cutoff,
+        fact_after_stage or review_after_stage,
+        pending_sde_count,
+    )
+
+
+def _expiry_manifest_sha256(artifacts: tuple[ArtifactRef, ...]) -> str:
+    """Hash the exact eligible path/digest pairs in canonical order."""
+
+    manifest = json.dumps(
+        [(item.path, item.sha256) for item in artifacts],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(manifest.encode("utf-8")).hexdigest()
 
 
 class ProjectPlugin:
@@ -562,62 +658,41 @@ class ProjectPlugin:
         timestamps = self.service.store.staging_artifact_times(
             self.config.project_id, inventory.artifacts
         )
-        artifact_goal_times: dict[str, tuple[str, str]] = {}
-        staging_root = self.config.validated_staging_root()
-        for artifact in inventory.artifacts:
-            staged_at = timestamps.get(artifact.path)
-            try:
-                path_parts = Path(artifact.path).relative_to(staging_root).parts
-            except ValueError:
-                path_parts = ()
-            if (
-                staged_at is not None
-                and len(path_parts) == 3
-                and _STAGING_SCOPE_ID_RE.fullmatch(path_parts[0])
-            ):
-                artifact_goal_times[artifact.path] = (path_parts[0], staged_at)
+        artifact_goal_times = _staged_artifact_goal_times(
+            self.config, inventory.artifacts, timestamps
+        )
         readiness = self.service.store.staging_artifact_expiry_readiness(
             self.config.project_id, artifact_goal_times
         )
-        expired: list[ArtifactRef] = []
-        unknown_age_count = 0
-        pending_sde_artifact_count = 0
-        for artifact in inventory.artifacts:
-            staged_at = timestamps.get(artifact.path)
-            if staged_at is None:
-                unknown_age_count += 1
-                continue
-            try:
-                parsed = datetime.fromisoformat(staged_at.replace("Z", "+00:00"))
-            except ValueError:
-                unknown_age_count += 1
-                continue
-            if parsed.tzinfo is None or parsed.utcoffset() is None:
-                unknown_age_count += 1
-                continue
-            state = readiness.get(artifact.path)
-            if state is None:
-                unknown_age_count += 1
-                continue
-            fact_after_stage, review_after_stage, pending_sde_count = state
-            age_eligible = parsed.astimezone(UTC) <= cutoff
-            review_ready = fact_after_stage or review_after_stage
-            if pending_sde_count:
-                if age_eligible or review_ready:
-                    pending_sde_artifact_count += 1
-                # Pending review delays prompt post-record expiry, but it must
-                # not extend transient-source retention beyond the approved
-                # 72-hour ceiling. Explicit legal/operational holds are still
-                # applied below and require their own audited release.
-                if not age_eligible:
-                    continue
-            if age_eligible or review_ready:
-                expired.append(artifact)
+        expired, unknown_age_count, pending_sde_artifact_count = (
+            _select_expiry_eligible_artifacts(
+                inventory.artifacts, timestamps, readiness, cutoff
+            )
+        )
         complete = inventory.usage.inventory_complete and unknown_age_count == 0
         if not complete:
-            expired.clear()
+            expired = ()
+        eligible, held = self._partition_expiry_holds(expired)
+        manifest_sha256 = (
+            _expiry_manifest_sha256(eligible) if complete else None
+        )
+        return StagingExpirySnapshot(
+            eligible,
+            held,
+            complete,
+            unknown_age_count,
+            cutoff.isoformat(timespec="microseconds"),
+            manifest_sha256,
+            pending_sde_artifact_count,
+        )
+
+    def _partition_expiry_holds(
+        self, expired: tuple[ArtifactRef, ...]
+    ) -> tuple[tuple[ArtifactRef, ...], tuple[ArtifactRef, ...]]:
+        """Separate held targets from purge-eligible targets in path order."""
+
         active_holds = self.service.store.active_staging_artifact_holds(
-            self.config.project_id, tuple(expired)
+            self.config.project_id, expired
         )
         held = tuple(
             ArtifactRef(item.path, item.sha256, active_holds[item.path])
@@ -629,23 +704,7 @@ class ProjectPlugin:
             for item in sorted(expired, key=lambda item: item.path)
             if item.path not in active_holds
         )
-        manifest_sha256 = None
-        if complete:
-            manifest = json.dumps(
-                [(item.path, item.sha256) for item in eligible],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-            manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
-        return StagingExpirySnapshot(
-            eligible,
-            held,
-            complete,
-            unknown_age_count,
-            cutoff.isoformat(timespec="microseconds"),
-            manifest_sha256,
-            pending_sde_artifact_count,
-        )
+        return eligible, held
 
     def approve_expired_staging_inventory(
         self,
@@ -807,24 +866,55 @@ class ProjectPlugin:
     ) -> ArtifactRef:
         """Publish a producer artifact while the project staging lock is held."""
 
+        existing_bytes, project_usage = self._staging_budget_snapshot(
+            root_fd, goal_id
+        )
+        return write_staged_artifact(
+            self.config,
+            self.service.store.record_staging_artifact_time,
+            StagingArtifactWriteRequest(
+                root_fd,
+                goal_id,
+                artifact_class,
+                artifact_id,
+                source,
+                existing_bytes,
+                project_usage,
+            ),
+            StagingWriteLimits(
+                MAX_STAGED_ARTIFACT_BYTES,
+                MAX_GOAL_STAGING_BYTES,
+                self.config.staging_max_project_bytes,
+            ),
+        )
+
+    def _staging_budget_snapshot(
+        self, root_fd: int, goal_id: str
+    ) -> tuple[int, StagingUsage | None]:
+        """Verify goal and optional project budgets before starting a write."""
+
         inventory = self._scan_staging_tree(
             discover_artifacts=True,
             scope_goal_id=goal_id,
             staging_root_fd=root_fd,
         )
         if not inventory.usage.inventory_complete:
-            raise ConflictError("cannot stage into an incompletely inventoried goal scope")
+            raise ConflictError(
+                "cannot stage into an incompletely inventoried goal scope"
+            )
         if self.service.store.pending_receipts_for_goal(
             goal_id, self.config.project_id
         ):
             raise ConflictError("cannot stage while this goal has a pending purge receipt")
         if len(inventory.artifacts) >= MAX_GOAL_STAGING_FILES:
             raise ConflictError("goal staging file-count ceiling reached")
-        existing_bytes = sum(self._artifact_size(item.path) for item in inventory.artifacts)
+        existing_bytes = sum(
+            self._artifact_size(item.path) for item in inventory.artifacts
+        )
         if existing_bytes >= MAX_GOAL_STAGING_BYTES:
             raise ConflictError("goal staging byte ceiling reached")
 
-        project_inventory = None
+        project_usage = None
         if (
             self.config.staging_max_project_bytes is not None
             or self.config.staging_max_project_files is not None
@@ -848,101 +938,8 @@ class ProjectPlugin:
                 >= self.config.staging_max_project_bytes
             ):
                 raise ConflictError("project staging byte budget reached")
-
-        no_follow = getattr(os, "O_NOFOLLOW", None)
-        directory_flag = getattr(os, "O_DIRECTORY", None)
-        if no_follow is None or directory_flag is None:
-            raise ProjectConfigError("platform lacks safe staging write primitives")
-
-        goal_fd = class_fd = temp_fd = -1
-        temp_name = f".curator-v2-{secrets.token_hex(16)}.partial"
-        final_name = f"{artifact_id}.bin"
-        try:
-            try:
-                os.mkdir(goal_id, mode=0o700, dir_fd=root_fd)
-            except FileExistsError:
-                pass
-            goal_fd = os.open(
-                goal_id, os.O_RDONLY | directory_flag | no_follow, dir_fd=root_fd
-            )
-            try:
-                os.mkdir(artifact_class, mode=0o700, dir_fd=goal_fd)
-            except FileExistsError:
-                pass
-            class_fd = os.open(
-                artifact_class,
-                os.O_RDONLY | directory_flag | no_follow,
-                dir_fd=goal_fd,
-            )
-            temp_fd = os.open(
-                temp_name,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow,
-                0o600,
-                dir_fd=class_fd,
-            )
-            digest = hashlib.sha256()
-            total = 0
-            with os.fdopen(temp_fd, "wb") as target:
-                temp_fd = -1
-                while True:
-                    chunk = source.read(64 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > MAX_STAGED_ARTIFACT_BYTES:
-                        raise ConflictError("artifact exceeds the per-file byte ceiling")
-                    if existing_bytes + total > MAX_GOAL_STAGING_BYTES:
-                        raise ConflictError("goal staging byte ceiling reached")
-                    if (
-                        project_inventory is not None
-                        and self.config.staging_max_project_bytes is not None
-                        and project_inventory.usage.observed_file_bytes + total
-                        > self.config.staging_max_project_bytes
-                    ):
-                        raise ConflictError("project staging byte budget reached")
-                    target.write(chunk)
-                    digest.update(chunk)
-                target.flush()
-                os.fsync(target.fileno())
-            # link() is no-clobber: a producer retry cannot overwrite evidence.
-            os.link(
-                temp_name,
-                final_name,
-                src_dir_fd=class_fd,
-                dst_dir_fd=class_fd,
-                follow_symlinks=False,
-            )
-            os.unlink(temp_name, dir_fd=class_fd)
-            os.fsync(class_fd)
-            artifact = ArtifactRef(
-                str(
-                    self.config.staging_root
-                    / goal_id
-                    / artifact_class
-                    / final_name
-                ),
-                digest.hexdigest(),
-            )
-            try:
-                self.service.store.record_staging_artifact_time(
-                    self.config.project_id, artifact
-                )
-            except (sqlite3.Error, ConflictError, ValueError):
-                os.unlink(final_name, dir_fd=class_fd)
-                os.fsync(class_fd)
-                raise
-            return artifact
-        finally:
-            if temp_fd >= 0:
-                os.close(temp_fd)
-            if class_fd >= 0:
-                try:
-                    os.unlink(temp_name, dir_fd=class_fd)
-                except FileNotFoundError:
-                    pass
-                os.close(class_fd)
-            if goal_fd >= 0:
-                os.close(goal_fd)
+            project_usage = project_inventory.usage
+        return existing_bytes, project_usage
 
     @staticmethod
     def _artifact_size(path: str) -> int:
@@ -995,229 +992,20 @@ class ProjectPlugin:
     ) -> StagingArtifactInventory:
         """Traverse staging with no-follow descriptors and bounded work."""
 
-        no_follow = getattr(os, "O_NOFOLLOW", None)
-        directory_flag = getattr(os, "O_DIRECTORY", None)
-        if no_follow is None or directory_flag is None:
-            return self._incomplete_inventory("unsupported_platform", scope_goal_id)
-        try:
-            root = self.config.validated_staging_root()
-        except ProjectConfigError:
-            return self._incomplete_inventory("root_invalid", scope_goal_id)
-        try:
-            root_fd = (
-                os.dup(staging_root_fd)
-                if staging_root_fd is not None
-                else os.open(root, os.O_RDONLY | directory_flag | no_follow)
+        scanner = StagingTreeScanner(
+            self.config,
+            self._hash_staged_file,
+            max_entries=MAX_STAGING_SCAN_ENTRIES,
+            max_hash_bytes=MAX_STAGING_HASH_BYTES,
+        )
+        if discover_artifacts:
+            return scanner.discover(
+                scope_goal_id=scope_goal_id,
+                staging_root_fd=staging_root_fd,
             )
-        except PermissionError:
-            return self._incomplete_inventory("permission_denied", scope_goal_id)
-        except OSError:
-            return self._incomplete_inventory("root_unavailable", scope_goal_id)
-
-        if scope_goal_id is not None:
-            if not _STAGING_SCOPE_ID_RE.fullmatch(scope_goal_id):
-                os.close(root_fd)
-                return self._incomplete_inventory("scope_invalid", scope_goal_id)
-            try:
-                goal_fd = os.open(
-                    scope_goal_id,
-                    os.O_RDONLY | directory_flag | no_follow,
-                    dir_fd=root_fd,
-                )
-            except FileNotFoundError:
-                os.close(root_fd)
-                return self._empty_goal_inventory(scope_goal_id)
-            except PermissionError:
-                os.close(root_fd)
-                return self._incomplete_inventory("permission_denied", scope_goal_id)
-            except OSError:
-                os.close(root_fd)
-                return self._incomplete_inventory("scope_unavailable", scope_goal_id)
-            os.close(root_fd)
-            root_fd = -1
-            initial_directory_fd = goal_fd
-            initial_relative_parts = (scope_goal_id,)
-        else:
-            initial_directory_fd = root_fd
-            initial_relative_parts = ()
-
-        entries_scanned = 0
-        regular_file_count = 0
-        observed_file_bytes = 0
-        directory_count = 0
-        symlink_count = 0
-        special_file_count = 0
-        class_totals: dict[StagingArtifactClass, list[int]] = {}
-        complete = True
-        error_code: str | None = None
-        artifacts: list[ArtifactRef] = []
-        hashed_bytes = 0
-        hashing_enabled = discover_artifacts
-        pending_directories: list[tuple[int, tuple[str, ...]]] = [
-            (initial_directory_fd, initial_relative_parts)
-        ]
-        try:
-            while pending_directories:
-                directory_fd, relative_parts = pending_directories.pop()
-                try:
-                    with os.scandir(os.dup(directory_fd)) as entries:
-                        for entry in entries:
-                            if entries_scanned >= MAX_STAGING_SCAN_ENTRIES:
-                                complete = False
-                                error_code = error_code or "entry_limit"
-                                break
-                            entries_scanned += 1
-                            try:
-                                metadata = os.stat(
-                                    entry.name,
-                                    dir_fd=directory_fd,
-                                    follow_symlinks=False,
-                                )
-                            except OSError as exc:
-                                complete = False
-                                if error_code is None:
-                                    error_code = (
-                                        "permission_denied"
-                                        if isinstance(exc, PermissionError)
-                                        else "scan_error"
-                                    )
-                                continue
-                            if stat.S_ISREG(metadata.st_mode):
-                                regular_file_count += 1
-                                observed_file_bytes += metadata.st_size
-                                class_name = (
-                                    relative_parts[1]
-                                    if len(relative_parts) > 1
-                                    else StagingArtifactClass.OTHER.value
-                                )
-                                try:
-                                    artifact_class = StagingArtifactClass(class_name)
-                                except ValueError:
-                                    artifact_class = StagingArtifactClass.OTHER
-                                totals = class_totals.setdefault(artifact_class, [0, 0])
-                                totals[0] += 1
-                                totals[1] += metadata.st_size
-                                if hashing_enabled:
-                                    if len(artifacts) >= MAX_ARTIFACTS_PER_RECEIPT:
-                                        complete = False
-                                        error_code = error_code or "artifact_limit"
-                                        hashing_enabled = False
-                                    elif (
-                                        hashed_bytes + metadata.st_size
-                                        > MAX_STAGING_HASH_BYTES
-                                    ):
-                                        complete = False
-                                        error_code = error_code or "hash_byte_limit"
-                                        hashing_enabled = False
-                                    else:
-                                        try:
-                                            artifact = self._hash_staged_file(
-                                                directory_fd,
-                                                entry.name,
-                                                metadata,
-                                                root.joinpath(*relative_parts, entry.name),
-                                            )
-                                        except (OSError, ValueError):
-                                            complete = False
-                                            error_code = error_code or "changed_during_scan"
-                                            hashing_enabled = False
-                                        else:
-                                            artifacts.append(artifact)
-                                            hashed_bytes += metadata.st_size
-                            elif stat.S_ISDIR(metadata.st_mode):
-                                directory_count += 1
-                                try:
-                                    child_fd = os.open(
-                                        entry.name,
-                                        os.O_RDONLY | directory_flag | no_follow,
-                                        dir_fd=directory_fd,
-                                    )
-                                except OSError as exc:
-                                    complete = False
-                                    if error_code is None:
-                                        error_code = (
-                                            "permission_denied"
-                                            if isinstance(exc, PermissionError)
-                                            else "scan_error"
-                                        )
-                                else:
-                                    pending_directories.append(
-                                        (child_fd, relative_parts + (entry.name,))
-                                    )
-                            elif stat.S_ISLNK(metadata.st_mode):
-                                symlink_count += 1
-                                complete = False
-                                error_code = error_code or "symlink_skipped"
-                            else:
-                                special_file_count += 1
-                                complete = False
-                                error_code = error_code or "special_file_skipped"
-                        if not complete and error_code == "entry_limit":
-                            break
-                except OSError as exc:
-                    complete = False
-                    if error_code is None:
-                        error_code = (
-                            "permission_denied"
-                            if isinstance(exc, PermissionError)
-                            else "scan_error"
-                        )
-                finally:
-                    os.close(directory_fd)
-                if error_code == "entry_limit":
-                    break
-        finally:
-            for directory_fd, _relative_parts in pending_directories:
-                os.close(directory_fd)
-
-        usage = StagingUsage(
-            entries_scanned=entries_scanned,
-            regular_file_count=regular_file_count,
-            observed_file_bytes=observed_file_bytes,
-            directory_count=directory_count,
-            symlink_count=symlink_count,
-            special_file_count=special_file_count,
-            inventory_complete=complete,
-            error_code=error_code,
-            classes=tuple(
-                StagingClassUsage(artifact_class, totals[0], totals[1])
-                for artifact_class, totals in sorted(
-                    class_totals.items(), key=lambda item: item[0].value
-                )
-            ),
-        )
-        sorted_artifacts = tuple(sorted(artifacts, key=lambda item: item.path))
-        manifest_sha256 = None
-        if complete:
-            canonical_manifest = json.dumps(
-                [(item.path, item.sha256) for item in sorted_artifacts],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-            manifest_sha256 = hashlib.sha256(
-                canonical_manifest.encode("utf-8")
-            ).hexdigest()
-        return StagingArtifactInventory(
-            sorted_artifacts, usage, manifest_sha256, scope_goal_id
-        )
-
-    @staticmethod
-    def _incomplete_inventory(
-        error_code: str, scope_goal_id: str | None = None
-    ) -> StagingArtifactInventory:
-        return StagingArtifactInventory(
-            (), StagingUsage(0, 0, 0, 0, 0, 0, False, error_code), None,
-            scope_goal_id,
-        )
-
-    @staticmethod
-    def _empty_goal_inventory(goal_id: str) -> StagingArtifactInventory:
-        """Represent a missing per-goal directory as a complete empty manifest."""
-
-        manifest_sha256 = hashlib.sha256(b"[]").hexdigest()
-        return StagingArtifactInventory(
-            (), StagingUsage(0, 0, 0, 0, 0, 0, True, None),
-            manifest_sha256, goal_id,
+        return scanner.measure(
+            scope_goal_id=scope_goal_id,
+            staging_root_fd=staging_root_fd,
         )
 
     @staticmethod
@@ -1409,7 +1197,7 @@ class ProjectPlugin:
         rationale: str | None = None,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
-        """Record a host-authorized review; cleanup stays behind persistence."""
+        """Record disposition and exact cleanup authorization in one review action."""
 
         with self._locked_staging_root() as root_fd:
             if artifact_inventory_complete:
@@ -1417,7 +1205,7 @@ class ProjectPlugin:
                 self._require_current_artifact_inventory(
                     candidate.goal_id, artifacts, staging_root_fd=root_fd
                 )
-            return self.service.sde_confirm(
+            receipt = self.service.sde_confirm(
                 candidate_id,
                 decision,
                 artifacts,
@@ -1425,6 +1213,16 @@ class ProjectPlugin:
                 rationale=rationale,
                 authenticated_subject=authenticated_subject,
             )
+            if artifact_inventory_complete:
+                self.service.authorize_artifact_cleanup(
+                    receipt.receipt_id,
+                    _artifact_manifest_sha256(artifacts),
+                    authenticated_subject=authenticated_subject,
+                )
+                receipt = self.service.store.get_receipt(
+                    receipt.receipt_id, self.config.project_id
+                )
+            return receipt
 
     def artifact_inventory_complete(
         self,
@@ -1458,7 +1256,7 @@ class ProjectPlugin:
         *,
         authenticated_subject: str | None = None,
     ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
-        """Recheck the displayed manifest and record a separate cleanup decision."""
+        """Recheck a displayed manifest and record compatibility cleanup approval."""
 
         with self._locked_staging_root() as root_fd:
             receipt = self.service.store.get_receipt(

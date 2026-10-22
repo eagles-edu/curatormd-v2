@@ -21,8 +21,11 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("email_address", re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+")),
     ("us_ssn", re.compile(r"(?<!\d)(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?!\d)")),
     ("provider_token", re.compile(
-        r"\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
-        r"AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{16,}|AIza[A-Za-z0-9_-]{30,})\b"
+        r"\b(?:(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|"
+        r"sk-[A-Za-z0-9_-]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+        r"ghs_[A-Za-z0-9_.-]{20,}|gh[pour]_[A-Za-z0-9]{20,}|"
+        r"AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{16,}|AIza[A-Za-z0-9_-]{30,}|"
+        r"glpat-[A-Za-z0-9_-]{20})\b"
     )),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     ("labeled_phone", re.compile(

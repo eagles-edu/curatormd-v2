@@ -5,7 +5,10 @@ claim. Statuses describe the strongest evidence currently present in this
 checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
-Current source snapshot (2026-10-21): Curator commit `3a4314b` is pushed to
+Current delivery checklist snapshot (2026-10-22): 135/175 complete, 40 open,
+using the counting rule in [`curator-v2-plan.md`](curator-v2-plan.md).
+
+Historical source snapshot (2026-10-21): Curator commit `3a4314b` is pushed to
 `main`; GitHub Actions run
 [39638397374](https://github.com/eagles-edu/curatormd-v2/actions/runs/39638397374)
 passes the Python 3.12/3.13/3.14 matrix, strict typing, blocking Pylint,
@@ -16,12 +19,40 @@ templates are excluded. The isolated `renew-ssl-coding` V2 database was read
 with SQLite read-only mode: schema 18, `quick_check=ok`, one active registered
 project, one active goal, two facts, 12 processed event receipts, zero retained
 event payload JSON bytes, and no SDE or purge rows. This is local persistence
-evidence, not an authenticated goal-list call or health probe. The last
-authenticated goal-list attempt returned
-`unauthenticated: Trusted Hermes profile context is required`; live tracker
-persistence remains unverified. Authenticated identity, owner retention
-policy, production scheduling/recovery, and live application workflow gates
-remain open.
+evidence, not a health probe. The current Hermes Core checkout's
+`hermes mcp test curator_v2 --probe-curator-status` connected through the
+configured local stdio server using host-injected profile/session context,
+discovered 48 tools, and returned the project activity counts. The alpha
+database is schema 21 with `quick_check=ok`, one goal, two facts, 12 inbox
+receipts, and no SDE candidates. The attended alpha reviewer has exact
+`local-uid:1000` project `read` and `review` grants; the installed reviewer
+queue command succeeds and returns no pending candidates. This verifies the
+selected local `eaglesvn` UID path only. The direct Codex `goal_list` call
+without Hermes context still returns
+`unauthenticated: Trusted Hermes profile context is required`; a Hermes `goal_list`
+result, Hermes-authenticated identity, live health, and application-workflow
+persistence remain unverified. Owner retention policy, production
+scheduling/recovery, and live application workflow gates remain open.
+
+The current source wheel (SHA-256
+`e268f1eddce61c44b1f132f93c6afad842a5ddd39e9e791cabd7091c25fdc2d0`) is
+installed in the isolated `renew-ssl-coding` alpha environment. All 38 Python
+module hashes match the Curator V2 source tree, and all seven disposable Vhost
+consumer contracts pass against it using the current typed
+project-registration request. This is installed-package and consumer-contract
+evidence only; no Vhost application request or canonical application-target
+write was exercised.
+
+The system-installed Hermes CLI connects to the alpha server and discovers
+48 tools. `Auth: none` indicates there are no conventional MCP credentials;
+that display does not show Hermes' separate host-context path. The configured
+`renew-ssl-coding` profile opts into `hermes_context`, and the installed
+managed-MCP call path attaches host-derived profile and session metadata to
+tool requests. The focused Hermes trust-gating tests pass (2 tests), and the
+checkout CLI status probe reads V2 activity through the same configured
+profile. `mcp test` itself only connected and discovered tools; it did not
+exercise a protected tool call. An actual gateway tool call, live Vhost event
+delivery, and Hermes-authenticated person identity remain open.
 
 Hermes Core source head `9b8fc71e30` is clean; the focused lifecycle-hook,
 profile-usage, and Codex-app-server integration files pass 61 tests, and

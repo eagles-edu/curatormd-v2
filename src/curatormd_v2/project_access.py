@@ -8,14 +8,17 @@ administrator and provide its policy before constructing
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
 from .api import AuthenticatedCaller, ProjectAction
+from .project_config import ProjectConfig
 from .store import (
     CuratorStore,
     ProjectGrantRecord,
     ProjectRegistrationRecord,
+    ProjectRegistrationRequest,
     ProjectRegistryAuditRecord,
     NotFoundError,
 )
@@ -65,6 +68,33 @@ class ProjectAdministrationAuthorizer(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class ProjectAuthorizationBinding:
+    """Immutable config fingerprints and action scopes for one profile."""
+
+    project_id: str
+    repository_fingerprint: str
+    config_sha256: str
+    backend_api_version: int
+    allowed_actions: frozenset[ProjectAction]
+
+    @classmethod
+    def from_project_config(
+        cls,
+        config: ProjectConfig,
+        allowed_actions: frozenset[ProjectAction],
+    ) -> ProjectAuthorizationBinding:
+        """Bind grants to the exact values from a validated project config."""
+
+        return cls(
+            project_id=config.project_id,
+            repository_fingerprint=config.repository_fingerprint,
+            config_sha256=config.config_sha256,
+            backend_api_version=config.backend_api_version,
+            allowed_actions=allowed_actions,
+        )
+
+
 class SQLiteProjectGrantAuthorizer:
     """Resolve exact grants from SQLite and fail closed for suspended projects."""
 
@@ -96,21 +126,10 @@ class FingerprintBoundSQLiteProjectGrantAuthorizer:
     """
 
     def __init__(
-        self,
-        store: CuratorStore,
-        *,
-        project_id: str,
-        repository_fingerprint: str,
-        config_sha256: str,
-        backend_api_version: int,
-        allowed_actions: frozenset[ProjectAction],
+        self, store: CuratorStore, binding: ProjectAuthorizationBinding
     ) -> None:
         self._store = store
-        self._project_id = project_id
-        self._repository_fingerprint = repository_fingerprint
-        self._config_sha256 = config_sha256
-        self._backend_api_version = backend_api_version
-        self._allowed_actions = allowed_actions
+        self._binding = binding
 
     def authorize(
         self,
@@ -121,9 +140,9 @@ class FingerprintBoundSQLiteProjectGrantAuthorizer:
         """Allow only an exact grant for the active, fingerprint-matched repo."""
 
         if (
-            project_id != self._project_id
+            project_id != self._binding.project_id
             or not _is_project_action(action)
-            or action not in self._allowed_actions
+            or action not in self._binding.allowed_actions
         ):
             return False
         try:
@@ -132,9 +151,11 @@ class FingerprintBoundSQLiteProjectGrantAuthorizer:
             return False
         if (
             registration.status != "active"
-            or registration.repository_fingerprint != self._repository_fingerprint
-            or registration.config_sha256 != self._config_sha256
-            or registration.backend_api_version != self._backend_api_version
+            or registration.repository_fingerprint
+            != self._binding.repository_fingerprint
+            or registration.config_sha256 != self._binding.config_sha256
+            or registration.backend_api_version
+            != self._binding.backend_api_version
         ):
             return False
         return self._store.has_project_grant(
@@ -172,44 +193,26 @@ class ProjectAccessManager:
     def register_project(
         self,
         caller: AuthenticatedCaller,
-        project_id: str,
-        repository_fingerprint: str,
-        config_sha256: str,
-        backend_api_version: int,
-        rationale: str,
+        request: ProjectRegistrationRequest,
     ) -> ProjectRegistrationRecord:
         """Register one project after host authorization of its identity."""
 
-        self._require_admin(caller, project_id, ProjectAdministrationAction.REGISTER)
-        return self._store.register_project(
-            project_id,
-            repository_fingerprint,
-            config_sha256,
-            backend_api_version,
-            caller.subject_id,
-            rationale,
+        self._require_admin(
+            caller, request.project_id, ProjectAdministrationAction.REGISTER
         )
+        return self._store.register_project(request, caller.subject_id)
 
     def update_project_registration(
         self,
         caller: AuthenticatedCaller,
-        project_id: str,
-        repository_fingerprint: str,
-        config_sha256: str,
-        backend_api_version: int,
-        rationale: str,
+        request: ProjectRegistrationRequest,
     ) -> ProjectRegistrationRecord:
         """Update the host-verified fingerprint after an explicit admin check."""
 
-        self._require_admin(caller, project_id, ProjectAdministrationAction.UPDATE)
-        return self._store.update_project_registration(
-            project_id,
-            repository_fingerprint,
-            config_sha256,
-            backend_api_version,
-            caller.subject_id,
-            rationale,
+        self._require_admin(
+            caller, request.project_id, ProjectAdministrationAction.UPDATE
         )
+        return self._store.update_project_registration(request, caller.subject_id)
 
     def set_project_status(
         self,

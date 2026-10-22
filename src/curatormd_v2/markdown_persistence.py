@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 import hashlib
 from html import escape
@@ -13,6 +14,7 @@ import stat
 import tempfile
 
 from .evidence import (
+    EvidenceVerificationContext,
     EvidenceVerifier,
     RejectUnverifiedEvidence,
     evidence_has_current_attestations,
@@ -487,9 +489,12 @@ class MarkdownPersistenceAdapter:
                 and fact.verification_attestations
                 and evidence_has_current_attestations(
                     self.evidence_verifier,
-                    project_id=self.project_id,
-                    goal_id=goal.goal_id,
-                    criterion_id=criterion.criterion_id,
+                    EvidenceVerificationContext(
+                        project_id=self.project_id,
+                        goal_id=goal.goal_id,
+                        criterion_id=criterion.criterion_id,
+                        now=datetime.now(UTC),
+                    ),
                     evidence=fact.evidence,
                     stored=fact.verification_attestations,
                 )
@@ -749,7 +754,7 @@ def _render_receipts(
             + (
                 "approved"
                 if receipt.cleanup_authorized
-                else "awaiting separate human approval"
+                else "awaiting a complete review inventory"
                 if receipt.artifacts
                 else "not required for empty inventory"
             )
@@ -769,7 +774,7 @@ def _render_receipts(
             )
         if receipt.cleanup_authorized:
             lines.append(
-                "    - Separate cleanup approval: reviewer `"
+                "    - Cleanup authorization from review action: reviewer `"
                 + _markdown_text(receipt.cleanup_reviewer_id or "")
                 + "`; manifest SHA-256 `"
                 + _markdown_text(receipt.cleanup_manifest_sha256 or "")

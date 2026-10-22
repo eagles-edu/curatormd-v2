@@ -21,7 +21,7 @@ from .project_access import (
     ProjectAdministrationAction,
 )
 from .project_config import ProjectConfig
-from .store import CuratorStore
+from .store import CuratorStore, ProjectRegistrationRequest
 
 _OPERATION_ACTIONS = {
     "register": ProjectAdministrationAction.REGISTER,
@@ -149,21 +149,13 @@ def _perform(
     if operation == "register":
         record = manager.register_project(
             caller,
-            config.project_id,
-            config.repository_fingerprint,
-            config.config_sha256,
-            config.backend_api_version,
-            rationale,
+            ProjectRegistrationRequest.from_project_config(config, rationale),
         )
         return {"operation": operation, "registration": asdict(record)}
     if operation == "update":
         record = manager.update_project_registration(
             caller,
-            config.project_id,
-            config.repository_fingerprint,
-            config.config_sha256,
-            config.backend_api_version,
-            rationale,
+            ProjectRegistrationRequest.from_project_config(config, rationale),
         )
         return {"operation": operation, "registration": asdict(record)}
     if operation in {"suspend", "reactivate"}:

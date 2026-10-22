@@ -25,6 +25,15 @@ class ContentSafetyTests(unittest.TestCase):
             ("evidence.locator", "https://user:pass@example.invalid/path", "credential_url"),
             ("fact.bullet", "-----BEGIN RSA PRIVATE KEY-----", "private_key"),
             ("fact.bullet", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", "provider_token"),
+            ("fact.bullet", "github_pat_abcdefghijklmnopqrstuvwxyz123456", "provider_token"),
+            (
+                "fact.bullet",
+                "ghs_1234567890_" + "A" * 480 + ".eyJhbGciOiJIUzI1NiJ9.signature",
+                "provider_token",
+            ),
+            ("fact.bullet", "glpat-abcdefghijklmnopqrst", "provider_token"),
+            ("fact.bullet", "sk" + "_live_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", "provider_token"),
+            ("fact.bullet", "rk" + "_test_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", "provider_token"),
             (
                 "fact.bullet",
                 "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signaturevalue12345",

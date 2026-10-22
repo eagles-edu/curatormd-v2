@@ -447,8 +447,45 @@ def migrate_expiry_purge_receipts_v20(connection: sqlite3.Connection) -> None:
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
     """Record separate human cleanup approval for reviewed SDE inventories."""
 
-    connection.execute(
-        """CREATE TABLE IF NOT EXISTS cleanup_authorizations (
+    existing = connection.execute(
+        "SELECT type FROM sqlite_master WHERE name = 'cleanup_authorizations'"
+    ).fetchone()
+    expected_columns = {
+        "receipt_id": ("TEXT", 0, 1, None),
+        "project_id": ("TEXT", 1, 0, None),
+        "reviewer_id": ("TEXT", 1, 0, None),
+        "manifest_sha256": ("TEXT", 1, 0, None),
+        "approved_at": ("TEXT", 1, 0, None),
+        "canonical_persisted": ("INTEGER", 1, 0, "0"),
+        "canonical_target": ("TEXT", 0, 0, None),
+        "canonical_sha256": ("TEXT", 0, 0, None),
+        "canonical_persisted_at": ("TEXT", 0, 0, None),
+    }
+    if existing is not None:
+        if existing[0] != "table":
+            raise RuntimeError("cleanup authorization schema object is incompatible")
+        actual_columns = {
+            row[1]: (
+                str(row[2]).upper(),
+                int(row[3]),
+                int(row[5]),
+                str(row[4]) if row[4] is not None else None,
+            )
+            for row in connection.execute("PRAGMA table_info(cleanup_authorizations)")
+        }
+        actual_foreign_keys = {
+            (row[2], row[3], row[4])
+            for row in connection.execute(
+                "PRAGMA foreign_key_list(cleanup_authorizations)"
+            )
+        }
+        if actual_columns != expected_columns or actual_foreign_keys != {
+            ("audit_receipts", "receipt_id", "receipt_id")
+        }:
+            raise RuntimeError("cleanup authorization table schema is incompatible")
+    else:
+        connection.execute(
+            """CREATE TABLE cleanup_authorizations (
                receipt_id TEXT PRIMARY KEY,
                project_id TEXT NOT NULL,
                reviewer_id TEXT NOT NULL,
@@ -460,7 +497,7 @@ def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
                canonical_persisted_at TEXT,
                FOREIGN KEY(receipt_id) REFERENCES audit_receipts(receipt_id)
            )"""
-    )
+        )
     connection.execute("PRAGMA user_version = 21")
 
 

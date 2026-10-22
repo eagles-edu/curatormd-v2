@@ -121,6 +121,10 @@ The local domain injects an `EvidenceVerifier` and defaults to
 `RejectUnverifiedEvidence`. Typed receipt adapters cover the four evidence
 kinds and enforce exact project/goal/criterion/hash/scope/subject binding,
 fresh revocation checks, expiry, and source-specific age/validity ceilings.
+Host-created `EvidenceAdapterPolicy` values bind project and subject allowlists
+with their freshness limits; the adapter freezes the allowlists and applies its
+source-kind ceiling before accepting a receipt. Event/MCP inputs cannot supply
+or modify this policy.
 Resolver receipts now reject unbounded or unsafe single-line fields, malformed
 SHA-256 values, naive timestamps, and non-boolean revocation flags at object
 construction; adapter tests cover these malformed-input cases. A local

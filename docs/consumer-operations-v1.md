@@ -71,12 +71,11 @@ curatormd-v2-review \
 ```
 
 The command displays selected facts, the complete hashed staging inventory,
-and the canonical Markdown target. The approve/reject action records only SDE
-disposition. After canonical facts and that receipt are written, the command
-displays the exact inventory again and asks for a separate cleanup approval
-bound to its manifest hash. The plugin re-scans before recording approval and
-projects that approval receipt before purge. Held artifacts stay in place;
-incomplete or changed inventories fail closed. Use `--target` only
+and the canonical Markdown target. One approve/reject confirmation binds both
+the SDE disposition and purge authorization to the exact inventory hash shown
+in the packet. The plugin re-scans before recording a distinct cleanup receipt,
+then projects both receipts canonically before purge. Held artifacts stay in
+place; incomplete or changed inventories fail closed. Use `--target` only
 when the consumer config has more than one canonical target. The local UID
 binding does not authenticate Hermes sessions or close production identity,
 retention-policy, scheduling, or deployment gates.

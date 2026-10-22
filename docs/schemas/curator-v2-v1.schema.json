@@ -136,16 +136,26 @@
       "type": "object",
       "required": ["entries_scanned", "regular_file_count", "observed_file_bytes", "directory_count", "symlink_count", "special_file_count", "inventory_complete", "error_code", "classes"],
       "properties": {
-        "entries_scanned": {"type": "integer", "minimum": 0},
+        "entries_scanned": {"type": "integer", "minimum": 0, "maximum": 10000},
         "regular_file_count": {"type": "integer", "minimum": 0},
         "observed_file_bytes": {"type": "integer", "minimum": 0},
         "directory_count": {"type": "integer", "minimum": 0},
         "symlink_count": {"type": "integer", "minimum": 0},
         "special_file_count": {"type": "integer", "minimum": 0},
         "inventory_complete": {"type": "boolean"},
-        "error_code": {"type": ["string", "null"], "maxLength": 128},
+        "error_code": {"type": ["string", "null"], "maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$"},
         "classes": {"type": "array", "maxItems": 7, "items": {"$ref": "#/$defs/stagingClassUsage"}}
       },
+      "allOf": [
+        {
+          "if": {"properties": {"inventory_complete": {"const": true}}},
+          "then": {"properties": {"error_code": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"inventory_complete": {"const": false}}},
+          "then": {"properties": {"error_code": {"type": "string"}}}
+        }
+      ],
       "additionalProperties": false
     },
     "stagingClassUsage": {

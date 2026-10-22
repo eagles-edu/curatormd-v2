@@ -65,7 +65,7 @@ class ReviewAuthorizer(Protocol):
         manifest_sha256: str,
         authenticated_subject: str | None = None,
     ) -> str:
-        """Authorize a separate human decision for one reviewed inventory."""
+        """Authorize cleanup of one exact inventory within the review action."""
         ...
 
 

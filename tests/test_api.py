@@ -1261,13 +1261,13 @@ class ApiFacadeTests(unittest.TestCase):
         api = AuthenticatedCuratorAPI(
             {"project-a": self.plugin}, self.authorizer
         )
-        secret = "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+        secret = "github_pat_abcdefghijklmnopqrstuvwxyz123456"
         payload = (
             '{"schema_version":1,"event_id":"sensitive-event-1",'
             '"project_id":"project-a","source_id":"api-test",'
             '"source_sequence":1,"occurred_at":"2026-10-18T00:00:00Z",'
             '"event_type":"goal.started","payload":{"goal_id":"sensitive-goal",'
-            f'"problem":"api_key={secret}",'
+            f'"problem":"Example token {secret}",'
             '"success_criteria":[{"criterion_id":"done",'
             '"description":"The task is complete"}]}}'
         )
@@ -1482,10 +1482,14 @@ class ApiFacadeTests(unittest.TestCase):
             tuple(item.path for item in packet.artifact_inventory.artifacts),
             (str(staged),),
         )
-        api.persist_goal(
+        cleanup_manifest = packet.artifact_inventory.manifest_sha256
+        assert cleanup_manifest is not None
+        api.authorize_artifact_cleanup(
             self.caller,
             "project-a",
-            goal.goal_id,
+            receipt.receipt_id,
+            inventory.artifacts,
+            cleanup_manifest,
             "persistence/HISTORY.md",
         )
         self.assertFalse(staged.exists())

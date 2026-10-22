@@ -26,6 +26,7 @@ from curatormd_v2 import (
     ProjectAction,
     ProjectAdministrationAction,
     ProjectConfig,
+    ProjectRegistrationRequest,
     SQLiteTokenBucket,
     hosted_mcp,
 )
@@ -117,11 +118,10 @@ class HostedMcpTests(unittest.TestCase):
             operator = AuthenticatedCaller("test-operator")
             manager.register_project(
                 operator,
-                config.project_id,
-                config.repository_fingerprint,
-                config.config_sha256,
-                config.backend_api_version,
-                "Approve the disposable integration-test project binding",
+                ProjectRegistrationRequest.from_project_config(
+                    config,
+                    "Approve the disposable integration-test project binding",
+                ),
             )
             for action in (
                 ProjectAction.READ,

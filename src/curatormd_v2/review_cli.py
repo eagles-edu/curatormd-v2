@@ -10,16 +10,20 @@ are persisted before any eligible purge runs.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 from typing import TextIO
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .models import ReviewDecision
-from .project_access import FingerprintBoundSQLiteProjectGrantAuthorizer
+from .project_access import (
+    FingerprintBoundSQLiteProjectGrantAuthorizer,
+    ProjectAuthorizationBinding,
+)
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .rate_limiter import SQLiteTokenBucket
@@ -99,6 +103,19 @@ class LocalUIDReviewAuthorizer:
         del project_id, receipt_id, manifest_sha256
         return self._subject(authenticated_subject)
 
+    def authorize_database(
+        self, database: Path, authenticated_subject: str | None = None
+    ) -> str:
+        """Require the current local reviewer to own the pilot ledger file."""
+
+        subject = self._subject(authenticated_subject)
+        metadata = database.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid():
+            raise ReviewAuthorizationError(
+                "database must be a regular file owned by the current local account"
+            )
+        return subject
+
     @staticmethod
     def _subject(authenticated_subject: str | None) -> str:
         """Reject absent, substituted, or setuid caller identity."""
@@ -108,6 +125,15 @@ class LocalUIDReviewAuthorizer:
                 "local reviewer identity does not match the current OS account"
             )
         return subject
+
+
+@dataclass(frozen=True, slots=True)
+class _CliStreams:
+    """Explicit streams for attended CLI operations and their tests."""
+
+    input: TextIO
+    output: TextIO
+    errors: TextIO
 
 
 def _local_subject() -> str:
@@ -148,20 +174,18 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _build_api(
-    config: ProjectConfig, store: CuratorStore
+    config: ProjectConfig,
+    store: CuratorStore,
+    review_authorizer: LocalUIDReviewAuthorizer,
 ) -> AuthenticatedCuratorAPI:
     """Build a project-fingerprint-bound API with a local UID review host."""
 
-    plugin = ProjectPlugin.bind(
-        config, store, review_authorizer=LocalUIDReviewAuthorizer()
-    )
+    plugin = ProjectPlugin.bind(config, store, review_authorizer=review_authorizer)
     authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
         store,
-        project_id=config.project_id,
-        repository_fingerprint=config.repository_fingerprint,
-        config_sha256=config.config_sha256,
-        backend_api_version=config.backend_api_version,
-        allowed_actions=frozenset({ProjectAction.READ, ProjectAction.REVIEW}),
+        ProjectAuthorizationBinding.from_project_config(
+            config, frozenset({ProjectAction.READ, ProjectAction.REVIEW})
+        ),
     )
     return AuthenticatedCuratorAPI(
         {config.project_id: plugin},
@@ -183,11 +207,10 @@ def _target(config: ProjectConfig, requested: str | None) -> Path:
 def _confirmation_phrase(
     decision: ReviewDecision, candidate_id: str, manifest_sha256: str
 ) -> str:
-    """Bind the human confirmation to the SDE disposition only."""
+    """Bind one human action to disposition and exact-inventory cleanup."""
 
     action = "APPROVE" if decision is ReviewDecision.APPROVED else "REJECT"
-    del manifest_sha256
-    return f"{action} SDE {candidate_id}"
+    return f"{action} SDE {candidate_id} AND PURGE INVENTORY {manifest_sha256}"
 
 
 def _confirm(
@@ -234,50 +257,52 @@ def _review(
     api: AuthenticatedCuratorAPI,
     caller: AuthenticatedCaller,
     config: ProjectConfig,
-    input_stream: TextIO,
-    output: TextIO,
-    errors: TextIO,
+    streams: _CliStreams,
 ) -> bool:
-    """Show facts and exact inventory, then commit one attended disposition."""
+    """Show facts and inventory, then commit one attended review/purge action."""
 
     packet = api.sde_review_packet(
         caller, config.project_id, arguments.candidate_id
     )
     inventory = packet.artifact_inventory
     if not inventory.usage.inventory_complete or inventory.manifest_sha256 is None:
-        errors.write("Refusing SDE review because the artifact inventory is incomplete.\n")
+        streams.errors.write("Refusing SDE review because the artifact inventory is incomplete.\n")
         return False
     target = _target(config, arguments.target)
     _write_json(
-        output,
+        streams.output,
         {
             "review_packet": asdict(packet),
             "canonical_target": str(target),
-            "cleanup_authorization": (
-                "A separate cleanup approval is required after canonical persistence; "
-                "SDE disposition does not authorize deletion."
+            "review_action": (
+                "The exact phrase below approves this SDE disposition and the "
+                "displayed complete inventory for purge after canonical persistence."
             ),
         },
     )
-    errors.write("Decision (approve/reject): ")
-    errors.flush()
-    decision_text = input_stream.readline(16).strip().lower()
-    decisions = {"approve": ReviewDecision.APPROVED, "reject": ReviewDecision.REJECTED}
-    decision = decisions.get(decision_text)
+    streams.errors.write("Decision (approve/reject; also purge this exact inventory): ")
+    streams.errors.flush()
+    decision = {
+        "approve": ReviewDecision.APPROVED,
+        "reject": ReviewDecision.REJECTED,
+    }.get(streams.input.readline(16).strip().lower())
     if decision is None:
-        errors.write("SDE review cancelled; no decision was recorded.\n")
+        streams.errors.write("SDE review cancelled; no decision was recorded.\n")
         return False
-    phrase = _confirmation_phrase(
-        decision, arguments.candidate_id, inventory.manifest_sha256
-    )
-    if not _confirm(phrase, input_stream, errors):
-        errors.write("SDE review cancelled; no decision was recorded.\n")
+    if not _confirm(
+        _confirmation_phrase(
+            decision, arguments.candidate_id, inventory.manifest_sha256
+        ),
+        streams.input,
+        streams.errors,
+    ):
+        streams.errors.write("SDE review cancelled; no decision was recorded.\n")
         return False
-    errors.write("Review rationale (one line): ")
-    errors.flush()
-    rationale = input_stream.readline(1002).rstrip("\r\n")
+    streams.errors.write("Review rationale (one line): ")
+    streams.errors.flush()
+    rationale = streams.input.readline(1002).rstrip("\r\n")
     if not rationale.strip() or len(rationale) > 1000 or "\n" in rationale:
-        errors.write("SDE review cancelled; rationale must be 1-1000 characters.\n")
+        streams.errors.write("SDE review cancelled; rationale must be 1-1000 characters.\n")
         return False
 
     receipt = api.sde_confirm(
@@ -295,44 +320,18 @@ def _review(
         packet.detail.goal.goal_id,
         str(target),
     )
-    _write_json(
-        output,
-        {
-            "cleanup_inventory": [asdict(item) for item in inventory.artifacts],
-            "manifest_sha256": inventory.manifest_sha256,
-            "canonical_target": str(projection.target),
-            "canonical_sha256": projection.sha256,
-            "consequence": "Approval permits deletion of only these unheld exact files.",
-        },
-    )
-    errors.write("Approve cleanup of this exact inventory (yes/no): ")
-    errors.flush()
-    cleanup_authorization = None
-    if input_stream.readline(8).strip().lower() == "yes":
-        cleanup_phrase = (
-            f"PURGE INVENTORY {inventory.manifest_sha256}"
-        )
-        if _confirm(cleanup_phrase, input_stream, errors):
-            cleanup_authorization, receipt = api.authorize_artifact_cleanup(
-                caller,
-                config.project_id,
-                receipt.receipt_id,
-                inventory.artifacts,
-                inventory.manifest_sha256,
-                str(target),
-            )
     final_receipt, purge_targets = api.artifact_purge_status(
         caller, config.project_id, receipt.receipt_id
     )
     _write_json(
-        output,
+        streams.output,
         {
             "decision": decision.value,
             "receipt_id": receipt.receipt_id,
             "canonical_target": str(projection.target),
             "canonical_sha256": projection.sha256,
             "purge_status": final_receipt.purge_status.value,
-            "cleanup_authorization": cleanup_authorization,
+            "cleanup_authorization": final_receipt.cleanup_authorized,
             "artifacts": [asdict(item) for item in purge_targets],
         },
     )
@@ -343,26 +342,26 @@ def _expire(
     api: AuthenticatedCuratorAPI,
     caller: AuthenticatedCaller,
     config: ProjectConfig,
-    input_stream: TextIO,
-    output: TextIO,
-    errors: TextIO,
+    streams: _CliStreams,
 ) -> int:
     """Display then approve only the complete, exact 72-hour inventory."""
 
     snapshot = api.discover_project_expiry_inventory(caller, config.project_id)
-    _write_json(output, {"expiry_snapshot": asdict(snapshot)})
+    _write_json(streams.output, {"expiry_snapshot": asdict(snapshot)})
     if not snapshot.inventory_complete or snapshot.manifest_sha256 is None:
-        errors.write("Refusing expiry approval because staging age inventory is incomplete.\n")
+        streams.errors.write(
+            "Refusing expiry approval because staging age inventory is incomplete.\n"
+        )
         return 2
     if not snapshot.eligible_artifacts:
-        errors.write("No unheld artifacts are ready for expiry.\n")
+        streams.errors.write("No unheld artifacts are ready for expiry.\n")
         return 0
     if len(snapshot.eligible_artifacts) > 500:
-        errors.write("Expiry inventory exceeds the 500-artifact receipt limit.\n")
+        streams.errors.write("Expiry inventory exceeds the 500-artifact receipt limit.\n")
         return 2
     phrase = f"PURGE EXPIRED INVENTORY {snapshot.manifest_sha256}"
-    if not _confirm(phrase, input_stream, errors):
-        errors.write("Expiry cleanup cancelled; no approval receipt was recorded.\n")
+    if not _confirm(phrase, streams.input, streams.errors):
+        streams.errors.write("Expiry cleanup cancelled; no approval receipt was recorded.\n")
         return 2
     receipt = api.approve_project_expiry_inventory(
         caller,
@@ -370,8 +369,37 @@ def _expire(
         snapshot.eligible_artifacts,
         snapshot.manifest_sha256,
     )
-    _write_json(output, {"expiry_purge_receipt": asdict(receipt)})
+    _write_json(streams.output, {"expiry_purge_receipt": asdict(receipt)})
     return 0 if receipt.status.value == "complete" else 1
+
+
+def _dispatch_operation(
+    arguments: argparse.Namespace,
+    api: AuthenticatedCuratorAPI,
+    caller: AuthenticatedCaller,
+    config: ProjectConfig,
+    streams: _CliStreams,
+) -> int:
+    """Run one operation after identity, project, and store validation."""
+
+    if arguments.operation == "queue":
+        _write_json(
+            streams.output,
+            {
+                "project_id": config.project_id,
+                "pending": _queue(api, caller, config.project_id),
+            },
+        )
+        return 0
+    if arguments.operation == "expiry-retry":
+        receipt = api.retry_expiry_purge(
+            caller, config.project_id, arguments.receipt_id
+        )
+        _write_json(streams.output, {"expiry_purge_receipt": asdict(receipt)})
+        return 0 if receipt.status.value == "complete" else 1
+    if arguments.operation == "expire":
+        return _expire(api, caller, config, streams)
+    return 0 if _review(arguments, api, caller, config, streams) else 2
 
 
 def main(
@@ -384,53 +412,36 @@ def main(
     """Run the attended local review workflow without accepting identity input."""
 
     arguments = _parser().parse_args(argv)
-    input_stream = stdin or sys.stdin
-    output = stdout or sys.stdout
-    errors = stderr or sys.stderr
+    streams = _CliStreams(stdin or sys.stdin, stdout or sys.stdout, stderr or sys.stderr)
     try:
         subject = _local_subject()
-        if arguments.operation in {"review", "expire"} and not input_stream.isatty():
-            errors.write("Refusing attended review without an interactive TTY.\n")
+        if arguments.operation in {"review", "expire"} and not streams.input.isatty():
+            streams.errors.write("Refusing attended review without an interactive TTY.\n")
             return 2
-        if arguments.operation in {"review", "expire"} and not output.isatty():
-            errors.write("Refusing attended review without a visible interactive TTY.\n")
+        if arguments.operation in {"review", "expire"} and not streams.output.isatty():
+            streams.errors.write("Refusing attended review without a visible interactive TTY.\n")
             return 2
-        if arguments.operation in {"review", "expire"} and not errors.isatty():
-            errors.write("Refusing attended review without a visible prompt TTY.\n")
+        if arguments.operation in {"review", "expire"} and not streams.errors.isatty():
+            streams.errors.write("Refusing attended review without a visible prompt TTY.\n")
             return 2
         database = arguments.database.expanduser()
-        if not database.is_absolute() or not database.is_file() or database.is_symlink():
+        if not database.is_absolute():
             raise ValueError("database must be an existing absolute regular file")
+        review_authorizer = LocalUIDReviewAuthorizer()
+        subject = review_authorizer.authorize_database(database, subject)
         config = ProjectConfig.load(arguments.project_root)
         store = CuratorStore(database)
     except Exception:  # pylint: disable=broad-exception-caught
-        errors.write("Curator review failed (identity or configuration error).\n")
+        streams.errors.write("Curator review failed (identity or configuration error).\n")
         return 2
     try:
         caller = AuthenticatedCaller(subject)
-        api = _build_api(config, store)
-        if arguments.operation == "queue":
-            _write_json(
-                output,
-                {
-                    "project_id": config.project_id,
-                    "pending": _queue(api, caller, config.project_id),
-                },
-            )
-            return 0
-        if arguments.operation == "expiry-retry":
-            receipt = api.retry_expiry_purge(
-                caller, config.project_id, arguments.receipt_id
-            )
-            _write_json(output, {"expiry_purge_receipt": asdict(receipt)})
-            return 0 if receipt.status.value == "complete" else 1
-        if arguments.operation == "expire":
-            return _expire(api, caller, config, input_stream, output, errors)
-        if _review(arguments, api, caller, config, input_stream, output, errors):
-            return 0
-        return 2
+        api = _build_api(config, store, review_authorizer)
+        return _dispatch_operation(arguments, api, caller, config, streams)
     except Exception:  # pylint: disable=broad-exception-caught
-        errors.write("Curator review failed (authorization, inventory, or persistence error).\n")
+        streams.errors.write(
+            "Curator review failed (authorization, inventory, or persistence error).\n"
+        )
         return 2
     finally:
         store.close()

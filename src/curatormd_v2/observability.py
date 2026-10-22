@@ -9,9 +9,9 @@ from .models import (
     OperationalHealth,
     ProjectHealthSnapshot,
     ProjectStorageUsage,
-    StagingArtifactClass,
     SDEQualityFeedbackSummary,
 )
+from .staging_models import StagingArtifactClass
 
 _KNOWN_EVENT_TYPES = frozenset(item.value for item in EventKind) | {"legacy.unknown"}
 _KNOWN_EVENT_STATUSES = frozenset(item.value for item in EventInboxStatus)

@@ -189,6 +189,8 @@ targets = ["persistence/HISTORY.md"]
             "/consumer/persistence/HISTORY.md",
             hashlib.sha256(receipt.receipt_id.encode()).hexdigest(),
         )
+        if not receipt.artifact_inventory_complete:
+            return active_service.store.get_receipt(receipt.receipt_id)
         manifest = json.dumps(
             [
                 (item.path, item.sha256)
@@ -384,6 +386,7 @@ targets = ["persistence/HISTORY.md"]
             (original_hold, newly_held),
             authenticated_subject="inventory-reviewer",
         )
+        receipt = self.persist_canonical(receipt)
 
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
         self.assertTrue(first_path.exists())
@@ -896,6 +899,7 @@ targets = ["persistence/HISTORY.md"]
         self.assertFalse(receipt.artifact_inventory_complete)
         self.assertEqual(self.store.pending_receipts()[0].receipt_id, receipt.receipt_id)
         receipt = self.service.artifact_inventory_complete(receipt.receipt_id, ())
+        receipt = self.persist_canonical(receipt)
         self.assertEqual(receipt.purge_status, PurgeStatus.COMPLETE)
         self.assertTrue(receipt.artifact_inventory_complete)
         self.assertEqual(self.store.pending_receipts(), ())
@@ -922,6 +926,7 @@ targets = ["persistence/HISTORY.md"]
         receipt = self.service.artifact_inventory_complete(
             receipt.receipt_id, (artifact,)
         )
+        receipt = self.persist_canonical(receipt)
         self.assertEqual(receipt.purge_status, PurgeStatus.COMPLETE)
         self.assertFalse(path.exists())
 

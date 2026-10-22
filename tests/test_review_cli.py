@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Any
+from typing import Any, TypedDict, Unpack
 import unittest
 from unittest.mock import patch
 
@@ -32,7 +32,10 @@ from curatormd_v2.models import (
 )
 from curatormd_v2.project_config import ProjectConfig
 from curatormd_v2.project_plugin import ProjectPlugin
-from curatormd_v2.review_cli import LocalUIDReviewAuthorizer, main
+from curatormd_v2.review_cli import (
+    LocalUIDReviewAuthorizer,
+    main,
+)
 from curatormd_v2.reviews import ReviewAuthorizationError
 from curatormd_v2.store import CuratorStore
 
@@ -90,6 +93,11 @@ class _Packet:
     artifact_inventory: _Inventory
 
 
+class _SDEConfirmOptions(TypedDict):
+    artifact_inventory_complete: bool
+    rationale: str
+
+
 class _InteractiveInput(StringIO):
     def __init__(self, value: str, *, interactive: bool = True) -> None:
         super().__init__(value)
@@ -114,14 +122,17 @@ class _PipedOutput(StringIO):
         return False
 
 
+@dataclass(frozen=True)
 class _Receipt:
-    receipt_id = "receipt-1"
-    purge_status = _PurgeStatus.COMPLETE
+    receipt_id: str = "receipt-1"
+    purge_status: _PurgeStatus = _PurgeStatus.COMPLETE
+    cleanup_authorized: bool = True
 
 
+@dataclass(frozen=True)
 class _Projection:
-    target = Path("/tmp/HISTORY.md")
-    sha256 = "b" * 64
+    target: Path = Path("/tmp/HISTORY.md")
+    sha256: str = "b" * 64
 
 
 @dataclass(frozen=True)
@@ -132,6 +143,7 @@ class _PreparedCliReview:
     manifest_hash: str
 
 
+@dataclass(frozen=True)
 class _TestEvidenceVerifier:
     def attest(
         self, evidence: EvidenceRef, context: EvidenceVerificationContext
@@ -140,6 +152,40 @@ class _TestEvidenceVerifier:
         if evidence.locator != "review-cli-proof:verified":
             return None
         return attest_test_evidence(evidence, context)
+
+
+@dataclass(frozen=True)
+class _CliInvocation:
+    result: int
+    stdout: str
+    stderr: str
+
+
+def _approve_local_review(
+    root: Path, database: Path, prepared: _PreparedCliReview
+) -> _CliInvocation:
+    phrase = (
+        f"APPROVE SDE {prepared.candidate_id} AND PURGE INVENTORY "
+        f"{prepared.manifest_hash}"
+    )
+    stdout = _InteractiveOutput()
+    stderr = _InteractiveErrors()
+    result = main(
+        [
+            "--project-root",
+            str(root),
+            "--database",
+            str(database),
+            "review",
+            prepared.candidate_id,
+        ],
+        stdin=_InteractiveInput(
+            f"approve\n{phrase}\nVerified in the disposable suite\n"
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+    return _CliInvocation(result, stdout.getvalue(), stderr.getvalue())
 
 
 class _ReviewAPI:
@@ -161,9 +207,7 @@ class _ReviewAPI:
         candidate_id: str,
         decision: ReviewDecision,
         artifacts: tuple[_Artifact, ...],
-        *,
-        artifact_inventory_complete: bool,
-        rationale: str,
+        **options: Unpack[_SDEConfirmOptions],
     ) -> _Receipt:
         """Record the exact decision request and return its fixture receipt."""
         self.calls.append(
@@ -175,8 +219,8 @@ class _ReviewAPI:
                     candidate_id,
                     decision,
                     artifacts,
-                    artifact_inventory_complete,
-                    rationale,
+                    options["artifact_inventory_complete"],
+                    options["rationale"],
                 ),
             )
         )
@@ -365,6 +409,24 @@ class ReviewCliTests(unittest.TestCase):
                     "project-a", "candidate-a", ReviewDecision.APPROVED, "renew-ssl-coding"
                 )
 
+    def test_local_review_authorizer_requires_owned_database(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "curator.sqlite3"
+            CuratorStore(database).close()
+            authorizer = LocalUIDReviewAuthorizer()
+            subject = f"local-uid:{os.geteuid()}"
+
+            self.assertEqual(
+                authorizer.authorize_database(database, subject), subject
+            )
+
+            with (
+                patch("curatormd_v2.review_cli.os.geteuid", return_value=os.geteuid() + 1),
+                patch("curatormd_v2.review_cli._local_subject", return_value=subject),
+            ):
+                with self.assertRaises(ReviewAuthorizationError):
+                    authorizer.authorize_database(database, subject)
+
     def test_review_confirms_exact_inventory_then_persists_before_purge_status(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
@@ -393,14 +455,11 @@ class ReviewCliTests(unittest.TestCase):
                 ),
             )
             api = _ReviewAPI(packet)
-            phrase = "APPROVE SDE candidate-a"
-            cleanup_phrase = (
-                f"PURGE INVENTORY "
+            phrase = (
+                f"APPROVE SDE candidate-a AND PURGE INVENTORY "
                 f"{packet.artifact_inventory.manifest_sha256}"
             )
-            stdin = _InteractiveInput(
-                f"approve\n{phrase}\nVerified and approved\nyes\n{cleanup_phrase}\n"
-            )
+            stdin = _InteractiveInput(f"approve\n{phrase}\nVerified and approved\n")
             stdout = _InteractiveOutput()
             stderr = _InteractiveErrors()
             with patch("curatormd_v2.review_cli._build_api", return_value=api):
@@ -429,8 +488,11 @@ class ReviewCliTests(unittest.TestCase):
                 next(i for i, (name, _) in enumerate(api.calls) if name == "persist"),
             )
             self.assertIn('"purge_status": "complete"', stdout.getvalue())
-            self.assertIn(
-                "cleanup_approve", [name for name, _ in api.calls]
+            self.assertTrue(json.loads(stdout.getvalue().splitlines()[-1])["cleanup_authorization"])
+            self.assertNotIn("cleanup_approve", [name for name, _ in api.calls])
+            self.assertLess(
+                next(i for i, (name, _) in enumerate(api.calls) if name == "persist"),
+                next(i for i, (name, _) in enumerate(api.calls) if name == "purge_status"),
             )
 
     def test_review_refuses_noninteractive_input_before_opening_database(self) -> None:
@@ -507,7 +569,7 @@ class ReviewCliTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertFalse(database.exists())
 
-    def test_local_cli_requires_separate_exact_cleanup_approval(self) -> None:
+    def test_local_cli_uses_one_exact_review_and_cleanup_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             root.mkdir()
@@ -520,34 +582,16 @@ class ReviewCliTests(unittest.TestCase):
             )
             prepared = self._prepare_local_review(root, database)
             staged = Path(prepared.staged_artifact.path)
+            invocation = _approve_local_review(root, database, prepared)
 
-            phrase = f"APPROVE SDE {prepared.candidate_id}"
-            cleanup_phrase = (
-                f"PURGE INVENTORY "
-                f"{prepared.manifest_hash}"
-            )
-            result_output = _InteractiveOutput()
-            result_errors = _InteractiveErrors()
-            result = main(
-                [
-                    "--project-root",
-                    str(root),
-                    "--database",
-                    str(database),
-                    "review",
-                    prepared.candidate_id,
-                ],
-                stdin=_InteractiveInput(
-                    f"approve\n{phrase}\nVerified in the disposable suite\n"
-                    f"yes\n{cleanup_phrase}\n"
-                ),
-                stdout=result_output,
-                stderr=result_errors,
-            )
-
-            self.assertEqual(result, 0, result_errors.getvalue())
+            self.assertEqual(invocation.result, 0, invocation.stderr)
             self.assertFalse(staged.exists())
             reopened = CuratorStore(database)
+            final_result = json.loads(invocation.stdout.splitlines()[-1])
+            receipt = reopened.get_receipt(
+                final_result["receipt_id"], "review-cli-project"
+            )
+            self.assertTrue(receipt.cleanup_authorized)
             self.assertEqual(
                 reopened.staging_artifact_times(
                     "review-cli-project", (prepared.staged_artifact,)
@@ -573,7 +617,7 @@ class ReviewCliTests(unittest.TestCase):
             history = (root / "persistence" / "HISTORY.md").read_text()
             self.assertIn("Implemented the bounded change", history)
             self.assertNotIn("TRANSIENT REVIEW CLI CANARY", history)
-            self.assertIn('"purge_status": "complete"', result_output.getvalue())
+            self.assertIn('"purge_status": "complete"', invocation.stdout)
 
     def test_local_expiry_review_persists_exact_receipt_before_purge(self) -> None:
         """Require an attended exact manifest and retain its receipt after cleanup."""

@@ -14,7 +14,7 @@ import sqlite3
 import stat
 from threading import RLock
 from types import TracebackType
-from typing import Generator, Self, cast
+from typing import Generator, Protocol, Self, cast
 import zlib
 
 from .events import (
@@ -144,6 +144,55 @@ class ProjectRegistrationRecord:
     updated_at: str
 
 
+class _ProjectRegistrationConfig(Protocol):
+    """Structural view of the validated config fields stored in the registry."""
+
+    @property
+    def project_id(self) -> str:
+        """Return the exact registered project ID."""
+        ...
+
+    @property
+    def repository_fingerprint(self) -> str:
+        """Return the host-computed repository identity digest."""
+        ...
+
+    @property
+    def config_sha256(self) -> str:
+        """Return the digest of the validated consumer configuration."""
+        ...
+
+    @property
+    def backend_api_version(self) -> int:
+        """Return the project's declared backend contract version."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectRegistrationRequest:
+    """Host-verified project binding values to register or update."""
+
+    project_id: str
+    repository_fingerprint: str
+    config_sha256: str
+    backend_api_version: int
+    rationale: str
+
+    @classmethod
+    def from_project_config(
+        cls, config: _ProjectRegistrationConfig, rationale: str
+    ) -> ProjectRegistrationRequest:
+        """Build a registry request from one already validated project config."""
+
+        return cls(
+            project_id=config.project_id,
+            repository_fingerprint=config.repository_fingerprint,
+            config_sha256=config.config_sha256,
+            backend_api_version=config.backend_api_version,
+            rationale=rationale,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectRegistryAuditRecord:
     """Append-only evidence of a project registration or lifecycle change."""
@@ -179,6 +228,15 @@ class ProjectGrantRecord:
         """Whether this grant has no recorded revocation."""
 
         return self.revoked_at is None
+
+
+@dataclass(frozen=True, slots=True)
+class _FactStoragePayload:
+    """Serialized evidence fields and dedupe identity for one fact write."""
+
+    evidence_json: str
+    attestations_json: str
+    dedupe_key: str
 
 
 _ACCESS_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
@@ -325,6 +383,30 @@ def _validate_retirement_relationships(
             "resolve dependent goals before retiring this dependency: "
             + ", ".join(active_dependents)
         )
+
+
+@dataclass(frozen=True, slots=True)
+class FactCompactionApprovalRequest:
+    """Exact reviewer-approved compaction values passed into the store."""
+
+    compaction_id: str
+    goal_id: str
+    project_id: str
+    fact_ids: tuple[str, ...]
+    source_sha256: str
+    reviewer_id: str
+    approval_reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedFactArchive:
+    """Validated live facts and their canonical compressed archive payload."""
+
+    facts: tuple[Fact, ...]
+    source: bytes
+    compressed: bytes
+    archive_sha256: str
+    created_at: str
 
 
 class CuratorStore:
@@ -499,13 +581,7 @@ class CuratorStore:
         )
 
     def register_project(
-        self,
-        project_id: str,
-        repository_fingerprint: str,
-        config_sha256: str,
-        backend_api_version: int,
-        actor_id: str,
-        rationale: str,
+        self, request: ProjectRegistrationRequest, actor_id: str
     ) -> ProjectRegistrationRecord:
         """Register a host-verified project binding exactly once.
 
@@ -513,6 +589,11 @@ class CuratorStore:
         store validates their shape but cannot authenticate or derive them.
         """
 
+        project_id = request.project_id
+        repository_fingerprint = request.repository_fingerprint
+        config_sha256 = request.config_sha256
+        backend_api_version = request.backend_api_version
+        rationale = request.rationale
         self._validate_access_identity(project_id, "project_id")
         self._validate_access_identity(actor_id, "actor_id")
         self._validate_access_digest(repository_fingerprint, "repository_fingerprint")
@@ -553,14 +634,17 @@ class CuratorStore:
             )
             self._append_project_registry_audit(
                 connection,
-                project_id,
-                actor_id,
-                "registered",
-                repository_fingerprint,
-                config_sha256,
-                backend_api_version,
-                rationale,
-                now,
+                ProjectRegistryAuditRecord(
+                    audit_id=new_id(),
+                    project_id=project_id,
+                    actor_id=actor_id,
+                    action="registered",
+                    repository_fingerprint=repository_fingerprint,
+                    config_sha256=config_sha256,
+                    backend_api_version=backend_api_version,
+                    rationale=rationale,
+                    created_at=now,
+                ),
             )
             row = connection.execute(
                 "SELECT * FROM project_registry WHERE project_id = ?",
@@ -573,14 +657,7 @@ class CuratorStore:
     @staticmethod
     def _append_project_registry_audit(
         connection: sqlite3.Connection,
-        project_id: str,
-        actor_id: str,
-        action: str,
-        repository_fingerprint: str,
-        config_sha256: str,
-        backend_api_version: int,
-        rationale: str,
-        created_at: str,
+        record: ProjectRegistryAuditRecord,
     ) -> None:
         connection.execute(
             """INSERT INTO project_registry_audit
@@ -588,29 +665,28 @@ class CuratorStore:
                 config_sha256, backend_api_version, rationale, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                new_id(),
-                project_id,
-                actor_id,
-                action,
-                repository_fingerprint,
-                config_sha256,
-                backend_api_version,
-                rationale,
-                created_at,
+                record.audit_id,
+                record.project_id,
+                record.actor_id,
+                record.action,
+                record.repository_fingerprint,
+                record.config_sha256,
+                record.backend_api_version,
+                record.rationale,
+                record.created_at,
             ),
         )
 
     def update_project_registration(
-        self,
-        project_id: str,
-        repository_fingerprint: str,
-        config_sha256: str,
-        backend_api_version: int,
-        actor_id: str,
-        rationale: str,
+        self, request: ProjectRegistrationRequest, actor_id: str
     ) -> ProjectRegistrationRecord:
         """Update host fingerprints with a separate attributable audit event."""
 
+        project_id = request.project_id
+        repository_fingerprint = request.repository_fingerprint
+        config_sha256 = request.config_sha256
+        backend_api_version = request.backend_api_version
+        rationale = request.rationale
         self._validate_access_identity(project_id, "project_id")
         self._validate_access_identity(actor_id, "actor_id")
         self._validate_access_digest(repository_fingerprint, "repository_fingerprint")
@@ -659,14 +735,17 @@ class CuratorStore:
             )
             self._append_project_registry_audit(
                 connection,
-                project_id,
-                actor_id,
-                "updated",
-                repository_fingerprint,
-                config_sha256,
-                backend_api_version,
-                rationale,
-                now,
+                ProjectRegistryAuditRecord(
+                    audit_id=new_id(),
+                    project_id=project_id,
+                    actor_id=actor_id,
+                    action="updated",
+                    repository_fingerprint=repository_fingerprint,
+                    config_sha256=config_sha256,
+                    backend_api_version=backend_api_version,
+                    rationale=rationale,
+                    created_at=now,
+                ),
             )
             row = connection.execute(
                 "SELECT * FROM project_registry WHERE project_id = ?",
@@ -708,14 +787,17 @@ class CuratorStore:
             )
             self._append_project_registry_audit(
                 connection,
-                project_id,
-                actor_id,
-                action,
-                current["repository_fingerprint"],
-                current["config_sha256"],
-                current["backend_api_version"],
-                rationale,
-                now,
+                ProjectRegistryAuditRecord(
+                    audit_id=new_id(),
+                    project_id=project_id,
+                    actor_id=actor_id,
+                    action=action,
+                    repository_fingerprint=current["repository_fingerprint"],
+                    config_sha256=current["config_sha256"],
+                    backend_api_version=current["backend_api_version"],
+                    rationale=rationale,
+                    created_at=now,
+                ),
             )
             row = connection.execute(
                 "SELECT * FROM project_registry WHERE project_id = ?",
@@ -1275,7 +1357,7 @@ class CuratorStore:
         reviewer_id: str,
         manifest_sha256: str,
     ) -> CleanupAuthorizationReceipt:
-        """Durably authorize the exact complete, canonicalized SDE inventory."""
+        """Durably authorize an exact complete SDE inventory before projection."""
 
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", reviewer_id):
             raise ValueError("cleanup reviewer must be a bounded opaque identifier")
@@ -1284,7 +1366,7 @@ class CuratorStore:
         approved_at = utc_now()
         with self._transaction() as connection:
             receipt = connection.execute(
-                """SELECT r.artifact_inventory_complete, r.canonical_persisted
+                """SELECT r.artifact_inventory_complete
                    FROM audit_receipts AS r
                    JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
                    JOIN goals AS g ON g.goal_id = s.goal_id
@@ -1295,8 +1377,6 @@ class CuratorStore:
                 raise NotFoundError("audit receipt not found")
             if not bool(receipt["artifact_inventory_complete"]):
                 raise ConflictError("cleanup requires a complete artifact inventory")
-            if not bool(receipt["canonical_persisted"]):
-                raise ConflictError("cleanup requires verified canonical persistence")
             rows = connection.execute(
                 "SELECT path, sha256 FROM purge_targets WHERE receipt_id = ? ORDER BY path",
                 (receipt_id,),
@@ -1349,7 +1429,7 @@ class CuratorStore:
         target: str,
         sha256: str,
     ) -> CleanupAuthorizationReceipt:
-        """Record the projection containing the separate cleanup receipt."""
+        """Record the projection containing the cleanup authorization receipt."""
 
         if not target.strip() or len(target) > 2000 or "\n" in target or "\r" in target:
             raise ValueError("cleanup canonical target must be bounded and one line")
@@ -2166,17 +2246,30 @@ class CuratorStore:
             )
         )
 
+    @classmethod
+    def _fact_storage_payload(cls, fact: Fact) -> _FactStoragePayload:
+        """Serialize indexed fact fields once before transaction capacity checks."""
+
+        return _FactStoragePayload(
+            evidence_json=_json_dump(
+                [_evidence_to_dict(item) for item in fact.evidence]
+            ),
+            attestations_json=_json_dump(
+                [
+                    _attestation_to_dict(item)
+                    for item in fact.verification_attestations
+                ]
+            ),
+            dedupe_key=cls._fact_dedupe_key(fact),
+        )
+
     def _append_fact(
         self,
         connection: sqlite3.Connection,
         fact: Fact,
         project_id: str | None = None,
     ) -> tuple[Fact, bool]:
-        evidence_json = _json_dump([_evidence_to_dict(item) for item in fact.evidence])
-        attestations_json = _json_dump(
-            [_attestation_to_dict(item) for item in fact.verification_attestations]
-        )
-        dedupe_key = self._fact_dedupe_key(fact)
+        payload = self._fact_storage_payload(fact)
         goal_row = connection.execute(
             "SELECT project_id, status FROM goals WHERE goal_id = ?", (fact.goal_id,)
         ).fetchone()
@@ -2185,13 +2278,13 @@ class CuratorStore:
         ):
             raise NotFoundError(f"goal not found: {fact.goal_id}")
         existing = connection.execute(
-            "SELECT * FROM facts WHERE dedupe_key = ?", (dedupe_key,)
+            "SELECT * FROM facts WHERE dedupe_key = ?", (payload.dedupe_key,)
         ).fetchone()
         if existing is not None:
             return self._fact_from_row(existing), False
         archived_duplicate = connection.execute(
             """SELECT fact_id FROM fact_archive_items WHERE dedupe_key = ?""",
-            (dedupe_key,),
+            (payload.dedupe_key,),
         ).fetchone()
         if archived_duplicate is not None:
             return self.get_fact(archived_duplicate["fact_id"]), False
@@ -2253,7 +2346,10 @@ class CuratorStore:
             (fact.goal_id,),
         ).fetchone()
         added_bytes = self._fact_record_bytes(
-            fact, evidence_json, attestations_json, dedupe_key
+            fact,
+            payload.evidence_json,
+            payload.attestations_json,
+            payload.dedupe_key,
         )
         if (
             goal_usage["count"] + 1 > MAX_FACTS_PER_GOAL
@@ -2277,15 +2373,15 @@ class CuratorStore:
                 fact.kind.value,
                 fact.bullet.strip(),
                 fact.criterion_id,
-                evidence_json,
-                attestations_json,
+                payload.evidence_json,
+                payload.attestations_json,
                 fact.source_event_id,
-                dedupe_key,
+                payload.dedupe_key,
                 fact.created_at,
             )
         )
         row = connection.execute(
-            "SELECT * FROM facts WHERE dedupe_key = ?", (dedupe_key,)
+            "SELECT * FROM facts WHERE dedupe_key = ?", (payload.dedupe_key,)
         ).fetchone()
         if row is None:
             raise RuntimeError("inserted fact row could not be read back")
@@ -3041,206 +3137,261 @@ class CuratorStore:
         )
 
     def approve_fact_compaction(
-        self,
-        compaction_id: str,
-        goal_id: str,
-        project_id: str,
-        fact_ids: tuple[str, ...],
-        source_sha256: str,
-        reviewer_id: str,
-        approval_reason: str,
+        self, approval: FactCompactionApprovalRequest
     ) -> FactArchiveReceipt:
         """Atomically archive exact eligible facts and remove only their live rows."""
 
-        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", compaction_id):
+        self._validate_fact_compaction_approval(approval)
+        with self._transaction() as connection:
+            existing = self._read_existing_compaction_receipt(connection, approval)
+            if existing is not None:
+                return existing
+            prepared = self._prepare_fact_archive(connection, approval)
+            self._ensure_fact_archive_capacity(connection, approval, prepared)
+            return self._persist_fact_archive(connection, approval, prepared)
+
+    @staticmethod
+    def _validate_fact_compaction_approval(
+        approval: FactCompactionApprovalRequest,
+    ) -> None:
+        """Reject malformed approval identifiers before opening a transaction."""
+
+        if not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", approval.compaction_id
+        ):
             raise ValueError("compaction_id must be a bounded opaque identifier")
-        if not fact_ids or len(fact_ids) > MAX_FACT_COMPACTION_BATCH_FACTS:
+        if not approval.fact_ids or len(approval.fact_ids) > MAX_FACT_COMPACTION_BATCH_FACTS:
             raise ValueError("fact_ids must contain 1-64 IDs")
-        if len(set(fact_ids)) != len(fact_ids):
+        if len(set(approval.fact_ids)) != len(approval.fact_ids):
             raise ValueError("fact_ids must be unique")
-        if not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
+        if not re.fullmatch(r"[0-9a-f]{64}", approval.source_sha256):
             raise ValueError("source_sha256 must be lowercase SHA-256")
-        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", reviewer_id):
+        if not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", approval.reviewer_id
+        ):
             raise ValueError("reviewer_id must be a bounded opaque identifier")
-        if not approval_reason.strip() or len(approval_reason) > 1000:
+        if not approval.approval_reason.strip() or len(approval.approval_reason) > 1000:
             raise ValueError("approval_reason must contain 1-1000 characters")
-        if "\n" in approval_reason or "\r" in approval_reason:
+        if "\n" in approval.approval_reason or "\r" in approval.approval_reason:
             raise ValueError("approval_reason must be a single line")
 
-        with self._transaction() as connection:
-            existing_archive = connection.execute(
-                "SELECT * FROM fact_archives WHERE compaction_id = ?",
-                (compaction_id,),
-            ).fetchone()
-            if existing_archive is not None:
-                receipt = self._fact_archive_receipt(existing_archive)
-                if (
-                    (
-                        receipt.project_id,
-                        receipt.goal_id,
-                        receipt.fact_ids,
-                        receipt.source_sha256,
-                        receipt.reviewer_id,
-                        receipt.approval_reason,
-                    )
-                    != (
-                        project_id,
-                        goal_id,
-                        fact_ids,
-                        source_sha256,
-                        reviewer_id,
-                        approval_reason,
-                    )
-                ):
-                    raise ConflictError("compaction ID was reused for different approval")
-                return receipt
+    def _read_existing_compaction_receipt(
+        self,
+        connection: sqlite3.Connection,
+        approval: FactCompactionApprovalRequest,
+    ) -> FactArchiveReceipt | None:
+        """Return an exact idempotent replay or reject a reused compaction ID."""
 
-            query = """SELECT f.* FROM facts AS f JOIN goals AS g
-                       ON g.goal_id = f.goal_id
-                       WHERE f.fact_id IN (SELECT value FROM json_each(?))
-                         AND f.goal_id = ? AND g.project_id = ?"""
-            rows = connection.execute(
-                query,
-                (json.dumps(fact_ids), goal_id, project_id),
-            ).fetchall()
-            fact_by_id = {row["fact_id"]: self._fact_from_row(row) for row in rows}
-            if set(fact_by_id) != set(fact_ids):
-                raise ConflictError("proposed facts changed or are no longer active")
-            facts = tuple(
-                sorted(fact_by_id.values(), key=lambda fact: (fact.created_at, fact.fact_id))
+        row = connection.execute(
+            "SELECT * FROM fact_archives WHERE compaction_id = ?",
+            (approval.compaction_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        receipt = self._fact_archive_receipt(row)
+        original = (
+            receipt.project_id,
+            receipt.goal_id,
+            receipt.fact_ids,
+            receipt.source_sha256,
+            receipt.reviewer_id,
+            receipt.approval_reason,
+        )
+        requested = (
+            approval.project_id,
+            approval.goal_id,
+            approval.fact_ids,
+            approval.source_sha256,
+            approval.reviewer_id,
+            approval.approval_reason,
+        )
+        if original != requested:
+            raise ConflictError("compaction ID was reused for different approval")
+        return receipt
+
+    def _prepare_fact_archive(
+        self,
+        connection: sqlite3.Connection,
+        approval: FactCompactionApprovalRequest,
+    ) -> _PreparedFactArchive:
+        """Load, revalidate, and hash exactly the facts named by the approval."""
+
+        rows = connection.execute(
+            """SELECT f.* FROM facts AS f JOIN goals AS g
+               ON g.goal_id = f.goal_id
+               WHERE f.fact_id IN (SELECT value FROM json_each(?))
+                 AND f.goal_id = ? AND g.project_id = ?""",
+            (json.dumps(approval.fact_ids), approval.goal_id, approval.project_id),
+        ).fetchall()
+        fact_by_id = {row["fact_id"]: self._fact_from_row(row) for row in rows}
+        if set(fact_by_id) != set(approval.fact_ids):
+            raise ConflictError("proposed facts changed or are no longer active")
+        facts = tuple(
+            sorted(fact_by_id.values(), key=lambda fact: (fact.created_at, fact.fact_id))
+        )
+        if tuple(fact.fact_id for fact in facts) != approval.fact_ids:
+            raise ConflictError("fact IDs do not match the canonical proposal order")
+        if any(
+            fact.kind not in {FactKind.RESEARCH, FactKind.ADVICE}
+            or fact.criterion_id is not None
+            or fact.evidence
+            for fact in facts
+        ):
+            raise ConflictError("approval includes a non-routine or evidence-bearing fact")
+        self._reject_sde_protected_facts(connection, approval)
+
+        source = self._fact_archive_source(facts)
+        if hashlib.sha256(source).hexdigest() != approval.source_sha256:
+            raise ConflictError("fact source changed since the proposal was reviewed")
+        if len(source) > MAX_FACT_COMPACTION_SOURCE_BYTES:
+            raise ConflictError("fact archive exceeds its source size limit")
+        compressed = zlib.compress(source, level=9)
+        return _PreparedFactArchive(
+            facts=facts,
+            source=source,
+            compressed=compressed,
+            archive_sha256=hashlib.sha256(compressed).hexdigest(),
+            created_at=utc_now(),
+        )
+
+    @staticmethod
+    def _reject_sde_protected_facts(
+        connection: sqlite3.Connection,
+        approval: FactCompactionApprovalRequest,
+    ) -> None:
+        """Keep facts supporting any SDE candidate out of compaction."""
+
+        rows = connection.execute(
+            "SELECT fact_ids_json FROM sde_candidates WHERE goal_id = ?",
+            (approval.goal_id,),
+        ).fetchall()
+        protected_ids = {
+            fact_id
+            for candidate in rows
+            for fact_id in json.loads(candidate["fact_ids_json"])
+        }
+        if protected_ids.intersection(approval.fact_ids):
+            raise ConflictError("SDE-supported facts cannot be compacted")
+
+    def _ensure_fact_archive_capacity(
+        self,
+        connection: sqlite3.Connection,
+        approval: FactCompactionApprovalRequest,
+        prepared: _PreparedFactArchive,
+    ) -> None:
+        """Enforce the project archive budget before deleting active facts."""
+
+        usage = connection.execute(
+            """SELECT COALESCE(SUM(
+                     length(CAST(compaction_id AS BLOB)) +
+                     length(CAST(schema_version AS TEXT)) +
+                     length(CAST(goal_id AS BLOB)) +
+                     length(CAST(source_sha256 AS BLOB)) +
+                     length(CAST(archive_sha256 AS BLOB)) +
+                     length(CAST(source_bytes AS TEXT)) +
+                     length(CAST(compressed_bytes AS TEXT)) +
+                     length(CAST(fact_count AS TEXT)) +
+                     length(CAST(reviewer_id AS BLOB)) +
+                     length(CAST(approval_reason AS BLOB)) +
+                     length(CAST(created_at AS BLOB)) + compressed_bytes
+                   ), 0) + COALESCE((
+                     SELECT SUM(length(CAST(fact_id AS BLOB)) +
+                                length(CAST(compaction_id AS BLOB)) +
+                                length(CAST(project_id AS BLOB)) +
+                                length(CAST(goal_id AS BLOB)) +
+                                length(CAST(dedupe_key AS BLOB)) +
+                                length(CAST(created_at AS BLOB)))
+                     FROM fact_archive_items WHERE project_id = ?
+                   ), 0) AS bytes
+               FROM fact_archives WHERE project_id = ?""",
+            (approval.project_id, approval.project_id),
+        ).fetchone()
+        new_bytes = len(prepared.compressed) + sum(
+            len(value.encode("utf-8"))
+            for value in (
+                approval.compaction_id,
+                approval.project_id,
+                approval.goal_id,
+                approval.source_sha256,
+                prepared.archive_sha256,
+                str(len(prepared.source)),
+                str(len(prepared.compressed)),
+                str(len(prepared.facts)),
+                "1",
+                approval.reviewer_id,
+                approval.approval_reason.strip(),
+                prepared.created_at,
             )
-            if tuple(fact.fact_id for fact in facts) != fact_ids:
-                raise ConflictError("fact IDs do not match the canonical proposal order")
-            if any(
-                fact.kind not in {FactKind.RESEARCH, FactKind.ADVICE}
-                or fact.criterion_id is not None
-                or fact.evidence
-                for fact in facts
-            ):
-                raise ConflictError("approval includes a non-routine or evidence-bearing fact")
-            candidate_rows = connection.execute(
-                "SELECT fact_ids_json FROM sde_candidates WHERE goal_id = ?",
-                (goal_id,),
-            ).fetchall()
-            protected_ids = {
-                item
-                for candidate in candidate_rows
-                for item in json.loads(candidate["fact_ids_json"])
-            }
-            if protected_ids.intersection(fact_ids):
-                raise ConflictError("SDE-supported facts cannot be compacted")
-            source = self._fact_archive_source(facts)
-            actual_source_sha256 = hashlib.sha256(source).hexdigest()
-            if actual_source_sha256 != source_sha256:
-                raise ConflictError("fact source changed since the proposal was reviewed")
-            if len(source) > MAX_FACT_COMPACTION_SOURCE_BYTES:
-                raise ConflictError("fact archive exceeds its source size limit")
-            compressed = zlib.compress(source, level=9)
-            archive_sha256 = hashlib.sha256(compressed).hexdigest()
-            created_at = utc_now()
-            archive_usage = connection.execute(
-                """SELECT COALESCE(SUM(
-                         length(CAST(compaction_id AS BLOB)) +
-                         length(CAST(schema_version AS TEXT)) +
-                         length(CAST(goal_id AS BLOB)) +
-                         length(CAST(source_sha256 AS BLOB)) +
-                         length(CAST(archive_sha256 AS BLOB)) +
-                         length(CAST(source_bytes AS TEXT)) +
-                         length(CAST(compressed_bytes AS TEXT)) +
-                         length(CAST(fact_count AS TEXT)) +
-                         length(CAST(reviewer_id AS BLOB)) +
-                         length(CAST(approval_reason AS BLOB)) +
-                         length(CAST(created_at AS BLOB)) + compressed_bytes
-                       ), 0) + COALESCE((
-                         SELECT SUM(length(CAST(fact_id AS BLOB)) +
-                                    length(CAST(compaction_id AS BLOB)) +
-                                    length(CAST(project_id AS BLOB)) +
-                                    length(CAST(goal_id AS BLOB)) +
-                                    length(CAST(dedupe_key AS BLOB)) +
-                                    length(CAST(created_at AS BLOB)))
-                         FROM fact_archive_items WHERE project_id = ?
-                       ), 0) AS bytes
-                   FROM fact_archives WHERE project_id = ?""",
-                (project_id, project_id),
-            ).fetchone()
-            new_archive_bytes = len(compressed) + sum(
-                len(value.encode("utf-8"))
-                for value in (
-                    compaction_id,
-                    project_id,
-                    goal_id,
-                    actual_source_sha256,
-                    archive_sha256,
-                    str(len(source)),
-                    str(len(compressed)),
-                    str(len(facts)),
-                    "1",
-                    reviewer_id,
-                    approval_reason.strip(),
-                    created_at,
-                )
+        )
+        new_bytes += sum(
+            len(value.encode("utf-8"))
+            for fact in prepared.facts
+            for value in (
+                fact.fact_id,
+                approval.compaction_id,
+                approval.project_id,
+                approval.goal_id,
+                self._fact_dedupe_key(fact),
+                fact.created_at,
             )
-            new_archive_bytes += sum(
-                len(value.encode("utf-8"))
-                for fact in facts
-                for value in (
+        )
+        if usage["bytes"] + new_bytes > MAX_FACT_ARCHIVE_BYTES_PER_PROJECT:
+            raise FactCapacityError("project fact archive capacity reached")
+
+    def _persist_fact_archive(
+        self,
+        connection: sqlite3.Connection,
+        approval: FactCompactionApprovalRequest,
+        prepared: _PreparedFactArchive,
+    ) -> FactArchiveReceipt:
+        """Write archive, item receipts, and active-row deletion atomically."""
+
+        connection.execute(
+            """INSERT INTO fact_archives
+               (compaction_id, schema_version, project_id, goal_id, source_sha256,
+                archive_sha256, source_bytes, compressed_bytes, fact_count, payload_zlib,
+                reviewer_id, approval_reason, created_at)
+               VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                approval.compaction_id,
+                approval.project_id,
+                approval.goal_id,
+                approval.source_sha256,
+                prepared.archive_sha256,
+                len(prepared.source),
+                len(prepared.compressed),
+                len(prepared.facts),
+                prepared.compressed,
+                approval.reviewer_id,
+                approval.approval_reason.strip(),
+                prepared.created_at,
+            ),
+        )
+        for fact in prepared.facts:
+            connection.execute(
+                """INSERT INTO fact_archive_items
+                   (fact_id, compaction_id, project_id, goal_id, dedupe_key, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
                     fact.fact_id,
-                    compaction_id,
-                    project_id,
-                    goal_id,
+                    approval.compaction_id,
+                    approval.project_id,
+                    approval.goal_id,
                     self._fact_dedupe_key(fact),
                     fact.created_at,
-                )
-            )
-            if archive_usage["bytes"] + new_archive_bytes > MAX_FACT_ARCHIVE_BYTES_PER_PROJECT:
-                raise FactCapacityError("project fact archive capacity reached")
-            connection.execute(
-                """INSERT INTO fact_archives
-                   (compaction_id, schema_version, project_id, goal_id, source_sha256,
-                    archive_sha256,
-                    source_bytes, compressed_bytes, fact_count, payload_zlib,
-                    reviewer_id, approval_reason, created_at)
-                   VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    compaction_id,
-                    project_id,
-                    goal_id,
-                    actual_source_sha256,
-                    archive_sha256,
-                    len(source),
-                    len(compressed),
-                    len(facts),
-                    compressed,
-                    reviewer_id,
-                    approval_reason.strip(),
-                    created_at,
                 ),
             )
-            for fact in facts:
-                connection.execute(
-                    """INSERT INTO fact_archive_items
-                       (fact_id, compaction_id, project_id, goal_id, dedupe_key, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (
-                        fact.fact_id,
-                        compaction_id,
-                        project_id,
-                        goal_id,
-                        self._fact_dedupe_key(fact),
-                        fact.created_at,
-                    ),
-                )
-            connection.executemany(
-                "DELETE FROM facts WHERE fact_id = ?",
-                ((fact_id,) for fact_id in fact_ids),
-            )
-            row = connection.execute(
-                "SELECT * FROM fact_archives WHERE compaction_id = ?",
-                (compaction_id,),
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("inserted fact archive could not be read back")
-            return self._fact_archive_receipt(row)
+        connection.executemany(
+            "DELETE FROM facts WHERE fact_id = ?",
+            ((fact_id,) for fact_id in approval.fact_ids),
+        )
+        row = connection.execute(
+            "SELECT * FROM fact_archives WHERE compaction_id = ?",
+            (approval.compaction_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("inserted fact archive could not be read back")
+        return self._fact_archive_receipt(row)
 
     def list_fact_archive_receipts(
         self,

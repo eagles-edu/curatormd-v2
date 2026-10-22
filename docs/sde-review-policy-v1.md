@@ -50,12 +50,12 @@ it never rewrites the candidate or its decision receipt. Pending decisions do
 not authorize cleanup. Canonical project facts and the receipt must be durable
 before purge of the exact unchanged transient manifest begins.
 
-The local attended reviewer uses separate decisions. It first records the SDE
-disposition and persists canonical facts and that receipt. It then displays
-the complete freshly hashed inventory and requires a second confirmation bound
-to its manifest. The plugin re-scans the exact inventory, records a separate
-cleanup receipt, projects it canonically, and only then attempts deletion. Any
-held artifact remains held. Incomplete or changed inventories cannot authorize
+The local attended reviewer uses one explicit action for both the SDE
+disposition and purge authorization. The confirmation phrase includes the
+complete freshly hashed inventory manifest displayed in the review packet. The
+plugin re-scans that exact inventory, records a distinct cleanup receipt,
+persists both receipts canonically, and only then attempts deletion. Any held
+artifact remains held. Incomplete or changed inventories cannot authorize
 cleanup.
 
 ## Approved local-alpha artifact retention default
@@ -66,14 +66,15 @@ eligible for expiry as soon as their compact facts are recorded and any related
 SDE is approved or rejected, with 72 hours as the absolute maximum age. The
 explicit SDE decision clears only the pending-SDE review hold. Legal or
 operational artifact holds remain in force until separately released by an
-authorized reviewer. Purge still requires a complete, freshly hashed inventory
-and an explicit human approval of that exact inventory; a scheduler may retry
-only a purge already approved in a durable receipt.
+authorized reviewer. The same explicit review action authorizes purge only for
+a complete, freshly hashed inventory displayed in the packet; a scheduler may
+retry only a purge already approved in a durable receipt.
 
 This is the approved policy for local alpha, not evidence that expiry is fully
-operational in production. SDE disposition alone never authorizes cleanup. A
-separate cleanup-authorization receipt binds the exact current inventory and
-canonical projection before the SDE review path can purge unheld artifacts.
+operational in production. The explicit review action authorizes cleanup only
+for its complete exact inventory; a separate durable cleanup-authorization
+receipt binds that inventory and its canonical projection before the SDE
+review path can purge unheld artifacts.
 V2 records publication time for producer-staged files and exposes a read-only
 72-hour candidate scan that fails closed on unknown age or incomplete
 inventory. The local implementation now supports attended approval of an

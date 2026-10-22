@@ -17,6 +17,7 @@ from .backup import backup_database, restore_database
 from .evidence import (
     BrowserProofEvidenceAdapter,
     EvidenceAdapterError,
+    EvidenceAdapterPolicy,
     EvidenceAdapterRegistry,
     EvidenceSourceResolver,
     EvidenceSourceReceipt,
@@ -114,13 +115,11 @@ from .models import (
     SDEReviewDetail,
     SDEReviewPacket,
     SDEStatus,
-    StagingArtifactClass,
     StagingArtifactInventory,
-    StagingClassUsage,
     StagingExpirySnapshot,
-    StagingUsage,
     SuccessCriterion,
 )
+from .staging_models import StagingArtifactClass, StagingClassUsage, StagingUsage
 from .markdown_persistence import (
     MAX_MARKDOWN_BYTES,
     MarkdownPersistenceAdapter,
@@ -147,6 +146,7 @@ from .project_access import (
     ProjectAccessManager,
     ProjectAdministrationAction,
     ProjectAdministrationAuthorizer,
+    ProjectAuthorizationBinding,
     SQLiteProjectGrantAuthorizer,
 )
 from .reviews import (
@@ -167,6 +167,7 @@ from .store import (
     NotFoundError,
     ProjectGrantRecord,
     ProjectRegistrationRecord,
+    ProjectRegistrationRequest,
     ProjectRegistryAuditRecord,
     SQLITE_SCHEMA_VERSION,
 )
@@ -196,6 +197,7 @@ __all__ = [
     "CodexGoalBinding",
     "EvidenceGateError",
     "EvidenceAttestation",
+    "EvidenceAdapterPolicy",
     "EvidenceAdapterRegistry",
     "EvidenceAdapterError",
     "EvidenceOutcome",
@@ -286,11 +288,13 @@ __all__ = [
     "FingerprintBoundSQLiteProjectGrantAuthorizer",
     "ProjectAdministrationAction",
     "ProjectAdministrationAuthorizer",
+    "ProjectAuthorizationBinding",
     "ProjectAction",
     "ProjectAuthorizer",
     "ProjectGrantAuthorizer",
     "ProjectGrantRecord",
     "ProjectRegistrationRecord",
+    "ProjectRegistrationRequest",
     "ProjectRegistryAuditRecord",
     "SQLiteProjectGrantAuthorizer",
     "ProjectDependencyReadiness",

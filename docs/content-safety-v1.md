@@ -12,7 +12,10 @@ content or replace it with an approved non-sensitive reference, then resubmit.
 - Private-key PEM markers.
 - Common credential assignments such as `api_key=`, `token=`, and
   `password=`; credentials embedded in URL user-info; JWT-shaped values; and
-  common provider-token prefixes.
+  common provider-token prefixes, including GitLab PAT (`glpat-`), Stripe
+  secret (`sk_live_` / `sk_test_`), and restricted (`rk_live_` / `rk_test_`)
+  keys, GitHub fine-grained PAT (`github_pat_`), and stateless GitHub App
+  installation tokens (`ghs_`).
 - Email addresses, syntactically valid US SSN-shaped strings, and phone numbers
   explicitly labeled `phone`, `mobile`, `cell`, or `telephone`.
 
@@ -32,10 +35,21 @@ SQLite v16 migration replaces prior failed-target exception strings with
 Pattern detection cannot prove that arbitrary free text contains no secret or
 personal data. It may miss unknown credential formats, names, unlabelled phone
 numbers, non-US identifiers, encoded data, or data split across fields; it may
-also reject a legitimate string that resembles a sensitive value. The error
-does not disclose the matched text. Do not interpret a clean scan as a privacy
-certification or as proof that logs, backups, traces, or upstream transport are
-safe. The preliminary scope-bounded register is in
+also reject a legitimate string that resembles a sensitive value. GitLab
+documents `glpat-` as the default personal/project/group token prefix, with a
+20-character token body; administrators can configure a custom PAT prefix,
+which this default scanner does not infer. See the [GitLab token prefix
+reference](https://docs.gitlab.com/security/tokens/) and [custom prefix
+settings](https://docs.gitlab.com/administration/settings/account_and_limit_settings/).
+GitHub documents `github_pat_` for fine-grained personal access tokens and
+reports that stateless installation tokens retain the `ghs_` prefix while
+growing to approximately 520 characters with a JWT body. The detector matches
+the prefix and bounded token-like body without requiring a fixed length. See
+[GitHub token formats](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github)
+and the [stateless installation-token rollout](https://github.blog/changelog/2026-10-02-stateless-github-app-installation-tokens-rolled-out/).
+The error does not disclose the matched text. Do not interpret a clean scan
+as a privacy certification or as proof that logs, backups, traces, or upstream
+transport are safe. The preliminary scope-bounded register is in
 [`threat-model-v1.md`](threat-model-v1.md). It does not close the broader
 threat-model, jurisdiction-specific rules, deployment-owner review, or
 independent-validation release gates.

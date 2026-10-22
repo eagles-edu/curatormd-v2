@@ -67,11 +67,11 @@ Curator V2 work protocol:
    criteria, facts to date, TODOs, blocker/owner, and next action. Finish only
    when every criterion has passing evidence; otherwise leave the goal open,
    blocked, or deferred with the exact unmet work.
-4. Keep SDE review, canonical persistence, cleanup authorization, and artifact
-   deletion as separate steps. SDE disposition and expiry eligibility never
-   authorize deletion. Require a separate human approval and durable receipt
-   bound to the complete exact inventory after canonical facts are persisted.
-   Keep unapproved or failed cleanup visibly pending; never equate a zero SDE
+4. Keep SDE disposition, cleanup authorization, canonical persistence, and
+   artifact deletion as ordered durable steps. One explicit review action may
+   authorize deletion only for its complete exact inventory; expiry eligibility
+   never authorizes deletion. Store a distinct cleanup receipt and project it
+   before deleting. Keep unapproved or failed cleanup visibly pending; never equate a zero SDE
    count with failed capture or health.
 """
 
@@ -206,6 +206,18 @@ def build_mcp_server(
 
         return register_safe
 
+    def _read_tool() -> Any:
+        """Advertise an idempotent, non-destructive Curator read to MCP hosts."""
+
+        return _safe_tool(
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            )
+        )
+
     def _event(event_id: str, payload: Any, source_sequence: int | None = None):
         return EventEnvelope(
             event_id=event_id,
@@ -220,25 +232,32 @@ def build_mcp_server(
             api.process_event_json(caller, project_id, event.to_json())
         )
 
-    @_safe_tool()
+    @_read_tool()
     def event_queue_status() -> str:
         """Read project backlog, queue lag, and active/expired claim totals."""
 
         return _json_result(api.event_queue_status(caller, project_id))
 
-    @_safe_tool()
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
     def project_activity_status() -> str:
         """Read retained event and SDE counts; this is not a health indicator."""
 
         return _json_result(api.project_activity_status(caller, project_id))
 
-    @_safe_tool()
+    @_read_tool()
     def project_health() -> str:
         """Read observed project operations; unknown probes never show healthy."""
 
         return _json_result(api.project_health(caller, project_id))
 
-    @_safe_tool()
+    @_read_tool()
     def project_metrics() -> str:
         """Render content-free Prometheus metrics for the bound project."""
 
@@ -548,7 +567,7 @@ def build_mcp_server(
 
         return _json_result(api.process_event_json(caller, project_id, event_json))
 
-    @_safe_tool()
+    @_read_tool()
     def goal_status(
         goal_id: str, sde_offset: int = 0, purge_offset: int = 0
     ) -> str:
@@ -558,7 +577,7 @@ def build_mcp_server(
             api.goal_status(caller, project_id, goal_id, sde_offset, purge_offset)
         )
 
-    @_safe_tool()
+    @_read_tool()
     def goal_bullet_projection(goal_id: str) -> str:
         """Read compact bullets separating verified facts, claims, and open gates."""
 
@@ -566,7 +585,7 @@ def build_mcp_server(
             api.goal_bullet_projection(caller, project_id, goal_id)
         )
 
-    @_safe_tool()
+    @_read_tool()
     def goal_report(
         goal_id: str,
         fact_offset: int = 0,
@@ -588,7 +607,7 @@ def build_mcp_server(
             receipt_offset,
         )
 
-    @_safe_tool()
+    @_read_tool()
     def fact_compaction_propose(goal_id: str, max_facts: int = 32) -> str:
         """Preview exact eligible routine bullets without modifying the ledger."""
 
@@ -622,7 +641,7 @@ def build_mcp_server(
             )
         )
 
-    @_safe_tool()
+    @_read_tool()
     def fact_archive_receipts(
         goal_id: str, offset: int = 0, limit: int = 50
     ) -> str:
@@ -634,14 +653,14 @@ def build_mcp_server(
             )
         )
 
-    @_safe_tool()
+    @_read_tool()
     def goal_list(statuses: list[str] | None = None) -> str:
         """List up to 100 project goal snapshots for small projects."""
 
         parsed_statuses = tuple(GoalStatus(status) for status in statuses or [])
         return _json_result(api.goal_list(caller, project_id, parsed_statuses))
 
-    @_safe_tool()
+    @_read_tool()
     def goal_list_page(
         offset: int = 0,
         limit: int = 50,
@@ -660,7 +679,7 @@ def build_mcp_server(
             )
         )
 
-    @_safe_tool()
+    @_read_tool()
     def goal_children(parent_goal_id: str) -> str:
         """List up to 100 full child snapshots for small parent tasks."""
 
@@ -668,7 +687,7 @@ def build_mcp_server(
             api.goal_children(caller, project_id, parent_goal_id)
         )
 
-    @_safe_tool()
+    @_read_tool()
     def goal_children_page(
         parent_goal_id: str,
         offset: int = 0,
@@ -689,7 +708,7 @@ def build_mcp_server(
             )
         )
 
-    @_safe_tool()
+    @_read_tool()
     def project_storage_usage() -> str:
         """Report this project's logical records and event-class byte usage."""
 
@@ -705,7 +724,7 @@ def build_mcp_server(
 
         return _json_result(api.persist_goal(caller, project_id, goal_id, target))
 
-    @_safe_tool()
+    @_read_tool()
     def goal_reconcile(goal_id: str, target: str) -> str:
         """Compare a configured Markdown block with SQLite without changing either."""
 
@@ -713,7 +732,7 @@ def build_mcp_server(
             api.reconcile_goal(caller, project_id, goal_id, target)
         )
 
-    @_safe_tool()
+    @_read_tool()
     def project_reconcile(
         target: str, offset: int = 0, limit: int = 50
     ) -> str:
@@ -725,7 +744,7 @@ def build_mcp_server(
             )
         )
 
-    @_safe_tool()
+    @_read_tool()
     def sde_review_queue(limit: int = 100) -> str:
         """List a bounded queue of project-scoped SDE review packets."""
 
@@ -790,7 +809,7 @@ def build_mcp_server(
             api.discover_project_expiry_inventory(caller, project_id)
         )
 
-    @_safe_tool()
+    @_read_tool()
     def sde_review_detail(candidate_id: str) -> str:
         """Inspect the selected facts and evidence for a review candidate."""
 
@@ -850,7 +869,7 @@ def build_mcp_server(
             )
         )
 
-    @_safe_tool()
+    @_read_tool()
     def sde_quality_feedback_summary() -> str:
         """Report aggregate reviewer labels without exposing identities."""
 
@@ -870,7 +889,7 @@ def build_mcp_server(
         artifact_inventory_complete: bool,
         rationale: str | None = None,
     ) -> str:
-        """Record an authorized decision and exact staged-artifact manifest."""
+        """Record disposition and authorize purge of its exact complete manifest."""
 
         return _json_result(
             api.sde_confirm(
@@ -914,7 +933,7 @@ def build_mcp_server(
         manifest_sha256: str,
         target: str,
     ) -> str:
-        """Record a separate human approval bound to the exact cleanup manifest."""
+        """Record compatibility cleanup approval for an exact manifest."""
 
         authorization, receipt = api.authorize_artifact_cleanup(
             caller,
@@ -928,7 +947,7 @@ def build_mcp_server(
             {"authorization": authorization, "receipt": receipt}
         )
 
-    @_safe_tool()
+    @_read_tool()
     def artifact_purge_status(receipt_id: str) -> str:
         """Read receipt-level and per-artifact purge state and retry metadata."""
 

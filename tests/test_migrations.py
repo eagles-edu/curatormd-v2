@@ -221,6 +221,162 @@ class SchemaMigrationTests(unittest.TestCase):
             finally:
                 migrated.close()
 
+    def test_v20_migration_adds_cleanup_authorizations_without_inventing_them(self) -> None:
+        """Preserve legacy SDE receipts while leaving their new approval absent."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                "CREATE TABLE audit_receipts (receipt_id TEXT PRIMARY KEY)"
+            )
+            connection.execute(
+                "INSERT INTO audit_receipts (receipt_id) VALUES (?)",
+                ("legacy-sde-receipt",),
+            )
+            connection.execute("PRAGMA user_version = 20")
+
+            apply_schema_migrations(connection, 20)
+
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                SQLITE_SCHEMA_VERSION,
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT receipt_id FROM audit_receipts"
+                ).fetchone()[0],
+                "legacy-sde-receipt",
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM cleanup_authorizations"
+                ).fetchone()[0],
+                0,
+            )
+        finally:
+            connection.close()
+
+    def test_v20_migration_rejects_incompatible_cleanup_authorization_table(self) -> None:
+        """Do not stamp v21 over a conflicting object with the expected table name."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute(
+                "CREATE TABLE audit_receipts (receipt_id TEXT PRIMARY KEY)"
+            )
+            connection.execute(
+                "CREATE TABLE cleanup_authorizations (unexpected TEXT)"
+            )
+            connection.execute("PRAGMA user_version = 20")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "cleanup authorization table schema is incompatible"
+            ):
+                apply_schema_migrations(connection, 20)
+
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0], 20
+            )
+            self.assertEqual(
+                [
+                    row[1]
+                    for row in connection.execute(
+                        "PRAGMA table_info(cleanup_authorizations)"
+                    )
+                ],
+                ["unexpected"],
+            )
+        finally:
+            connection.close()
+
+    def test_v20_migration_rejects_cleanup_table_without_receipt_foreign_key(self) -> None:
+        """Require the migrated authorization to remain tied to an SDE receipt."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute(
+                "CREATE TABLE audit_receipts (receipt_id TEXT PRIMARY KEY)"
+            )
+            connection.execute(
+                """CREATE TABLE cleanup_authorizations (
+                       receipt_id TEXT PRIMARY KEY,
+                       project_id TEXT NOT NULL,
+                       reviewer_id TEXT NOT NULL,
+                       manifest_sha256 TEXT NOT NULL,
+                       approved_at TEXT NOT NULL,
+                       canonical_persisted INTEGER NOT NULL DEFAULT 0,
+                       canonical_target TEXT,
+                       canonical_sha256 TEXT,
+                       canonical_persisted_at TEXT
+                   )"""
+            )
+            connection.execute("PRAGMA user_version = 20")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "cleanup authorization table schema is incompatible"
+            ):
+                apply_schema_migrations(connection, 20)
+
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0], 20
+            )
+            self.assertEqual(
+                connection.execute(
+                    "PRAGMA foreign_key_list(cleanup_authorizations)"
+                ).fetchall(),
+                [],
+            )
+        finally:
+            connection.close()
+
+    def test_v20_migration_rejects_cleanup_table_with_incompatible_constraints(
+        self,
+    ) -> None:
+        """Reject a wrong default, nullable required field, or missing primary key."""
+
+        schema = """CREATE TABLE cleanup_authorizations (
+                       receipt_id TEXT PRIMARY KEY,
+                       project_id TEXT NOT NULL,
+                       reviewer_id TEXT NOT NULL,
+                       manifest_sha256 TEXT NOT NULL,
+                       approved_at TEXT NOT NULL,
+                       canonical_persisted INTEGER NOT NULL DEFAULT 0,
+                       canonical_target TEXT,
+                       canonical_sha256 TEXT,
+                       canonical_persisted_at TEXT,
+                       FOREIGN KEY(receipt_id) REFERENCES audit_receipts(receipt_id)
+                   )"""
+        invalid_schemas = (
+            schema.replace("DEFAULT 0", "DEFAULT 1"),
+            schema.replace("project_id TEXT NOT NULL", "project_id TEXT"),
+            schema.replace("receipt_id TEXT PRIMARY KEY", "receipt_id TEXT"),
+        )
+        for invalid_schema in invalid_schemas:
+            with self.subTest(schema=invalid_schema):
+                connection = sqlite3.connect(":memory:")
+                try:
+                    connection.execute(
+                        "CREATE TABLE audit_receipts (receipt_id TEXT PRIMARY KEY)"
+                    )
+                    connection.execute(invalid_schema)
+                    connection.execute("PRAGMA user_version = 20")
+
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "cleanup authorization table schema is incompatible",
+                    ):
+                        apply_schema_migrations(connection, 20)
+
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0], 20
+                    )
+                finally:
+                    connection.close()
+
     def test_v15_migration_redacts_legacy_purge_failure_details(self) -> None:
         """Remove potentially sensitive exception text without clearing retry state."""
 
@@ -960,8 +1116,8 @@ class SchemaMigrationTests(unittest.TestCase):
             finally:
                 migrated.close()
 
-    def test_v5_purge_target_migrates_as_immediately_due(self) -> None:
-        """Upgrade v5 purge receipts without inventing a retry delay."""
+    def test_v5_purge_target_stays_pending_without_cleanup_authorization(self) -> None:
+        """Migrate the target without inventing either retry delay or approval."""
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1037,6 +1193,11 @@ class SchemaMigrationTests(unittest.TestCase):
                 self.assertEqual(target.status.value, "pending")
                 self.assertEqual(target.attempts, 0)
                 self.assertIsNone(target.next_attempt_at)
+                self.assertIsNone(
+                    migrated.cleanup_authorization(
+                        receipt.receipt_id, "migration-project"
+                    )
+                )
                 self.assertEqual(
                     tuple(
                         item.receipt_id
@@ -1044,7 +1205,7 @@ class SchemaMigrationTests(unittest.TestCase):
                             "migration-project"
                         )
                     ),
-                    (receipt.receipt_id,),
+                    (),
                 )
                 with migrated.transaction() as connection:
                     self.assertEqual(

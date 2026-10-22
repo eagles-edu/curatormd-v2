@@ -25,7 +25,10 @@ from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .mcp_server import build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
-from .project_access import FingerprintBoundSQLiteProjectGrantAuthorizer
+from .project_access import (
+    FingerprintBoundSQLiteProjectGrantAuthorizer,
+    ProjectAuthorizationBinding,
+)
 from .rate_limiter import SQLiteTokenBucket
 from .store import CuratorStore
 
@@ -89,11 +92,9 @@ def build_local_profile_mcp(
             actions.add(ProjectAction.REVIEW)
         authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
             store,
-            project_id=config.project_id,
-            repository_fingerprint=config.repository_fingerprint,
-            config_sha256=config.config_sha256,
-            backend_api_version=config.backend_api_version,
-            allowed_actions=frozenset(actions),
+            ProjectAuthorizationBinding.from_project_config(
+                config, frozenset(actions)
+            ),
         )
         if not authorizer.authorize(caller, config.project_id, ProjectAction.READ):
             raise ValueError(

@@ -2,6 +2,18 @@
 
 ## 2026-10-22
 
+- **Intent:** Close the verified local Curator V2 domain implementation slice.
+  **Changed fact:** Plan slice B now covers local bounds, schema/privacy,
+  concurrency/replay, correction/supersession, property, and v0-to-v21 migration
+  evidence. The delivery checklist now reads 138/175 complete, with 37 open.
+  **Verification:** The focused domain set passes 155 tests, and the full
+  locked suite passes 377. Strict Pyright, errors-only Pylint, Bandit, and
+  `git diff --check` pass on the current worktree.
+  **Open gate:** Broader source-to-sink privacy review, production migration,
+  authenticated identity, deployment, production retention/recovery, and
+  live-runtime evidence remain open.
+  **Outcome:** Closed one locally evidenced delivery row while preserving all
+  external release gates.
 - **Intent:** Verify the next locally testable Curator V2 domain-slice criteria.
   **Changed fact:** No runtime behavior or delivery checklist status changed.
   **Verification:** The focused bounds, validation, schema/privacy, concurrency,
@@ -45,6 +57,224 @@
   remain open. The privacy checklist item remains unchecked.
   **Outcome:** Recorded a bounded local privacy improvement without changing
   checklist progress or claiming end-to-end privacy.
+- **Intent:** Close a concrete high-confidence credential-format false
+  negative in the Curator V2 reject-only safety gate.
+  **Changed fact:** Unlabelled Stripe secret and restricted key forms are now
+  recognized alongside existing provider-token prefixes. The safety contract
+  documents those formats; rejection still preserves source meaning and never
+  echoes the matched value.
+  **Verification:** Five focused safety/API/MCP tests pass, including the
+  existing no-write/no-leak canary path with an unlabelled synthetic Stripe
+  token. Strict Pyright, errors-only Pylint, and `git diff --check` pass.
+  **Open gate:** Other formats, scanner false positives/negatives, jurisdiction
+  rules, and deployment policy remain unreviewed; no checklist status changed.
+  **Outcome:** this specific prefix false negative is covered locally without
+  claiming privacy certification; the full V2 goal remains active.
+- **Intent:** Exercise staging-measurement aggregate invariants over generated
+  inputs.
+  **Changed fact:** A deterministic Hypothesis property generates class
+  breakdowns and non-file scan counts, accepts consistent totals, and rejects
+  a mismatched aggregate. Its strategy stays below the configured scan bound.
+  **Verification:** The property passes 60 examples; strict Pyright and
+  errors-only Pylint pass; `git diff --check` passes. No full Curator suite was
+  rerun.
+  **Open gate:** Full transition/privacy coverage and production migration
+  support remain open; no checklist status changed.
+  **Outcome:** generated validation coverage now exercises the new staging
+  domain boundary; the full V2 goal remains active.
+- **Intent:** Make Hermes MCP discovery describe the configured Curator V2
+  caller context accurately.
+  **Changed fact:** `hermes mcp test` now reports host-injected profile/session
+  context for an opted-in local stdio server; remote URLs carrying the same
+  flag do not get that label. The text explicitly avoids claiming human auth.
+  **Verification:** Three focused MCP CLI tests pass; Hermes `scripts/check`
+  passes all 12 checks. Running the checkout-activated CLI against the actual
+  `renew-ssl-coding` profile connects and discovers 47 tools with the new
+  context label. Hermes `git diff --check` passes.
+  **Open gate:** The prior read-only profile status call was rejected before
+  server execution. Authenticated ledger status, verified identity, and live
+  profile behavior remain unverified; no checklist status changed.
+  **Outcome:** configuration diagnostics now distinguish host context from
+  absent remote auth without weakening the server boundary; the V2 goal remains
+  active.
+- **Intent:** Make the bounded staging-measurement domain easier to maintain
+  while preserving Curator V2's public record imports.
+  **Changed fact:** `StagingArtifactClass`, `StagingClassUsage`, and
+  `StagingUsage` now live in `staging_models.py`; package-level exports remain
+  unchanged. Aggregate count/completeness checks and per-class consistency
+  checks are separate helpers with unchanged validation errors.
+  **Verification:** Four focused schema/scanner regressions pass; strict
+  Pyright reports zero diagnostics; errors-only Pylint passes. Focused Pylint
+  findings for `models.py` plus `staging_models.py` fell from 19 to 16. Both
+  repositories pass `git diff --check`.
+  **Open gate:** Full transition/privacy and repository-wide advisory Pylint
+  cleanup remain open; no checklist status changed.
+  **Outcome:** staging domain validation is isolated and less branch-complex;
+  the full V2 goal remains active.
+- **Intent:** Close one locally actionable Curator V2 privacy sink in Hermes
+  Core's shared session viewer projection.
+  **Changed fact:** Viewer events retain Curator V2 tool identity and failure
+  state but replace arguments, result text, previews, and labels derived from
+  arguments with fixed markers. The in-call observer path retains the response
+  required by the initiating API request.
+  **Verification:** The focused managed-worker viewer suite passes 2 tests;
+  Hermes `scripts/check` passes all 12 checks; both repositories' `git diff
+  --check` pass. No full Hermes test suite was rerun.
+  **Open gate:** Other Hermes logs/traces/provider paths and the complete
+  source-to-sink privacy review remain open. The authenticated Curator MCP
+  status request is still unverified: the Codex route lacks Hermes context and
+  the attempted profile call was rejected before reaching the server. No
+  checklist count changed.
+  **Outcome:** shared live viewer payloads no longer expose Curator V2 facts or
+  evidence; the overall V2 goal remains active.
+- **Intent:** Verify the current Curator V2 CI quality sequence after the
+  active local source changes.
+  **Changed fact:** The locked quality environment resolves from the repository
+  lockfile without dependency changes; no source behavior changed in this
+  verification step.
+  **Verification:** Strict Pyright reports zero diagnostics; errors-only
+  Pylint passes; Bandit exits successfully (its documented `nosec` checks emit
+  warnings, with no failed checks); locked dependency audit finds no known
+  vulnerabilities or adverse project statuses. Curator `git diff --check`
+  passes. The complete Curator test suite was not rerun.
+  **Open gate:** Full-suite freshness, deployed identity/retention/runtime,
+  and production release evidence remain separate. No checklist count
+  changed.
+  **Outcome:** the current CI quality/security gates are green for this dirty
+  local V2 checkout; the full V2 goal remains active.
+- **Intent:** Harden the local-alpha staging measurement boundary under the
+  V2 domain bounds/schema slice.
+  **Changed fact:** `StagingUsage` now validates exact non-negative counters,
+  the 10,000-entry scan ceiling, completeness/error-code consistency, safe
+  bounded category codes, classified-entry totals, and per-class alignment.
+  `StagingClassUsage` now rejects non-exact counters and non-enum classes. The
+  published v1 schema now enforces the scan ceiling and bounded safe error-code
+  shape, and ties error-code presence to inventory completeness.
+  **Verification:** Four focused contract/scanner regressions pass; strict
+  Pyright reports zero diagnostics; errors-only Pylint and `git diff --check`
+  pass. No broad test suite was rerun.
+  **Open gate:** Full transition/privacy coverage and production migration
+  support remain open. Owner-approved measured disk budgets and deployed growth
+  monitoring are also unverified; no delivery count changed.
+  **Outcome:** malformed staging metrics can no longer enter the typed domain
+  records; the V2 goal remains active.
+- **Intent:** Continue the locally actionable repository-quality cleanup
+  without running the already-verified review-CLI tests again.
+  **Changed fact:** The review CLI test double now types its two keyword-only
+  confirmation options with `TypedDict` and `Unpack`, preserving the exercised
+  API call while removing its excessive-argument signature finding.
+  **Verification:** Focused warning-level Pylint reports no findings in
+  `tests/test_review_cli.py` (10.00/10); strict Pyright reports zero diagnostics;
+  `git diff --check` passes. No tests or full repository Pylint inventory were
+  rerun.
+  **Open gate:** Repository-wide warning-level Pylint cleanup remains open.
+  No checklist status changed. **Outcome:** one local test-maintainability
+  finding removed with no runtime behavior change.
+- **Intent:** Complete the local contract-freeze implementation slice using
+  current V2 sources and executable fixtures.
+  **Changed fact:** The version-1 contract family is now explicitly frozen for
+  the current local-alpha source. The contract index states
+  when a schema/behavior change needs a new version and migration; the plan
+  slice is marked complete based on its linked schema, lifecycle, error, and
+  plugin contracts.
+  **Verification:** `tests.test_contract_schemas` passes all 6 tests, including
+  runtime record/event/config/error validation; the lifecycle action matrix
+  regression passes for every public action and goal state. `git diff --check`
+  passes.
+  **Open gate:** The installed Vhost alpha wheel is schema v20 while the
+  worktree source is v21. This source freeze does not prove cross-repository
+  interoperability, external serializers, production compatibility,
+  authenticated identity, or deployment. No delivery-row count changed.
+  **Outcome:** local V2 source contracts are frozen and executable; installed
+  consumer synchronization and external integration gates remain open.
+- **Intent:** Resolve the Curator V2 ledger status uncertainty without
+  weakening the trusted Hermes profile check.
+  **Changed fact:** A read-only inspection of the alpha profile's configured
+  SQLite database passed `PRAGMA quick_check` and found one `vhost-manager-alpha`
+  goal, two facts linked to that project's goal, and 12 project event-inbox
+  rows. `hermes mcp test curator_v2` connected over stdio and discovered 47
+  tools. A profile one-shot status attempt was rejected before returning a
+  server result; direct Codex MCP calls still lack Hermes-owned request metadata
+  and correctly return `unauthenticated`.
+  **Verification:** Database access used SQLite `mode=ro`; only aggregate counts
+  were queried, with no content or mutation. The plan now distinguishes at-rest
+  local ledger evidence from authenticated MCP/live-profile evidence.
+  **Open gate:** Hermes-authenticated identity and an actual successful
+  profile-context `project_activity_status` response remain unverified. No
+  checklist status changed. **Outcome:** local alpha ledger persistence is
+  verified at rest; MCP authorization remains fail-closed.
+- **Intent:** Keep Curator V2 response content out of Hermes diagnostic logs.
+  **Changed fact:** verbose result logging and tool-failure warnings now pass
+  Curator V2 results through a fixed redaction marker; unrelated tool output
+  keeps its prior diagnostic behavior. Hermes executor exception and failed-
+  result logs now use the same marker and omit Curator-specific tracebacks.
+  The central Hermes dispatcher returns a fixed Curator V2 error and sends the
+  same bounded message to post-tool hooks when a handler raises.
+  Dispatcher hook, request-middleware, and result-hook exception diagnostics
+  now also redact Curator-specific exception text.
+  **Verification:** the existing Curator V2 trajectory, result-log, and
+  sampling suites pass 7 focused tests; the Hermes MCP-handler, executor, and
+  central-dispatch failure regressions pass 9 tests across focused runs.
+  Hermes `python scripts/check` passes all 12 checks with zero
+  blocking/advisory health findings, and Hermes `git diff --check` passes.
+  **Open gate:** other diagnostic sinks, traces, backups, provider
+  retention, and the full privacy source-to-sink review remain open; no plan
+  checkbox or checklist count changed. **Outcome:** recorded local Hermes
+  integration evidence only.
+- **Intent:** Prevent Curator V2 tool responses from being copied into saved
+  Hermes trajectories. **Changed fact:** trajectory conversion now preserves
+  paired call IDs and tool names but replaces Curator V2 result content with a
+  redaction sentinel before serialization; unrelated tool results remain
+  intact. **Verification:** focused Hermes argument/result/sampling regressions
+  pass (5 tests); `python scripts/check` passes all 12 checks with zero
+  blocking/advisory health findings; Hermes `git diff --check` passes.
+  **Open gate:** other trajectory fields, logs, traces, backups, provider-side
+  retention, and the broad source-to-sink privacy review remain open; no plan
+  checkbox or checklist count changed. **Outcome:** recorded local Hermes
+  integration evidence only.
+- **Intent:** Reduce existing V2 review-CLI test maintainability findings.
+  **Changed fact:** fixture receipt/projection/verifier values are typed
+  dataclasses, and the exact end-to-end CLI invocation lives in a focused
+  helper. **Verification:** all 9 review-CLI tests pass; strict Pyright reports
+  zero diagnostics; errors-only Pylint, Bandit, and `git diff --check` pass.
+  Warning-level Pylint findings in the touched test file fell from five to
+  one. **Open gate:** the remaining finding is the test double's seven-argument
+  signature matching the current review API; the full repository warning
+  inventory was not rerun and broad Pylint cleanup remains open. **Outcome:**
+  recorded a focused test-structure cleanup without suppressions.
+- **Intent:** Prevent Curator V2 tool payloads from entering Hermes trajectory
+  samples. **Changed fact:** trajectory conversion preserves the Curator V2
+  call boundary but replaces its arguments with a redaction sentinel.
+  **Verification:** two trajectory regressions plus the sampling regression
+  pass (3 tests total); Hermes `python scripts/check` passes all 12 checks and
+  Hermes `git diff --check` passes. **Open gate:** unrelated trajectory content,
+  traces, backups, provider paths, and the broad source-to-sink privacy review
+  remain open; no plan checkbox or progress count changed. **Outcome:** recorded
+  local Hermes integration evidence only.
+- **Intent:** Enforce the approved sole-local-reviewer boundary for the alpha
+  ledger. **Changed fact:** the attended CLI review authorizer now requires the
+  invoking UID to own the SQLite database before opening it; the shareable
+  profile `auth=none` path remains denied. **Verification:** the focused review
+  CLI suite passes 9 tests, strict Pyright reports zero diagnostics,
+  errors-only Pylint and `git diff --check` pass. Scoped warning-level Pylint
+  rates the touched CLI/test pair 9.90/10 with no remaining CLI findings; five
+  fixture/helper findings remain in the test module. **Open gate:** this is
+  local filesystem-account binding only; Hermes-authenticated identity,
+  production grant provisioning, deployment, retention, and live runtime remain
+  open.
+  **Outcome:** recorded local alpha enforcement without changing the production
+  identity claim.
+- **Intent:** Close the remaining malformed MCP sampling-argument log disclosure
+  found in the Hermes Core Curator V2 integration. **Changed fact:** Hermes now
+  omits malformed sampling argument text from its warning while preserving the
+  raw value only for in-memory recovery; trajectory-conversion helpers now live
+  in their topical module. **Verification:** the dedicated canary regression
+  passes; Hermes `python scripts/check` passes all 12 checks and
+  `git diff --check` passes. **Open gate:** broader Hermes logging, replay,
+  backup, trace, and upstream privacy review remains open; the plan privacy item
+  and checklist count are unchanged. Curator MCP status calls returned
+  `unauthenticated`, so global ledger persistence remains unverified.
+  **Outcome:** recorded local integration evidence only; no commit or push.
 - **Intent:** Complete the pending Curator V2 quality verification without
   rerunning the test suite. **Changed fact:** no delivery checklist status or
   source behavior changed. **Verification:** the documented locked quality
@@ -2912,6 +3142,414 @@
 **Open gate:** This informational editor label does not establish authenticated identity, runtime health, or deployment readiness. No tests were run.
 
 **Outcome:** The separately requested V2 editor integration is visible in the V2 plan with directly checked local installation evidence.
+
+## 2026-10-22 — Bind SDE disposition and exact purge to one review action
+
+**Intent:** Align the local-alpha review flow with the owner's decision that the same explicit SDE review action authorizes purge of its displayed exact inventory.
+
+**Changed fact:** A complete, freshly rechecked inventory now creates its distinct cleanup-authorization receipt during `sde_confirm`; incomplete inventories create no cleanup authorization. Canonical projections of both receipts remain mandatory before purge. The review CLI uses one phrase bound to the manifest, and the MCP lifecycle regression now proves unheld files purge after canonical persistence while held files remain. Markdown projections identify the cleanup receipt as authorized by the review action.
+
+**Verification:** Eight focused review-CLI tests and the focused MCP SDE/persistence/purge integration pass. Strict Pyright reports zero diagnostics; errors-only Pylint and Bandit exit successfully; Bandit reports four existing `nosec` notices in `git_evidence.py`. `git diff --check` passes.
+
+**Open gate:** Hermes still reports no authenticated human subject for the Vhost profile. Production identity, retention/recovery, deployment, scheduler, and live-runtime gates remain open; Curator V2 MCP persistence could not be verified in the unauthenticated session. No V1, GPTMD, consumer, or Hermes Core files were changed.
+
+**Outcome:** Local V2 review and purge behavior now follows the one-action policy while preserving the canonical-write-before-delete gate; the full V2 goal remains active.
+
+## 2026-10-22 — Mark Curator activity status read-only for Hermes
+
+**Intent:** Let Hermes classify the V2 ledger status read as non-mutating while retaining the required host-injected profile/session context check.
+
+**Changed fact:** The `project_activity_status` MCP schema now advertises `readOnlyHint=true`, with the corresponding bounded, non-destructive annotations. The MCP contract documents this hint. No authentication rule or caller identity was relaxed.
+
+**Verification:** The current Hermes Core checkout's profile-scoped `mcp test` reports host-injected local stdio context and discovers 47 tools. A read-only SQLite integrity inspection returned `quick_check: ok`, with one goal, two facts, and 12 inbox rows. The Hermes-routed status call was rejected before server execution; the direct Codex call remains `unauthenticated`. No local MCP status result was obtained.
+
+**Open gate:** Authenticated Hermes MCP status, verified human identity, production persistence, and live runtime remain unverified. The delivery checkbox remains open.
+
+**Outcome:** Hermes trust metadata can distinguish the status tool as read-only, but the active caller path still has not completed an authenticated ledger read.
+
+## 2026-10-22 — Detect default GitLab access-token prefix
+
+**Intent:** Reduce one documented provider-token false negative in the V2 reject-only input gate.
+
+**Changed fact:** The detector rejects the documented `glpat-` token prefix when followed by its documented 20-character token body. The scanner documentation records GitLab's configurable custom-prefix limitation.
+
+**Verification:** Added a synthetic `glpat-` regression to the focused content-safety suite. GitLab's official token and administrator-setting documentation was checked for the default prefix, body length, and custom-prefix behavior. No live credentials were used.
+
+**Open gate:** Other provider formats, custom prefixes, false positives, jurisdictional policy, and end-to-end privacy assurance remain open; the threat-model checklist remains unchecked.
+
+**Outcome:** The default GitLab token form is covered by the local high-confidence reject-only scanner.
+
+## 2026-10-22 — Verify V2 status through the Hermes profile context
+
+**Intent:** Replace the failed direct Codex status path with an explicit read-only probe through the configured local Hermes stdio integration.
+
+**Changed fact:** Hermes Core now provides `hermes mcp test curator_v2 --probe-curator-status`. It invokes only Curator's fixed activity-status tool and supplies host-generated profile/session metadata after requiring the exact opted-in local stdio server.
+
+**Verification:** Four focused Hermes CLI tests passed. The current Hermes Core checkout successfully probed the configured `renew-ssl-coding` profile: Curator returned project `vhost-manager-alpha`, 12 retained and processed event receipts, one goal, two facts, and zero SDE candidates. This was a read from the configured local stdio process; it made no ledger changes.
+
+**Open gate:** This confirms Hermes profile-context access and persisted aggregate visibility, not authenticated human identity, the managed gateway route, production persistence, or deployment. The system-installed Hermes CLI is older than this source checkout; the new command is not installed globally.
+
+**Outcome:** Local profile-context ledger status is directly verified; identity and production/runtime gates remain open.
+
+## 2026-10-22 — Mark Curator MCP inspection tools read-only
+
+**Intent:** Make Hermes trust-tier gating distinguish observational V2 operations from mutations across the complete MCP surface.
+
+**Changed fact:** Curator's read-only status, goal, projection, listing, review-inspection, storage, reconciliation, and purge-status tools now share bounded non-destructive MCP annotations. Lifecycle, review-decision, cleanup, hold-release, and retry tools remain write-capable.
+
+**Verification:** The focused MCP protocol regression verifies `readOnlyHint=true` for every designated inspection tool and confirms representative goal-start, SDE-decision, and purge-retry actions are not marked read-only. Pyright reports zero diagnostics; errors-only Pylint and Bandit pass; `git diff --check` passes. Bandit emitted four existing `nosec` notices for `git_evidence.py`.
+
+**Open gate:** An MCP hint is advisory metadata, not authorization or identity. Hermes host-context, project grants, verified human identity, and production gates remain independently enforced/open.
+
+**Outcome:** Hermes can correctly classify the local Curator inspection surface for trust-tier approval decisions.
+
+## 2026-10-22 — Cover the v20-to-v21 cleanup-authorization migration
+
+**Intent:** Close the focused local migration-fixture gap for the current schema version without treating it as production upgrade approval.
+
+**Changed fact:** The v20-to-v21 regression preserves an existing SDE receipt and proves migration creates no cleanup authorization for legacy decisions. The schema reference and ordered domain-slice text now describe the supported v0-to-v21 path.
+
+**Verification:** The focused migration regression passes; `git diff --check` passes.
+
+**Open gate:** Full migration, rollback, corruption, backup/restore, and deployment upgrade drills remain separate open work; the local-domain slice stays open.
+
+**Outcome:** The latest schema step has direct evidence that it does not grant cleanup authority retroactively.
+
+## 2026-10-22 — Reject malformed v21 migration targets
+
+**Intent:** Prevent schema migration from accepting a conflicting object under the cleanup-authorization table name.
+
+**Changed fact:** The v21 migration now validates the existing object kind, exact column names/types/defaults/nullability/primary-key shape, and audit-receipt foreign key before stamping schema version 21. An incompatible table fails closed without modification.
+
+**Verification:** Focused migration tests pass for the valid legacy-receipt upgrade, malformed-column refusal, and missing-receipt-foreign-key refusal; `git diff --check` passes.
+
+**Open gate:** Full recovery and production migration/rollback drills remain open.
+
+**Outcome:** The v21 schema stamp is no longer applied over an incompatible pre-existing table.
+
+## 2026-10-22 — Cover v21 migration constraints independently
+
+**Intent:** Verify every fail-closed constraint checked when an existing v21 cleanup-authorization table is encountered.
+
+**Changed fact:** The migration regression now independently varies the canonical-persistence default, required project-field nullability, and receipt primary key, in addition to the existing malformed-column and missing-foreign-key cases.
+
+**Verification:** Four focused v20 migration tests pass: valid legacy-receipt upgrade, malformed columns, missing receipt foreign key, and three incompatible-constraint variants. Each refusal preserves schema version 20. Strict Pyright, errors-only Pylint, and `git diff --check` pass. No full suite was rerun.
+
+**Open gate:** Production upgrade/rollback, corruption, backup/restore drills, and deployment approval remain open.
+
+**Outcome:** The local v21 fail-closed schema checks now have direct regression coverage for each validated constraint.
+
+## 2026-10-22 — Split read-side Curator record models
+
+**Intent:** Reduce the oversized core model module while preserving its existing import contract.
+
+**Changed fact:** Goal bullets, storage/activity/health summaries, expiry and cleanup projections, and the fact archive receipt now live in `read_models.py`. Shared timestamp and digest validators live in `record_validation.py`. Lazy exports and type-checking declarations preserve the existing `curatormd_v2.models` import paths.
+
+**Verification:** The eight contract-schema tests pass; strict Pyright reports zero diagnostics; errors-only Pylint passes; direct compatibility imports resolve to the new record classes; the targeted Pylint module-line check rates the changed model modules 10.00/10; `git diff --check` passes. No full test suite or warning-level repository inventory was rerun.
+
+**Open gate:** Wide serialized record attribute findings and repository-wide warning-level Pylint cleanup remain open. No delivery checklist status changed.
+
+**Outcome:** The core model module is now 980 lines while existing import paths remain usable; the repository-wide Pylint item remains open.
+
+## 2026-10-22 — Simplify current evidence revalidation
+
+**Intent:** Make the evidence trust check operate on one explicit scope/time context and reduce its compound provenance logic.
+
+**Changed fact:** `evidence_has_current_attestations` now accepts `EvidenceVerificationContext` directly. Separate helpers check evidence-reference equality, exact project/goal/criterion binding, and stable source revision/adapter/authenticated subject. The service and Markdown projection callers construct the same bounded context explicitly.
+
+**Verification:** The focused goal-completion and Markdown-projection regressions pass. Strict Pyright reports zero diagnostics, errors-only Pylint and `git diff --check` pass. Targeted Pylint no longer reports the evidence function's argument-count or boolean-expression findings; its focused score improved from 9.19 to 9.95/10. The last full warning-level inventory before this change contained 278 findings; it was not rerun after the refactor.
+
+**Open gate:** The repository-wide warning-level Pylint inventory and deployment-owned evidence trust roots remain open. No full test suite was rerun.
+
+**Outcome:** Evidence revalidation uses an explicit trusted context with simpler, separately reviewable checks; the full V2 goal remains active.
+
+## 2026-10-22 — Extract evidence adapter policy validation
+
+**Intent:** Simplify the host-trusted evidence adapter constructor while preserving its explicit configuration surface.
+
+**Changed fact:** Project/subject allowlist checks, source age ceilings, and revocation freshness bounds now use small validation helpers. The adapter's configured trust fields and fail-closed receipt checks are unchanged.
+
+**Verification:** The 13-test evidence module passed after helper extraction; after replacing an assertion in the revocation-limit helper with an exact-integer guard, the focused TTL/boolean regression passes. Strict Pyright, errors-only Pylint, and Bandit pass; Bandit emits four existing `nosec` notices. The focused branch/argument Pylint check no longer reports excessive branches; it reports only the existing eight-argument constructor finding. No full suite or full warning-level Pylint inventory was rerun.
+
+**Open gate:** Repository-wide warning-level Pylint cleanup and deployment-owned evidence credentials/trust roots remain open.
+
+**Outcome:** Adapter policy validation is separated into bounded helpers without changing the source-authentication boundary.
+
+## 2026-10-22 — Cover current GitHub token formats in the reject-only scanner
+
+**Intent:** Close two documented provider-token false negatives in the local high-confidence safety gate.
+
+**Changed fact:** The detector now rejects fine-grained PATs beginning `github_pat_` and stateless installation tokens beginning `ghs_`, including JWT-shaped bodies with periods and underscores. The safety contract links GitHub's token-prefix documentation and October 2026 rollout notice.
+
+**Verification:** Three content-safety tests and two API/MCP persistence privacy canaries pass. Both forms are absent from returned errors and durable writes; the API canary also checks backup absence, and the MCP canary checks logs, SQLite sidecars, canonical history, and staging files. Strict Pyright, errors-only Pylint, and `git diff --check` pass. No full suite was rerun.
+
+**Open gate:** This covers only two documented formats; other secrets, custom formats, false positives, jurisdictions, independent DLP review, and deployment policy remain open. A clean scan is not privacy certification.
+
+**Outcome:** Both newly documented GitHub token forms fail closed before canonical persistence or event retention.
+
+## 2026-10-22 — Group trusted evidence adapter policy
+
+**Intent:** Reduce evidence adapter configuration complexity without weakening host-owned project, subject, or freshness checks.
+
+**Changed fact:** Added immutable `EvidenceAdapterPolicy` for project and subject allowlists and age/revocation limits. Adapter construction freezes validated allowlists and applies source-specific ceilings before evidence evaluation. Exported the policy type and documented that event and MCP input cannot choose it.
+
+**Verification:** All 13 focused evidence tests pass; strict Pyright reports zero diagnostics; the focused warning-level Pylint run no longer reports the adapter's argument-count or attribute-count findings; `git diff --check` passes. Other intentional small data/protocol-class warnings remain, and the repository-wide warning inventory was not rerun.
+
+**Open gate:** This changes local configuration structure only. Deployment-owned evidence identities and trust roots, authenticated human identity, owner policy, and production adapter integration remain open.
+
+**Outcome:** Trusted adapter policy is represented as one immutable host-owned value, with source checks unchanged.
+
+## 2026-10-22 — Close the per-slice evidence-index requirement
+
+**Intent:** Make each V2 implementation slice reviewable against concrete evidence and explicit remaining approval boundaries.
+
+**Changed fact:** Verified the A-I status rows and matching entry, recovery, and approval registers in `docs/release-gates-v2.md`; each row identifies ownership, probe, expected/actual result, evidence, and open exit conditions. Marked the corresponding plan documentation requirement complete.
+
+**Verification:** Manual cross-check of all nine slice rows and the entry/recovery/approval register; `git diff --check` passes.
+
+**Open gate:** The documentation checklist item is complete, but product slices and deployment, identity, retention-policy, and live-runtime release gates remain open.
+
+**Outcome:** Reviewers have one indexed A-I evidence ledger; no runtime gate or release status changed.
+
+## 2026-10-22 — Use typed records for project-registry audit writes
+
+**Intent:** Reduce the project-registry audit writer's argument complexity while preserving its append-only audit data and transaction boundary.
+
+**Changed fact:** `_append_project_registry_audit` now accepts the existing typed `ProjectRegistryAuditRecord`; registration, update, suspension, and reactivation construct that record before writing it.
+
+**Verification:** All 7 project-access tests pass; strict Pyright and `git diff --check` pass. Targeted Pylint no longer reports either argument-count finding for the audit writer. A fresh repository-wide warning-level inventory fell from 273 to 271 findings.
+
+**Open gate:** Repository-wide structural and duplicate-code findings remain. Project identity authentication, deployment-owned registry authority, and live deployment gates are unchanged.
+
+**Outcome:** The writer's typed input keeps the audit fields explicit and removes two warning-level findings without changing the storage schema.
+
+## 2026-10-22 — Type project registration commands
+
+**Intent:** Reduce registration/update interfaces to one explicit binding request while retaining host-derived actor identity and the existing authorization order.
+
+**Changed fact:** Added immutable `ProjectRegistrationRequest` and a factory from validated project configuration. `ProjectAccessManager` authorizes the exact request project, then derives `actor_id` from the trusted caller before calling the store. Updated the attended CLI and hosted-MCP test provisioning path.
+
+**Verification:** The focused project-access, access-CLI, and hosted-MCP suites pass 22 tests; strict Pyright reports zero diagnostics; `git diff --check` passes. A fresh full warning-level Pylint inventory fell from 271 to 263 findings, removing eight argument and positional-argument findings.
+
+**Open gate:** The inventory still has 263 structural, design, and duplicate-code findings. The host admin remains a local profile/UID assertion; verified Hermes identity, deployment authority, and live registration administration remain open.
+
+**Outcome:** Registration inputs are typed and bounded as one request object, while caller identity remains host-derived and authorization remains fail-closed.
+
+## 2026-10-22 — Bind profile authorization to a typed config snapshot
+
+**Intent:** Make the fingerprint-bound authorizer's trusted configuration explicit while preserving its per-call registry and grant checks.
+
+**Changed fact:** Added immutable `ProjectAuthorizationBinding`, built from validated `ProjectConfig` and the exact allowed-action set. The local MCP launcher and attended reviewer now construct the authorizer from this binding; the authorizer still checks registration status, fingerprints, API version, and current grants for each action.
+
+**Verification:** Focused access, CLI, hosted-MCP, and review-CLI tests pass 31 cases; strict Pyright reports zero diagnostics; changed-file warning-level Pylint reports no constructor argument finding for the fingerprint-bound authorizer; `git diff --check` passes. The full repository warning inventory was not rerun.
+
+**Open gate:** This local config binding is not cryptographic Hermes identity. Authenticated identity, production grant administration, deployment, retention policy, and live-runtime gates remain open.
+
+**Outcome:** The authorizer configuration is a typed immutable value without changing fail-closed authorization behavior.
+
+## 2026-10-22 — Group serialized fact persistence fields
+
+**Intent:** Reduce local complexity in fact persistence while preserving duplicate handling and the existing fact-capacity transaction.
+
+**Changed fact:** `_append_fact` now uses an immutable internal payload for evidence JSON, verification-attestation JSON, and the dedupe key. The helper computes each once before duplicate checks, capacity accounting, and insertion.
+
+**Verification:** The focused dedupe, fact-count/byte-capacity, and fact-compaction tests pass 12 cases; strict Pyright reports zero diagnostics; targeted full Pylint for `store.py` fell from 27 to 26 findings and no longer reports excess locals in `_append_fact`; `git diff --check` passes. No full repository Pylint inventory or full test suite was rerun.
+
+**Open gate:** This is local storage refactoring evidence only. Backend-wide retention/budget policy, production storage recovery, and deployment/runtime gates remain open.
+
+**Outcome:** Fact serialization inputs are grouped without changing insert, dedupe, or capacity decisions.
+
+## 2026-10-22 — Split fact-compaction approval persistence
+
+**Intent:** Reduce complexity in the reviewer-approved archive transaction while preserving exact approval replay and atomic archive-before-delete behavior.
+
+**Changed fact:** `CuratorStore.approve_fact_compaction` now receives one immutable typed request. Validation, idempotent receipt lookup, fact/hash/SDE-protection checks, archive-capacity accounting, and archive/item persistence are separate helpers; all remain inside the existing transaction boundary where required.
+
+**Verification:** All 9 existing fact-compaction tests pass; strict Pyright reports zero diagnostics; targeted warning-level Pylint no longer reports argument-count, local-variable, branch, or statement complexity findings for this path; `git diff --check` passes. Other store and service Pylint findings remain; no full suite or full repository warning inventory was rerun.
+
+**Open gate:** This is local transaction/refactoring evidence only. The current Codex-to-Curator MCP call still returns `unauthenticated` because it lacks Hermes-injected profile/session context. Hermes-authenticated human identity, retention-policy rollout, deployment, and live-runtime gates remain open.
+
+**Outcome:** Fact archival keeps the same exact-fact checks, capacity accounting, replay behavior, and transactional deletion while making the local approval path easier to review. The plan's defined delivery-checklist snapshot was recounted as 135/175 complete (40 open); this counts sections 0-10, 12, and Definition of done, excluding section 11 task templates.
+
+## 2026-10-22 — Verify Curator V2 status through Hermes profile context
+
+**Intent:** Resolve whether the configured Hermes profile can read Curator V2 ledger status through its trusted local stdio route.
+
+**Changed fact:** No runtime state changed. The checked-out Hermes CLI's read-only `mcp test curator_v2 --probe-curator-status` supplies host-generated profile/session context to the configured server; it connected to the `renew-ssl-coding` server and returned activity counts for `vhost-manager-alpha`.
+
+**Verification:** The command exited 0, discovered 47 tools, and returned 12 event receipts (all processed), one goal, two facts, zero received/failed/quarantined events, and zero pending SDEs. Curator and Hermes `git diff --check` pass. This confirms Hermes-context status visibility for the configured local stdio profile. A direct Codex MCP `goal_list` call without Hermes context remains unauthenticated; the Hermes profile still reports no authenticated human subject.
+
+**Open gate:** This read-only status result is not a human identity assertion, a live application write/capture, a health result, managed-gateway delivery, or production persistence proof. Deployment, production identity, retention, and live-runtime gates remain open.
+
+**Outcome:** Use the supported Hermes CLI status probe for local profile/session ledger visibility; preserve the identity and live-workflow gates.
+
+## 2026-10-22 — Verify the installed Vhost alpha consumer against the current wheel
+
+**Intent:** Fix the stale consumer-test API calls and verify the installed V2 package through the local Vhost consumer contract.
+
+**Changed fact:** Updated four disposable Vhost consumer fixtures to use the current typed `ProjectRegistrationRequest` API. No Vhost application source or persistent application data changed. The alpha profile now runs Curator schema 21.
+
+**Verification:** All seven installed-package Vhost consumer contract tests pass. The installed wheel SHA-256 is `fa712eca766747b4e157673014d76abe6f68abab68d31a6ea5628ea7938e8ca3`. Hermes Core's checkout CLI connects to the configured `renew-ssl-coding` local stdio server with host-injected profile/session context, discovers 48 tools, and reads 12 processed receipts, one goal, two facts, and no pending SDEs. A read-only SQLite check reports schema 21, `quick_check=ok`, 12 inbox rows, and zero SDE candidates.
+
+**Open gate:** This verifies local alpha profile status and disposable consumer contracts only. It does not establish Hermes-authenticated human identity, a Hermes `goal_list` result, live Vhost application capture, production retention policy, health, recovery, or release approval.
+
+**Outcome:** The local alpha package and consumer contract are verified against the current source wheel; the profile-scoped Hermes status probe resolves the prior status-read uncertainty while identity and live-workflow gates remain open.
+
+## 2026-10-22 — Provision the approved local alpha reviewer grants
+
+**Intent:** Make the already-approved `eaglesvn` local reviewer usable through the attended V2 review CLI for `vhost-manager-alpha`.
+
+**Changed fact:** The project had profile `renew-ssl-coding` read/write grants but no local reviewer grants. Using the TTY-confirmed access command, added `local-uid:1000` project `review` grant `8454ec91a6774250969c7aedc88207a3` and `read` grant `33b94283101c4a7999c0b73256480ee4`. Read access is required for the candidate queue; review access is required for reviewer operations. Both are scoped only to `vhost-manager-alpha`; the rationale explicitly keeps Hermes human identity separate.
+
+**Verification:** The installed `curatormd-v2-review ... queue` command now exits 0 and returns `{"pending":[],"project_id":"vhost-manager-alpha"}`. A read-only database check confirms both grants, schema 21, and `PRAGMA quick_check=ok`. The invocation is from OS user `eaglesvn`, UID 1000, which owns the mode-600 ledger.
+
+**Open gate:** No SDE candidate currently exists, so no live decision/purge was exercised. This is the selected local OS-UID reviewer path only; Hermes-authenticated identity, production grants, live Vhost application capture, and release gates remain open.
+
+**Outcome:** The local alpha reviewer can read the queue and is authorized for review operations through the attended CLI. The Hermes profile remains unable to act as an authenticated human reviewer.
+
+## 2026-10-22 — Distinguish checkout Hermes context from installed runtime
+
+**Intent:** Record the current system-installed Hermes profile's runtime compatibility evidence without conflating tool discovery with trusted request context.
+
+**Changed fact:** No Hermes runtime files or application data changed. The system-installed `hermes -p renew-ssl-coding mcp test curator_v2` connects to the installed Curator server and discovers 48 tools, but reports `Auth: none`. The checkout Hermes CLI's explicit `--probe-curator-status` separately injects local profile/session context and reads project activity status.
+
+**Verification:** Both read-only commands exit successfully. The installed CLI invocation does not call any Curator tool; the checkout status probe returns activity counts. No status is inferred from tool discovery alone.
+
+**Open gate:** Trusted context injection from the actual profile gateway, Hermes-authenticated person identity, live Vhost event capture, health, deployment recovery, and release approval remain unverified.
+
+**Outcome:** Keep checkout-probe evidence distinct from system-runtime evidence; the local alpha reviewer path is available by OS UID while Hermes tool-call context remains open.
+
+## 2026-10-22 — Decompose staging expiry eligibility
+
+**Intent:** Reduce complexity in the 72-hour staging-expiry path without changing its age, pending-review, incomplete-inventory, or hold rules.
+
+**Changed fact:** Extracted exact staged-goal mapping, age/readiness selection, active-hold partitioning, and canonical manifest hashing from `ProjectPlugin._expiry_snapshot_locked`. Pending SDEs still delay prompt expiry but cannot extend the hard 72-hour ceiling; incomplete age/inventory evidence still clears eligibility, and held artifacts remain excluded.
+
+**Verification:** All 43 `project_plugin` tests pass; strict Pyright reports zero diagnostics; repository errors-only Pylint passes; `git diff --check` passes. The focused warning-level Pylint run no longer reports the snapshot/selector excessive-local findings. The full warning-level run still reports non-blocking structural/style findings.
+
+**Open gate:** Repository-wide warning-level Pylint cleanup and production retention, scheduler, monitoring, and runtime evidence remain open.
+
+**Outcome:** The expiry decision is split into smaller reviewable helpers with its existing 72-hour and fail-closed behavior preserved.
+
+## 2026-10-22 — Refresh the installed Vhost alpha wheel
+
+**Intent:** Keep the isolated Vhost profile on the current V2 source after the expiry-path refactor.
+
+**Changed fact:** Rebuilt and force-reinstalled the alpha wheel with SHA-256 `e268f1eddce61c44b1f132f93c6afad842a5ddd39e9e791cabd7091c25fdc2d0`. This supersedes local alpha wheel `fa712eca766747b4e157673014d76abe6f68abab68d31a6ea5628ea7938e8ca3`; the previous wheel remains available under `/tmp/curator-v2-alpha-build/` for rollback.
+
+**Verification:** All 38 installed Python modules hash-match `src/curatormd_v2`. All seven installed Vhost consumer contracts pass. The local reviewer queue still succeeds with no pending SDEs. The persistent alpha database remains schema 21 with `quick_check=ok`, one goal, two facts, and 12 inbox receipts.
+
+**Open gate:** The disposable consumer contracts do not prove live Vhost application capture. Hermes human identity, profile gateway context delivery, production retention/scheduling, and runtime/release gates remain open.
+
+**Outcome:** The isolated alpha package and Vhost consumer tests now use the same source version; runtime and identity boundaries remain explicit.
+
+## 2026-10-22 — Correct Hermes profile-context evidence
+
+**Intent:** Resolve whether the system Hermes CLI's `Auth: none` display means Curator V2 calls lack trusted Hermes context.
+
+**Changed fact:** No runtime code or application data changed. Inspection confirms the `renew-ssl-coding` profile opts into `hermes_context`; Hermes Core's installed managed-MCP handler derives the profile ID from the active Hermes home, requires a session ID, and attaches both as host-owned request metadata. The CLI's `Auth: none` display indicates no conventional MCP credentials; it does not display this separate Hermes request-context path.
+
+**Verification:** The focused Hermes trust-gating tests for explicit local-stdio opt-in and gateway-to-MCP profile context pass (2 tests). The system CLI `mcp test` only connects and discovers tools; it did not make a protected tool call. The checkout CLI's read-only status probe succeeds with profile/session context.
+
+**Open gate:** A real managed-gateway tool call and live Vhost event delivery have not been exercised. Profile/session context does not establish a Hermes-authenticated person subject; person identity and live-runtime evidence remain open. No checklist item is closed by this diagnostic correction.
+
+**Outcome:** Supersede the earlier inference that `Auth: none` proves system-runtime context injection is absent. Keep the actual call-delivery, person-identity, and Vhost workflow gates open.
+
+## 2026-10-22 — Extend Curator V2 privacy coverage across Hermes sinks
+
+**Intent:** Advance the open V2 source-to-sink privacy item for Hermes-managed Curator tool calls without claiming full data-flow coverage.
+
+**Changed fact:** The current Hermes Core worktree now redacts Curator V2 tool arguments, results, and failure details from selected executor/MCP diagnostics, shared session-viewer event payloads, durable session transcript projections, and exported trajectory samples. Malformed MCP sampling arguments remain available to in-memory recovery but are omitted from warning logs. Ordinary non-Curator tool behavior remains preserved in the tested paths. No deployment or runtime configuration changed.
+
+**Verification:** Six dedicated Hermes redaction test files and the managed-worker viewer-event regression pass 19 tests. Targeted Ruff passes for the changed source and test files. Earlier status-probe verification still confirms aggregate V2 ledger visibility through host-derived Hermes profile/session metadata; it does not establish a human subject.
+
+**Open gate:** Traces, session-database backup/WAL recovery, provider-side retention, remaining exception/output paths, and the complete source-to-sink review remain open. No privacy checklist item is closed by this local slice.
+
+**Outcome:** Hermes local diagnostics and selected durable/viewer projections no longer retain the tested Curator V2 argument/result canaries; preserve the wider privacy and live-runtime gates.
+
+## 2026-10-22 — Verify Curator V2 transcript redaction in Hermes backups
+
+**Intent:** Check whether Hermes' real `state.db` backup archive preserves the redacted Curator V2 session projection without reintroducing tool payloads.
+
+**Changed fact:** Added a disposable backup regression that builds assistant-tool and tool-result rows through the Hermes durable session projection, places those projected rows in temporary `state.db`, and snapshots the database through `hermes backup`. The regression uses no real Hermes profile data and changes no backup implementation.
+
+**Verification:** The resulting backup ZIP contains no synthetic raw argument or result canaries; reading the backed-up SQLite database confirms it retains the redacted argument and result markers. The backup regression and both durable-projection tests pass together (3 tests); targeted Ruff passes.
+
+**Open gate:** This verifies one fresh `state.db` snapshot path only. It does not inspect pre-existing raw transcript rows, WAL/recovery behavior, all Hermes backup variants, traces, or provider-side retention. The broader V2 privacy item remains open.
+
+**Outcome:** Fresh projected Curator V2 transcript content stays redacted in a real disposable Hermes backup archive; broader retention and migration evidence remain outstanding.
+
+## 2026-10-22 — Decompose the bounded staging scanner
+
+**Intent:** Reduce the complexity of the staging inventory traversal while preserving its descriptor safety, resource ceilings, and fail-closed behavior.
+
+**Changed fact:** Moved the project staging traversal into `staging_scan.py`. The scanner now has explicit `measure` and `discover` paths, grouped typed scan state, and separate helpers for directory traversal, entry classification, regular-file hashing, and manifest finalization. `ProjectPlugin` supplies the existing hash implementation and the module's configured entry/hash limits.
+
+**Verification:** All 43 `test_project_plugin.py` tests pass. Strict Pyright reports zero diagnostics; repository errors-only Pylint, Bandit, and `git diff --check` pass. Focused warning-level Pylint reports no findings in `staging_scan.py`; the previous scanner-specific excess-local, branch, statement, and return findings are absent. Other `project_plugin.py` and repository warning-level findings remain.
+
+**Open gate:** No staging retention or runtime behavior is inferred from the local refactor. Repository-wide warning-level Pylint cleanup, production scheduler/inventory operation, and deployment/runtime validation remain open.
+
+**Outcome:** The staging traversal is smaller and easier to audit, with the existing local behavior verified. The repository-wide Pylint checklist item remains open.
+
+## 2026-10-22 — Decompose the bounded staging writer
+
+**Intent:** Reduce staging-write complexity while preserving atomic publication, byte ceilings, and receipt-before-cleanup behavior.
+
+**Changed fact:** Extracted the stream, hash, limit enforcement, no-clobber publication, and receipt-failure rollback path into `staging_write.py`. Its typed request and limit records keep the project adapter focused on the locked inventory/budget snapshot and the writer on one bounded file operation.
+
+**Verification:** All 43 `test_project_plugin.py` tests pass. Strict Pyright reports zero diagnostics; repository errors-only Pylint, Bandit, and `git diff --check` pass. Focused warning-level Pylint rates both `staging_write.py` and `staging_scan.py` 10.00/10; `project_plugin.py` rates 9.74/10 with remaining module-size and API-argument findings.
+
+**Open gate:** This is local adapter evidence only. Repository-wide warning-level Pylint cleanup, production retention/scheduling, authenticated identity, and deployment/runtime verification remain open.
+
+**Outcome:** The bounded file write is isolated and verified without changing staging policy or claiming live behavior.
+
+## 2026-10-22 — Revalidate the composed Hermes-to-Vhost integration
+
+**Intent:** Recheck the disposable Hermes managed-MCP path against the current Curator alpha API and use its result to assess local integration readiness.
+
+**Changed fact:** Updated the Vhost-owned disposable integration harness to register its temporary project through the current typed `ProjectRegistrationRequest` API. The consumer test and Vhost alpha record now identify the 2026-10-22 verification; no live Vhost data or gateway configuration changed.
+
+**Verification:** The Hermes Core managed-hook harness passes against the installed Curator alpha package. It confirms explicit session/goal binding, refusal to bind a planned goal, three bounded lifecycle receipts, replay and retry, Vhost projection/reconciliation, unchanged out-of-scope target, and denial of the reviewer-gated persistence tool to a write-only profile. The run uses temporary state. A fresh full Pylint inventory over `src/curatormd_v2` and `tests` reports 246 non-blocking findings; strict Pyright, errors-only Pylint, Bandit, and diff checks were verified in the prior staging-writer checkpoint.
+
+**Open gate:** The harness does not run the Hermes gateway service, exercise a real Vhost UI request, or establish authenticated human identity. Production retention, deployment, recovery policy, and live-runtime gates remain open. Repository-wide warning-level Pylint cleanup also remains open.
+
+**Outcome:** Local composed Hermes-to-Curator delivery and consumer persistence behavior are reverified without claiming live Vhost readiness or changing the delivery checklist count.
+
+## 2026-10-22 — Refresh the isolated Vhost alpha package
+
+**Intent:** Put the current Curator V2 source into the dedicated Vhost Hermes profile so its consumer and managed-MCP checks exercise the same package as the source checkout.
+
+**Changed fact:** Built wheel SHA-256 `cd8218a9c4423f17b7ec831ea15e97719fee9c56f05974e1cca94632c049d827` and force-reinstalled it only in the `renew-ssl-coding` alpha virtualenv. Before installation, archived the prior installed Curator package, metadata, and seven launchers to `/tmp/curator-v2-alpha-installed-runtime-2026-10-22.tar.gz` (SHA-256 `3c3a283543f571b1ced1affd0beebbaedaafcadad72cb7a4f703df9b8c3851c4`). Updated the Vhost-owned disposable managed-MCP harness to use the current typed project-registration API and refreshed the consumer alpha record.
+
+**Verification:** All 40 installed Python module hashes match the Curator source. Seven installed Vhost consumer contracts and the disposable Hermes managed-MCP harness pass. The profile-context status probe connects through configured local stdio, discovers 48 tools, and returns 12 processed event receipts, one goal, two facts, and no event failures or pending SDEs. The alpha database remains schema 21 with `quick_check=ok` from the same read-only status evidence.
+
+**Open gate:** No Hermes gateway restart or real Vhost UI request was exercised. The profile status probe proves local ledger visibility, not authenticated human identity, production persistence/recovery policy, or live-runtime readiness. Production deployment and release gates remain open.
+
+**Outcome:** The isolated alpha environment now runs the current V2 package and passes its local consumer/managed-MCP contracts; the previous installed package remains recoverable from the verified archive.
+
+## 2026-10-22 — Decompose local operational-health evaluation
+
+**Intent:** Reduce API-module complexity in the health path while preserving fail-closed treatment of incomplete local state and untrusted dependency probes.
+
+**Changed fact:** Moved local queue/staging and host dependency-probe evaluation into `health_evaluation.py`. Probe lookup failure, malformed observations, invalid/stale timestamps, and ready/degraded/unknown states remain separate typed outcomes. The public `AuthenticatedCuratorAPI` and MCP contracts are unchanged; dependency names and the age limit remain re-exported through the existing package surface.
+
+**Verification:** Eleven focused API health regressions pass; strict Pyright reports zero diagnostics, repository errors-only Pylint passes, and `git diff --check` passes. Targeted warning-level Pylint no longer reports `api.py` module-size or `_evaluate_dependency` branch-count findings. The pre-extraction full-tree inventory reported 246 findings; a fresh inventory after extraction reports 244, all non-blocking structural/refactor findings.
+
+**Open gate:** This is local health aggregation evidence only. Production dependency probes, scheduler/alert integration, and repository-wide warning-level Pylint cleanup remain open.
+
+**Outcome:** The health evaluator is isolated and verified without changing public tool behavior or claiming deployment health.
+
+## 2026-10-22 — Synchronize alpha package after health refactoring
+
+**Intent:** Keep the dedicated Vhost alpha profile on the same source revision after separating Curator's health evaluator.
+
+**Changed fact:** Rebuilt wheel SHA-256 `e1ae63f63952d8c7953aa70c413b5446dec2b68c8984b5ea60272a34805ca778` and force-reinstalled it only in the `renew-ssl-coding` alpha virtualenv. Archived the previous installed package/metadata/launchers at `/tmp/curator-v2-alpha-installed-runtime-2026-10-22-pre-health.tar.gz` (SHA-256 `228c45cada7502d293d76f804ac54594a6cae3ec58abc02cd716c08ae9b2fad8`); the preceding `cd8218a9…` wheel is also retained separately.
+
+**Verification:** All 41 installed module hashes match the current Curator source; `pip check` reports no broken requirements. Hermes Core's read-only profile-context probe connects through the installed alpha launcher, discovers 48 tools, and returns the unchanged 12 processed receipts, one goal, two facts, and zero event failures/pending SDEs.
+
+**Open gate:** No gateway restart or live Vhost application request was exercised. This verifies only the installed alpha package and profile stdio path; authenticated human identity, production persistence/recovery policy, and live-runtime gates remain open.
+
+**Outcome:** The alpha package again matches the current source without changing the persistent Vhost ledger or claiming live gateway readiness.
 
 ## 2026-10-22 — Close local Host Steward validation slice
 

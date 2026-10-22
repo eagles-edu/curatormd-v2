@@ -15,6 +15,9 @@ from curatormd_v2 import (
     ConflictError,
     CuratorService,
     GoalStatus,
+    StagingArtifactClass,
+    StagingClassUsage,
+    StagingUsage,
     SuccessCriterion,
 )
 from curatormd_v2.events import (
@@ -139,6 +142,59 @@ class EventPropertyTests(unittest.TestCase):
                 self.assertEqual(tuple(fact.bullet for fact in outcomes), ("open",))
             finally:
                 store.close()
+
+
+class StagingUsagePropertyTests(unittest.TestCase):
+    """Generated bounded measurements must preserve their aggregate invariants."""
+
+    @settings(max_examples=60, deadline=None, derandomize=True)
+    @given(
+        classes=st.lists(
+            st.tuples(
+                st.sampled_from(tuple(StagingArtifactClass)),
+                st.integers(min_value=0, max_value=100),
+                st.integers(min_value=0, max_value=100_000),
+            ),
+            unique_by=lambda item: item[0],
+            max_size=len(StagingArtifactClass),
+        ),
+        non_file_entries=st.integers(min_value=0, max_value=100),
+    )
+    def test_generated_class_totals_match_bounded_scan(
+        self,
+        classes: list[tuple[StagingArtifactClass, int, int]],
+        non_file_entries: int,
+    ) -> None:
+        class_usage = tuple(
+            StagingClassUsage(artifact_class, file_count, file_bytes)
+            for artifact_class, file_count, file_bytes in classes
+        )
+        file_count = sum(item.regular_file_count for item in class_usage)
+        file_bytes = sum(item.observed_file_bytes for item in class_usage)
+        usage = StagingUsage(
+            entries_scanned=file_count + non_file_entries,
+            regular_file_count=file_count,
+            observed_file_bytes=file_bytes,
+            directory_count=non_file_entries,
+            symlink_count=0,
+            special_file_count=0,
+            inventory_complete=True,
+            classes=class_usage,
+        )
+
+        self.assertEqual(sum(item.regular_file_count for item in usage.classes), file_count)
+        self.assertEqual(sum(item.observed_file_bytes for item in usage.classes), file_bytes)
+        with self.assertRaises(ValueError):
+            StagingUsage(
+                entries_scanned=usage.entries_scanned,
+                regular_file_count=file_count + 1,
+                observed_file_bytes=file_bytes,
+                directory_count=non_file_entries,
+                symlink_count=0,
+                special_file_count=0,
+                inventory_complete=True,
+                classes=class_usage,
+            )
 
     @settings(max_examples=40, deadline=None, derandomize=True)
     @given(actions=st.lists(st.sampled_from(("block", "defer")), min_size=1, max_size=12))

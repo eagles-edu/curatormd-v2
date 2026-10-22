@@ -90,6 +90,7 @@ from .store import (
     CuratorStore,
     EventClaimError,
     EventInboxCapacityError,
+    FactCompactionApprovalRequest,
     FactCapacityError,
 )
 from .validation import is_exact_int
@@ -416,9 +417,12 @@ class CuratorService:
             return False
         return evidence_has_current_attestations(
             self.evidence_verifier,
-            project_id=self.project_id,
-            goal_id=goal.goal_id,
-            criterion_id=fact.criterion_id,
+            EvidenceVerificationContext(
+                project_id=self.project_id,
+                goal_id=goal.goal_id,
+                criterion_id=fact.criterion_id,
+                now=datetime.now(UTC),
+            ),
             evidence=fact.evidence,
             stored=fact.verification_attestations,
         )
@@ -985,13 +989,15 @@ class CuratorService:
         """Archive only the exact preview approved by a scoped reviewer."""
 
         return self.store.approve_fact_compaction(
-            compaction_id,
-            goal_id,
-            self.project_id,
-            fact_ids,
-            source_sha256,
-            reviewer_id,
-            approval_reason,
+            FactCompactionApprovalRequest(
+                compaction_id=compaction_id,
+                goal_id=goal_id,
+                project_id=self.project_id,
+                fact_ids=fact_ids,
+                source_sha256=source_sha256,
+                reviewer_id=reviewer_id,
+                approval_reason=approval_reason,
+            )
         )
 
     def fact_archive_receipts(
@@ -1423,7 +1429,7 @@ class CuratorService:
         rationale: str | None = None,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
-        """Record SDE disposition; destructive cleanup requires separate approval."""
+        """Record the SDE disposition before the plugin binds this action to cleanup."""
 
         reviewer_id = self.review_authorizer.authorize(
             self.project_id, candidate_id, decision, authenticated_subject
@@ -1453,7 +1459,7 @@ class CuratorService:
         *,
         authenticated_subject: str | None = None,
     ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
-        """Record a separate human approval without authorizing immediate deletion."""
+        """Record review-authorized cleanup; canonical projection still gates deletion."""
 
         reviewer_id = self.review_authorizer.authorize_cleanup(
             self.project_id, receipt_id, manifest_sha256, authenticated_subject

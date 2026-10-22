@@ -202,6 +202,11 @@ and the host profile-to-project permission and deployment gates remain open.
 
 ## Tool inventory
 
+Purely observational tools advertise MCP `readOnlyHint=true` and are marked
+non-destructive; mutation, review, cleanup, and retry tools do not carry the
+read-only hint. Hermes uses this metadata only for trust-tier approval gating;
+it does not replace Curator's profile, project, or action authorization.
+
 | Tool | Function |
 | --- | --- |
 | `goal_start` | Capture a goal with caller-supplied criteria, optional next action/checklist snapshot/parent/dependencies, and `planned` status by default. `initial_status=active` is for already accepted work. Requires stable event ID. |
@@ -238,14 +243,14 @@ and the host profile-to-project permission and deployment gates remain open.
 | `sde_quality_feedback_record` | Record one authenticated post-disposition reviewer label; identical retries are idempotent and changed/duplicate submissions conflict. |
 | `sde_quality_feedback_summary` | Return project-scoped counts by explicit label without reviewer IDs or rationale. |
 | `artifact_inventory_discover(goal_id)` | Reviewer-scoped, bounded streaming hash inventory of regular files in `.curatormd-v2/staging/<goal_id>/`; files belonging to other goals cannot enter this receipt's manifest. Incomplete scans cannot release purge. |
-| `sde_confirm` | Record only an authorized approve/reject disposition and exact artifact manifest. This decision never authorizes deletion. An artifact may carry `retention_hold: legal` or `retention_hold: operational`; the hold is reviewer-selected and never inferred by the backend. |
+| `sde_confirm` | One authorized approve/reject action records the SDE disposition and authorizes purge of the complete exact artifact manifest supplied with that action. The plugin re-scans before recording a distinct cleanup receipt; canonical projection of both receipts must succeed before deletion. An artifact may carry `retention_hold: legal` or `retention_hold: operational`; the hold is reviewer-selected and never inferred by the backend. |
 | `artifact_inventory_complete` | Declare a receipt's full inventory without granting cleanup authority. Newly assigned holds are attributed to the authenticated reviewer; unchanged existing hold attribution is preserved. |
-| `artifact_cleanup_approve` | Record a separate human cleanup approval, bound to the complete exact artifact manifest and configured Markdown target. The plugin rescans the live inventory; it persists the cleanup authorization receipt to Markdown before starting deletion. Changed or incomplete manifests fail closed. |
+| `artifact_cleanup_approve` | Compatibility path for a receipt without cleanup authorization: record a human approval bound to the complete exact artifact manifest and configured Markdown target. Normal `sde_confirm` already creates this authorization as part of the same review action. The plugin rescans the live inventory and persists the cleanup authorization receipt before deletion. Changed or incomplete manifests fail closed. |
 | `artifact_purge_status` | Inspect the receipt plus each artifact's status (including `held`), retention category, attempt count, creation/last-attempt timestamps and ages, persisted retry deadline/countdown, content-free last error code, and next safe recovery action. |
 | `release_artifact_hold` | Release one exact held path in a receipt after dedicated project `retention_hold_release` scope and plugin reviewer authorization; persist actor, timestamp, and rationale, then resume eligible purge. Exact replay is idempotent; changed actor/rationale conflicts. |
 | `retry_pending_purges` | Immediately retry only manifests with durable, canonically projected cleanup authorization; authenticated use overrides an automatic retry deadline. |
 | `event_queue_status` | Read this bound project's received/failed/quarantined counts, oldest pending age, and aggregate active/expired worker claims without exposing event content. |
-| `project_activity_status` | Read retained event receipt/processing counts and recency, goal/fact totals, and pending/approved/rejected SDE totals. `events_observed=false` means no event receipt is retained; it does not assert capture completeness. This is activity, not readiness or a `project_health` signal. |
+| `project_activity_status` | Read retained event receipt/processing counts and recency, goal/fact totals, and pending/approved/rejected SDE totals. Advertises MCP `readOnlyHint=true` for Hermes trust gating. `events_observed=false` means no event receipt is retained; it does not assert capture completeness. This is activity, not readiness or a `project_health` signal. |
 | `project_health` | Read an authorized, content-free aggregate of local queue/review/purge/capacity/staging state and trusted timestamped host dependency probes. Missing, malformed, or older-than-60-second probes are `unknown`; known backlog/failure is `degraded`; `healthy` requires complete fresh positive observations. |
 | `project_metrics` | Render a content-free Prometheus exposition snapshot for this authorized project, including explicit reviewer-feedback label counts; excludes user content, reviewer IDs/rationale, artifact paths, and global database/WAL sizes. It does not provide an HTTP scrape server, dashboards, alerts, or model/token usage. |
 | `event_quarantine_retry` | Retry one retained quarantined event; requires `event_retry` authorization and records the host-authenticated actor. |

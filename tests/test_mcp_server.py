@@ -431,7 +431,7 @@ class McpServerTests(unittest.TestCase):
                     "record deduplicated compact fact bullets",
                     "healthy readiness are not proof",
                     "verified criteria separately from open criteria",
-                    "Require a separate human approval and durable receipt",
+                    "Store a distinct cleanup receipt and project it",
                     "unapproved or failed cleanup visibly pending",
                 ):
                     self.assertIn(required_guidance, instructions)
@@ -636,6 +636,7 @@ class McpServerTests(unittest.TestCase):
                         self.assertEqual(receipt["reviewer_id"], "host-subject")
                         self.assertTrue(receipt["artifact_inventory_complete"])
                         self.assertFalse(receipt["canonical_persisted"])
+                        self.assertTrue(receipt["cleanup_authorized"])
                         self.assertEqual(receipt["purge_status"], "purge_pending")
                         self.assertTrue(staged.exists())
                         pending_health = await call_json("project_health", {})
@@ -672,30 +673,6 @@ class McpServerTests(unittest.TestCase):
                                 "target": "persistence/HISTORY.md",
                             },
                         )
-                        self.assertTrue(staged.exists())
-                        self.assertTrue(unheld_staged.exists())
-                        unheld_staged.write_bytes(b"changed after review")
-                        stale_cleanup = await client.call_tool(
-                            "artifact_cleanup_approve",
-                            {
-                                "receipt_id": receipt["receipt_id"],
-                                "artifacts": reviewed_manifest,
-                                "manifest_sha256": inventory["manifest_sha256"],
-                                "target": "persistence/HISTORY.md",
-                            },
-                        )
-                        self.assertTrue(stale_cleanup.is_error)
-                        unheld_staged.write_bytes(unheld_payload)
-                        cleanup = await call_json(
-                            "artifact_cleanup_approve",
-                            {
-                                "receipt_id": receipt["receipt_id"],
-                                "artifacts": reviewed_manifest,
-                                "manifest_sha256": inventory["manifest_sha256"],
-                                "target": "persistence/HISTORY.md",
-                            },
-                        )
-                        self.assertTrue(cleanup["authorization"]["approved_at"])
                         self.assertTrue(staged.exists())
                         self.assertFalse(unheld_staged.exists())
                         self.assertIn("Added the reviewed SDE assessment path", history.read_text())
@@ -984,6 +961,7 @@ class McpServerTests(unittest.TestCase):
                             },
                         )
                         self.assertEqual(rejected_receipt["purge_status"], "purge_pending")
+                        self.assertTrue(rejected_receipt["cleanup_authorized"])
                         self.assertTrue(rejected_artifact.exists())
                         await call_json(
                             "sde_quality_feedback_record",
@@ -1008,19 +986,7 @@ class McpServerTests(unittest.TestCase):
                                 "target": "persistence/HISTORY.md",
                             },
                         )
-                        rejected_cleanup = await call_json(
-                            "artifact_cleanup_approve",
-                            {
-                                "receipt_id": rejected_receipt["receipt_id"],
-                                "artifacts": rejected_manifest,
-                                "manifest_sha256": rejected_inventory["manifest_sha256"],
-                                "target": "persistence/HISTORY.md",
-                            },
-                        )
-                        self.assertEqual(
-                            rejected_cleanup["authorization"]["receipt_id"],
-                            rejected_receipt["receipt_id"],
-                        )
+                        self.assertFalse(rejected_artifact.exists())
                         reconciliation = await call_json(
                             "goal_reconcile",
                             {
@@ -1163,6 +1129,49 @@ class McpServerTests(unittest.TestCase):
                     async with Client(server, raise_exceptions=True) as client:
                         tool_result = await client.list_tools()
                         names = [tool.name for tool in tool_result.tools]
+                        activity_status_tool = next(
+                            tool
+                            for tool in tool_result.tools
+                            if tool.name == "project_activity_status"
+                        )
+                        self.assertIsNotNone(activity_status_tool.annotations)
+                        assert activity_status_tool.annotations is not None
+                        self.assertTrue(
+                            activity_status_tool.annotations.read_only_hint
+                        )
+                        tools_by_name = {tool.name: tool for tool in tool_result.tools}
+                        read_only_names = {
+                            "event_queue_status",
+                            "project_activity_status",
+                            "project_health",
+                            "project_metrics",
+                            "goal_status",
+                            "goal_bullet_projection",
+                            "goal_report",
+                            "fact_compaction_propose",
+                            "fact_archive_receipts",
+                            "goal_list",
+                            "goal_list_page",
+                            "goal_children",
+                            "goal_children_page",
+                            "project_storage_usage",
+                            "goal_reconcile",
+                            "project_reconcile",
+                            "sde_review_queue",
+                            "sde_review_detail",
+                            "sde_quality_feedback_summary",
+                            "artifact_purge_status",
+                        }
+                        for name in read_only_names:
+                            annotations = tools_by_name[name].annotations
+                            self.assertIsNotNone(annotations, name)
+                            assert annotations is not None
+                            self.assertTrue(annotations.read_only_hint, name)
+                        for name in ("goal_start", "sde_confirm", "retry_pending_purges"):
+                            annotations = tools_by_name[name].annotations
+                            self.assertFalse(
+                                bool(annotations and annotations.read_only_hint), name
+                            )
                         correction_result = await client.call_tool(
                             "sde_correction_record",
                             {
@@ -1787,7 +1796,11 @@ class McpServerTests(unittest.TestCase):
                     {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
                 )
                 server = build_mcp_server(api, caller, "mcp-project", "privacy-test")
-                secret = "sk-PRIVATE_EVENT_CANARY-1234567890"
+                secret = (
+                    "ghs_1234567890_"
+                    + "A" * 480
+                    + ".eyJhbGciOiJIUzI1NiJ9.signature"
+                )
                 payload = json.dumps(
                     {
                         "schema_version": 1,
@@ -1799,7 +1812,7 @@ class McpServerTests(unittest.TestCase):
                         "event_type": "goal.started",
                         "payload": {
                             "goal_id": "sensitive-mcp-goal",
-                            "problem": f"api_key={secret}",
+                            "problem": f"Example token {secret}",
                             "success_criteria": [
                                 {"criterion_id": "done", "description": "No leak"}
                             ],

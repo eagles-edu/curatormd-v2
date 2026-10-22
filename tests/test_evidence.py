@@ -15,6 +15,7 @@ import unittest
 from curatormd_v2 import (
     BrowserProofEvidenceAdapter,
     EvidenceAdapterRegistry,
+    EvidenceAdapterPolicy,
     EvidenceAttestation,
     EvidenceAdapterError,
     EvidenceOutcome,
@@ -84,8 +85,10 @@ class EvidenceAdapterTests(unittest.TestCase):
             adapter_id="gptmd-readiness-probe",
             scope_id="gptmd-api-readiness",
             resolver=self.resolver,
-            allowed_projects=frozenset({"project-a"}),
-            allowed_subjects=frozenset({"host-probe:gptmd"}),
+            policy=EvidenceAdapterPolicy(
+                allowed_projects=frozenset({"project-a"}),
+                allowed_subjects=frozenset({"host-probe:gptmd"}),
+            ),
         )
 
     def test_service_receipt_creates_exact_compact_attestation(self) -> None:
@@ -213,8 +216,10 @@ class EvidenceAdapterTests(unittest.TestCase):
                 adapter_id=f"adapter-{kind}",
                 scope_id=scope,
                 resolver=resolver,
-                allowed_projects=frozenset({"project-a"}),
-                allowed_subjects=frozenset({"host-probe:gptmd"}),
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects=frozenset({"project-a"}),
+                    allowed_subjects=frozenset({"host-probe:gptmd"}),
+                ),
             )
             with self.subTest(kind=kind):
                 self.assertIsNone(adapter.attest(evidence, self.context))
@@ -236,8 +241,10 @@ class EvidenceAdapterTests(unittest.TestCase):
             adapter_id="gptmd-test-runner",
             scope_id="repo:/srv/gptmd",
             resolver=FixedReceiptResolver(receipt),
-            allowed_projects={"project-a"},
-            allowed_subjects={"host-probe:gptmd"},
+            policy=EvidenceAdapterPolicy(
+                allowed_projects={"project-a"},
+                allowed_subjects={"host-probe:gptmd"},
+            ),
         )
 
         attestation = adapter.attest(evidence, self.context)
@@ -320,8 +327,10 @@ class EvidenceAdapterTests(unittest.TestCase):
                 adapter_id="local-git-project-a",
                 scope_id=resolver.scope_id,
                 resolver=resolver,
-                allowed_projects={"project-a"},
-                allowed_subjects={"local-git-runner"},
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects={"project-a"},
+                    allowed_subjects={"local-git-runner"},
+                ),
             )
             attestation = adapter.attest(
                 replace(evidence, sha256=receipt.evidence_sha256), context
@@ -354,8 +363,10 @@ class EvidenceAdapterTests(unittest.TestCase):
                 adapter_id="bounded-local-git-project-a",
                 scope_id=limited_resolver.scope_id,
                 resolver=limited_resolver,
-                allowed_projects={"project-a"},
-                allowed_subjects={"local-git-runner"},
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects={"project-a"},
+                    allowed_subjects={"local-git-runner"},
+                ),
             )
             with self.assertRaises(EvidenceAdapterError):
                 limited_adapter.attest(
@@ -425,8 +436,10 @@ class EvidenceAdapterTests(unittest.TestCase):
                 adapter_id="local-unit-tests",
                 scope_id=resolver.scope_id,
                 resolver=resolver,
-                allowed_projects={"project-a"},
-                allowed_subjects={"local-test-runner"},
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects={"project-a"},
+                    allowed_subjects={"local-test-runner"},
+                ),
             )
             self.assertIsNotNone(
                 adapter.attest(replace(evidence, sha256=receipt.evidence_sha256), context)
@@ -524,18 +537,33 @@ class EvidenceAdapterTests(unittest.TestCase):
                 adapter_id="gptmd-readiness-probe",
                 scope_id="gptmd-api-readiness",
                 resolver=self.resolver,
-                allowed_projects={"project-a"},
-                allowed_subjects={"host-probe:gptmd"},
-                max_observation_age_seconds=61,
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects={"project-a"},
+                    allowed_subjects={"host-probe:gptmd"},
+                    max_observation_age_seconds=61,
+                ),
             )
         with self.assertRaisesRegex(ValueError, "revocation age"):
             ServiceProbeEvidenceAdapter(
                 adapter_id="gptmd-readiness-probe",
                 scope_id="gptmd-api-readiness",
                 resolver=self.resolver,
-                allowed_projects={"project-a"},
-                allowed_subjects={"host-probe:gptmd"},
-                max_revocation_age_seconds=61,
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects={"project-a"},
+                    allowed_subjects={"host-probe:gptmd"},
+                    max_revocation_age_seconds=61,
+                ),
+            )
+        with self.assertRaisesRegex(ValueError, "nonnegative integer"):
+            ServiceProbeEvidenceAdapter(
+                adapter_id="gptmd-readiness-probe",
+                scope_id="gptmd-api-readiness",
+                resolver=self.resolver,
+                policy=EvidenceAdapterPolicy(
+                    allowed_projects={"project-a"},
+                    allowed_subjects={"host-probe:gptmd"},
+                    max_revocation_age_seconds=cast(int, True),
+                ),
             )
 
     def test_attestation_rejects_naive_or_expired_timestamps(self) -> None:

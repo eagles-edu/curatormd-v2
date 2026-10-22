@@ -198,6 +198,74 @@ class ContractSchemaTests(unittest.TestCase):
             with self.subTest(disposition=disposition.value):
                 self.validate_contract("eventInboxReceipt", _json_record(receipt))
 
+    def test_staging_usage_rejects_malformed_measurements(self) -> None:
+        usage = StagingUsage(
+            entries_scanned=1,
+            regular_file_count=1,
+            observed_file_bytes=4,
+            directory_count=0,
+            symlink_count=0,
+            special_file_count=0,
+            inventory_complete=True,
+            classes=(StagingClassUsage(StagingArtifactClass.CUE, 1, 4),),
+        )
+        invalid_fields = (
+            ("entries_scanned", -1),
+            ("entries_scanned", True),
+            ("entries_scanned", 10_001),
+            ("regular_file_count", 1.0),
+            ("observed_file_bytes", -1),
+            ("directory_count", False),
+            ("symlink_count", "0"),
+            ("special_file_count", -1),
+            ("inventory_complete", 1),
+            ("error_code", "path=/private/staging"),
+            ("error_code", "x" * 65),
+            ("regular_file_count", 2),
+        )
+
+        for field, value in invalid_fields:
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError):
+                    replace(usage, **{field: value})
+
+        with self.assertRaisesRegex(ValueError, "include an error_code"):
+            replace(usage, inventory_complete=False)
+        with self.assertRaisesRegex(ValueError, "must not have an error_code"):
+            replace(usage, error_code="scan_error")
+
+        valid_json = json.loads(json.dumps(asdict(usage)))
+        self.validate_contract("stagingUsage", valid_json)
+        for field, value in (
+            ("entries_scanned", 10_001),
+            ("error_code", "path=/private/staging"),
+        ):
+            with self.subTest(schema_field=field, schema_value=value):
+                invalid_json = {**valid_json, field: value}
+                with self.assertRaises(ValidationError):
+                    self.validate_contract("stagingUsage", invalid_json)
+        for invalid_json in (
+            {**valid_json, "inventory_complete": False},
+            {**valid_json, "error_code": "scan_error"},
+        ):
+            with self.subTest(staging_usage=invalid_json):
+                with self.assertRaises(ValidationError):
+                    self.validate_contract("stagingUsage", invalid_json)
+
+    def test_staging_class_usage_rejects_non_exact_counts_and_class(self) -> None:
+        usage = StagingClassUsage(StagingArtifactClass.CUE, 1, 4)
+
+        for field, value in (
+            ("regular_file_count", True),
+            ("regular_file_count", 1.5),
+            ("observed_file_bytes", -1),
+            ("observed_file_bytes", "4"),
+            ("artifact_class", "cue"),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError):
+                    replace(usage, **{field: value})
+
     def test_goal_fact_sde_correction_and_receipt_records_match_schemas(self) -> None:
         goal = GoalCard(
             goal_id="goal-contracts",

@@ -1,16 +1,19 @@
 # Curator V2 contract index, version 1
 
-Status: proposed local-library contract. It is not a production compatibility
-promise or evidence that a Hermes host, authenticated transport, or consumer
-plugin is deployed. Contract owners must approve the retention and security
-policies before a production stability commitment.
+Status: version 1 is frozen for the current Curator V2 source contract. This is
+not a production compatibility promise or evidence that a
+Hermes host, authenticated transport, or consumer plugin is deployed. Contract
+owners must approve retention and security policies before a production
+stability commitment.
 
-This v1 contract family is still pre-release. Its schemas and plugin surface may
-change together before an approved consumer rollout; no compatibility is
-promised for draft wheel/config pairs. At the first pilot release, freeze the
-schema and plugin API versions, pin the wheel, and provide an explicit migration
-for any consumer config or tool-shape change. After that freeze, required-field
-or meaning changes need a new contract version.
+The local alpha source baseline is frozen as version 1: changes to published
+schema semantics, lifecycle behavior, error codes, or the plugin/backend
+boundary must pass the v1 fixtures or introduce a new contract version and
+explicit migration. The freeze does not promise compatibility across arbitrary
+draft wheel/config pairs; every installed consumer package must be checked
+against this source baseline before integration claims. At pilot entry,
+revalidate the baseline, pin the wheel, and require an explicit migration for
+consumer config or tool-shape changes.
 
 ## Canonical contract sources
 

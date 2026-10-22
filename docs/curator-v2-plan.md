@@ -70,14 +70,14 @@ flowchart TB
   subgraph Decision["5. Decision and cleanup"]
     NSDE[Ordinary goal update\nretain compact facts only]
     SDE[Candidate SDE card\nselected bullets only]
-    SDEC{Human decides SDE disposition?}
+    SDEC{Human decides SDE disposition and approves purge?}
     REC[Durable goal facts and\nSDE disposition receipt if applicable]
     INV[Complete exact temporary\nartifact inventory]
-    CA{Human separately approves\ncleanup of this inventory?}
-    CAR[Durable cleanup authorization receipt\nexact manifest and approval]
+    CA{One review action authorizes\ncleanup of the exact inventory?}
+    CAR[Durable cleanup authorization receipt\nexact manifest and reviewer]
     PURGE[Delete only artifacts in\nthe approved inventory]
     CREC[Per-artifact cleanup receipt\nsuccess or purge_pending]
-    WAIT[Cleanup approval pending\nor rejected; no deletion]
+    WAIT[Inventory incomplete or stale;\nno deletion]
   end
 
   SG -->|No| NSDE
@@ -86,8 +86,8 @@ flowchart TB
   SDEC -->|Approve| REC
   SDEC -->|Reject| REC
   REC --> INV --> CA
-  CA -->|Approve exact inventory| CAR --> PURGE --> CREC
-  CA -->|No approval| WAIT
+  CA -->|Same explicit review action| CAR --> PURGE --> CREC
+  CA -->|Incomplete or changed| WAIT
   NSDE --> REC
 
   subgraph Views["6. Truthful status"]
@@ -134,13 +134,13 @@ flowchart TB
   cancellation, and supersession require separate explicit lifecycle events.
 - A significance gate derives an SDE only when evidence supports a durable implementation, decision, recovery, or lesson. Routine progress remains a goal update.
 - Every durable record is short bullets, separating observed facts from planned or unverified claims.
-- An SDE approval or rejection records only the SDE disposition; it does not
-  authorize destructive cleanup. After compact facts and the disposition
-  receipt are durable, V2 must present the complete exact artifact inventory
-  for a separate human cleanup approval. Neither SDE disposition nor expiry
-  eligibility authorizes deletion. Purge only the approved inventory; report
-  failed deletion as `purge_pending` and never hide it behind green health.
-  Waiting for cleanup approval is a separate state, not a purge failure.
+- One explicit SDE approve/reject action also authorizes purge of the complete
+  exact artifact inventory displayed with the decision. Store a distinct
+  cleanup-authorization receipt for audit, and persist both receipts canonically
+  before deletion. Neither an incomplete inventory nor expiry eligibility
+  authorizes deletion. Purge only the approved inventory; report failed deletion
+  as `purge_pending` and never hide it behind green health. Missing or changed
+  inventory remains a fail-closed gate.
 
 ## Token and disk discipline
 
@@ -156,8 +156,8 @@ flowchart TB
   `goal.reopen`, `goal.criteria_amended`
 - `sde.assess`, `sde.confirm`, `artifact.purge_status`
 - `artifact.cleanup_approve` (implemented as `artifact_cleanup_approve` in the
-  API/MCP surface; human approval is bound to a complete exact inventory and
-  recorded separately from SDE disposition)
+  API/MCP surface; the same explicit review action creates a distinct durable
+  cleanup receipt bound to a complete exact inventory)
 - `steward.inventory`, `steward.propose_cleanup`, `steward.execute_cleanup`
 
 Tests must prove that:
@@ -166,9 +166,9 @@ Tests must prove that:
 - an incomplete task stays open with a concrete next action;
 - unsupported agent claims cannot close a goal;
 - ordinary updates do not become SDEs;
-- confirmed/rejected SDEs preserve compact facts and disposition receipts; no
-  transient artifact is deleted until a separate human cleanup approval binds
-  the exact complete inventory;
+- confirmed/rejected SDEs preserve compact facts and disposition receipts; the
+  same explicit review action authorizes only the exact complete inventory, and
+  no transient artifact is deleted until both receipts are canonically durable;
 - an interrupted purge is retried and visibly reported;
 - no host cleanup happens without explicit approval.
 
@@ -188,7 +188,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 137 of 175 delivery rows are complete; 38 are open. One row was
+(2026-10-22): 138 of 175 delivery rows are complete; 37 are open. One row was
 added for the owner's separately requested V2-owned VS Code status-bar
 integration; the prior 174-row scope remains intact. The count
 includes implementation rows in sections 0–10, 12, and Definition of done. It
@@ -215,8 +215,8 @@ consumer plugin, Hermes integration, or production deployment.
       runtime events and records against the machine-readable schema bundle.
 - [x] Record supported data-retention, privacy, threat-model, and operator
       requirements from the actual deployment owners. The owner-approved local
-      alpha policy records the eaglesvn UID-bound reviewer, separate exact-
-      inventory cleanup approval, 72-hour maximum and prompt expiry, artifact
+      alpha policy records the eaglesvn UID-bound reviewer, same-action exact-
+      inventory cleanup authorization, 72-hour maximum and prompt expiry, artifact
       holds, privacy/canonical-data boundary, fail-closed missing identity, and
       Hermes Core root-account ownership of Host Steward. Production identity,
       retention, external hold discovery, deployment recovery, and live runtime
@@ -452,7 +452,15 @@ consumer plugin, Hermes integration, or production deployment.
       archive/ledger recovery, approval attribution, idempotent replay, archived
       fact retrieval, authenticated receipt reads, byte/count reporting, and
       capacity-resume tests pass; failed archive verification or persistence
-      leaves active facts and the capacity gate unchanged.
+      leaves active facts and the capacity gate unchanged. Maintenance progress
+      (2026-10-22): the storage approval path now accepts one immutable typed
+      request and separates replay, fact/hash validation, SDE protection,
+      capacity accounting, and archive persistence into focused helpers. All
+      nine existing fact-compaction tests and strict Pyright pass; targeted
+      warning-level Pylint no longer reports this path's argument, local-variable,
+      branch, or statement complexity findings, while other `store.py` warnings
+      remain; `git diff --check` passes. This preserves the same transaction
+      boundary and does not establish a Hermes-authenticated reviewer identity.
 - [x] Bound the global event inbox to 250,000 receipts and 128 MiB of retained
       logical row bytes across all projects; reserve room for failure metadata,
       reject new IDs before writes at the ceiling, preserve idempotent replays,
@@ -473,6 +481,31 @@ consumer plugin, Hermes integration, or production deployment.
 - [ ] Threat-model scanner false negatives/positives, formats and jurisdictions
       beyond the current high-confidence patterns; expand based on deployment
       policy without claiming a clean scan is privacy certification.
+      Local progress (2026-10-22): the detector now rejects unlabelled Stripe
+      secret (`sk_live_`, `sk_test_`) and restricted (`rk_live_`, `rk_test_`)
+      key forms in addition to existing high-confidence prefixes. Regressions
+      cover both key classes and prove a synthetic unlabelled `sk_live_` value
+      is rejected before API/MCP persistence; it is absent from returned errors,
+      logs, SQLite sidecars, backup, and canonical output. Five focused tests,
+      strict Pyright, errors-only Pylint, and `git diff --check` pass. Other
+      credential formats, false positives, and jurisdiction/deployment policy
+      remain open; no checklist status changed.
+      Further progress (2026-10-22): GitLab's documented default `glpat-`
+      personal/project/group token prefix with a 20-character body is now
+      rejected as a high-confidence provider token. The scanner documentation
+      records that administrator-configured custom prefixes remain uncovered.
+      This does not claim generic secret detection or privacy certification.
+      Additional progress (2026-10-22): added reject-only coverage for GitHub's
+      `github_pat_` fine-grained PAT prefix and the current opaque/stateless
+      `ghs_` installation-token format, including a synthetic 520-character
+      JWT-shaped value. API and MCP persistence/privacy canaries prove both
+      forms are rejected without echoing or persisting their contents; the API
+      canary also checks backup absence. Official GitHub token-format and
+      rollout references are recorded in
+      `docs/content-safety-v1.md`. Five focused scanner/API/MCP tests, strict
+      Pyright, errors-only Pylint, and `git diff --check` pass. Other provider
+      formats, false positives, custom formats, jurisdictional rules, and
+      deployment policy remain open; this is not a privacy certification.
 - [x] Write a preliminary threat register for the local implementation boundary,
       explicitly separating implemented controls from deployment assumptions and
       residual risks; see [`threat-model-v1.md`](threat-model-v1.md). Owner review,
@@ -539,9 +572,38 @@ consumer plugin, Hermes integration, or production deployment.
       no authenticated human subject and remains unable to review or purge.
       A disposable end-to-end CLI test now exercises its actual grant ledger,
       pending SDE, exact staged inventory, canonical write, and purge. Schema
-      v21 now requires a distinct cleanup approval bound to the complete exact
-      manifest and canonical projection proof before deletion; focused lifecycle
+      v21 now records a distinct cleanup receipt from the same review action,
+      bound to the complete exact manifest and canonical projection proof;
+      focused lifecycle
       and MCP regressions cover missing, mismatched, stale, and approved cleanup.
+      Progress (2026-10-22): the attended review authorizer now also requires
+      the invoking UID to own the SQLite ledger before opening it. The focused
+      review CLI suite passes 9 tests, strict Pyright reports zero diagnostics,
+      errors-only Pylint passes, and `git diff --check` passes. A scoped
+      warning-level Pylint run rates the touched CLI/test pair 9.90/10 with no
+      remaining findings in `review_cli.py`; five fixture/helper findings
+      remain in `test_review_cli.py`. This enforces the selected local alpha
+      account boundary only; Hermes-authenticated identity and production
+      reviewer provisioning remain open.
+      Local alpha authorization follow-up (2026-10-22): the attended access
+      command added exact `read` and `review` grants for `local-uid:1000` on
+      `vhost-manager-alpha`; the read grant is required to inspect the review
+      queue and the review grant gates disposition. The installed reviewer CLI
+      now returns the queue successfully (empty), while the database remains
+      schema 21 with `quick_check=ok`. This verifies local UID-bound reviewer
+      access only; no SDE was present to exercise a real decision, and Hermes
+      authenticated identity remains open.
+      Runtime compatibility check (2026-10-22): the system-installed Hermes
+      CLI for `renew-ssl-coding` connects and discovers 48 tools but reports
+      `Auth: none`, indicating no conventional MCP credentials but not showing
+      Hermes' separate trusted request-context path. The configured local stdio
+      server opts into `hermes_context`; the installed managed-MCP call path derives
+      the profile ID from Hermes Core's active profile and attaches it with
+      the current session ID as host-owned request metadata. Two focused
+      Hermes trust-gating tests pass. The CLI connection test itself only
+      discovers tools, and no actual gateway tool call or live Vhost event
+      workflow has been exercised. Hermes-authenticated person identity
+      remains separate and open.
       It does not close the Hermes identity gate.
       Additional verification (2026-10-22): the current Codex client attempted
       the read-only Curator V2 `goal_list` tool without Hermes profile context;
@@ -582,16 +644,18 @@ consumer plugin, Hermes integration, or production deployment.
 - [x] Gate purge on a project plugin's successful canonical Markdown write;
       record the allowlisted target and projection hash immutably before releasing
       cleanup, and leave the receipt pending if the write fails.
-- [x] Require a distinct, explicit human cleanup approval for every destructive
-      purge, bound to the complete exact inventory and recorded in its own
-      durable receipt. SDE approval/rejection and expiry eligibility do not
-      authorize deletion. Schema v21 stores the separate approval and its
-      canonical projection proof; the plugin rechecks the live complete
-      inventory before accepting it, persists the approval before deletion,
-      and retries only approvals whose projection proof is durable. Focused
-      lifecycle and MCP tests prove no deletion before approval, rejection of a
-      changed file/manifest, exact-manifest approval, and retry after an approved
-      purge failure. The attended expiry approval remains a separate path.
+- [x] Require explicit human authorization for every destructive purge, bound
+      to the complete exact inventory and recorded in its own durable receipt.
+      The same SDE approve/reject action authorizes only the displayed complete
+      inventory; expiry eligibility alone does not authorize deletion. Schema
+      v21 stores the distinct cleanup receipt and its canonical projection
+      proof; the plugin rechecks the live complete inventory, persists both
+      receipts before deletion, and retries only approvals whose projection
+      proof is durable. Focused local CLI and MCP lifecycle regressions prove
+      immediate purge of unheld artifacts only after canonical persistence,
+      retention of held artifacts, and exclusion of transient content from
+      Markdown. Stale and changed manifests remain rejected by focused cleanup
+      coverage. The attended expiry approval remains a separate path.
 - [x] Require the adapter to mark the full artifact inventory complete before
       deleting any artifact, including an explicitly confirmed empty inventory.
 - [x] Restrict purge to exact regular files below the configured staging root;
@@ -619,8 +683,9 @@ consumer plugin, Hermes integration, or production deployment.
       336 tests; strict Pyright, errors-only Pylint, Bandit, locked dependency
       audit, and `git diff --check` pass. This remains local synthetic-reviewer
       evidence of canonical persistence, held-artifact exclusion, and purge
-      recovery. The separate cleanup-approval gate is implemented; production
-      purge scheduling and retention approval remain open.
+      recovery. The distinct cleanup receipt is created by the same explicit
+      review action and projected before purge; production purge scheduling and
+      retention approval remain open.
 - [x] Implement inventory discovery in each staging adapter and prove it
       accounts for every temporary artifact class (raw chat, cue, import, scratch,
       generated intermediate, and duplicate). Progress (2026-10-18): the
@@ -848,6 +913,36 @@ consumer plugin, Hermes integration, or production deployment.
       uses synthetic registration/grants and profile metadata; authenticated
       identity, the interactive Vhost application workflow, and deployment
       remain open.
+      Progress (2026-10-22): `project_activity_status` now advertises the MCP
+      `readOnlyHint=true` annotation so Hermes can safely classify the status
+      read as non-mutating on untrusted-server profiles. The current Hermes
+      Core checkout's CLI correctly reports host-injected profile/session
+      context and discovers 47 tools; the installed global CLI does not display
+      its separate Hermes request-context path and reports `Auth: none`. An
+      earlier one-shot request was rejected by MCP approval before Curator
+      execution, while direct Codex access still returns `unauthenticated`.
+      SQLite `quick_check` is `ok` with one goal, two facts, and 12 inbox rows,
+      proving local at-rest integrity only. Authenticated MCP ledger status,
+      human identity, and live runtime remain open.
+      Additional verification (2026-10-22): Hermes Core now offers
+      `hermes mcp test curator_v2 --probe-curator-status`, which calls only the
+      fixed read-only status tool over configured local stdio using Hermes-
+      generated profile/session metadata. The probe succeeded for
+      `vhost-manager-alpha` and returned 12 retained/processed event receipts,
+      one goal, two facts, and zero SDE candidates. This verifies profile-context
+      MCP access and current ledger aggregates; it does not authenticate a human,
+      exercise the gateway, or establish production persistence. The installed
+      global Hermes CLI remains older than this checkout. Human identity,
+      gateway/runtime, and deployment gates remain open.
+      Additional hardening (2026-10-22): every read-only MCP status, goal,
+      projection, listing, review-inspection, storage, reconciliation, and purge
+      status tool now advertises `readOnlyHint=true`; write/review/retry actions
+      remain unmarked as read-only. A protocol regression checks both sets.
+      Clarification (2026-10-22): the direct Codex `goal_list` call without
+      Hermes host context remains correctly unauthenticated. The supported
+      Hermes profile/session status probe succeeds and verifies current V2
+      ledger aggregates; this does not establish a human subject or live
+      gateway event delivery.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted
       retries, capped persisted exponential retry due times, source-sequence
@@ -949,6 +1044,13 @@ consumer plugin, Hermes integration, or production deployment.
       goal/fact round trip, explicit restore consent, no-overwrite behavior,
       and sanitized failure output. Production storage drills, off-host backup
       policy, and active-database switch/rollback remain open.
+      Additional progress (2026-10-22): the v20-to-v21 migration regressions
+      now independently reject a wrong canonical-persistence default, a
+      nullable required project field, a missing receipt primary key, malformed
+      columns, and a missing audit-receipt foreign key without advancing
+      `user_version`; the valid legacy-receipt upgrade still invents no cleanup
+      authorization. Four focused migration tests pass. Production upgrade,
+      corruption, backup/restore, and rollback drills remain open.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.
@@ -1299,9 +1401,9 @@ consumer plugin, Hermes integration, or production deployment.
       compact facts are recorded and any related SDE is approved or rejected,
       with 72 hours as the absolute maximum age. That SDE decision clears
       only its pending-review hold; legal/operational artifact holds require
-      separate release. Expiry eligibility is not authorization to delete;
-      cleanup still requires a separate human approval bound to the exact
-      complete inventory. Schema v19 stores content-free publication times for
+      separate release. The same explicit review action authorizes cleanup
+      only for the exact complete inventory displayed; expiry eligibility by
+      itself is not authorization to delete. Schema v19 stores content-free publication times for
       files written through the producer adapter. Expiry discovery hashes the
       full project inventory and marks artifacts eligible after facts are
       recorded following staging and related SDE disposition. Pending SDE
@@ -1551,6 +1653,38 @@ consumer plugin, Hermes integration, or production deployment.
       Curator MCP test still discovers 45 tools. The separate gateway status
       command reports only the default manual gateway PID; this does not prove
       profile event delivery or the Vhost application workflow.
+      Additional composed integration verification (2026-10-22): the Vhost
+      disposable managed-MCP harness was refreshed for the current typed
+      `ProjectRegistrationRequest` API and now passes against the installed
+      alpha package. It confirms exact profile/session/goal binding, planned-
+      goal denial, three bounded lifecycle events, durable receipts, replay and
+      retry behavior, canonical Vhost projection/reconciliation, out-of-scope
+      target preservation, and reviewer-tool denial. All data is temporary;
+      this composes Hermes Core's hook registry and gateway callback with the
+      installed Curator stdio MCP server, but does not run the gateway service,
+      exercise a real Vhost UI request, or authenticate a human. Those gates
+      remain open.
+      Alpha package refresh (2026-10-22): rebuilt the current V2 source into
+      wheel SHA-256
+      `cd8218a9c4423f17b7ec831ea15e97719fee9c56f05974e1cca94632c049d827`
+      and installed it only in the dedicated `renew-ssl-coding` alpha
+      virtualenv after archiving the previous installed package and launchers
+      for rollback. All 40 installed Python module hashes match source; the
+      seven disposable consumer contracts and the composed Hermes managed-MCP
+      harness pass. The read-only profile-context probe connects to the
+      configured stdio server, discovers 48 tools, and reports 12 processed
+      receipts, one goal, two facts, and no failed or pending events. This does
+      not restart or prove the live gateway, exercise the Vhost UI, or establish
+      human identity, production policy, or runtime readiness.
+      Follow-up alpha refresh (2026-10-22): after the local-health extraction,
+      rebuilt and installed wheel SHA-256
+      `e1ae63f63952d8c7953aa70c413b5446dec2b68c8984b5ea60272a34805ca778`
+      in the same dedicated alpha virtualenv, preserving the preceding installed
+      package and launchers in a separate rollback archive. All 41 installed
+      module hashes now match source and `pip check` passes. The Hermes-context
+      status probe still connects, discovers 48 tools, and reads the same
+      12-receipt, one-goal, two-fact ledger aggregates. No gateway restart or
+      live Vhost application request occurred.
 - [x] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries. Additional progress
       (2026-10-20): the separate-process Hermes adapter acceptance test now
@@ -1876,14 +2010,91 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       bounded excerpts. This is local source/test evidence only. Other Hermes
       logging paths, traces, backups, replay/trajectory content, and the wider
       source-to-sink review remain open, so this privacy checklist item stays
-      unchecked. Further follow-up (2026-10-22): Hermes spillover now preserves
-      the Curator V2 tool identity through direct result persistence and aggregate
-      turn-budget enforcement. Oversized Curator V2 results are truncated inline
-      with an explicit no-archive marker; the full result is not written to Hermes
-      spillover or sandbox temp files. Three focused regressions cover direct,
-      aggregate string, and aggregate multimodal-text paths. This closes those
-      Hermes spillover paths only; broader logging, traces, old transcript rows,
-      WAL/recovery, other backup paths, and provider retention remain open.
+      unchecked. Additional progress (2026-10-22): malformed MCP sampling
+      arguments are still preserved for in-memory recovery but omitted from
+      Hermes warning logs. A dedicated canary regression passes, the Hermes
+      12-check quality command passes, and `git diff --check` passes. The
+      trajectory conversion helpers were moved into their topical module to
+      satisfy Hermes' code-health ratchet. This does not close the privacy item
+      or change checklist progress. Read-only Curator goal and activity status
+      calls returned `unauthenticated`; global ledger persistence remains
+      unverified in this session. Further progress (2026-10-22): saved
+      trajectory samples now retain the Curator V2 tool-call boundary but
+      replace its arguments with a redaction sentinel. Two focused trajectory
+      regressions and the sampling regression pass (3 tests total), Hermes'
+      12-check quality command passes, and `git diff --check` passes. Other
+      trajectory content, traces, backups, and provider paths remain in the
+      broader source-to-sink review; the privacy item stays unchecked. Further
+      progress (2026-10-22): paired tool responses for Curator V2 calls now
+      retain call IDs/names but replace returned content with a redaction
+      sentinel before trajectory serialization. Canary regressions cover both
+      arguments and tool results while a non-Curator result remains intact;
+      all 5 focused Hermes tests pass, the 12-check quality command reports
+      zero blocking/advisory health findings, and `git diff --check` passes.
+      This does not cover other trajectory content, logs, traces, backups, or
+      provider-side retention, so the privacy item remains open. Further
+      progress (2026-10-22): Hermes now substitutes a fixed marker for Curator
+      V2 tool results in verbose diagnostics and failure warnings, preserving
+      ordinary tool output behavior. Two canary tests cover the redaction
+      helper; all 7 focused trajectory/log/sampling tests pass and the Hermes
+      12-check quality command reports zero blocking/advisory findings. Other
+      diagnostic sinks and the end-to-end source-to-sink audit remain open.
+      Follow-up (2026-10-22): the executor's concurrent and sequential
+      exception paths and concurrent failed-result preview now use the same
+      Curator-specific redaction, suppressing exception tracebacks for those
+      calls while retaining other tools' diagnostics. Seven focused executor
+      and MCP-handler tests pass; the Hermes 12-check quality command and both
+      repositories' `git diff --check` pass. The broader source-to-sink review
+      remains open.
+      Further follow-up (2026-10-22): the central Hermes dispatcher now avoids
+      exception details in Curator V2 error logs, returned tool errors, and
+      post-tool hook metadata, while preserving other tools' current behavior.
+      Its canary regression and the focused executor/log-handler regressions
+      pass (8 tests across the recent focused runs); Hermes `scripts/check`
+      passes all 12 checks with zero blocking/advisory findings. The end-to-end
+      privacy review remains open.
+      Further follow-up (2026-10-22): Curator V2 exceptions from Hermes request
+      middleware and post-tool hooks now use the same fixed diagnostic marker.
+      The focused dispatcher/executor redaction suite passes 9 tests across
+      recent runs, Hermes `scripts/check` passes all 12 checks, and both
+      repositories pass `git diff --check`. Provider logs, other diagnostic
+      sinks, and full source-to-sink review remain open.
+      Further follow-up (2026-10-22): shared Hermes session-viewer events now
+      keep Curator V2 tool names, call IDs, and failure status while replacing
+      arguments, result text, previews, and argument-derived labels with fixed
+      redaction markers. A focused managed-worker regression confirms the
+      viewer stream contains no argument/result canaries while the initiating
+      API observer still receives its in-call response. The two-test focused
+      viewer suite passes; Hermes `scripts/check` passes all 12 checks and both
+      repositories' `git diff --check` pass. Other Hermes sinks and the overall
+      source-to-sink review remain open; the separate
+      `project_activity_status` probe later succeeded with Hermes profile/session
+      context, verifying aggregate ledger access but not human authentication.
+      Further progress (2026-10-22): Hermes now redacts Curator V2 arguments,
+      results, and failure details from managed-MCP/tool logs, session-viewer
+      events, durable session transcript rows, and exported trajectory samples;
+      malformed sampled arguments remain available in memory but are omitted
+      from warnings. Six dedicated redaction files plus the managed-worker
+      viewer regression pass 19 tests, and targeted Ruff passes. This is local
+      source evidence only. Traces, Hermes session DB backup/WAL recovery,
+      provider-side retention, all exception surfaces, and the complete
+      source-to-sink review remain open; this privacy item stays unchecked.
+      Backup follow-up (2026-10-22): a disposable `hermes backup` regression
+      now creates the V2 durable-session projection, snapshots Hermes `state.db`
+      into the real backup ZIP, and confirms that the raw argument/result
+      canaries are absent while the redacted transcript fields remain. The
+      persistence projection and backup regression pass together (3 tests),
+      and targeted Ruff passes. This covers one fresh `state.db` snapshot path;
+      old transcript rows, WAL/recovery behavior, other backup paths, traces,
+      and provider retention remain open. Further follow-up (2026-10-22):
+      Hermes spillover now preserves the Curator V2 tool identity through
+      direct result persistence and aggregate turn-budget enforcement. Oversized
+      Curator V2 results are truncated inline with an explicit no-archive
+      marker; the full result is not written to Hermes spillover or sandbox temp
+      files. Three focused regressions cover direct, aggregate string, and
+      aggregate multimodal-text paths. This closes those Hermes spillover paths
+      only; broader logging, traces, old transcript rows, WAL/recovery, other
+      backup paths, and provider retention remain open.
       TUI follow-up (2026-10-22): Hermes tool-start/tool-complete events and
       restart-preview callbacks now replace Curator V2 arguments and results
       with fixed markers before event replay or preview emission; argument-
@@ -1892,7 +2103,11 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       This closes only these TUI sinks; the repository-wide privacy item stays
       open and no checklist count changes.
 - [ ] Define retention and deletion policies by artifact class, with measured
-      disk budgets and monitoring for unexplained growth.
+      disk budgets and monitoring for unexplained growth. The local-alpha
+      72-hour maximum and prompt post-record/disposition expiry are implemented;
+      content-free per-class measurements and configurable project staging
+      limits are available. Owner-approved measured budgets and deployed growth
+      monitoring remain open.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
       pinned/reviewed tool versions and documented failure handling.
 
@@ -2186,7 +2401,132 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       line in `tests/test_purge.py`. Wrapped that comprehension without changing
       behavior; the targeted `C0301` check now passes. The full inventory was
       not rerun after the formatting change, and no tests were rerun. Broad
-      repository cleanup remains open.
+      repository cleanup remains open. Further progress (2026-10-22): converted
+      review-CLI receipt/projection/verifier fixtures to typed records and
+      extracted the end-to-end invocation from its test. The focused file's
+      warning-level Pylint findings fell from five to one; all nine focused
+      tests pass, strict Pyright reports zero diagnostics, errors-only Pylint,
+      Bandit, and `git diff --check` pass. The remaining scoped finding is the
+      seven-argument test-double signature matching the current review API;
+      the full repository inventory was not rerun and remains open. Further
+      progress (2026-10-22): represented the fake review API's two required
+      keyword options with a TypedDict `Unpack`, preserving its call contract
+      while avoiding an overlong test-double signature. Focused warning-level
+      Pylint now reports no findings in `tests/test_review_cli.py`, strict
+      Pyright reports zero diagnostics, and `git diff --check` passes. No tests
+      or full Pylint inventory were rerun; repository-wide cleanup remains open.
+      Further progress (2026-10-22): moved the read-side goal, storage, and
+      operations projection records into `read_models.py`, and shared timestamp
+      and digest validation into `record_validation.py`. `models.py` remains
+      below Pylint's module-line ceiling (980 lines); lazy compatibility exports
+      preserve existing `curatormd_v2.models` imports. Eight contract-schema
+      tests, strict Pyright, errors-only Pylint, a direct compatibility-import
+      smoke check, and the focused module-line check pass. Wide serialized
+      record attribute findings and the full repository Pylint inventory remain
+      open; no full suite was rerun.
+      Further progress (2026-10-22): evidence revalidation now takes the
+      existing immutable `EvidenceVerificationContext` instead of separate
+      project/goal/criterion/time arguments, and independently checks content,
+      scope, and stable source identity. Focused Pylint no longer reports the
+      function's argument-count or boolean-expression findings; the focused
+      module score improved from 9.19 to 9.95/10, with the remaining finding
+      in the receipt-adapter constructor. The service and canonical-projection
+      regressions pass, strict Pyright and errors-only Pylint pass, and the
+      full inventory remains open (the latest complete inventory before this
+      slice reported 278 findings).
+      Further progress (2026-10-22): extracted allowlist, age-limit, and
+      revocation-ceiling validation from `ReceiptEvidenceAdapter.__init__` into
+      bounded helpers while preserving its existing configuration signature.
+      This removes the constructor's branch-count finding; its argument-count
+      finding remains because the current public configuration takes explicit
+      trust fields. All 13 evidence tests pass, strict Pyright and errors-only
+      Pylint pass. The focused branch/argument check reports only the remaining
+      constructor argument finding; the full repository inventory was not
+      rerun. Replaced the revocation-limit assertion with an exact-integer
+      guard after Bandit flagged it; the focused TTL/boolean regression and
+      Bandit now pass.
+      Further progress (2026-10-22): grouped the adapter's project/subject
+      allowlists and freshness limits into an immutable host-owned
+      `EvidenceAdapterPolicy`, normalized source ceilings at construction, and
+      documented that event/MCP input cannot select this policy. This removed
+      the constructor argument-count and adapter attribute-count findings in
+      the focused warning-level Pylint run; remaining warnings in the module
+      concern intentionally small protocol/data classes. All 13 focused
+      evidence tests and strict Pyright pass; the repository-wide warning
+      inventory remains open.
+      Further progress (2026-10-22): the project-registry audit writer now
+      accepts the existing typed `ProjectRegistryAuditRecord` rather than nine
+      parallel fields. The seven project-access tests and strict Pyright pass;
+      targeted Pylint no longer reports argument-count findings for the audit
+      writer. A fresh full inventory fell from 273 to 271 findings, removing
+      its argument-count and positional-argument findings. Repository-wide
+      structural and duplication cleanup remains open.
+      Further progress (2026-10-22): project registration and update now take
+      one typed `ProjectRegistrationRequest`; the manager still derives the
+      audit actor exclusively from its authorized caller. The attended CLI and
+      hosted-MCP fixture share a factory over validated project configuration.
+      The 22 focused access, CLI, and hosted-MCP tests pass, and strict Pyright
+      reports zero diagnostics. A fresh full Pylint inventory fell from 271 to
+      263 findings, removing eight argument/positional-argument findings;
+      repository-wide cleanup remains open.
+      Further progress (2026-10-22): the fingerprint-bound authorizer now
+      receives an immutable `ProjectAuthorizationBinding` built from validated
+      project configuration and its exact allowed-action set. It continues to
+      recheck active registration fingerprints and current grants on each
+      authorization call. The focused access, CLI, hosted-MCP, and review-CLI
+      suites pass 31 tests; strict Pyright and the changed-file Pylint run pass
+      with only existing protocol-class and launcher-signature findings. The
+      full warning inventory was not rerun; verified Hermes identity remains
+      an open gate.
+      Further progress (2026-10-22): `_append_fact` now groups its serialized
+      evidence, attestation, and dedupe fields in one immutable internal
+      payload before duplicate checks and capacity accounting. The existing
+      dedupe, fact-count/byte-capacity, and fact-compaction tests pass 12 cases;
+      strict Pyright and `git diff --check` pass. Targeted full Pylint for
+      `store.py` dropped from 27 to 26 findings and no longer reports excess
+      locals in `_append_fact`; the repository-wide inventory was not rerun.
+      Further progress (2026-10-22): split the staging-expiry snapshot into
+      exact staged-goal mapping, age/readiness selection, hold partition, and
+      manifest-hash helpers. This preserves the 72-hour cutoff and pending-SDE
+      behavior while removing the excessive-local findings from the snapshot
+      and selector. All 43 `project_plugin` tests, strict Pyright, repository
+      errors-only Pylint, and `git diff --check` pass. Warning-level Pylint
+      still reports non-blocking repository refactor/convention findings; this
+      checklist item remains open.
+      Further progress (2026-10-22): extracted descriptor-relative staging
+      traversal into `staging_scan.py` and separated usage measurement from
+      artifact discovery. This removes the scanner's 40-local, 37-branch,
+      126-statement, and nine-return Pylint findings without changing its
+      no-follow descriptors, entry/hash limits, or fail-closed inventory
+      results. All 43 `project_plugin` tests pass; strict Pyright, repository
+      errors-only Pylint, Bandit, and `git diff --check` pass. Focused
+      warning-level Pylint reports no findings in the new scanner module;
+      remaining `project_plugin.py` and repository findings keep this item open.
+      Further progress (2026-10-22): extracted the bounded atomic staging-file
+      writer into `staging_write.py`, grouping its typed inputs and hard limits
+      while retaining no-follow directory opens, chunked writes, fsync, no-
+      clobber publication, and receipt-failure rollback. All 43
+      `test_project_plugin.py` tests pass; strict Pyright, errors-only Pylint,
+      Bandit, and `git diff --check` pass. Warning-level Pylint rates the new
+      writer and scanner modules 10.00/10 each; `project_plugin.py` remains at
+      9.74/10 with structural argument-count and module-size findings. This
+      cleanup does not change the checklist count or close repository-wide
+      warning-level cleanup.
+      Last full warning inventory before the health-evaluator extraction
+      (2026-10-22): Pylint over all
+      `src/curatormd_v2` and `tests` files reports 246 non-blocking findings
+      (39 argument-count, 36 local-count, 35 fixture/public-method-count,
+      31 duplication, and 27 instance-attribute findings among the largest
+      groups). A fresh whole-tree count has not been run after the subsequent
+      focused refactors; repository-wide warning cleanup remains open.
+      Further progress (2026-10-22): moved fail-closed local/dependency health
+      evaluation into `health_evaluation.py` and separated host probe parsing,
+      freshness, and readiness-state handling. Eleven health regressions pass;
+      strict Pyright reports zero diagnostics, repository errors-only Pylint
+      passes, and `git diff --check` passes. Targeted warning-level Pylint no
+      longer reports `api.py` module-size or dependency-evaluator branch-count
+      findings. A fresh whole-tree warning inventory has not been run, and
+      production dependency probes/health alerts remain unverified.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
@@ -2550,8 +2890,13 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       closes a checklist item; application workflow, identity, retention,
       recovery, live runtime, and release gates remain open. A read-only Curator
       `goal_list` call from this Codex session returned `unauthenticated` because trusted Hermes profile
-      context was unavailable; current backend goal persistence therefore
-      remains unverified in this session.
+      context was unavailable. A read-only inspection of the configured local
+      alpha SQLite ledger on 2026-10-22 then passed `PRAGMA quick_check` and
+      found one goal, two facts linked to that project's goal, and 12 project
+      event-inbox rows. Hermes profile MCP discovery also connected and exposed
+      47 tools, but its one-shot status call was rejected before a server result.
+      Local ledger persistence is therefore verified at rest; an authenticated
+      Curator MCP status response and live Hermes call remain unverified.
 
       Latest local report-source verification (2026-10-21): the MCP SDE/purge
       acceptance regression compares `goal_report` against persisted lifecycle,
@@ -2618,10 +2963,11 @@ replaying the full session:
       checklist item done merely because the agent stopped.
 - [ ] **Resolve review and cleanup separately.** Show SDE state, cleanup
       authorization, canonical write/receipt state, artifact-inventory
-      completeness, and purge state as independent fields. SDE disposition and
-      destructive-cleanup approval are separate human decisions; neither
-      substitutes for the other. Persist canonical facts and both applicable
-      decision receipts before deletion. Leave unapproved cleanup visibly
+      completeness, and purge state as independent fields. One explicit review
+      action may decide SDE disposition and authorize cleanup of the exact
+      displayed inventory; retain distinct immutable receipts for both. Persist
+      canonical facts and both applicable receipts before deletion. Leave
+      unapproved cleanup visibly
       awaiting authorization and failed cleanup visibly `purge_pending`, with a
       safe retry owner/action. Cleanup success must not mark unfinished
       development complete.
@@ -2681,19 +3027,18 @@ verified work.
       keep routine updates on the goal. For a candidate SDE, select only
       material, durable facts and passing evidence, with concise impact and
       retrieval value. Label planned, inferred, and measured impact distinctly.
-- [ ] **Present separate human decisions.** For SDE disposition, show the
-      proposed bullet record, selected fact/evidence references, project scope,
-      and decision consequences. For destructive cleanup, separately show the
-      complete exact eligible artifact inventory, hashes, target, and deletion
-      consequences. A single SDE approve/reject decision never authorizes
-      cleanup. Record each decision, reviewer, time, and rationale in its own
-      immutable receipt; no purge is allowed before the exact cleanup
-      authorization receipt is durable.
+- [ ] **Present review and cleanup consequences together.** Show the proposed
+      bullet record, selected fact/evidence references, project scope, decision
+      consequences, and complete exact eligible artifact inventory with hashes
+      and target before asking for one explicit review action. That action may
+      authorize cleanup only for the displayed manifest. Record SDE and cleanup
+      authorization in distinct immutable receipts; no purge is allowed until
+      both are durable and canonically projected.
 - [ ] **Persist before purging.** Write the approved compact facts (or the
-      required rejection/goal facts) and durable receipt to the configured
-      canonical target, verify the resulting projection/hash, then persist a
-      separate human cleanup-authorization receipt bound to the complete exact
-      inventory before purging only that allowlisted inventory. Keep evidence
+      required rejection/goal facts) and disposition receipt to the configured
+      canonical target, verify the resulting projection/hash, then persist the
+      cleanup-authorization receipt from the same review action, bound to the
+      complete exact inventory, before purging only that allowlisted inventory. Keep evidence
       needed for unresolved criteria only when policy explicitly permits it;
       never delete source, canonical, or unrelated user files.
 - [ ] **Close the cleanup loop.** Report per-artifact deleted, already absent,
@@ -2830,9 +3175,10 @@ Final report: completed facts, open items, recovery path, next action
       are denied before details are fetched. Inventory is point-in-time and
       decision-time manifest checks remain required; live authenticated reviewer
       UX is still open.
-- [x] Require a separate human cleanup-authorization receipt bound to the
-      complete exact manifest before any SDE-triggered purge. SDE disposition
-      and initial canonical persistence leave the files untouched. Schema v21
+- [x] Require a durable cleanup-authorization receipt bound to the complete
+      exact manifest before any SDE-triggered purge. The same explicit human
+      review action records SDE disposition and cleanup authorization. Initial
+      canonical persistence leaves files untouched. Schema v21
       records the cleanup reviewer, manifest hash, approval time, and separate
       canonical projection proof. The plugin rescans the staging inventory,
       rejects stale/changed files, persists the approval receipt, then starts
@@ -2868,14 +3214,59 @@ Final report: completed facts, open items, recovery path, next action
 Close slices in dependency order. A checkbox in an earlier slice is not a
 substitute for evidence at a later integration boundary.
 
-- [ ] **A. Freeze contracts:** publish versioned goal/event/fact/SDE/receipt/
-      plugin schemas, lifecycle transition rules, error codes, and compatibility
-      policy; add executable contract fixtures.
-- [ ] **B. Harden the local domain slice:** finish bounds, schema/privacy
+- [x] **A. Freeze contracts:** version-1 goal/event/fact/SDE/receipt/plugin
+      schemas, lifecycle transition rules, error codes, and compatibility
+      policy are published in [`contracts-v1.md`](contracts-v1.md) and its
+      linked documents. `tests/test_contract_schemas.py` validates runtime
+      records, all lifecycle event payloads, both durable event dispositions,
+      repository config examples, and the API error envelope; the lifecycle
+      action matrix regression checks every public action against every stored
+      goal status. Version 1 is frozen for the current source contract. The
+      installed Vhost alpha wheel is still schema v20 while source is v21, so
+      installed-consumer synchronization remains separate and open.
+      Cross-repository interoperability, external serializers/transports, and
+      production compatibility approval remain separate open gates.
+- [x] **B. Harden the local domain slice:** finish bounds, schema/privacy
       validation, concurrency/replay behavior, correction/supersession semantics,
-      property tests, and the local v0-to-v16 migration fixtures; attach
-      test evidence. Full transition/privacy coverage and production migration
-      support remain open.
+      property tests, and the local v0-to-v21 migration fixtures; attach
+      test evidence. Broader source-to-sink privacy review and production
+      migration support remain open. Progress (2026-10-22): content-free staging usage
+      records now reject negative, boolean, floating-point, oversized, or
+      inconsistent counts; malformed completeness flags and unsafe/unbounded
+      error categories are rejected. The published v1 schema matches the
+      10,000-entry ceiling, bounded error category, and completeness/error
+      relationship. Two contract regressions and two bounded-scanner regressions
+      pass; strict Pyright reports zero diagnostics, errors-only Pylint passes,
+      and `git diff --check` passes. Broader transition/privacy coverage and
+      production migration support remain open. Further local progress
+      (2026-10-22): the bounded staging measurement types and their validation
+      now live in `staging_models.py`, while `models.py` and the package-level
+      import surface remain compatible. Four focused contract/scanner tests
+      pass, strict Pyright reports zero diagnostics, and errors-only Pylint
+      passes. The focused Pylint inventory for `models.py` plus the new module
+      fell from 19 to 16 findings, removing the staging validator's branch
+      complexity and three unused-import findings; this is not a full-suite
+      lint cleanup. Broader domain/privacy coverage and production migration
+      support remain open. Additional property coverage (2026-10-22): a
+      deterministic Hypothesis property generates up to seven class totals and
+      proves consistent bounded scans are accepted while a mismatched aggregate
+      is rejected across 60 examples. The focused property passes; strict
+      Pyright, errors-only Pylint, and `git diff --check` pass. No full Curator
+      suite rerun or checklist status change. Further migration coverage
+      (2026-10-22): a v20-to-v21 fixture confirms an existing SDE receipt is
+      preserved without inventing the new cleanup authorization. The schema
+      migration reference now lists the complete v2-to-v21 fresh-install chain;
+      production upgrade/rollback remains unapproved. A malformed pre-existing
+      `cleanup_authorizations` table now fails closed before the v21 stamp if
+      its columns, defaults, nullability, primary key, or receipt foreign key
+      differ; regressions verify the version remains unchanged.
+      Closure (2026-10-22): focused bounds, validation, schema/privacy,
+      concurrency, event/application replay, lifecycle, correction/supersession,
+      property, and migration suites pass 155 tests; the full locked Curator
+      suite passes 377 tests. Strict Pyright, errors-only Pylint, Bandit, and
+      `git diff --check` pass. This closes the local domain slice; broader
+      source-to-sink privacy, production migration, deployment, identity,
+      retention, and live-runtime gates remain open.
 - [ ] **C. Complete storage and projection recovery:** define the authoritative
       record, reconcile SQLite and Markdown after interruption, test backup/restore
       and integrity recovery, and document operator repair steps. Local backup,
@@ -2893,7 +3284,34 @@ substitute for evidence at a later integration boundary.
       project isolation.
 - [ ] **G. Integrate Hermes Core:** map real app-server lifecycle events through
       the global router and managed gateway; prove profile/project authorization
-      and that no raw session transcript is retained.
+      and that no raw session transcript is retained. Local diagnostic progress
+      (2026-10-22): the checkout Hermes CLI now labels a configured local stdio
+      server with `hermes_context: true` as host-injected Hermes profile/session
+      context, instead of `Auth: none`. The actual `renew-ssl-coding` profile
+      connects and discovers 47 Curator V2 tools under that checkout. Subsequent
+      verification added `hermes mcp test curator_v2 --probe-curator-status`,
+      which successfully reads aggregate V2 ledger status through the configured
+      stdio server with host-generated profile/session context. Four focused CLI
+      tests and all 12 Hermes source checks pass. This proves local profile
+      context and ledger visibility, not human identity, managed-gateway or
+      app-server lifecycle delivery. The system-installed CLI's `Auth: none`
+      display indicates no conventional MCP credentials, but does not show
+      Hermes context metadata. Inspection confirms its managed-MCP call path
+      injects host-derived profile/session metadata for the opted-in local stdio
+      server. Two focused Hermes trust-gating tests pass. These checks do not
+      establish that a real managed-gateway tool call or app-server event was
+      delivered. Human identity and live-runtime gates remain open. Current
+      probe (2026-10-22): the checkout CLI exits 0, discovers 48
+      tools, and reads `vhost-manager-alpha` activity status: 12 event receipts,
+      all processed, one goal, two facts, and no pending SDEs or event failures.
+      The alpha database is schema 21, passes `PRAGMA quick_check=ok`, and has
+      12 inbox receipts. The refreshed source wheel with SHA-256
+      `e268f1eddce61c44b1f132f93c6afad842a5ddd39e9e791cabd7091c25fdc2d0` is
+      installed in the isolated profile; all 38 Python module hashes match
+      source and all seven disposable Vhost consumer contracts pass against
+      it. These are profile-context, installed-package, and disposable
+      consumer-contract results, not person authentication, a `goal_list`
+      result, a health probe, or live application capture.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
@@ -2908,9 +3326,13 @@ substitute for evidence at a later integration boundary.
 - [ ] **I. Pilot and release:** run the V2 consumer workflow and rollback drill,
       publish runbooks/release notes, and obtain owner sign-off on retention,
       cleanup, and capture policy. V1 migration or rollback is not a V2 gate.
-- [ ] For each slice, record entry conditions, named owner, exact commands or
+- [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
+      [`release-gates-v2.md`](release-gates-v2.md) now has an A-I status row with
+      owner, probe, expected/actual result, evidence, and open exit conditions,
+      plus per-slice entry, recovery, and approval registers. This closes the
+      documentation/evidence-index requirement only; release gates remain open.
 - [x] Keep a release-gate summary in [`release-gates-v2.md`](release-gates-v2.md)
       that lists each slice as `not started`,
       `in progress`, `verified`, or `blocked`; include evidence links and never
@@ -2925,9 +3347,9 @@ substitute for evidence at a later integration boundary.
       claims remain open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable.
-- [ ] SDE disposition and destructive-cleanup approval are separate human
-      decisions. Canonical facts, the applicable decision receipts, and a
-      cleanup-authorization receipt bound to the complete exact inventory are
+- [ ] One explicit review action decides SDE disposition and authorizes cleanup
+      of the complete exact inventory. Canonical facts, the distinct decision
+      receipts, and a cleanup-authorization receipt bound to that inventory are
       durable before deletion; every transient artifact is inventoried, safely
       purged or visibly pending, and retryable.
 - [ ] Status reports exact active/completed/open/blocked/deferred goals,
