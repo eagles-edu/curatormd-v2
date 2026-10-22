@@ -3574,3 +3574,15 @@
 **Open gate:** The broader V2 privacy item remains open for other logging and exception paths, traces, old transcript rows, WAL/recovery, other backup paths, and provider-side retention. Direct Curator MCP access remains unauthenticated from this Codex session.
 
 **Outcome:** Oversized Curator V2 results no longer spill into Hermes files on the covered paths; no deployment or live-runtime claim is made.
+
+## 2026-10-22 — Redact Curator V2 payloads across Hermes persistence and diagnostics
+
+**Intent:** Extend the local Hermes Core privacy boundary across durable session projections, exported trajectories, diagnostic logs, and session-viewer events without changing other tools' behavior.
+
+**Changed fact:** Hermes now redacts Curator V2 call arguments, results, and failure details in the covered persistence, trajectory, managed-MCP, executor, dispatch/hook, sampling, and viewer paths. A disposable `hermes backup` regression verifies that a fresh SQLite backup contains only the redacted transcript projection. Hermes change `2a0a8f1574` is pushed to the Curator V2 integration branch.
+
+**Verification:** Seven focused redaction test files plus the managed-worker viewer regression pass 20 tests; Hermes `scripts/check` passes all 12 checks, and Hermes `git diff --check` passes. The profile-scoped local Curator probe connects with Hermes-injected profile/session context and reports the `vhost-manager-alpha` ledger: 12 processed receipts, one goal, and two facts. It does not authenticate a human subject or prove live application delivery.
+
+**Open gate:** Historical raw transcript rows, WAL/recovery, all backup variants, traces, provider-side retention, and the complete source-to-sink audit remain open. Production identity, retention, deployment, and live-runtime gates remain open.
+
+**Outcome:** The tested local Hermes sinks retain no Curator V2 argument/result canaries while preserving call identity; no checklist item is marked complete and no production claim is made.

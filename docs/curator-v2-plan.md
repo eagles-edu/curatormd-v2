@@ -2102,6 +2102,21 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       TUI regressions pass, targeted Ruff passes, and `git diff --check` passes.
       This closes only these TUI sinks; the repository-wide privacy item stays
       open and no checklist count changes.
+      Further Hermes coverage (2026-10-22): Curator V2 arguments, results, and
+      exception details are now redacted from durable session transcript rows,
+      exported trajectories, managed-MCP failure logs, tool-executor failure
+      paths, model-dispatch/hook diagnostics, sampling warnings, and shared
+      session-viewer payloads. The disposable `hermes backup` regression proves
+      a fresh `state.db` archive retains only the redacted transcript fields.
+      Seven focused test files plus the managed-worker viewer regression pass
+      20 tests; Hermes `scripts/check` passes all 12 checks and
+      `git diff --check` passes. The Hermes change is pushed as `2a0a8f1574`.
+      Hermes profile-context status probe succeeds for `vhost-manager-alpha`
+      with 12 processed receipts, one goal, and two facts. This verifies local
+      profile-to-ledger visibility only; it does not authenticate a human or
+      establish live application delivery. Old transcript rows, WAL/recovery,
+      all backup variants, traces, provider retention, and broader
+      source-to-sink review remain open; this privacy item stays unchecked.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth. The local-alpha
       72-hour maximum and prompt post-record/disposition expiry are implemented;
