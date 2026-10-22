@@ -4,10 +4,11 @@
 
 - **Intent:** Reduce Curator V2 fact/event exposure in Hermes Core diagnostics.
   **Changed fact:** Hermes now redacts Curator V2 MCP argument excerpts in
-  verbose-call, repair, trajectory-conversion, and corrupt-call logs while
-  preserving bounded excerpts for unrelated tools. **Verification:** the
-  focused Hermes regression passes (3 tests), including a canary absence check
-  and unchanged repaired arguments; `git diff --check` passes. **Open gate:**
+  verbose-call, repair, trajectory-conversion, corrupt-call, and batch
+  admission logs while preserving bounded excerpts for unrelated tools.
+  **Verification:** the focused Hermes regression passes (4 tests), including
+  canary absence checks and unchanged repaired arguments; `git diff --check`
+  passes. **Open gate:**
   broader Hermes log, trace, backup, replay/trajectory, and upstream privacy
   review remains open; the plan privacy item and delivery count are unchanged.
   **Outcome:** recorded bounded local integration evidence without claiming

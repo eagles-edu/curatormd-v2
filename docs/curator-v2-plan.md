@@ -1869,8 +1869,9 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       Progress (2026-10-22): Hermes Core now replaces argument excerpts with a
       fixed redaction marker for Curator V2 MCP tools in verbose tool-call
       diagnostics, malformed-argument repair warnings, trajectory conversion
-      warnings, and corrupt-call repair warnings. A focused Hermes regression
-      verifies a unique content canary is absent from repair logs while the
+      warnings, corrupt-call repair warnings, and the batch-admission debug
+      log for invalid JSON. A focused Hermes regression verifies a unique
+      content canary is absent from repair and batch-admission logs while the
       repaired arguments remain usable; non-Curator diagnostics retain their
       bounded excerpts. This is local source/test evidence only. Other Hermes
       logging paths, traces, backups, replay/trajectory content, and the wider
