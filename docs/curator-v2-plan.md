@@ -188,7 +188,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 133 of 175 delivery rows are complete; 42 are open. One row was
+(2026-10-22): 137 of 175 delivery rows are complete; 38 are open. One row was
 added for the owner's separately requested V2-owned VS Code status-bar
 integration; the prior 174-row scope remains intact. The count
 includes implementation rows in sections 0–10, 12, and Definition of done. It

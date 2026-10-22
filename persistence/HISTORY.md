@@ -2,6 +2,18 @@
 
 ## 2026-10-22
 
+- **Intent:** Reconcile the published Curator V2 checklist snapshot with its
+  declared delivery-row scope.
+  **Changed fact:** The snapshot now reports 137 of 175 delivery rows complete
+  and 38 open. The count includes sections 0–10, 12, and Definition of Done;
+  it excludes section 11's reusable task templates.
+  **Verification:** A section-scoped count of current `- [x]`, `- [ ]`, and
+  `- [!]` rows returns 137 complete, 38 open, and zero blocked. No checklist
+  rows were changed in this reconciliation.
+  **Open gate:** Deployment, verified human identity, production retention and
+  recovery, and live-runtime evidence remain open.
+  **Outcome:** Corrected the stale progress snapshot without changing delivery
+  checklist state.
 - **Intent:** Close the Hermes TUI replay and restart-preview sinks in the
   Curator V2 content-safety review.
   **Changed fact:** Curator V2 tool-start/tool-complete events and restart
