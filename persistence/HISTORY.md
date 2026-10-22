@@ -2,6 +2,15 @@
 
 ## 2026-10-22
 
+- **Intent:** Complete the pending Curator V2 quality verification without
+  rerunning the test suite. **Changed fact:** no delivery checklist status or
+  source behavior changed. **Verification:** the documented locked quality
+  commands pass: strict Pyright reports zero errors/warnings/informationals,
+  errors-only Pylint exits successfully, Bandit exits successfully with four
+  existing `nosec` warnings in `git_evidence.py`, and `git diff --check` passes.
+  **Open gate:** full privacy data-flow review, deployment, authenticated
+  identity, production retention/recovery, and live-runtime evidence remain
+  open. **Outcome:** recorded local static-check evidence only.
 - **Intent:** Reduce Curator V2 fact/event exposure in Hermes Core diagnostics.
   **Changed fact:** Hermes now redacts Curator V2 MCP argument excerpts in
   verbose-call, repair, trajectory-conversion, corrupt-call, and batch
