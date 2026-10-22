@@ -2813,3 +2813,15 @@
 **Open gate:** These defaults do not establish production identity, production retention, deployment-owned hold discovery, or live runtime behavior.
 
 **Outcome:** Local alpha owner requirements are recorded; production release policy remains open.
+
+## 2026-10-22 — Reconcile the lifecycle plan with schema v21
+
+**Intent:** Remove an obsolete plan statement left over from the direct SDE-to-purge implementation.
+
+**Changed fact:** The plan now states that SDE confirmation records disposition only and points to the separate schema-v21 cleanup authorization and canonical projection proof. No checklist status changed; the count remains 132/174 complete with 42 open.
+
+**Verification:** Compared the plan entry with the current Curator service/plugin flow and the focused approval tests; checklist count remains 132/174; `git diff --check` passes.
+
+**Open gate:** The installed Vhost consumer remains on an older alpha package. Hermes authenticated identity, production retention/recovery, deployment, and live-runtime gates remain open.
+
+**Outcome:** The plan no longer claims SDE confirmation begins purge.

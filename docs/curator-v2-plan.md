@@ -750,9 +750,9 @@ consumer plugin, Hermes integration, or production deployment.
       database-file permissions and atomic transitions.
 - [x] Expose in-process goal start/fact/finish/defer/block/status/list and
       SDE assess/confirm/purge-status operations.
-      The current SDE-confirm path starts purge after its review receipt and
-      canonical write without a distinct cleanup authorization; it does not
-      satisfy the separate cleanup-approval gate above.
+      SDE confirmation records disposition only. Destructive cleanup now uses
+      the separate schema-v21 cleanup-authorization receipt and canonical
+      projection proof described in section 4 above.
 - [x] Expose an authenticated, project-scoped paginated goal-card list that
       reports total/next offset, supports lifecycle filters, and avoids loading
       fact/review histories for overview reads. Keep the legacy full-snapshot
