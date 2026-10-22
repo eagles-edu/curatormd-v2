@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import signal
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -109,6 +110,47 @@ class DurableEventRouterTests(unittest.TestCase):
             self.store.pending_events(project_id="project-b"),
             (unbound,),
         )
+
+    def test_idle_router_pass_retries_a_blocked_event_payload_scrub(self) -> None:
+        """Retry durable privacy cleanup even when no events remain to route."""
+
+        canary = "router-wal-canary-691c"
+        event = EventEnvelope(
+            "router-wal-event",
+            "project-a",
+            GoalStarted(
+                "router-wal-goal",
+                canary,
+                (SuccessCriterion("routed", "The event is processed"),),
+                initial_status=GoalStatus.ACTIVE,
+            ),
+        )
+        self.store.ingest_event(event)
+        reader = sqlite3.connect(self.database, isolation_level=None)
+        self.addCleanup(reader.close)
+        reader.execute("BEGIN")
+        self.assertIn(
+            canary,
+            reader.execute(
+                "SELECT payload_json FROM event_inbox WHERE event_id = ?",
+                (event.event_id,),
+            ).fetchone()[0],
+        )
+
+        first = self.router.route_once()
+
+        self.assertEqual(first.processed_count, 1)
+        self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 1)
+        reader.execute("ROLLBACK")
+        reader.close()
+
+        idle = self.router.route_once()
+
+        self.assertEqual(idle.attempted_count, 0)
+        self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 0)
+        wal_path = Path(f"{self.database}-wal")
+        wal_bytes = wal_path.read_bytes() if wal_path.exists() else b""
+        self.assertNotIn(canary.encode(), wal_bytes)
 
     def test_ordered_pending_events_resume_after_store_restart_and_replay(self) -> None:
         """Recover the durable gap, route in order, and keep replay idempotent."""

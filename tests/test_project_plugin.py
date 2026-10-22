@@ -171,6 +171,42 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 
+    def test_sensitive_config_error_does_not_retain_credential_value(self) -> None:
+        """Credential rejection keeps safe metadata out of retained frames."""
+
+        secret = "PRIVATE_CONFIG_CANARY_7f91a3"
+        config = self._valid_config().replace(
+            'project_id = "consumer-a"',
+            f'project_id = "token={secret}"',
+        )
+        self.write_config(config)
+
+        caught: ProjectConfigError | None = None
+        try:
+            ProjectConfig.load(self.root)
+        except ProjectConfigError as exc:
+            caught = exc
+
+        self.assertIsNotNone(caught)
+        error = cast(ProjectConfigError, caught)
+        self.assertIn(
+            "sensitive content rejected in project config value",
+            str(error),
+        )
+        self.assertNotIn(secret, str(error))
+        self.assertIn("credential_assignment", str(error))
+        self.assertIsNone(error.__cause__)
+        self.assertIsNone(error.__context__)
+        tb = error.__traceback__
+        load_frames: list[dict[str, object]] = []
+        while tb is not None:
+            if tb.tb_frame.f_code.co_name == "load":
+                load_frames.append(cast(dict[str, object], tb.tb_frame.f_locals))
+            tb = tb.tb_next
+        self.assertEqual(len(load_frames), 1)
+        self.assertNotIn("root_table", load_frames[0])
+        self.assertNotIn(secret, repr(load_frames[0]))
+
     def test_missing_config_path_error_does_not_echo_untrusted_path(self) -> None:
         """Path resolution errors must not expose a configured filesystem path."""
 

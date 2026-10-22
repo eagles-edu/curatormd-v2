@@ -20,6 +20,8 @@ from .staging_models import StagingUsage
 class ProjectDependencyReadiness(Protocol):
     """Trusted host adapter for required project-scoped service probes."""
 
+    # pylint: disable=too-few-public-methods  # Protocol intentionally has one readiness operation.
+
     def readiness(self, project_id: str) -> Mapping[str, object]:
         """Return timestamped probe records; missing or malformed stays unknown."""
         ...
@@ -84,6 +86,7 @@ def evaluate_local_health(
     queue: EventQueueStatus,
     counts: ProjectOperationalCounts,
     usage: ProjectStorageUsage,
+    event_payload_scrub_pending_count: int = 0,
 ) -> _HealthEvaluation:
     """Turn local queue, review, purge, capacity, and staging state into gates."""
 
@@ -95,6 +98,7 @@ def evaluate_local_health(
         (queue.failed_count > 0, "event_failures"),
         (queue.quarantined_count > 0, "event_quarantine"),
         (queue.expired_claim_count > 0, "expired_event_claims"),
+        (event_payload_scrub_pending_count > 0, "sqlite_payload_scrub_pending"),
         (counts.pending_review_count > 0, "review_backlog"),
         (counts.pending_purge_receipt_count > 0, "purge_pending"),
         (counts.pending_purge_artifact_count > 0, "purge_artifacts_pending"),

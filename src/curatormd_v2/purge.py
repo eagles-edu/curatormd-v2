@@ -23,6 +23,8 @@ class PurgeError(RuntimeError):
 class ArtifactPurger:
     """Delete only exact, hash-matching regular files beneath one staging root."""
 
+    # pylint: disable=too-few-public-methods  # One configured purge operation is this adapter's contract.
+
     def __init__(self, staging_root: str | Path) -> None:
         root = Path(staging_root).expanduser().resolve(strict=True)
         if not root.is_dir():

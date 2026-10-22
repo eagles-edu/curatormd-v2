@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 from io import BytesIO
+import sqlite3
 import tempfile
 from typing import cast
 import unittest
@@ -585,6 +586,40 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertEqual(health.status.value, "degraded")
         self.assertIn("event_backlog", health.gate_codes)
         self.assertEqual(health.event_received_count, 1)
+
+    def test_project_health_degrades_while_event_payload_scrub_is_pending(self) -> None:
+        """Keep a blocked privacy scrub visible in project readiness."""
+
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+        event = EventEnvelope(
+            "health-scrub-event",
+            "project-a",
+            GoalStarted(
+                "health-scrub-goal",
+                "A scrub remains pending",
+                (SuccessCriterion("scrubbed", "WAL remnants are scrubbed"),),
+            ),
+        )
+        self.store.ingest_event(event)
+        reader = sqlite3.connect(self.store.database, isolation_level=None)
+        self.addCleanup(reader.close)
+        reader.execute("BEGIN")
+        reader.execute(
+            "SELECT payload_json FROM event_inbox WHERE event_id = ?",
+            ("health-scrub-event",),
+        ).fetchone()
+        self.store.mark_event_processed("project-a", "health-scrub-event")
+
+        health = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertIn("sqlite_payload_scrub_pending", health.gate_codes)
 
     def test_project_health_degrades_when_staging_inventory_is_incomplete(self) -> None:
         """Do not report green when bounded traversal cannot complete inventory."""

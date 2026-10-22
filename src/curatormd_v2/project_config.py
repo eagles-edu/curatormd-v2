@@ -76,7 +76,15 @@ class ProjectConfig:
             raise ProjectConfigError(
                 "backend_api_version is not supported by this Curator backend"
             )
-        _validate_config_values(root_table)
+        sensitive_category = _sensitive_config_category(root_table)
+        if sensitive_category is not None:
+            # Drop the parsed document before raising so the public exception's
+            # traceback cannot retain credential-like configuration values.
+            del root_table
+            raise ProjectConfigError(
+                "sensitive content rejected in project config value: "
+                f"{sensitive_category}"
+            )
         project_id = _identifier(root_table["project_id"], "project_id")
         readable_paths = _load_readable_paths(root, root_table["scope"])
         checklist_bindings = _load_checklists(
@@ -281,24 +289,31 @@ def _parse_project_config(encoded: bytes) -> dict[str, object]:
     return root_table
 
 
-def _validate_config_values(value: object) -> None:
-    """Reject recognizable credentials/PII without echoing config values."""
+def _sensitive_config_category(value: object) -> str | None:
+    """Find one sensitive value without retaining it in a raised exception."""
 
     if isinstance(value, str):
         try:
             validate_safe_text(value, "project config value")
         except SensitiveContentError as exc:
-            raise ProjectConfigError(str(exc)) from exc
-        return
+            return exc.category
+        return None
     if isinstance(value, dict):
         for key, item in cast(dict[object, object], value).items():
             if isinstance(key, str):
-                _validate_config_values(key)
-            _validate_config_values(item)
-        return
+                key_category = _sensitive_config_category(key)
+                if key_category is not None:
+                    return key_category
+            item_category = _sensitive_config_category(item)
+            if item_category is not None:
+                return item_category
+        return None
     if isinstance(value, list):
         for item in cast(list[object], value):
-            _validate_config_values(item)
+            category = _sensitive_config_category(item)
+            if category is not None:
+                return category
+    return None
 
 
 def _load_checklists(

@@ -118,6 +118,8 @@ class EvidenceSourceReceipt:
 class EvidenceSourceResolver(Protocol):
     """Resolve evidence through credentials and identity owned by the host."""
 
+    # pylint: disable=too-few-public-methods  # Single-operation source contract.
+
     def resolve(
         self,
         evidence: EvidenceRef,
@@ -129,6 +131,8 @@ class EvidenceSourceResolver(Protocol):
 
 class EvidenceVerifier(Protocol):
     """Verify a reference and return provenance suitable for immutable storage."""
+
+    # pylint: disable=too-few-public-methods  # Single-operation verification contract.
 
     def attest(
         self,
@@ -214,6 +218,8 @@ def _validated_revocation_limit(value: int) -> int:
 class RejectUnverifiedEvidence:
     """Safe default until trusted source adapters are explicitly configured."""
 
+    # pylint: disable=too-few-public-methods  # Fail-closed implementation has one verifier operation.
+
     def attest(
         self,
         evidence: EvidenceRef,
@@ -246,6 +252,8 @@ class ReceiptEvidenceAdapter:
     evidence, goal, criterion, project, scope, freshness, expiry, and subject
     binding before emitting a persistable attestation.
     """
+
+    # pylint: disable=too-few-public-methods  # Adapter contract exposes one attestation operation.
 
     evidence_kinds: frozenset[str] = frozenset()
     max_observation_age_ceiling_seconds: int | None = None
@@ -388,11 +396,15 @@ class ReceiptEvidenceAdapter:
 class RepositoryEvidenceAdapter(ReceiptEvidenceAdapter):
     """Adapter for immutable repository-diff and test-run receipts."""
 
+    # pylint: disable=too-few-public-methods  # Specializes evidence kinds, not the shared method surface.
+
     evidence_kinds = frozenset({"repository_diff", "repository_test"})
 
 
 class ServiceProbeEvidenceAdapter(ReceiptEvidenceAdapter):
     """Adapter for short-lived host-authenticated service health probes."""
+
+    # pylint: disable=too-few-public-methods  # Specializes evidence policy constants only.
 
     evidence_kinds = frozenset({"service_probe"})
     max_observation_age_ceiling_seconds = 60
@@ -402,6 +414,8 @@ class ServiceProbeEvidenceAdapter(ReceiptEvidenceAdapter):
 class BrowserProofEvidenceAdapter(ReceiptEvidenceAdapter):
     """Adapter for origin-bound browser receipts with a short session window."""
 
+    # pylint: disable=too-few-public-methods  # Specializes evidence policy constants only.
+
     evidence_kinds = frozenset({"browser"})
     max_observation_age_ceiling_seconds = 900
     max_validity_ceiling_seconds = 900
@@ -410,6 +424,8 @@ class BrowserProofEvidenceAdapter(ReceiptEvidenceAdapter):
 class HumanObservationEvidenceAdapter(ReceiptEvidenceAdapter):
     """Adapter for explicit, authenticated human confirmations."""
 
+    # pylint: disable=too-few-public-methods  # Specializes evidence policy constants only.
+
     evidence_kinds = frozenset({"human_observation"})
     max_observation_age_ceiling_seconds = 86_400
     max_validity_ceiling_seconds = 86_400
@@ -417,6 +433,8 @@ class HumanObservationEvidenceAdapter(ReceiptEvidenceAdapter):
 
 class EvidenceAdapterRegistry:
     """Fixed host-created adapter map; evidence callers cannot register adapters."""
+
+    # pylint: disable=too-few-public-methods  # Registry intentionally resolves one adapter per kind.
 
     def __init__(self, adapters: tuple[ReceiptEvidenceAdapter, ...]) -> None:
         by_kind: dict[str, ReceiptEvidenceAdapter] = {}

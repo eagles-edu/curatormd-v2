@@ -393,6 +393,16 @@ consumer plugin, Hermes integration, or production deployment.
       This verifies the current package/plugin composition and stored database
       integrity, not an interactive Vhost request or authenticated identity;
       the lifecycle checklist item remains open.
+      Current-source wheel check (2026-10-22): built `0.1.0a1` into a temporary
+      output directory after splitting the MCP registration modules. The wheel
+      SHA-256 is
+      `1c390fded18292a3abc6ade03de8b4cc1a34eeac10e68c2d91dc478bf59277a0`;
+      its manifest contains `mcp_server.py`, `mcp_tool_registration.py`, and
+      `mcp_tool_support.py`. Installed to a temporary target without replacing
+      the profile wheel; an import check with that target first on `PYTHONPATH`
+      loaded the package from the extracted wheel and resolved the registrar and
+      parser exports. This is package-content evidence only; no consumer profile
+      or Vhost application was changed or exercised.
 
 ### 2. Evidence and fact ledger
 
@@ -466,7 +476,9 @@ consumer plugin, Hermes integration, or production deployment.
       this separate host-owned file is supplied; no host file was installed in
       the Vhost profile. Six config-security tests and five
       service-resolver/integration tests pass; credentials, remote trust, and
-      live service evidence remain open.
+      live service evidence remain open. A focused launcher test confirms
+      `main()` forwards the host config to its builder and closes the server
+      runtime after exit.
 - [x] Bound immutable fact history to 512 facts/512 KiB per goal and 10,000
       facts/16 MiB per project; reject over-limit appends atomically without
       pruning, expose capacity gates in goal/project status, and test count/byte
@@ -643,6 +655,16 @@ consumer plugin, Hermes integration, or production deployment.
       disposable Hermes managed-MCP harness and does not prove this session's
       user identity. Persistent goal-ledger updates from this client remain
       unverified.
+      Later verification (2026-10-22): the Hermes Core checkout CLI's
+      `--probe-curator-status` run connects through the configured
+      `renew-ssl-coding` stdio profile and reads both `project_activity_status`
+      and paginated `goal_list_page`: 12 processed receipts, one goal, two
+      facts, zero failed/quarantined events, zero pending SDEs, and goal-list
+      total 1. Direct Codex calls without Hermes metadata remain
+      `unauthenticated` by design. Local profile-context ledger reads are now
+      verified; person identity, reviewer authority from the profile,
+      managed-gateway delivery, live capture, and writes from the direct Codex
+      client remain open.
 - [x] Make an SDE decision and its artifact manifest immutable after the first
       durable receipt; repeated requests with changed decision or targets conflict.
 - [x] Record bounded, idempotent corrections as linked append-only follow-up
@@ -953,16 +975,18 @@ consumer plugin, Hermes integration, or production deployment.
       earlier one-shot request was rejected by MCP approval before Curator
       execution, while direct Codex access still returns `unauthenticated`.
       SQLite `quick_check` is `ok` with one goal, two facts, and 12 inbox rows,
-      proving local at-rest integrity only. Authenticated MCP ledger status,
-      human identity, and live runtime remain open.
+      proving local at-rest integrity only. Profile-context MCP ledger status,
+      verified below, is separate from human identity and live runtime.
       Additional verification (2026-10-22): Hermes Core now offers
-      `hermes mcp test curator_v2 --probe-curator-status`, which calls only the
-      fixed read-only status tool over configured local stdio using Hermes-
-      generated profile/session metadata. The probe succeeded for
+      `hermes mcp test curator_v2 --probe-curator-status`, which calls fixed
+      read-only activity and paginated goal-list tools over configured local
+      stdio using Hermes-generated profile/session metadata. The probe succeeded for
       `vhost-manager-alpha` and returned 12 retained/processed event receipts,
       one goal, two facts, and zero SDE candidates. This verifies profile-context
-      MCP access and current ledger aggregates; it does not authenticate a human,
-      exercise the gateway, or establish production persistence. The installed
+      MCP reads, including the paginated goal-list route; the CLI emits only its
+      aggregate total and does not display goal-card text. It does not
+      authenticate a human, exercise the gateway, or establish production
+      persistence. The installed
       global Hermes CLI remains older than this checkout. Human identity,
       gateway/runtime, and deployment gates remain open.
       Additional hardening (2026-10-22): every read-only MCP status, goal,
@@ -971,9 +995,11 @@ consumer plugin, Hermes integration, or production deployment.
       remain unmarked as read-only. A protocol regression checks both sets.
       Clarification (2026-10-22): the direct Codex `goal_list` call without
       Hermes host context remains correctly unauthenticated. The supported
-      Hermes profile/session status probe succeeds and verifies current V2
-      ledger aggregates; this does not establish a human subject or live
-      gateway event delivery.
+      Hermes profile/session probe now also calls `goal_list_page` and returns
+      only the total; goal-card content is suppressed. A fresh run returned 12
+      processed receipts, one goal, two facts, and no failed/quarantined events.
+      This verifies the local profile-to-ledger read route without establishing
+      a human subject or live gateway event delivery.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted
       retries, capped persisted exponential retry due times, source-sequence
@@ -1269,7 +1295,13 @@ consumer plugin, Hermes integration, or production deployment.
       unchanged. This verifies local cross-connection serialization and
       idempotency for one repeated turn, not sustained load or production lock
       behavior. The wider restart, delayed-ordering, load, disk-growth, and
-      production recovery matrix remains open.
+      production recovery matrix remains open. Further local progress
+      (2026-10-22): a dedicated SQLite WAL-scrub regression keeps a blocked
+      content-free cleanup receipt across store reopen, then proves constructor
+      recovery clears it and removes the payload canary after the reader exits.
+      The four focused scrub tests pass; strict Pyright and errors-only Pylint
+      pass. This is local SQLite recovery evidence only; deployment-like load,
+      power-loss, and production locking remain open.
 
 ### 6. Per-project plugin and repository boundary
 
@@ -1333,7 +1365,36 @@ consumer plugin, Hermes integration, or production deployment.
       `fcce3c0e343c79a7e800153131e0dd4b43a02087055dd6a6a257f9cbe01e688f`;
       all 32 installed Python module hashes match this source tree. Fresh MCP
       discovery and all seven Vhost contracts pass. The Vhost application
-      workflow and production gates remain open.
+      workflow and production gates remain open. Additional source-package
+      validation (2026-10-22): built the current working tree to a wheel in
+      `/tmp/curator-v2-alpha-wheel`, installed it into an isolated target, and
+      imported the package from that target. The artifact includes the split
+      MCP modules and SQLite v22 migration; the hosted-MCP builder and server
+      factory import successfully. Wheel SHA-256 is
+      `afebd122c466237bd23b795280f4012bb66ab139bf416a010618760461a16ef6`.
+      This is packaging/import evidence only; the wheel was not installed into
+      a consumer profile at that checkpoint. The follow-up profile test below
+      exercises the artifact through Hermes Core; authenticated human identity,
+      Vhost application writes, and production runtime remain separate gates.
+      Vhost alpha profile test (2026-10-22): before installation, a verified
+      SQLite backup of the configured V2 database passed `integrity_check` at
+      schema v21. Installed this exact wheel only into the isolated
+      `renew-ssl-coding` Curator V2 profile environment and ran Hermes Core's
+      read-only MCP probe. Hermes connected over local stdio, discovered 48
+      tools, and read 12 processed event receipts, one goal, two facts, and
+      paginated goal total 1. The probe migrated the V2 database to schema 22;
+      post-run integrity is `ok` and payload-scrub queue count is zero. This
+      verifies the local Hermes/profile/Vhost-project read path and migration,
+      not authenticated human identity, Vhost application writes, or production
+      deployment. GPTMD was not touched. Installed-wheel consumer follow-up
+      (2026-10-22): ran the seven Vhost-owned Curator V2 contract tests using
+      the `renew-ssl-coding` profile Python environment. All pass, covering
+      bounded hook delivery/receipt acknowledgement, the installed stdio
+      launcher, configured Markdown projection, router project scoping, and
+      two-consumer isolation. Each write test uses disposable repositories and
+      SQLite; no Vhost app or project data was changed. This is local adapter
+      integration evidence, not a real application-originated request or
+      production identity/runtime proof.
 - [x] Ship and install a Curator V2-owned VS Code status-bar extension labeled
       `CuratorMD V2`; its tooltip and click action state that health, capture,
       persistence, and identity are not checked. `node --check` passes, VS Code
@@ -2047,9 +2108,31 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       12-check quality command passes, and `git diff --check` passes. The
       trajectory conversion helpers were moved into their topical module to
       satisfy Hermes' code-health ratchet. This does not close the privacy item
-      or change checklist progress. Read-only Curator goal and activity status
-      calls returned `unauthenticated`; global ledger persistence remains
-      unverified in this session. Further progress (2026-10-22): saved
+      or change checklist progress. Direct Codex-connector calls to Curator's
+      read-only goal/activity tools return `unauthenticated` because that
+      transport does not supply trusted Hermes profile context. The Hermes Core
+      source-checkout CLI probe separately returned activity and paginated
+      goal-list data for the configured local profile (12 processed receipts,
+      one goal, two facts). This verifies local profile-to-ledger reads only;
+      it does not authenticate a human or establish production authorization.
+      Further Curator progress (2026-10-22): processed and permanently discarded
+      event payloads now enqueue content-free scrub locators and attempt a
+      SQLite WAL `TRUNCATE` checkpoint; a busy reader leaves the queue pending,
+      increments retry metadata, and makes project health degraded until a
+      later startup/router pass can scrub it. SQLite v22 schedules a one-time
+      global scrub for pre-upgrade inboxes and enables `secure_delete`. Canary
+      regressions prove successful truncation removes payload bytes from the
+      WAL and that a blocked reader remains visible until retry. This closes
+      only the processed/discarded event WAL-remnant path; retryable and
+      quarantined payloads, other WAL/backup/trace/log paths, and broad
+      source-to-sink privacy review remain open. No checklist item is closed.
+      Quality follow-up (2026-10-22): locked sync and the full 397-test suite
+      pass on the current source. Bandit flagged the bounded scrub-ID
+      placeholder assembly, so the code now uses fixed parameterized
+      `executemany` statements; the full suite was rerun after that change.
+      Strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
+      `git diff --check` pass.
+      Further progress (2026-10-22): saved
       trajectory samples now retain the Curator V2 tool-call boundary but
       replace its arguments with a redaction sentinel. Two focused trajectory
       regressions and the sampling regression pass (3 tests total), Hermes'
@@ -2159,6 +2242,21 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       that specific diagnostic sink only; historical records, WAL/recovery,
       other traces/backups, provider retention, and the broader source-to-sink
       review remain open.
+      Further Curator V2 progress (2026-10-22): a consumer config containing a
+      credential-like value now has a focused regression proving the rejected
+      value is absent from the public `ProjectConfigError`, its cause, and its
+      context while the safe rejection category is retained. The test passes;
+      strict Pyright and errors-only Pylint pass for the changed test module.
+      This covers config-validation exceptions only; the full privacy item and
+      broader source-to-sink review remain open.
+      Follow-up (2026-10-22): config scanning now returns only the rejection
+      category after its value-bearing frames unwind, and `ProjectConfig.load`
+      drops the parsed document before raising the public error. The regression
+      directly retains that error and verifies it has no cause/context and its
+      loader traceback frame retains neither the parsed table nor the canary.
+      All 44 project-plugin tests pass; strict Pyright and errors-only Pylint
+      pass for the changed source and test modules. Other source-to-sink paths
+      remain open, so this does not close the privacy item.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth. The local-alpha
       72-hour maximum and prompt post-record/disposition expiry are implemented;
@@ -2574,16 +2672,149 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       `src/curatormd_v2` and `tests` files reports 246 non-blocking findings
       (39 argument-count, 36 local-count, 35 fixture/public-method-count,
       31 duplication, and 27 instance-attribute findings among the largest
-      groups). A fresh whole-tree count has not been run after the subsequent
-      focused refactors; repository-wide warning cleanup remains open.
+      groups). Follow-up inventory after the health extraction reports 245
+      findings; this predates the focused migration-dispatch refactor below.
+      Repository-wide warning cleanup remains open.
       Further progress (2026-10-22): moved fail-closed local/dependency health
       evaluation into `health_evaluation.py` and separated host probe parsing,
       freshness, and readiness-state handling. Eleven health regressions pass;
       strict Pyright reports zero diagnostics, repository errors-only Pylint
       passes, and `git diff --check` passes. Targeted warning-level Pylint no
       longer reports `api.py` module-size or dependency-evaluator branch-count
-      findings. A fresh whole-tree warning inventory has not been run, and
-      production dependency probes/health alerts remain unverified.
+      findings. The 245-finding whole-tree inventory predates the subsequent
+      migration and metrics refactors; no fresh whole-tree inventory has been
+      run after them. Production dependency probes/health alerts remain
+      unverified.
+      Additional progress (2026-10-22): consolidated versioned and unversioned
+      upgrades onto one ordered `_MIGRATION_STEPS` registry. The dispatcher
+      preserves the caller-owned transaction boundary and retains the separate
+      unversioned-v0 bootstrap behavior. All 29 migration tests pass; strict
+      Pyright and focused warning-level Pylint are clean for
+      `schema_migrations.py`. This removes that module's branch/statement
+      complexity findings; repository-wide warning cleanup remains open.
+      Further progress (2026-10-22): split Prometheus rendering into bounded
+      health, queue, dependency, goal, storage, feedback, staging, event, and
+      formatting helpers. Metric names, labels, sample order, and content-free
+      output are unchanged. All 36 API tests pass; strict Pyright reports zero
+      diagnostics and focused warning-level Pylint is clean for
+      `observability.py`. Repository-wide warning cleanup remains open.
+      Additional progress (2026-10-22): split fact-archive evidence parsing,
+      attestation parsing, and domain construction into bounded helpers. The
+      same schema checks and sanitized failure boundary remain in place; all
+      nine fact-compaction tests pass, including malformed-source redaction.
+      Strict Pyright and `git diff --check` pass. Focused full Pylint for
+      `store.py` fell from 21 to 18 findings; its remaining storage findings
+      and the repository-wide cleanup remain open. At that checkpoint the
+      documented blocking quality chain passed: 389 unit tests, strict Pyright,
+      errors-only Pylint, Bandit, locked dependency audit, and `git diff --check`.
+      Further progress (2026-10-22): split compressed-source integrity,
+      decompression, JSON parsing, record-count validation, and archive
+      eligibility checks into bounded helpers. The same 9 fact-compaction tests
+      pass; strict Pyright and `git diff --check` pass. Focused full Pylint for
+      `store.py` now reports 17 findings, down from 21 before both archive
+      refactors. The warning-level whole-tree inventory was not rerun after
+      these changes.
+      Further progress (2026-10-22): split MCP registration from the trusted
+      server factory and moved shared parsing/error handling into dedicated
+      modules. The factory is 133 lines; registrars are grouped by operation
+      family in a 933-line module below the configured ceiling. Public MCP
+      handler parameters remain explicit schema fields, with a documented
+      targeted Pylint exception for their argument counts. All 19 focused
+      MCP-server/hosted-MCP tests pass, strict Pyright reports zero diagnostics,
+      focused Pylint rates the three modules 10.00/10, and `git diff --check`
+      passes. The whole-tree warning inventory and this checklist item remain
+      open. Further progress (2026-10-22): moved the versioned event-contract
+      cases into `test_event_contracts.py` and isolated WAL canary cases in
+      `test_event_payload_scrub.py`, leaving the event-inbox module below
+      Pylint's module-size and public-method limits. The 20 contract, 19 inbox,
+      and 4 scrub tests pass; targeted warning-level Pylint rates all three
+      test modules 10.00/10. A full repository Pylint run still exits 24 at
+      9.87/10 on remaining structural findings; repository-wide cleanup stays
+      open. Follow-up verification (2026-10-22): a full warning-level run after
+      the event-validation and dispatch refactors still returns 9.87/10 (exit
+      24). Duplicate-code and structural findings elsewhere keep the
+      repository-wide cleanup open. The
+      documented pinned blocking quality commands pass Pyright (zero
+      diagnostics), errors-only Pylint, Bandit, and locked dependency audit;
+      `git diff --check` also passes. This does not close the warning-level
+      cleanup item. Additional local progress (2026-10-22): strict duplicate-key,
+      object/field, string, revision, enum, and UTF-8-length validators now live
+      in `event_validation.py`; `events.py` fell from 1,002 to 935 lines, below
+      the configured module ceiling. All 43 event-contract, inbox, and WAL-scrub
+      tests pass; strict Pyright reports zero diagnostics; focused Pylint rates
+      the two modules 9.96/10 with the remaining findings limited to the two
+      event payload dataclasses' attribute counts; and the built wheel includes
+      the new module. Follow-up (2026-10-22): payload encoding and decoding now
+      use one return path each; the same 43 focused tests pass, strict Pyright
+      remains clean, and focused Pylint stayed at 9.96/10 with only those two
+      dataclass findings. Follow-up (2026-10-22): the event receipt, goal-start,
+      and envelope records now have narrow, class-local exceptions for
+      attribute-count warnings because their attributes directly represent the
+      versioned event contract; focused Pylint reports 10.00/10. The full-tree
+      warning-level cleanup remains open.
+      Additional progress (2026-10-22): applied the same narrow rationale to
+      eight immutable V2 model/read/receipt records whose complete fields are
+      part of their persisted or typed snapshot contract. `models.py` now rates
+      10.00/10; the fresh whole-tree score moved from 9.87/10 to 9.88/10
+      (exit 24). This removes those eight structural false positives but leaves
+      repository-level complexity, module-size, and duplicate-code findings;
+      the checklist item remains open.
+      Further progress (2026-10-22): class-local exceptions now identify the
+      intended single-operation shape of 22 production protocols, policies,
+      resolvers, adapters, registry/limiter/router objects, and the exact-file
+      purger. The targeted production scan for `too-few-public-methods` is
+      clean. A fresh whole-tree run moved from 9.88/10 to 9.89/10 (exit 24);
+      remaining module-size, complexity, and duplicate-code findings still
+      require code refactors, so the item remains open.
+      Further progress (2026-10-22): decomposed the high-complexity goal report
+      renderer into typed page/data inputs and focused criteria, fact, TODO,
+      child/dependency, SDE, and cleanup renderers. A shared open-child selector
+      removes duplicate logic between service completion checks and reports.
+      Five focused report lifecycle tests pass, Pyright is clean, and focused
+      reporting Pylint is 10.00/10. The fresh whole-tree score moved to 9.90/10
+      (exit 24); remaining service/store/test structural findings stay open.
+      Further progress (2026-10-22): completed the service-side report
+      decomposition and passed one immutable `GoalReportPage` through the
+      service, project API, and plugin layers; the MCP tool still exposes the
+      same explicit offset/limit fields and constructs that page at dispatch.
+      Five focused report lifecycle tests and all six MCP-server tests pass;
+      strict Pyright and `git diff --check` pass. The current whole-tree
+      warning-level Pylint run remains 9.90/10 (exit 24); the goal-report
+      argument-count findings are removed, but other structural findings keep
+      this item open. No full suite was rerun.
+      Further progress (2026-10-22): extracted open-gate reason and fact
+      construction from the transactional goal-finish method while preserving
+      the same missing-criterion, child, and dependency ordering and wording.
+      The focused finish regression passes, strict Pyright reports zero
+      diagnostics, and focused `service.py` Pylint improves from 9.76/10 to
+      9.81/10 with the method's branch/local findings removed. The repository-
+      wide Pylint inventory was not rerun after this slice; broad cleanup stays
+      open. The documented blocking quality commands were then refreshed:
+      errors-only Pylint, Bandit, and locked dependency audit pass; the full
+      unit suite was not rerun.
+      Further progress (2026-10-22): extracted parent/dependency validation
+      and initial-status normalization from goal intake, keeping relationship
+      checks inside the same transaction and preserving the context-free
+      invalid-status error. Eight focused parent/dependency lifecycle tests
+      and the invalid-status privacy regression pass; strict Pyright reports
+      zero diagnostics. Focused `service.py` Pylint no longer reports excess
+      locals in goal intake and rates the module 9.82/10 (exit 24); unrelated
+      interface and module findings remain, and the full suite was not rerun.
+      Further progress (2026-10-22): moved truth-labeled goal-bullet projection
+      and its criterion/fact/review/purge/capacity helpers into the reporting
+      module, beside the Markdown report renderer. One projection test and five
+      report tests pass; strict Pyright reports zero diagnostics, and focused
+      Pylint for `service.py` plus `reporting.py` improves from 9.82/10 to
+      9.86/10. `service.py` remains above the module-size limit and repository-
+      wide Pylint remains open; the full suite was not rerun.
+      Further progress (2026-10-22): decomposed bounded event routing into
+      per-event dispatch recovery and receipt classification while preserving
+      claim-loss, retry, quarantine, stop-batch, and payload-scrub behavior.
+      All nine focused router tests pass, including deferred WAL scrub retry;
+      strict Pyright reports zero diagnostics and focused router Pylint is
+      10.00/10. The full suite and whole-tree warning-level inventory were not
+      rerun; repository-wide cleanup remains open.
+      The whole-tree warning-level inventory and its checklist item remain open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
@@ -2968,6 +3199,42 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       local MCP flow only. Authenticated reviewer identity, real application
       workflow, retention, production recovery, live runtime, and release gates
       remain open.
+      Further progress (2026-10-22): extracted the ordered parent, dependency,
+      and completed-dependent checks from `CuratorStore.reopen_goal` into
+      focused store helpers while keeping them inside the original transaction
+      and preserving first-error order. Four focused reopen/report lifecycle
+      tests pass; strict Pyright and repository errors-only Pylint pass. A
+      focused store complexity scan no longer reports `reopen_goal`; other
+      store complexity warnings remain. The full suite and refreshed whole-tree
+      warning-level score were not rerun. No release gate changed.
+      Further progress (2026-10-22): extracted stable manifest validation and
+      purge-target insertion from `CuratorStore.complete_artifact_inventory`.
+      Duplicate-path detection, immutability checks, attempts/status gating,
+      hold-audit carry-forward, target insertion, and receipt-state update stay
+      in the same order and transaction. Three focused inventory/hold tests
+      pass; strict Pyright and errors-only Pylint pass. The focused store
+      variable-count scan no longer flags this method; remaining local-count
+      warnings are in other store methods. No checklist completion state or
+      release gate changed.
+      Further progress (2026-10-22): split `project_storage_usage` into
+      project-record queries, event/capacity queries, and typed event-summary
+      aggregation. Query order and the shared connection lock are preserved;
+      logical byte accounting still sums the same project rows while global
+      SQLite/WAL sizes remain separate. Focused fact-compaction (9 tests),
+      event-usage, and API authorization/usage tests pass. Strict Pyright and
+      errors-only Pylint pass; the focused `R0914` scan no longer flags this
+      method. Whole-tree warning Pylint improves from 9.90/10 to 9.91/10
+      (exit 24); broader structural findings remain. The full suite was not
+      rerun and no checklist item was closed.
+      Further progress (2026-10-22): extracted retry-time calculation and
+      stale-lease/invalid-transition classification from
+      `CuratorStore.mark_event_failed`. Its update statement, lease predicate,
+      retry ceiling, fixed error code, payload-scrub receipt ordering, and
+      transaction boundary remain unchanged. Five focused retry, permanent
+      payload-discard, and cross-connection lease tests pass; strict Pyright
+      and errors-only Pylint pass. The focused `R0914` scan no longer reports
+      `mark_event_failed`; `record_purge_result` remains flagged. No checklist
+      item or release gate changed.
 
 ### 10. V1 ownership boundary
 
@@ -3369,6 +3636,39 @@ substitute for evidence at a later integration boundary.
       it. These are profile-context, installed-package, and disposable
       consumer-contract results, not person authentication, a `goal_list`
       result, a health probe, or live application capture.
+      Follow-up (2026-10-22): Hermes Core's checkout CLI probe now reads the
+      activity summary, paginated goal total, and aggregate project health over
+      the same trusted local profile/session context. The probe exits 0 and
+      reports 12 processed receipts, one goal, two facts, zero failed or
+      quarantined events, and goal-list total 1. Project health correctly
+      remains `unknown` with gates for `event_router`, `purge_scheduler`,
+      `host_identity`, `human_review`, and `artifact_producer_inventory`.
+      Hermes suppresses goal-card contents and displays only the bounded total,
+      health state, and gate codes. This closes local Hermes-profile ledger
+      read verification; direct Codex MCP calls still lack Hermes context and
+      return `unauthenticated`. Neither path authenticates a human or proves
+      managed-gateway delivery, live capture, or production readiness. The
+      Curator V2 checklist total is unchanged. Project-binding follow-up
+      (2026-10-22): the Hermes probe now requires the profile's configured
+      `hermes_project_id` and checks it against activity, paginated-goal, and
+      health responses before displaying results. Its focused regression
+      accepts the exact configured project and rejects a response bound to a
+      different project. The actual `renew-ssl-coding` probe succeeds for
+      `vhost-manager-alpha`; this is project-scope validation, not person
+      authentication or live application evidence. Rechecked from the Hermes
+      Core checkout with `./hermes -p renew-ssl-coding mcp test curator_v2
+      --probe-curator-status`: the trusted profile-context read exits 0 and
+      returns the same project-bound counts and unknown health. The direct
+      Codex MCP response remains an expected denial when Hermes context is not
+      attached; it does not indicate missing or degraded SQLite persistence.
+      Fresh verification (2026-10-22): the same command again exits 0 and
+      reports 12 processed receipts, one goal, two facts, and health `unknown`
+      with the same five dependency gates. Hermes `scripts/check` passes all 12
+      checks. The focused Curator-probe test passes. The first full MCP CLI
+      test-file run exposed a real-home bootstrap read in the dispatcher test;
+      the test now stubs only the unrelated bootstrap import. The complete file
+      passes 46/46, and a fresh Hermes `scripts/check` passes all 12 checks. No
+      production bootstrap behavior, identity, or live-runtime gate changed.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the

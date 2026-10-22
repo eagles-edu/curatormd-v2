@@ -58,6 +58,8 @@ def _project_admin_action_for_status(
 class ProjectAdministrationAuthorizer(Protocol):
     """Trusted-host policy for operators managing registrations and grants."""
 
+    # pylint: disable=too-few-public-methods  # Single-operation host administration contract.
+
     def authorize_project_administration(
         self,
         caller: AuthenticatedCaller,
@@ -98,6 +100,8 @@ class ProjectAuthorizationBinding:
 class SQLiteProjectGrantAuthorizer:
     """Resolve exact grants from SQLite and fail closed for suspended projects."""
 
+    # pylint: disable=too-few-public-methods  # Implements the one-operation project authorizer contract.
+
     def __init__(self, store: CuratorStore) -> None:
         self._store = store
 
@@ -124,6 +128,8 @@ class FingerprintBoundSQLiteProjectGrantAuthorizer:
     authorization decision, so suspension and revocation take effect without
     restarting the MCP process.
     """
+
+    # pylint: disable=too-few-public-methods  # Implements the one-operation project authorizer contract.
 
     def __init__(
         self, store: CuratorStore, binding: ProjectAuthorizationBinding

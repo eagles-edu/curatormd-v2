@@ -70,6 +70,7 @@ from .staging_write import (
 )
 from .project_config import ProjectConfig, ProjectConfigError
 from .purge import ArtifactPurger, PurgeError
+from .reporting import GoalReportPage
 from .reviews import ReviewAuthorizer
 from .service import CuratorService, PurgeTargetStatus
 from .store import ConflictError, CuratorStore, NotFoundError
@@ -506,22 +507,11 @@ class ProjectPlugin:
     def goal_report(
         self,
         goal_id: str,
-        fact_offset: int = 0,
-        fact_limit: int = 16,
-        child_offset: int = 0,
-        sde_offset: int = 0,
-        receipt_offset: int = 0,
+        page: GoalReportPage | None = None,
     ) -> str:
         """Render a bounded, user-readable report inside this project scope."""
 
-        return self.service.goal_report(
-            goal_id,
-            fact_offset=fact_offset,
-            fact_limit=fact_limit,
-            child_offset=child_offset,
-            sde_offset=sde_offset,
-            receipt_offset=receipt_offset,
-        )
+        return self.service.goal_report(goal_id, page)
 
     def fact_compaction_propose(
         self, goal_id: str, max_facts: int = 32

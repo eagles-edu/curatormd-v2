@@ -7,7 +7,7 @@ from typing import Mapping
 from uuid import uuid4
 
 from .errors import safe_exception_label
-from .events import EventQueueStatus, EventInboxStatus
+from .events import EventEnvelope, EventInboxReceipt, EventQueueStatus, EventInboxStatus
 from .service import CuratorService
 from .store import CuratorStore, EventClaimError
 
@@ -29,6 +29,17 @@ class EventRoutingResult:
     queue: EventQueueStatus
 
 
+@dataclass(frozen=True, slots=True)
+class _EventRouteOutcome:
+    """Content-free counters for one claimed event attempt."""
+
+    processed_count: int = 0
+    failed_count: int = 0
+    quarantined_count: int = 0
+    claim_lost_count: int = 0
+    stop_batch: bool = False
+
+
 class DurableEventRouter:
     """Consume stored events through trusted, project-bound service instances.
 
@@ -36,6 +47,8 @@ class DurableEventRouter:
     bindings. Event project IDs are used only to select that fixed map entry;
     they never create or authorize a service.
     """
+
+    # pylint: disable=too-few-public-methods  # The router exposes one bounded pass operation.
 
     def __init__(
         self,
@@ -68,74 +81,18 @@ class DurableEventRouter:
             limit=limit,
             project_ids=tuple(sorted(self.project_services)),
         )
-        attempted = 0
-        processed = 0
-        failed = 0
-        quarantined = 0
-        claim_lost = 0
+        attempted = processed = failed = quarantined = claim_lost = 0
         for event in events:
             attempted += 1
-            service = self.project_services.get(event.project_id)
-            if service is None:
-                receipt = self.store.mark_event_failed(
-                    event.project_id,
-                    event.event_id,
-                    "project_binding_missing",
-                    lease_owner=lease_owner,
-                )
-            else:
-                try:
-                    receipt = service.process_event(event, lease_owner=lease_owner)
-                except EventClaimError:
-                    claim_lost += 1
-                    continue
-                except Exception as exc:  # pylint: disable=broad-exception-caught
-                    code = safe_exception_label(exc)
-                    try:
-                        current = self.store.event_receipt(
-                            event.project_id, event.event_id
-                        )
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        current = None
-                    if current is None:
-                        # Preserve the durable receipt and stop this pass if
-                        # storage cannot report the failed dispatch state.
-                        failed += 1
-                        break
-                    if current.status is EventInboxStatus.PROCESSED:
-                        receipt = current
-                    elif current.status is EventInboxStatus.QUARANTINED:
-                        receipt = current
-                    else:
-                        try:
-                            receipt = self.store.mark_event_failed(
-                                event.project_id,
-                                event.event_id,
-                                code or "router_error",
-                                lease_owner=lease_owner,
-                            )
-                        except Exception:  # pylint: disable=broad-exception-caught
-                            # A later pass can recover once SQLite is healthy.
-                            failed += 1
-                            break
-            if receipt.status is EventInboxStatus.FAILED:
-                if receipt.attempts >= self.max_delivery_attempts:
-                    try:
-                        receipt = self.store.quarantine_event(
-                            event.project_id,
-                            event.event_id,
-                            self.max_delivery_attempts,
-                        )
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        failed += 1
-                        continue
-                if receipt.status is EventInboxStatus.QUARANTINED:
-                    quarantined += 1
-                else:
-                    failed += 1
-            elif receipt.status is EventInboxStatus.PROCESSED:
-                processed += 1
+            outcome = self._route_claimed_event(event, lease_owner)
+            processed += outcome.processed_count
+            failed += outcome.failed_count
+            quarantined += outcome.quarantined_count
+            claim_lost += outcome.claim_lost_count
+            if outcome.stop_batch:
+                break
         self.store.release_event_claims(lease_owner)
+        self.store.retry_pending_event_payload_scrubs()
         return EventRoutingResult(
             attempted_count=attempted,
             processed_count=processed,
@@ -144,3 +101,77 @@ class DurableEventRouter:
             claim_lost_count=claim_lost,
             queue=self.store.event_queue_status(),
         )
+
+    def _route_claimed_event(
+        self, event: EventEnvelope, lease_owner: str
+    ) -> _EventRouteOutcome:
+        """Dispatch one claimed event, then classify its durable receipt."""
+
+        service = self.project_services.get(event.project_id)
+        if service is None:
+            receipt = self.store.mark_event_failed(
+                event.project_id,
+                event.event_id,
+                "project_binding_missing",
+                lease_owner=lease_owner,
+            )
+            return self._classify_receipt(receipt)
+        try:
+            receipt = service.process_event(event, lease_owner=lease_owner)
+        except EventClaimError:
+            return _EventRouteOutcome(claim_lost_count=1)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            receipt, stop_batch = self._recover_dispatch_failure(
+                event, lease_owner, exc
+            )
+            if stop_batch or receipt is None:
+                return _EventRouteOutcome(failed_count=1, stop_batch=True)
+        return self._classify_receipt(receipt)
+
+    def _recover_dispatch_failure(
+        self, event: EventEnvelope, lease_owner: str, error: Exception
+    ) -> tuple[EventInboxReceipt | None, bool]:
+        """Recover or preserve a dispatch failure without exposing its details."""
+
+        code = safe_exception_label(error)
+        try:
+            current = self.store.event_receipt(event.project_id, event.event_id)
+        except Exception:  # pylint: disable=broad-exception-caught
+            current = None
+        if current is None:
+            return None, True
+        if current.status in {
+            EventInboxStatus.PROCESSED,
+            EventInboxStatus.QUARANTINED,
+        }:
+            return current, False
+        try:
+            failed = self.store.mark_event_failed(
+                event.project_id,
+                event.event_id,
+                code or "router_error",
+                lease_owner=lease_owner,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            return None, True
+        return failed, False
+
+    def _classify_receipt(self, receipt: EventInboxReceipt) -> _EventRouteOutcome:
+        """Count one persisted result and quarantine only at its retry ceiling."""
+
+        if receipt.status is EventInboxStatus.FAILED:
+            if receipt.attempts >= self.max_delivery_attempts:
+                try:
+                    receipt = self.store.quarantine_event(
+                        receipt.project_id,
+                        receipt.event_id,
+                        self.max_delivery_attempts,
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    return _EventRouteOutcome(failed_count=1)
+            if receipt.status is EventInboxStatus.QUARANTINED:
+                return _EventRouteOutcome(quarantined_count=1)
+            return _EventRouteOutcome(failed_count=1)
+        if receipt.status is EventInboxStatus.PROCESSED:
+            return _EventRouteOutcome(processed_count=1)
+        return _EventRouteOutcome()

@@ -303,7 +303,7 @@ class EvidenceRef:
 
 
 @dataclass(frozen=True, slots=True)
-class EvidenceAttestation:
+class EvidenceAttestation:  # pylint: disable=too-many-instance-attributes  # Versioned evidence receipt fields are atomic.
     """Compact host-trusted provenance for one accepted evidence reference."""
 
     evidence_kind: str
@@ -353,7 +353,7 @@ class EvidenceAttestation:
 
 
 @dataclass(frozen=True, slots=True)
-class GoalCard:
+class GoalCard:  # pylint: disable=too-many-instance-attributes  # Immutable goal snapshot mirrors the persisted contract.
     """Current project-scoped goal contract and lifecycle state."""
 
     goal_id: str
@@ -512,7 +512,7 @@ def _validate_goal_checklist_snapshot(goal: GoalCard) -> None:
 
 
 @dataclass(frozen=True, slots=True)
-class Fact:
+class Fact:  # pylint: disable=too-many-instance-attributes  # Immutable fact record mirrors the persisted contract.
     """One compact, typed, immutable fact recorded against a goal."""
 
     goal_id: str
@@ -580,7 +580,7 @@ class Fact:
 
 
 @dataclass(frozen=True, slots=True)
-class SDECandidate:
+class SDECandidate:  # pylint: disable=too-many-instance-attributes  # Review candidate fields are persisted as one record.
     """Reviewable significance proposal linked to supporting goal facts."""
 
     goal_id: str
@@ -725,7 +725,7 @@ class ArtifactRef:
 
 
 @dataclass(frozen=True, slots=True)
-class PurgeTargetRecord:
+class PurgeTargetRecord:  # pylint: disable=too-many-instance-attributes  # Retry and hold receipt fields are one durable record.
     """Durable cleanup state; error is a content-free failure code."""
 
     artifact: ArtifactRef
@@ -743,7 +743,7 @@ class PurgeTargetRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class AuditReceipt:
+class AuditReceipt:  # pylint: disable=too-many-instance-attributes  # Versioned review and purge receipt fields are atomic.
     """Immutable disposition and purge receipt for a reviewed candidate."""
 
     candidate_id: str
@@ -869,7 +869,7 @@ class GoalCriteriaVersion:
 
 
 @dataclass(frozen=True, slots=True)
-class FactCapacity:
+class FactCapacity:  # pylint: disable=too-many-instance-attributes  # Capacity counters form one bounded read snapshot.
     """Current append budget; reaching it blocks capture without pruning facts."""
 
     goal_fact_count: int
@@ -916,7 +916,7 @@ class FactCompactionProposal:
 
 
 @dataclass(frozen=True, slots=True)
-class GoalSnapshot:
+class GoalSnapshot:  # pylint: disable=too-many-instance-attributes  # Paginated goal summary fields form one read model.
     """Bounded read model combining a goal with its current ledger state."""
 
     goal: GoalCard

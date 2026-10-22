@@ -8,7 +8,7 @@ from enum import StrEnum
 import hashlib
 import json
 import re
-from typing import TypeAlias, TypeVar, cast
+from typing import TypeAlias, cast
 
 from .models import (
     MAX_EVIDENCE_REFERENCES,
@@ -23,6 +23,16 @@ from .models import (
     utc_now,
 )
 from .content_safety import validate_safe_text
+from .event_validation import (
+    event_string,
+    event_utf8_length,
+    optional_event_revision,
+    parse_event_enum,
+    reject_duplicate_event_keys,
+    require_event_fields,
+    require_event_object,
+    validate_lifecycle_revision,
+)
 from .validation import is_exact_int
 
 
@@ -30,26 +40,6 @@ EVENT_SCHEMA_VERSION = 1
 MAX_EVENT_BYTES = 16 * 1024
 _PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
-EnumValue = TypeVar("EnumValue", bound=StrEnum)
-
-
-def _parse_enum(enum_type: type[EnumValue], value: str, message: str) -> EnumValue:
-    """Parse an untrusted enum value without retaining it in an exception chain."""
-
-    parse_failed = False
-    parsed: EnumValue | None = None
-    try:
-        parsed = enum_type(value)
-    except ValueError:
-        parse_failed = True
-    if parse_failed or parsed is None:
-        raise ValueError(message)
-    return parsed
-
-
-def _validate_lifecycle_revision(revision: int | None) -> None:
-    if revision is not None and (not is_exact_int(revision) or revision < 1):
-        raise ValueError("expected_lifecycle_revision must be a positive integer")
 
 
 class EventKind(StrEnum):
@@ -85,7 +75,7 @@ class EventDisposition(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class EventInboxReceipt:
+class EventInboxReceipt:  # pylint: disable=too-many-instance-attributes
     """Compact durable acceptance/processing receipt for one project event."""
 
     project_id: str
@@ -114,8 +104,8 @@ class EventQueueStatus:
 
 
 @dataclass(frozen=True, slots=True)
-class GoalStarted:
-    """A caller-provided goal identity and its unchanged success criteria."""
+class GoalStarted:  # pylint: disable=too-many-instance-attributes
+    """Event record mirrors the versioned goal.started payload fields."""
 
     goal_id: str
     problem: str
@@ -176,7 +166,7 @@ def _validate_goal_started_problem_and_criteria(event: GoalStarted) -> None:
 def _validate_goal_started_status(event: GoalStarted) -> None:
     """Normalize the initial status before checking relationship fields."""
 
-    initial_status = _parse_enum(
+    initial_status = parse_event_enum(
         GoalStatus, event.initial_status, "initial_status must be planned or active"
     )
     if initial_status not in {GoalStatus.PLANNED, GoalStatus.ACTIVE}:
@@ -234,7 +224,7 @@ class GoalActivated:
             raise ValueError("activation requires a goal ID and acceptance reason")
         if len(self.reason) > 500 or "\n" in self.reason or "\r" in self.reason:
             raise ValueError("activation reason must be one line of at most 500 characters")
-        _validate_lifecycle_revision(self.expected_lifecycle_revision)
+        validate_lifecycle_revision(self.expected_lifecycle_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,7 +297,7 @@ class GoalFinishRequested:
             raise ValueError("goal_id and completion_claim must not be empty")
         if len(self.completion_claim) > 980:
             raise ValueError("completion claim exceeds 980 characters")
-        _validate_lifecycle_revision(self.expected_lifecycle_revision)
+        validate_lifecycle_revision(self.expected_lifecycle_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,7 +316,7 @@ class GoalDeferred:
             raise ValueError("deferred event requires goal_id, reason, and next_action")
         if len(self.next_action) > 1000:
             raise ValueError("next_action exceeds 1000 characters")
-        _validate_lifecycle_revision(self.expected_lifecycle_revision)
+        validate_lifecycle_revision(self.expected_lifecycle_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,7 +335,7 @@ class GoalBlocked:
             raise ValueError("blocked event requires goal_id, dependency, and recovery")
         if len(self.recovery) > 1000:
             raise ValueError("recovery exceeds 1000 characters")
-        _validate_lifecycle_revision(self.expected_lifecycle_revision)
+        validate_lifecycle_revision(self.expected_lifecycle_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,7 +358,7 @@ class GoalReopened:
             raise ValueError("reopen reason and next_action exceed the fact bullet limit")
         if any("\n" in value or "\r" in value for value in (reason, next_action)):
             raise ValueError("reopen reason and next_action must be single lines")
-        _validate_lifecycle_revision(self.expected_lifecycle_revision)
+        validate_lifecycle_revision(self.expected_lifecycle_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,7 +392,7 @@ class GoalCriteriaAmended:
             raise ValueError("amendment reason and next_action must be at most 500 characters")
         if any("\n" in item or "\r" in item for item in (self.reason, self.next_action)):
             raise ValueError("amendment reason and next_action must be single lines")
-        _validate_lifecycle_revision(self.expected_lifecycle_revision)
+        validate_lifecycle_revision(self.expected_lifecycle_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -471,7 +461,7 @@ _EVENT_TYPES: dict[type[object], EventKind] = {
 
 
 @dataclass(frozen=True, slots=True)
-class EventEnvelope:
+class EventEnvelope:  # pylint: disable=too-many-instance-attributes
     """Project-scoped transport envelope; it is not an authorization token."""
 
     event_id: str
@@ -537,7 +527,7 @@ class EventEnvelope:
         serialized = json.dumps(
             self.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
         )
-        if _utf8_length(serialized) > MAX_EVENT_BYTES:
+        if event_utf8_length(serialized) > MAX_EVENT_BYTES:
             raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
         return serialized
 
@@ -556,12 +546,12 @@ class EventEnvelope:
     def from_json(cls, serialized: str) -> EventEnvelope:
         """Parse a strict version-1 event, rejecting ambiguous JSON fields."""
 
-        if _utf8_length(serialized) > MAX_EVENT_BYTES:
+        if event_utf8_length(serialized) > MAX_EVENT_BYTES:
             raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
         decode_failed = False
         value: object = None
         try:
-            value = json.loads(serialized, object_pairs_hook=_reject_duplicate_keys)
+            value = json.loads(serialized, object_pairs_hook=reject_duplicate_event_keys)
         except json.JSONDecodeError:
             # JSONDecodeError retains the complete source in its ``doc`` field.
             decode_failed = True
@@ -573,53 +563,10 @@ class EventEnvelope:
         return envelope
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("event contains a duplicate JSON field")
-        result[key] = value
-    return result
-
-
-def _require_object(value: object, name: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(
-        not isinstance(key, str) for key in cast(dict[object, object], value)
-    ):
-        raise ValueError(f"{name} must be an object with string keys")
-    return cast(dict[str, object], value)
-
-
-def _require_fields(
-    value: dict[str, object],
-    required: set[str],
-    optional: set[str] | frozenset[str] = frozenset(),
-) -> None:
-    missing = required - value.keys()
-    extra = value.keys() - required - optional
-    if missing or extra:
-        raise ValueError(f"invalid fields; missing={sorted(missing)}, extra={sorted(extra)}")
-
-
-def _string(value: object, name: str, *, optional: bool = False) -> str | None:
-    if optional and value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
-
-
-def _optional_revision(value: object) -> int | None:
-    if value is None:
-        return None
-    if not is_exact_int(value) or value < 1:
-        raise ValueError("expected_lifecycle_revision must be a positive integer")
-    return value
-
-
 def _payload_to_dict(payload: EventPayload) -> dict[str, object]:
+    payload_data: dict[str, object]
     if isinstance(payload, GoalStarted):
-        return {
+        payload_data = {
             "goal_id": payload.goal_id,
             "problem": payload.problem,
             "success_criteria": [
@@ -635,14 +582,14 @@ def _payload_to_dict(payload: EventPayload) -> dict[str, object]:
             "initial_status": payload.initial_status.value,
             "next_action": payload.next_action,
         }
-    if isinstance(payload, GoalActivated):
-        return {
+    elif isinstance(payload, GoalActivated):
+        payload_data = {
             "goal_id": payload.goal_id,
             "reason": payload.reason,
             "expected_lifecycle_revision": payload.expected_lifecycle_revision,
         }
-    if isinstance(payload, FactRecorded):
-        return {
+    elif isinstance(payload, FactRecorded):
+        payload_data = {
             "goal_id": payload.goal_id,
             "fact_id": payload.fact_id,
             "kind": payload.kind.value,
@@ -658,42 +605,42 @@ def _payload_to_dict(payload: EventPayload) -> dict[str, object]:
                 for item in payload.evidence
             ],
         }
-    if isinstance(payload, GoalActivityObserved):
-        return {
+    elif isinstance(payload, GoalActivityObserved):
+        payload_data = {
             "goal_id": payload.goal_id,
             "fact_id": payload.fact_id,
             "kind": payload.kind.value,
             "bullet": payload.bullet,
         }
-    if isinstance(payload, GoalFinishRequested):
-        return {
+    elif isinstance(payload, GoalFinishRequested):
+        payload_data = {
             "goal_id": payload.goal_id,
             "completion_claim": payload.completion_claim,
             "expected_lifecycle_revision": payload.expected_lifecycle_revision,
         }
-    if isinstance(payload, GoalDeferred):
-        return {
+    elif isinstance(payload, GoalDeferred):
+        payload_data = {
             "goal_id": payload.goal_id,
             "reason": payload.reason,
             "next_action": payload.next_action,
             "expected_lifecycle_revision": payload.expected_lifecycle_revision,
         }
-    if isinstance(payload, GoalBlocked):
-        return {
+    elif isinstance(payload, GoalBlocked):
+        payload_data = {
             "goal_id": payload.goal_id,
             "dependency": payload.dependency,
             "recovery": payload.recovery,
             "expected_lifecycle_revision": payload.expected_lifecycle_revision,
         }
-    if isinstance(payload, GoalReopened):
-        return {
+    elif isinstance(payload, GoalReopened):
+        payload_data = {
             "goal_id": payload.goal_id,
             "reason": payload.reason,
             "next_action": payload.next_action,
             "expected_lifecycle_revision": payload.expected_lifecycle_revision,
         }
-    if isinstance(payload, GoalCriteriaAmended):
-        return {
+    elif isinstance(payload, GoalCriteriaAmended):
+        payload_data = {
             "goal_id": payload.goal_id,
             "expected_revision": payload.expected_revision,
             "success_criteria": [
@@ -704,13 +651,15 @@ def _payload_to_dict(payload: EventPayload) -> dict[str, object]:
             "next_action": payload.next_action,
             "expected_lifecycle_revision": payload.expected_lifecycle_revision,
         }
-    if isinstance(payload, GoalCancelled):
-        return {"goal_id": payload.goal_id, "reason": payload.reason}
-    return {
-        "goal_id": payload.goal_id,
-        "replacement_goal_id": payload.replacement_goal_id,
-        "reason": payload.reason,
-    }
+    elif isinstance(payload, GoalCancelled):
+        payload_data = {"goal_id": payload.goal_id, "reason": payload.reason}
+    else:
+        payload_data = {
+            "goal_id": payload.goal_id,
+            "replacement_goal_id": payload.replacement_goal_id,
+            "reason": payload.reason,
+        }
+    return payload_data
 
 
 def _success_criteria_from_value(value: object) -> tuple[SuccessCriterion, ...]:
@@ -720,12 +669,12 @@ def _success_criteria_from_value(value: object) -> tuple[SuccessCriterion, ...]:
         raise ValueError("success_criteria must be an array")
     criteria: list[SuccessCriterion] = []
     for criterion in cast(list[object], value):
-        item = _require_object(criterion, "success criterion")
-        _require_fields(item, {"criterion_id", "description"})
+        item = require_event_object(criterion, "success criterion")
+        require_event_fields(item, {"criterion_id", "description"})
         criteria.append(
             SuccessCriterion(
-                _string(item["criterion_id"], "criterion_id") or "",
-                _string(item["description"], "description") or "",
+                event_string(item["criterion_id"], "criterion_id") or "",
+                event_string(item["description"], "description") or "",
             )
         )
     return tuple(criteria)
@@ -734,7 +683,7 @@ def _success_criteria_from_value(value: object) -> tuple[SuccessCriterion, ...]:
 def _goal_started_from_dict(value: dict[str, object]) -> GoalStarted:
     """Parse the goal-start contract after validating its exact field set."""
 
-    _require_fields(
+    require_event_fields(
         value,
         {"goal_id", "problem", "success_criteria"},
         {
@@ -753,45 +702,45 @@ def _goal_started_from_dict(value: dict[str, object]) -> GoalStarted:
     if not isinstance(dependency_values, list):
         raise ValueError("depends_on_goal_ids must be an array")
     dependencies = tuple(
-        _string(item, "dependency goal ID") or ""
+        event_string(item, "dependency goal ID") or ""
         for item in cast(list[object], dependency_values)
     )
     return GoalStarted(
-        goal_id=_string(value["goal_id"], "goal_id") or "",
-        problem=_string(value["problem"], "problem") or "",
+        goal_id=event_string(value["goal_id"], "goal_id") or "",
+        problem=event_string(value["problem"], "problem") or "",
         success_criteria=criteria,
-        owner=_string(value.get("owner"), "owner", optional=True),
-        checklist_id=_string(value.get("checklist_id"), "checklist_id", optional=True),
-        checklist_version=_string(
+        owner=event_string(value.get("owner"), "owner", optional=True),
+        checklist_id=event_string(value.get("checklist_id"), "checklist_id", optional=True),
+        checklist_version=event_string(
             value.get("checklist_version"), "checklist_version", optional=True
         ),
-        checklist_source_text=_string(
+        checklist_source_text=event_string(
             value.get("checklist_source_text"),
             "checklist_source_text",
             optional=True,
         ),
-        parent_goal_id=_string(
+        parent_goal_id=event_string(
             value.get("parent_goal_id"), "parent_goal_id", optional=True
         ),
         depends_on_goal_ids=dependencies,
         initial_status=GoalStatus(
-            _string(value.get("initial_status", GoalStatus.ACTIVE.value), "initial_status")
+            event_string(value.get("initial_status", GoalStatus.ACTIVE.value), "initial_status")
             or GoalStatus.ACTIVE.value
         ),
-        next_action=_string(value.get("next_action"), "next_action", optional=True),
+        next_action=event_string(value.get("next_action"), "next_action", optional=True),
     )
 
 
 def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
     """Parse a fact event and its bounded evidence references."""
 
-    _require_fields(
+    require_event_fields(
         value,
         {"goal_id", "fact_id", "kind", "bullet", "evidence"},
         {"criterion_id"},
     )
-    fact_kind = _parse_enum(
-        FactKind, _string(value["kind"], "kind") or "", "unknown fact kind"
+    fact_kind = parse_event_enum(
+        FactKind, event_string(value["kind"], "kind") or "", "unknown fact kind"
     )
     if fact_kind is FactKind.REOPENED:
         raise ValueError("reopened facts must use the goal.reopened event")
@@ -804,50 +753,50 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
         raise ValueError("evidence must be an array")
     evidence: list[EvidenceRef] = []
     for item_value in cast(list[object], evidence_value):
-        item = _require_object(item_value, "evidence reference")
-        _require_fields(item, {"evidence_kind", "locator", "sha256", "outcome"})
-        outcome = _parse_enum(
+        item = require_event_object(item_value, "evidence reference")
+        require_event_fields(item, {"evidence_kind", "locator", "sha256", "outcome"})
+        outcome = parse_event_enum(
             EvidenceOutcome,
-            _string(item["outcome"], "outcome") or "",
+            event_string(item["outcome"], "outcome") or "",
             "unknown evidence outcome",
         )
         evidence.append(
             EvidenceRef(
-                evidence_kind=_string(item["evidence_kind"], "evidence_kind") or "",
-                locator=_string(item["locator"], "locator") or "",
-                sha256=_string(item["sha256"], "sha256") or "",
+                evidence_kind=event_string(item["evidence_kind"], "evidence_kind") or "",
+                locator=event_string(item["locator"], "locator") or "",
+                sha256=event_string(item["sha256"], "sha256") or "",
                 outcome=outcome,
             )
         )
     return FactRecorded(
-        goal_id=_string(value["goal_id"], "goal_id") or "",
-        fact_id=_string(value["fact_id"], "fact_id") or "",
+        goal_id=event_string(value["goal_id"], "goal_id") or "",
+        fact_id=event_string(value["fact_id"], "fact_id") or "",
         kind=fact_kind,
-        bullet=_string(value["bullet"], "bullet") or "",
-        criterion_id=_string(value.get("criterion_id"), "criterion_id", optional=True),
+        bullet=event_string(value["bullet"], "bullet") or "",
+        criterion_id=event_string(value.get("criterion_id"), "criterion_id", optional=True),
         evidence=tuple(evidence),
     )
 
 
 def _goal_activity_from_dict(value: dict[str, object]) -> GoalActivityObserved:
-    _require_fields(value, {"goal_id", "fact_id", "kind", "bullet"})
-    kind = _parse_enum(
+    require_event_fields(value, {"goal_id", "fact_id", "kind", "bullet"})
+    kind = parse_event_enum(
         FactKind,
-        _string(value["kind"], "kind") or "",
+        event_string(value["kind"], "kind") or "",
         "unknown activity fact kind",
     )
     return GoalActivityObserved(
-        goal_id=_string(value["goal_id"], "goal_id") or "",
-        fact_id=_string(value["fact_id"], "fact_id") or "",
+        goal_id=event_string(value["goal_id"], "goal_id") or "",
+        fact_id=event_string(value["fact_id"], "fact_id") or "",
         kind=kind,
-        bullet=_string(value["bullet"], "bullet") or "",
+        bullet=event_string(value["bullet"], "bullet") or "",
     )
 
 
 def _criteria_amended_from_dict(value: dict[str, object]) -> GoalCriteriaAmended:
     """Parse a criteria-amendment event with exact integer semantics."""
 
-    _require_fields(
+    require_event_fields(
         value,
         {"goal_id", "expected_revision", "success_criteria", "reason", "next_action"},
         {"expected_lifecycle_revision"},
@@ -856,12 +805,12 @@ def _criteria_amended_from_dict(value: dict[str, object]) -> GoalCriteriaAmended
     if not isinstance(expected_revision, int) or isinstance(expected_revision, bool):
         raise ValueError("expected_revision must be an integer")
     return GoalCriteriaAmended(
-        goal_id=_string(value["goal_id"], "goal_id") or "",
+        goal_id=event_string(value["goal_id"], "goal_id") or "",
         expected_revision=expected_revision,
         success_criteria=_success_criteria_from_value(value["success_criteria"]),
-        reason=_string(value["reason"], "reason") or "",
-        next_action=_string(value["next_action"], "next_action") or "",
-        expected_lifecycle_revision=_optional_revision(
+        reason=event_string(value["reason"], "reason") or "",
+        next_action=event_string(value["next_action"], "next_action") or "",
+        expected_lifecycle_revision=optional_event_revision(
             value.get("expected_lifecycle_revision")
         ),
     )
@@ -869,89 +818,91 @@ def _criteria_amended_from_dict(value: dict[str, object]) -> GoalCriteriaAmended
 
 def _payload_from_dict(kind: EventKind, value: dict[str, object]) -> EventPayload:
     if kind is EventKind.GOAL_STARTED:
-        return _goal_started_from_dict(value)
-    if kind is EventKind.GOAL_ACTIVATED:
-        _require_fields(
+        payload = _goal_started_from_dict(value)
+    elif kind is EventKind.GOAL_ACTIVATED:
+        require_event_fields(
             value,
             {"goal_id", "reason", "expected_lifecycle_revision"},
         )
-        return GoalActivated(
-            goal_id=_string(value["goal_id"], "goal_id") or "",
-            reason=_string(value["reason"], "reason") or "",
-            expected_lifecycle_revision=_optional_revision(
+        payload = GoalActivated(
+            goal_id=event_string(value["goal_id"], "goal_id") or "",
+            reason=event_string(value["reason"], "reason") or "",
+            expected_lifecycle_revision=optional_event_revision(
                 value["expected_lifecycle_revision"]
             ) or 0,
         )
-    if kind is EventKind.FACT_RECORDED:
-        return _fact_recorded_from_dict(value)
-    if kind is EventKind.GOAL_ACTIVITY_OBSERVED:
-        return _goal_activity_from_dict(value)
-    if kind is EventKind.GOAL_FINISH_REQUESTED:
-        _require_fields(
+    elif kind is EventKind.FACT_RECORDED:
+        payload = _fact_recorded_from_dict(value)
+    elif kind is EventKind.GOAL_ACTIVITY_OBSERVED:
+        payload = _goal_activity_from_dict(value)
+    elif kind is EventKind.GOAL_FINISH_REQUESTED:
+        require_event_fields(
             value,
             {"goal_id", "completion_claim"},
             {"expected_lifecycle_revision"},
         )
-        return GoalFinishRequested(
-            _string(value["goal_id"], "goal_id") or "",
-            _string(value["completion_claim"], "completion_claim") or "",
-            _optional_revision(value.get("expected_lifecycle_revision")),
+        payload = GoalFinishRequested(
+            event_string(value["goal_id"], "goal_id") or "",
+            event_string(value["completion_claim"], "completion_claim") or "",
+            optional_event_revision(value.get("expected_lifecycle_revision")),
         )
-    if kind is EventKind.GOAL_DEFERRED:
-        _require_fields(
+    elif kind is EventKind.GOAL_DEFERRED:
+        require_event_fields(
             value,
             {"goal_id", "reason", "next_action"},
             {"expected_lifecycle_revision"},
         )
-        return GoalDeferred(
-            _string(value["goal_id"], "goal_id") or "",
-            _string(value["reason"], "reason") or "",
-            _string(value["next_action"], "next_action") or "",
-            _optional_revision(value.get("expected_lifecycle_revision")),
+        payload = GoalDeferred(
+            event_string(value["goal_id"], "goal_id") or "",
+            event_string(value["reason"], "reason") or "",
+            event_string(value["next_action"], "next_action") or "",
+            optional_event_revision(value.get("expected_lifecycle_revision")),
         )
-    if kind is EventKind.GOAL_REOPENED:
-        _require_fields(
+    elif kind is EventKind.GOAL_REOPENED:
+        require_event_fields(
             value,
             {"goal_id", "reason", "next_action"},
             {"expected_lifecycle_revision"},
         )
-        return GoalReopened(
-            _string(value["goal_id"], "goal_id") or "",
-            _string(value["reason"], "reason") or "",
-            _string(value["next_action"], "next_action") or "",
-            _optional_revision(value.get("expected_lifecycle_revision")),
+        payload = GoalReopened(
+            event_string(value["goal_id"], "goal_id") or "",
+            event_string(value["reason"], "reason") or "",
+            event_string(value["next_action"], "next_action") or "",
+            optional_event_revision(value.get("expected_lifecycle_revision")),
         )
-    if kind is EventKind.GOAL_CRITERIA_AMENDED:
-        return _criteria_amended_from_dict(value)
-    if kind is EventKind.GOAL_CANCELLED:
-        _require_fields(value, {"goal_id", "reason"})
-        return GoalCancelled(
-            _string(value["goal_id"], "goal_id") or "",
-            _string(value["reason"], "reason") or "",
+    elif kind is EventKind.GOAL_CRITERIA_AMENDED:
+        payload = _criteria_amended_from_dict(value)
+    elif kind is EventKind.GOAL_CANCELLED:
+        require_event_fields(value, {"goal_id", "reason"})
+        payload = GoalCancelled(
+            event_string(value["goal_id"], "goal_id") or "",
+            event_string(value["reason"], "reason") or "",
         )
-    if kind is EventKind.GOAL_SUPERSEDED:
-        _require_fields(value, {"goal_id", "replacement_goal_id", "reason"})
-        return GoalSuperseded(
-            _string(value["goal_id"], "goal_id") or "",
-            _string(value["replacement_goal_id"], "replacement_goal_id") or "",
-            _string(value["reason"], "reason") or "",
+    elif kind is EventKind.GOAL_SUPERSEDED:
+        require_event_fields(value, {"goal_id", "replacement_goal_id", "reason"})
+        payload = GoalSuperseded(
+            event_string(value["goal_id"], "goal_id") or "",
+            event_string(value["replacement_goal_id"], "replacement_goal_id") or "",
+            event_string(value["reason"], "reason") or "",
         )
-    _require_fields(
-        value,
-        {"goal_id", "dependency", "recovery"},
-        {"expected_lifecycle_revision"},
-    )
-    return GoalBlocked(
-        _string(value["goal_id"], "goal_id") or "",
-        _string(value["dependency"], "dependency") or "",
-        _string(value["recovery"], "recovery") or "",
-        _optional_revision(value.get("expected_lifecycle_revision")),
-    )
+    else:
+        require_event_fields(
+            value,
+            {"goal_id", "dependency", "recovery"},
+            {"expected_lifecycle_revision"},
+        )
+        payload = GoalBlocked(
+            event_string(value["goal_id"], "goal_id") or "",
+            event_string(value["dependency"], "dependency") or "",
+            event_string(value["recovery"], "recovery") or "",
+            optional_event_revision(value.get("expected_lifecycle_revision")),
+        )
+    return payload
 
 
 def _envelope_from_dict(value: object) -> EventEnvelope:
-    envelope = _require_object(value, "event envelope")
-    _require_fields(
+    envelope = require_event_object(value, "event envelope")
+    require_event_fields(
         envelope,
         {"schema_version", "event_id", "project_id", "occurred_at", "event_type", "payload"},
         {"source_id", "source_sequence"},
@@ -959,21 +910,21 @@ def _envelope_from_dict(value: object) -> EventEnvelope:
     version = envelope["schema_version"]
     if not isinstance(version, int) or isinstance(version, bool):
         raise ValueError("schema_version must be an integer")
-    kind = _parse_enum(
+    kind = parse_event_enum(
         EventKind,
-        _string(envelope["event_type"], "event_type") or "",
+        event_string(envelope["event_type"], "event_type") or "",
         "unknown event type",
     )
-    payload = _payload_from_dict(kind, _require_object(envelope["payload"], "payload"))
+    payload = _payload_from_dict(kind, require_event_object(envelope["payload"], "payload"))
     if _EVENT_TYPES[type(payload)] is not kind:
         raise ValueError("event_type does not match payload")
     return EventEnvelope(
-        event_id=_string(envelope["event_id"], "event_id") or "",
-        project_id=_string(envelope["project_id"], "project_id") or "",
-        occurred_at=_string(envelope["occurred_at"], "occurred_at") or "",
+        event_id=event_string(envelope["event_id"], "event_id") or "",
+        project_id=event_string(envelope["project_id"], "project_id") or "",
+        occurred_at=event_string(envelope["occurred_at"], "occurred_at") or "",
         schema_version=version,
         payload=payload,
-        source_id=_string(envelope.get("source_id", "unspecified"), "source_id")
+        source_id=event_string(envelope.get("source_id", "unspecified"), "source_id")
         or "unspecified",
         source_sequence=_optional_positive_integer(
             envelope.get("source_sequence"), "source_sequence"
@@ -987,16 +938,3 @@ def _optional_positive_integer(value: object, name: str) -> int | None:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise ValueError(f"{name} must be a positive integer when supplied")
     return value
-
-
-def _utf8_length(value: str) -> int:
-    invalid_utf8 = False
-    try:
-        length = len(value.encode("utf-8"))
-    except UnicodeEncodeError:
-        # UnicodeEncodeError retains the complete source in its ``object`` field.
-        invalid_utf8 = True
-        length = 0
-    if invalid_utf8:
-        raise ValueError("event contains text that is not valid UTF-8")
-    return length

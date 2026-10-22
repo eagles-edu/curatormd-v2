@@ -59,6 +59,7 @@ from .markdown_persistence import (
 )
 from .observability import render_project_metrics
 from .project_plugin import ProjectPlugin
+from .reporting import GoalReportPage
 from .service import PurgeTargetStatus
 
 
@@ -101,6 +102,8 @@ class AuthenticatedCaller:
 class ProjectAuthorizer(Protocol):
     """Host-owned authorization for an identity, project, and operation."""
 
+    # pylint: disable=too-few-public-methods  # Protocol intentionally has one authorization operation.
+
     def authorize(
         self,
         caller: AuthenticatedCaller,
@@ -113,6 +116,8 @@ class ProjectAuthorizer(Protocol):
 
 class RejectAllProjectAccess:
     """Safe default until Hermes supplies an authorization adapter."""
+
+    # pylint: disable=too-few-public-methods  # Fail-closed policy implements the one-method protocol.
 
     def authorize(
         self,
@@ -133,6 +138,8 @@ class ProjectGrantAuthorizer:
     project registry. A trusted host must supply verified subjects and
     operator-managed grants; unknown triples always deny.
     """
+
+    # pylint: disable=too-few-public-methods  # This exact-grant policy implements one authorization operation.
 
     def __init__(
         self,
@@ -168,6 +175,8 @@ class ProjectGrantAuthorizer:
 class RequestLimiter(Protocol):
     """Bound request rate by verified subject and project."""
 
+    # pylint: disable=too-few-public-methods  # Protocol intentionally has one rate-limit operation.
+
     def allow(self, subject_id: str, project_id: str) -> bool:
         """Consume one request token, if available."""
         ...
@@ -186,6 +195,8 @@ class InMemoryTokenBucket:
     Production deployments with multiple workers must inject a shared limiter;
     this class does not claim cross-process enforcement.
     """
+
+    # pylint: disable=too-few-public-methods  # The limiter contract is one token-consumption operation.
 
     def __init__(
         self,
@@ -326,7 +337,12 @@ class AuthenticatedCuratorAPI:
     ) -> tuple[ProjectHealthSnapshot, ProjectStorageUsage]:
         """Build health and storage observations from one project plugin read."""
         queue, counts, usage = plugin.operational_health_inputs()
-        local = evaluate_local_health(queue, counts, usage)
+        local = evaluate_local_health(
+            queue,
+            counts,
+            usage,
+            plugin.service.store.event_payload_scrub_pending_count(project_id),
+        )
         dependencies = evaluate_dependencies(
             self.dependency_readiness, project_id, datetime.now(UTC)
         )
@@ -400,24 +416,13 @@ class AuthenticatedCuratorAPI:
         caller: AuthenticatedCaller,
         project_id: str,
         goal_id: str,
-        fact_offset: int = 0,
-        fact_limit: int = 16,
-        child_offset: int = 0,
-        sde_offset: int = 0,
-        receipt_offset: int = 0,
+        page: GoalReportPage | None = None,
     ) -> str:
         """Render a bounded report after project-scoped read authorization."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
-        ).goal_report(
-            goal_id,
-            fact_offset=fact_offset,
-            fact_limit=fact_limit,
-            child_offset=child_offset,
-            sde_offset=sde_offset,
-            receipt_offset=receipt_offset,
-        )
+        ).goal_report(goal_id, page)
 
     def fact_compaction_propose(
         self,

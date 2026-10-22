@@ -14,7 +14,7 @@ import sqlite3
 import stat
 from threading import RLock
 from types import TracebackType
-from typing import Generator, Protocol, Self, cast
+from typing import Generator, NoReturn, Protocol, Self, cast
 import zlib
 
 from .events import (
@@ -385,6 +385,171 @@ def _validate_retirement_relationships(
         )
 
 
+def _validate_reopen_parent(
+    connection: sqlite3.Connection, parent_goal_id: str | None, project_id: str
+) -> None:
+    """Require a reopened goal's parent to remain in an open lifecycle state."""
+
+    if parent_goal_id is None:
+        return
+    parent = connection.execute(
+        "SELECT status FROM goals WHERE goal_id = ? AND project_id = ?",
+        (parent_goal_id, project_id),
+    ).fetchone()
+    if parent is None:
+        raise ConflictError("goal parent is missing from its project")
+    if GoalStatus(parent["status"]) in {
+        GoalStatus.COMPLETE,
+        GoalStatus.CANCELLED,
+        GoalStatus.SUPERSEDED,
+    }:
+        raise ConflictError("reopen or replace the terminal parent first")
+
+
+def _validate_reopen_dependencies(
+    connection: sqlite3.Connection, goal_id: str, project_id: str
+) -> None:
+    """Require every dependency to exist and not be cancelled or superseded."""
+
+    goal_row = connection.execute(
+        "SELECT depends_on_json FROM goals WHERE goal_id = ?", (goal_id,)
+    ).fetchone()
+    for dependency_id in json.loads(goal_row["depends_on_json"]):
+        dependency = connection.execute(
+            "SELECT status FROM goals WHERE goal_id = ? AND project_id = ?",
+            (dependency_id, project_id),
+        ).fetchone()
+        if dependency is None:
+            raise ConflictError("goal dependency is missing from its project")
+        if GoalStatus(dependency["status"]) in {
+            GoalStatus.CANCELLED,
+            GoalStatus.SUPERSEDED,
+        }:
+            raise ConflictError(
+                "replace the cancelled or superseded dependency before reopening"
+            )
+
+
+def _validate_reopen_dependents(
+    connection: sqlite3.Connection, goal_id: str, project_id: str
+) -> None:
+    """Keep completed goals from depending on a goal that is reopened."""
+
+    completed_goals = connection.execute(
+        "SELECT goal_id, depends_on_json FROM goals "
+        "WHERE project_id = ? AND status = ? AND goal_id != ?",
+        (project_id, GoalStatus.COMPLETE.value, goal_id),
+    ).fetchall()
+    completed_dependents = tuple(
+        item["goal_id"]
+        for item in completed_goals
+        if goal_id in json.loads(item["depends_on_json"])
+    )
+    if completed_dependents:
+        raise ConflictError(
+            "reopen completed dependent goals first: "
+            + ", ".join(completed_dependents)
+        )
+
+
+def _validate_reopen_relationships(
+    connection: sqlite3.Connection, goal_id: str, row: sqlite3.Row
+) -> None:
+    """Validate parent, dependency, and completed-dependent constraints."""
+
+    project_id = row["project_id"]
+    _validate_reopen_parent(connection, row["parent_goal_id"], project_id)
+    _validate_reopen_dependencies(connection, goal_id, project_id)
+    _validate_reopen_dependents(connection, goal_id, project_id)
+
+
+def _requested_artifact_manifest(
+    artifacts: tuple[ArtifactRef, ...],
+) -> tuple[tuple[str, str, str | None], ...]:
+    """Return a stable manifest key and reject duplicate artifact paths."""
+
+    paths = [artifact.path for artifact in artifacts]
+    if len(paths) != len(set(paths)):
+        raise ConflictError("artifact inventory contains duplicate paths")
+    return tuple(
+        sorted(
+            (
+                artifact.path,
+                artifact.sha256,
+                artifact.retention_hold.value if artifact.retention_hold else None,
+            )
+            for artifact in artifacts
+        )
+    )
+
+
+def _stored_artifact_manifest(
+    targets: list[sqlite3.Row],
+) -> tuple[tuple[str, str, str | None], ...]:
+    """Return the persisted target key in the same order as a requested manifest."""
+
+    return tuple(
+        (target["path"], target["sha256"], target["retention_hold"])
+        for target in targets
+    )
+
+
+def _insert_purge_targets_from_inventory(
+    connection: sqlite3.Connection,
+    receipt_id: str,
+    artifacts: tuple[ArtifactRef, ...],
+    existing_targets: list[sqlite3.Row],
+    hold_created_by: str | None,
+) -> None:
+    """Insert an exact complete inventory while carrying forward matching hold audit."""
+
+    hold_audit = {
+        (target["path"], target["sha256"], target["retention_hold"]): (
+            target["hold_created_at"],
+            target["hold_created_by"],
+        )
+        for target in existing_targets
+        if target["retention_hold"] is not None
+    }
+    inventory_created_at = utc_now()
+    for artifact in artifacts:
+        hold_kind = artifact.retention_hold.value if artifact.retention_hold else None
+        previous_hold = hold_audit.get(
+            (artifact.path, artifact.sha256, hold_kind)
+        )
+        hold_created_at = (
+            previous_hold[0]
+            if previous_hold is not None
+            else inventory_created_at if hold_kind else None
+        )
+        hold_actor = (
+            previous_hold[1]
+            if previous_hold is not None
+            else hold_created_by if hold_kind else None
+        )
+        connection.execute(
+            """INSERT INTO purge_targets
+               (receipt_id, path, sha256, status, attempts, error,
+                created_at, last_attempt_at, next_attempt_at, retention_hold,
+                hold_created_at, hold_created_by)
+               VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, NULL, ?, ?, ?)""",
+            (
+                receipt_id,
+                artifact.path,
+                artifact.sha256,
+                (
+                    ArtifactStatus.HELD
+                    if artifact.retention_hold
+                    else ArtifactStatus.PENDING
+                ).value,
+                inventory_created_at,
+                hold_kind,
+                hold_created_at,
+                hold_actor,
+            ),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class FactCompactionApprovalRequest:
     """Exact reviewer-approved compaction values passed into the store."""
@@ -407,6 +572,75 @@ class _PreparedFactArchive:
     compressed: bytes
     archive_sha256: str
     created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectRecordUsageRows:
+    """Aggregates for a project's non-event ledger records."""
+
+    goals: sqlite3.Row
+    goal_statuses: list[sqlite3.Row]
+    facts: sqlite3.Row
+    archives: sqlite3.Row
+    candidates: sqlite3.Row
+    corrections: sqlite3.Row
+    feedback: sqlite3.Row
+    receipts: sqlite3.Row
+    artifacts: sqlite3.Row
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectEventUsageRows:
+    """Event aggregates and global inbox capacity captured with the ledger read."""
+
+    event_classes: list[sqlite3.Row]
+    failures: list[sqlite3.Row]
+    global_capacity: GlobalEventInboxUsage
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectEventUsageSummary:
+    """Content-free event counts and payload/metadata byte totals."""
+
+    event_classes: tuple[EventClassStorageUsage, ...]
+    failures: tuple[EventFailureCategoryUsage, ...]
+    event_count: int
+    original_bytes: int
+    retained_bytes: int
+    metadata_bytes: int
+
+
+def _summarize_project_event_usage(
+    rows: _ProjectEventUsageRows,
+) -> _ProjectEventUsageSummary:
+    """Build typed content-free event usage values from grouped SQLite rows."""
+
+    event_classes = tuple(
+        EventClassStorageUsage(
+            event_type=row["event_type"],
+            status=row["status"],
+            count=row["count"],
+            original_payload_bytes=row["original_bytes"],
+            retained_payload_bytes=row["retained_bytes"],
+        )
+        for row in rows.event_classes
+    )
+    failure_counts = {
+        EventFailureCategory(row["category"]): int(row["count"])
+        for row in rows.failures
+    }
+    failures = tuple(
+        EventFailureCategoryUsage(category, failure_counts.get(category, 0))
+        for category in EventFailureCategory
+    )
+    return _ProjectEventUsageSummary(
+        event_classes=event_classes,
+        failures=failures,
+        event_count=sum(item.count for item in event_classes),
+        original_bytes=sum(item.original_payload_bytes for item in event_classes),
+        retained_bytes=sum(item.retained_payload_bytes for item in event_classes),
+        metadata_bytes=sum(row["metadata_bytes"] for row in rows.event_classes),
+    )
 
 
 class CuratorStore:
@@ -447,11 +681,13 @@ class CuratorStore:
         )
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA foreign_keys = ON")
+        self._connection.execute("PRAGMA secure_delete = ON")
         if self.database != ":memory:":
             self._connection.execute("PRAGMA journal_mode = WAL")
             self._connection.execute("PRAGMA synchronous = FULL")
         try:
             self._create_schema()
+            self.retry_pending_event_payload_scrubs()
         except BaseException:
             self._connection.close()
             raise
@@ -2651,52 +2887,7 @@ class CuratorStore:
                 raise ConflictError("only completed goals can be reopened")
             if row["lifecycle_revision"] != expected_lifecycle_revision:
                 raise ConflictError("goal lifecycle revision changed; reload before reopening")
-            parent_goal_id = row["parent_goal_id"]
-            if parent_goal_id is not None:
-                parent = connection.execute(
-                    "SELECT status FROM goals WHERE goal_id = ? AND project_id = ?",
-                    (parent_goal_id, row["project_id"]),
-                ).fetchone()
-                if parent is None:
-                    raise ConflictError("goal parent is missing from its project")
-                if GoalStatus(parent["status"]) in {
-                    GoalStatus.COMPLETE,
-                    GoalStatus.CANCELLED,
-                    GoalStatus.SUPERSEDED,
-                }:
-                    raise ConflictError("reopen or replace the terminal parent first")
-            goal_row = connection.execute(
-                "SELECT depends_on_json FROM goals WHERE goal_id = ?", (goal_id,)
-            ).fetchone()
-            for dependency_id in json.loads(goal_row["depends_on_json"]):
-                dependency = connection.execute(
-                    "SELECT status FROM goals WHERE goal_id = ? AND project_id = ?",
-                    (dependency_id, row["project_id"]),
-                ).fetchone()
-                if dependency is None:
-                    raise ConflictError("goal dependency is missing from its project")
-                if GoalStatus(dependency["status"]) in {
-                    GoalStatus.CANCELLED,
-                    GoalStatus.SUPERSEDED,
-                }:
-                    raise ConflictError(
-                        "replace the cancelled or superseded dependency before reopening"
-                    )
-            completed_goals = connection.execute(
-                "SELECT goal_id, depends_on_json FROM goals "
-                "WHERE project_id = ? AND status = ? AND goal_id != ?",
-                (row["project_id"], GoalStatus.COMPLETE.value, goal_id),
-            ).fetchall()
-            completed_dependents = tuple(
-                item["goal_id"]
-                for item in completed_goals
-                if goal_id in json.loads(item["depends_on_json"])
-            )
-            if completed_dependents:
-                raise ConflictError(
-                    "reopen completed dependent goals first: "
-                    + ", ".join(completed_dependents)
-                )
+            _validate_reopen_relationships(connection, goal_id, row)
             self._append_fact(connection, fact, project_id)
             connection.execute(
                 "UPDATE goals SET status = ?, next_action = ?, lifecycle_revision = ?, "
@@ -2858,7 +3049,78 @@ class CuratorStore:
         }
 
     @staticmethod
-    def _fact_from_archive_record(value: object) -> Fact:
+    def _fact_archive_evidence(value: object) -> tuple[EvidenceRef, ...]:
+        if not isinstance(value, list):
+            raise FactArchiveIntegrityError("fact archive evidence schema is invalid")
+        evidence: list[EvidenceRef] = []
+        for raw_item in cast(list[object], value):
+            if not isinstance(raw_item, dict):
+                raise FactArchiveIntegrityError(
+                    "fact archive evidence item schema is invalid"
+                )
+            item = cast(dict[str, object], raw_item)
+            if set(item) != {"evidence_kind", "locator", "sha256", "outcome"}:
+                raise FactArchiveIntegrityError(
+                    "fact archive evidence item fields are invalid"
+                )
+            values = tuple(
+                item[key]
+                for key in ("evidence_kind", "locator", "sha256", "outcome")
+            )
+            if any(not isinstance(item_value, str) for item_value in values):
+                raise FactArchiveIntegrityError(
+                    "fact archive evidence values must be strings"
+                )
+            evidence.append(
+                EvidenceRef(
+                    cast(str, values[0]),
+                    cast(str, values[1]),
+                    cast(str, values[2]),
+                    EvidenceOutcome(cast(str, values[3])),
+                )
+            )
+        return tuple(evidence)
+
+    @staticmethod
+    def _fact_archive_attestations(value: object) -> tuple[EvidenceAttestation, ...]:
+        if not isinstance(value, list):
+            raise FactArchiveIntegrityError(
+                "fact archive attestation schema is invalid"
+            )
+        attestation_fields = {
+            "evidence_kind",
+            "evidence_sha256",
+            "project_id",
+            "goal_id",
+            "criterion_id",
+            "adapter_id",
+            "authenticated_subject",
+            "source_revision",
+            "observed_at",
+            "verified_at",
+            "valid_until",
+            "revocation_checked_at",
+        }
+        attestations: list[EvidenceAttestation] = []
+        for raw_attestation in cast(list[object], value):
+            if not isinstance(raw_attestation, dict):
+                raise FactArchiveIntegrityError(
+                    "fact archive attestation item schema is invalid"
+                )
+            attestation = cast(dict[str, object], raw_attestation)
+            if set(attestation) != attestation_fields or any(
+                not isinstance(item, str) for item in attestation.values()
+            ):
+                raise FactArchiveIntegrityError(
+                    "fact archive attestation fields are invalid"
+                )
+            attestations.append(
+                EvidenceAttestation(**cast(dict[str, str], attestation))
+            )
+        return tuple(attestations)
+
+    @classmethod
+    def _build_fact_from_archive_record(cls, record: dict[str, object]) -> Fact:
         required = {
             "fact_id",
             "goal_id",
@@ -2868,124 +3130,55 @@ class CuratorStore:
             "evidence",
             "created_at",
         }
+        optional = {"verification_attestations", "source_event_id"}
+        if not required.issubset(record) or not set(record).issubset(
+            required | optional
+        ):
+            raise FactArchiveIntegrityError("fact archive record schema is invalid")
+
+        values = tuple(
+            record[key]
+            for key in ("fact_id", "goal_id", "kind", "bullet", "created_at")
+        )
+        if any(not isinstance(value, str) for value in values):
+            raise FactArchiveIntegrityError("fact archive record strings are invalid")
+        fact_id, goal_id, kind_value, bullet, created_at = cast(
+            tuple[str, str, str, str, str], values
+        )
+        criterion_id = record["criterion_id"]
+        if criterion_id is not None and not isinstance(criterion_id, str):
+            raise FactArchiveIntegrityError(
+                "fact archive criterion_id must be a string or null"
+            )
+        source_event_id = record.get("source_event_id")
+        if source_event_id is not None and not isinstance(source_event_id, str):
+            raise FactArchiveIntegrityError(
+                "fact archive source_event_id must be a string or null"
+            )
+
+        return Fact(
+            goal_id=goal_id,
+            kind=FactKind(kind_value),
+            bullet=bullet,
+            fact_id=fact_id,
+            criterion_id=criterion_id,
+            evidence=cls._fact_archive_evidence(record["evidence"]),
+            verification_attestations=cls._fact_archive_attestations(
+                record.get("verification_attestations", [])
+            ),
+            source_event_id=source_event_id,
+            created_at=created_at,
+        )
+
+    @staticmethod
+    def _fact_from_archive_record(value: object) -> Fact:
         if not isinstance(value, dict):
             raise FactArchiveIntegrityError("fact archive record schema is invalid")
-        record = cast(dict[str, object], value)
-        optional = {"verification_attestations", "source_event_id"}
-        if not required.issubset(record) or not set(record).issubset(required | optional):
-            raise FactArchiveIntegrityError("fact archive record schema is invalid")
-        if not isinstance(record["evidence"], list):
-            raise FactArchiveIntegrityError("fact archive evidence schema is invalid")
         validation_failed = False
         fact: Fact | None = None
         try:
-            evidence_items = cast(list[object], record["evidence"])
-            evidence: list[EvidenceRef] = []
-            for raw_item in evidence_items:
-                if not isinstance(raw_item, dict):
-                    raise FactArchiveIntegrityError(
-                        "fact archive evidence item schema is invalid"
-                    )
-                item = cast(dict[str, object], raw_item)
-                if set(item) != {"evidence_kind", "locator", "sha256", "outcome"}:
-                    raise FactArchiveIntegrityError(
-                        "fact archive evidence item fields are invalid"
-                    )
-                evidence_kind = item["evidence_kind"]
-                locator = item["locator"]
-                sha256 = item["sha256"]
-                outcome_value = item["outcome"]
-                if not all(
-                    isinstance(value, str)
-                    for value in (evidence_kind, locator, sha256, outcome_value)
-                ):
-                    raise FactArchiveIntegrityError(
-                        "fact archive evidence values must be strings"
-                    )
-                evidence_kind = cast(str, evidence_kind)
-                locator = cast(str, locator)
-                sha256 = cast(str, sha256)
-                outcome_value = cast(str, outcome_value)
-                evidence.append(
-                    EvidenceRef(
-                        evidence_kind, locator, sha256, EvidenceOutcome(outcome_value)
-                    )
-                )
-            raw_attestations = record.get("verification_attestations", [])
-            if not isinstance(raw_attestations, list):
-                raise FactArchiveIntegrityError(
-                    "fact archive attestation schema is invalid"
-                )
-            attestation_fields = {
-                "evidence_kind",
-                "evidence_sha256",
-                "project_id",
-                "goal_id",
-                "criterion_id",
-                "adapter_id",
-                "authenticated_subject",
-                "source_revision",
-                "observed_at",
-                "verified_at",
-                "valid_until",
-                "revocation_checked_at",
-            }
-            attestations: list[EvidenceAttestation] = []
-            for raw_attestation in cast(list[object], raw_attestations):
-                if not isinstance(raw_attestation, dict):
-                    raise FactArchiveIntegrityError(
-                        "fact archive attestation item schema is invalid"
-                    )
-                attestation_data = cast(dict[str, object], raw_attestation)
-                if set(attestation_data) != attestation_fields or any(
-                    not isinstance(item, str) for item in attestation_data.values()
-                ):
-                    raise FactArchiveIntegrityError(
-                        "fact archive attestation fields are invalid"
-                    )
-                attestations.append(
-                    EvidenceAttestation(**cast(dict[str, str], attestation_data))
-                )
-            fact_id = record["fact_id"]
-            goal_id = record["goal_id"]
-            kind_value = record["kind"]
-            bullet = record["bullet"]
-            created_at = record["created_at"]
-            if not all(
-                isinstance(value, str)
-                for value in (fact_id, goal_id, kind_value, bullet, created_at)
-            ):
-                raise FactArchiveIntegrityError("fact archive record strings are invalid")
-            fact_id = cast(str, fact_id)
-            goal_id = cast(str, goal_id)
-            kind_value = cast(str, kind_value)
-            bullet = cast(str, bullet)
-            created_at = cast(str, created_at)
-            for key in ("fact_id", "goal_id", "kind", "bullet", "created_at"):
-                if not isinstance(record[key], str):
-                    raise FactArchiveIntegrityError(
-                        f"fact archive {key} must be a string"
-                    )
-            criterion_id = record["criterion_id"]
-            if criterion_id is not None and not isinstance(criterion_id, str):
-                raise FactArchiveIntegrityError(
-                    "fact archive criterion_id must be a string or null"
-                )
-            source_event_id = record.get("source_event_id")
-            if source_event_id is not None and not isinstance(source_event_id, str):
-                raise FactArchiveIntegrityError(
-                    "fact archive source_event_id must be a string or null"
-                )
-            fact = Fact(
-                goal_id=goal_id,
-                kind=FactKind(kind_value),
-                bullet=bullet,
-                fact_id=fact_id,
-                criterion_id=criterion_id,
-                evidence=tuple(evidence),
-                verification_attestations=tuple(attestations),
-                source_event_id=source_event_id,
-                created_at=created_at,
+            fact = CuratorStore._build_fact_from_archive_record(
+                cast(dict[str, object], value)
             )
         except (KeyError, TypeError, ValueError):
             # Enum and domain errors may retain caller-controlled archive values.
@@ -2995,11 +3188,13 @@ class CuratorStore:
                 "fact archive record failed domain validation"
             )
         if fact is None:
-            raise FactArchiveIntegrityError("fact archive record failed domain validation")
+            raise FactArchiveIntegrityError(
+                "fact archive record failed domain validation"
+            )
         return fact
 
-    @classmethod
-    def _decode_fact_archive(cls, row: sqlite3.Row) -> tuple[Fact, ...]:
+    @staticmethod
+    def _decode_fact_archive_source(row: sqlite3.Row) -> object:
         if row["schema_version"] != 1:
             raise FactArchiveIntegrityError("unsupported fact archive version")
         compressed = bytes(row["payload_zlib"])
@@ -3036,22 +3231,36 @@ class CuratorStore:
             parse_failed = True
         if parse_failed:
             raise FactArchiveIntegrityError("fact archive JSON is invalid")
+        return parsed
+
+    @classmethod
+    def _fact_archive_records(cls, row: sqlite3.Row) -> list[object]:
+        parsed = cls._decode_fact_archive_source(row)
         if not isinstance(parsed, list):
             raise FactArchiveIntegrityError("fact archive record count mismatch")
         records = cast(list[object], parsed)
         if len(records) != row["fact_count"]:
             raise FactArchiveIntegrityError("fact archive record count mismatch")
-        facts = tuple(cls._fact_from_archive_record(item) for item in records)
+        return records
+
+    @staticmethod
+    def _validate_fact_archive_facts(facts: tuple[Fact, ...], goal_id: str) -> None:
         if len({fact.fact_id for fact in facts}) != len(facts):
             raise FactArchiveIntegrityError("fact archive contains duplicate IDs")
         if any(
-            fact.goal_id != row["goal_id"]
+            fact.goal_id != goal_id
             or fact.kind not in {FactKind.RESEARCH, FactKind.ADVICE}
             or fact.criterion_id is not None
             or fact.evidence
             for fact in facts
         ):
             raise FactArchiveIntegrityError("fact archive contains an ineligible fact")
+
+    @classmethod
+    def _decode_fact_archive(cls, row: sqlite3.Row) -> tuple[Fact, ...]:
+        records = cls._fact_archive_records(row)
+        facts = tuple(cls._fact_from_archive_record(item) for item in records)
+        cls._validate_fact_archive_facts(facts, row["goal_id"])
         return facts
 
     @classmethod
@@ -4350,17 +4559,7 @@ class CuratorStore:
             r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", hold_created_by
         ):
             raise ValueError("hold-placement actor must be a bounded opaque identifier")
-        paths = [item.path for item in artifacts]
-        if len(paths) != len(set(paths)):
-            raise ConflictError("artifact inventory contains duplicate paths")
-        requested = sorted(
-            (
-                item.path,
-                item.sha256,
-                item.retention_hold.value if item.retention_hold else None,
-            )
-            for item in artifacts
-        )
+        requested = _requested_artifact_manifest(artifacts)
         with self._transaction() as connection:
             if project_id is None:
                 row = connection.execute(
@@ -4387,20 +4586,8 @@ class CuratorStore:
                 "WHERE receipt_id = ? ORDER BY path",
                 (receipt_id,),
             ).fetchall()
-            existing_hold_audit = {
-                (item["path"], item["sha256"], item["retention_hold"]): (
-                    item["hold_created_at"],
-                    item["hold_created_by"],
-                )
-                for item in existing_targets
-                if item["retention_hold"] is not None
-            }
-            saved = [
-                (item["path"], item["sha256"], item["retention_hold"])
-                for item in existing_targets
-            ]
             if bool(row["artifact_inventory_complete"]):
-                if requested != saved:
+                if requested != _stored_artifact_manifest(existing_targets):
                     raise ConflictError("complete artifact inventory cannot be changed")
             else:
                 if row["purge_status"] != PurgeStatus.PURGE_PENDING.value:
@@ -4419,47 +4606,13 @@ class CuratorStore:
                 connection.execute(
                     "DELETE FROM purge_targets WHERE receipt_id = ?", (receipt_id,)
                 )
-                inventory_created_at = utc_now()
-                for artifact in artifacts:
-                    hold_kind = (
-                        artifact.retention_hold.value
-                        if artifact.retention_hold
-                        else None
-                    )
-                    prior_hold_audit = existing_hold_audit.get(
-                        (artifact.path, artifact.sha256, hold_kind)
-                    )
-                    hold_created_at = (
-                        prior_hold_audit[0]
-                        if prior_hold_audit is not None
-                        else inventory_created_at if hold_kind else None
-                    )
-                    hold_actor = (
-                        prior_hold_audit[1]
-                        if prior_hold_audit is not None
-                        else hold_created_by if hold_kind else None
-                    )
-                    connection.execute(
-                        """INSERT INTO purge_targets
-                           (receipt_id, path, sha256, status, attempts, error,
-                            created_at, last_attempt_at, next_attempt_at, retention_hold,
-                            hold_created_at, hold_created_by)
-                           VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, NULL, ?, ?, ?)""",
-                        (
-                            receipt_id,
-                            artifact.path,
-                            artifact.sha256,
-                            (
-                                ArtifactStatus.HELD
-                                if artifact.retention_hold
-                                else ArtifactStatus.PENDING
-                            ).value,
-                            inventory_created_at,
-                            hold_kind,
-                            hold_created_at,
-                            hold_actor,
-                        ),
-                    )
+                _insert_purge_targets_from_inventory(
+                    connection,
+                    receipt_id,
+                    artifacts,
+                    existing_targets,
+                    hold_created_by,
+                )
                 purge_status = (
                     PurgeStatus.PURGE_PENDING
                     if artifacts or not bool(row["canonical_persisted"])
@@ -5554,6 +5707,80 @@ class CuratorStore:
             expired_claim_count=int(claim_counts["expired"]),
         )
 
+    def event_payload_scrub_pending_count(self, project_id: str) -> int:
+        """Count content-free WAL scrub receipts visible to one project."""
+
+        self._validate_access_identity(project_id, "project_id")
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT COUNT(*) AS count FROM event_payload_scrub_queue
+                   WHERE project_id = ? OR project_id IS NULL""",
+                (project_id,),
+            ).fetchone()
+        return int(row["count"])
+
+    def retry_pending_event_payload_scrubs(self, limit: int = 1000) -> int:
+        """Truncate payload remnants from WAL, retaining pending receipts on busy."""
+
+        if not is_exact_int(limit) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        if self.database == ":memory:":
+            return 0
+        with self._lock:
+            if self._connection.in_transaction:
+                return 0
+            rows = self._connection.execute(
+                """SELECT scrub_id FROM event_payload_scrub_queue
+                   ORDER BY scrub_id LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            scrub_ids = tuple(int(row["scrub_id"]) for row in rows)
+            if not scrub_ids:
+                return 0
+            busy_timeout = int(
+                self._connection.execute("PRAGMA busy_timeout").fetchone()[0]
+            )
+            try:
+                self._connection.execute("PRAGMA busy_timeout = 0")
+                checkpoint = self._connection.execute(
+                    "PRAGMA wal_checkpoint(TRUNCATE)"
+                ).fetchone()
+            except sqlite3.Error:
+                checkpoint = None
+            finally:
+                self._connection.execute(
+                    f"PRAGMA busy_timeout = {busy_timeout}"
+                )
+            checkpoint_complete = checkpoint is not None and (
+                int(checkpoint[0]) == 0
+                and (
+                    int(checkpoint[1]) == -1
+                    or (int(checkpoint[1]) == 0 and int(checkpoint[2]) == 0)
+                )
+            )
+            if not checkpoint_complete:
+                try:
+                    with self._transaction() as connection:
+                        connection.executemany(
+                            """UPDATE event_payload_scrub_queue
+                               SET attempts = attempts + 1,
+                                   last_error_code = 'wal_checkpoint_busy'
+                               WHERE scrub_id = ?""",
+                            ((scrub_id,) for scrub_id in scrub_ids),
+                        )
+                except sqlite3.Error:
+                    pass
+                return 0
+            try:
+                with self._transaction() as connection:
+                    cursor = connection.executemany(
+                        "DELETE FROM event_payload_scrub_queue WHERE scrub_id = ?",
+                        ((scrub_id,) for scrub_id in scrub_ids),
+                    )
+            except sqlite3.Error:
+                return 0
+        return cursor.rowcount
+
     def event_receipt(self, project_id: str, event_id: str) -> EventInboxReceipt:
         """Return the compact acceptance/processing receipt for an event."""
 
@@ -5578,6 +5805,235 @@ class CuratorStore:
             return None
         return metadata.st_size
 
+    def _project_record_usage_rows(self, project_id: str) -> _ProjectRecordUsageRows:
+        """Query logical non-event record usage for one project."""
+
+        goal_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(g.goal_id AS BLOB)) +
+                 length(CAST(g.problem AS BLOB)) +
+                 length(CAST(g.criteria_json AS BLOB)) +
+                 COALESCE(length(CAST(g.owner AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.checklist_id AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.checklist_version AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.checklist_source_text AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.parent_goal_id AS BLOB)), 0) +
+                 length(CAST(g.depends_on_json AS BLOB)) +
+                 length(CAST(g.status AS BLOB)) +
+                 COALESCE(length(CAST(g.next_action AS BLOB)), 0) +
+                 length(CAST(g.criteria_revision AS TEXT)) +
+                 length(CAST(g.lifecycle_revision AS TEXT)) +
+                 COALESCE(length(CAST(g.superseded_by_goal_id AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.initial_status AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.source_event_id AS BLOB)), 0) +
+                 length(CAST(g.created_at AS BLOB)) +
+                 length(CAST(g.updated_at AS BLOB)) +
+                 COALESCE((SELECT SUM(
+                   length(CAST(v.criteria_json AS BLOB)) +
+                   length(CAST(v.reason AS BLOB)) +
+                   length(CAST(v.created_at AS BLOB)) +
+                   length(CAST(v.revision AS TEXT))
+                 ) FROM goal_criteria_versions AS v WHERE v.goal_id = g.goal_id), 0)
+               ), 0) AS bytes FROM goals AS g WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        goal_statuses = self._connection.execute(
+            "SELECT status, COUNT(*) AS count FROM goals "
+            "WHERE project_id = ? GROUP BY status ORDER BY status",
+            (project_id,),
+        ).fetchall()
+        fact_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(f.fact_id AS BLOB)) +
+                 length(CAST(f.kind AS BLOB)) +
+                 length(CAST(f.bullet AS BLOB)) +
+                 COALESCE(length(CAST(f.criterion_id AS BLOB)), 0) +
+                 length(CAST(f.evidence_json AS BLOB)) +
+                 length(CAST(f.verification_attestations_json AS BLOB)) +
+                 COALESCE(length(CAST(f.source_event_id AS BLOB)), 0) +
+                 length(CAST(f.dedupe_key AS BLOB)) +
+                 length(CAST(f.created_at AS BLOB))
+               ), 0) AS bytes
+               FROM facts AS f JOIN goals AS g ON g.goal_id = f.goal_id
+               WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        archive_usage = self._connection.execute(
+            """SELECT COUNT(*) AS batches,
+                      COALESCE(SUM(fact_count), 0) AS items,
+                      COALESCE(SUM(compressed_bytes), 0) AS compressed_bytes,
+                      COALESCE(SUM(
+                        length(CAST(compaction_id AS BLOB)) +
+                        length(CAST(schema_version AS TEXT)) +
+                        length(CAST(goal_id AS BLOB)) +
+                        length(CAST(source_sha256 AS BLOB)) +
+                        length(CAST(archive_sha256 AS BLOB)) +
+                        length(CAST(source_bytes AS TEXT)) +
+                        length(CAST(compressed_bytes AS TEXT)) +
+                        length(CAST(fact_count AS TEXT)) +
+                        length(CAST(reviewer_id AS BLOB)) +
+                        length(CAST(approval_reason AS BLOB)) +
+                        length(CAST(created_at AS BLOB)) +
+                        compressed_bytes
+                      ), 0) + COALESCE((
+                        SELECT SUM(length(CAST(fact_id AS BLOB)) +
+                                   length(CAST(compaction_id AS BLOB)) +
+                                   length(CAST(project_id AS BLOB)) +
+                                   length(CAST(goal_id AS BLOB)) +
+                                   length(CAST(dedupe_key AS BLOB)) +
+                                   length(CAST(created_at AS BLOB)) )
+                        FROM fact_archive_items WHERE project_id = ?
+                      ), 0) AS bytes
+               FROM fact_archives WHERE project_id = ?""",
+            (project_id, project_id),
+        ).fetchone()
+        candidate_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(s.candidate_id AS BLOB)) +
+                 length(CAST(s.goal_id AS BLOB)) +
+                 length(CAST(s.materiality AS BLOB)) +
+                 length(CAST(s.rationale AS BLOB)) +
+                 COALESCE(length(CAST(s.impact AS BLOB)), 0) +
+                 COALESCE(length(CAST(s.retrieval_value AS BLOB)), 0) +
+                 length(CAST(s.fact_ids_json AS BLOB)) +
+                 length(CAST(s.dedupe_key AS BLOB)) +
+                 length(CAST(s.status AS BLOB)) +
+                 length(CAST(s.created_at AS BLOB))
+               ), 0) AS bytes
+               FROM sde_candidates AS s JOIN goals AS g ON g.goal_id = s.goal_id
+               WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        correction_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(c.correction_id AS BLOB)) +
+                 length(CAST(c.candidate_id AS BLOB)) +
+                 length(CAST(c.correction AS BLOB)) +
+                 length(CAST(c.rationale AS BLOB)) +
+                 length(CAST(c.reviewer_id AS BLOB)) +
+                 length(CAST(c.created_at AS BLOB))
+               ), 0) AS bytes
+               FROM sde_corrections AS c
+               JOIN sde_candidates AS s ON s.candidate_id = c.candidate_id
+               JOIN goals AS g ON g.goal_id = s.goal_id
+               WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        feedback_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(f.feedback_id AS BLOB)) +
+                 length(CAST(f.candidate_id AS BLOB)) +
+                 length(CAST(f.reviewer_id AS BLOB)) +
+                 length(CAST(f.label AS BLOB)) +
+                 length(CAST(f.rationale AS BLOB)) +
+                 length(CAST(f.created_at AS BLOB))
+               ), 0) AS bytes
+               FROM sde_quality_feedback AS f
+               JOIN sde_candidates AS s ON s.candidate_id = f.candidate_id
+               JOIN goals AS g ON g.goal_id = s.goal_id
+               WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        receipt_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(r.receipt_id AS BLOB)) +
+                 length(CAST(r.candidate_id AS BLOB)) +
+                 length(CAST(r.decision AS BLOB)) +
+                 length(CAST(r.facts_sha256 AS BLOB)) +
+                 COALESCE(length(CAST(r.reviewer_id AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.review_rationale AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.canonical_target AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.canonical_sha256 AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.canonical_persisted_at AS BLOB)), 0) +
+                 length(CAST(r.purge_status AS BLOB)) +
+                 length(CAST(r.created_at AS BLOB)) +
+                 length(CAST(r.updated_at AS BLOB))
+               ), 0) AS bytes
+               FROM audit_receipts AS r
+               JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+               JOIN goals AS g ON g.goal_id = s.goal_id
+               WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        artifact_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(p.path AS BLOB)) +
+                 length(CAST(p.sha256 AS BLOB)) +
+                 length(CAST(p.status AS BLOB)) +
+                 length(CAST(p.attempts AS TEXT)) +
+                 COALESCE(length(CAST(p.error AS BLOB)), 0) +
+                 length(CAST(p.created_at AS BLOB)) +
+                 COALESCE(length(CAST(p.last_attempt_at AS BLOB)), 0) +
+                 COALESCE(length(CAST(p.next_attempt_at AS BLOB)), 0)
+               ), 0) AS bytes
+               FROM purge_targets AS p
+               JOIN audit_receipts AS r ON r.receipt_id = p.receipt_id
+               JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+               JOIN goals AS g ON g.goal_id = s.goal_id
+               WHERE g.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        return _ProjectRecordUsageRows(
+            goals=goal_usage,
+            goal_statuses=goal_statuses,
+            facts=fact_usage,
+            archives=archive_usage,
+            candidates=candidate_usage,
+            corrections=correction_usage,
+            feedback=feedback_usage,
+            receipts=receipt_usage,
+            artifacts=artifact_usage,
+        )
+
+    def _project_event_usage_rows(self, project_id: str) -> _ProjectEventUsageRows:
+        """Query content-free event usage and global inbox capacity."""
+
+        event_rows = self._connection.execute(
+            """SELECT event_type, status, COUNT(*) AS count,
+                      COALESCE(SUM(payload_bytes), 0) AS original_bytes,
+                      COALESCE(SUM(COALESCE(
+                          length(CAST(payload_json AS BLOB)), 0
+                      )), 0) AS retained_bytes,
+                      COALESCE(SUM(
+                          length(CAST(event_id AS BLOB)) +
+                          length(CAST(payload_sha256 AS BLOB)) +
+                          COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
+                          length(CAST(event_type AS BLOB)) +
+                          length(CAST(status AS BLOB)) +
+                          length(CAST(received_at AS BLOB)) +
+                          COALESCE(length(CAST(processed_at AS BLOB)), 0) +
+                          COALESCE(length(CAST(last_error AS BLOB)), 0) +
+                          COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
+                          COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
+                          COALESCE(length(CAST(lease_expires_at AS BLOB)), 0)
+                      ), 0) AS metadata_bytes
+               FROM event_inbox WHERE project_id = ?
+               GROUP BY event_type, status ORDER BY event_type, status""",
+            (project_id,),
+        ).fetchall()
+        failure_rows = self._connection.execute(
+            """SELECT CASE last_error
+                 WHEN 'EvidenceGateError' THEN 'evidence_rejected'
+                 WHEN 'EvidenceAdapterError' THEN 'evidence_adapter_error'
+                 ELSE 'other' END AS category,
+                 COUNT(*) AS count
+               FROM event_inbox
+               WHERE project_id = ? AND status IN (?, ?)
+               GROUP BY category""",
+            (
+                project_id,
+                EventInboxStatus.FAILED.value,
+                EventInboxStatus.QUARANTINED.value,
+            ),
+        ).fetchall()
+        global_event_count, global_event_bytes = self._event_inbox_usage(
+            self._connection
+        )
+        global_capacity = self._global_event_inbox_capacity(
+            global_event_count, global_event_bytes
+        )
+        return _ProjectEventUsageRows(event_rows, failure_rows, global_capacity)
+
     def project_storage_usage(self, project_id: str) -> ProjectStorageUsage:
         """Report logical retained bytes per project and physical DB files globally.
 
@@ -5587,255 +6043,22 @@ class CuratorStore:
         """
 
         with self._lock:
-            goal_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(g.goal_id AS BLOB)) +
-                     length(CAST(g.problem AS BLOB)) +
-                     length(CAST(g.criteria_json AS BLOB)) +
-                     COALESCE(length(CAST(g.owner AS BLOB)), 0) +
-                     COALESCE(length(CAST(g.checklist_id AS BLOB)), 0) +
-                     COALESCE(length(CAST(g.checklist_version AS BLOB)), 0) +
-                     COALESCE(length(CAST(g.checklist_source_text AS BLOB)), 0) +
-                     COALESCE(length(CAST(g.parent_goal_id AS BLOB)), 0) +
-                     length(CAST(g.depends_on_json AS BLOB)) +
-                     length(CAST(g.status AS BLOB)) +
-                     COALESCE(length(CAST(g.next_action AS BLOB)), 0) +
-                     length(CAST(g.criteria_revision AS TEXT)) +
-                     length(CAST(g.lifecycle_revision AS TEXT)) +
-                     COALESCE(length(CAST(g.superseded_by_goal_id AS BLOB)), 0) +
-                     COALESCE(length(CAST(g.initial_status AS BLOB)), 0) +
-                     COALESCE(length(CAST(g.source_event_id AS BLOB)), 0) +
-                     length(CAST(g.created_at AS BLOB)) +
-                     length(CAST(g.updated_at AS BLOB)) +
-                     COALESCE((SELECT SUM(
-                       length(CAST(v.criteria_json AS BLOB)) +
-                       length(CAST(v.reason AS BLOB)) +
-                       length(CAST(v.created_at AS BLOB)) +
-                       length(CAST(v.revision AS TEXT))
-                     ) FROM goal_criteria_versions AS v WHERE v.goal_id = g.goal_id), 0)
-                   ), 0) AS bytes FROM goals AS g WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            goal_status_rows = self._connection.execute(
-                "SELECT status, COUNT(*) AS count FROM goals "
-                "WHERE project_id = ? GROUP BY status ORDER BY status",
-                (project_id,),
-            ).fetchall()
-            fact_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(f.fact_id AS BLOB)) +
-                     length(CAST(f.kind AS BLOB)) +
-                     length(CAST(f.bullet AS BLOB)) +
-                     COALESCE(length(CAST(f.criterion_id AS BLOB)), 0) +
-                     length(CAST(f.evidence_json AS BLOB)) +
-                     length(CAST(f.verification_attestations_json AS BLOB)) +
-                     COALESCE(length(CAST(f.source_event_id AS BLOB)), 0) +
-                     length(CAST(f.dedupe_key AS BLOB)) +
-                     length(CAST(f.created_at AS BLOB))
-                   ), 0) AS bytes
-                   FROM facts AS f JOIN goals AS g ON g.goal_id = f.goal_id
-                   WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            archive_usage = self._connection.execute(
-                """SELECT COUNT(*) AS batches,
-                          COALESCE(SUM(fact_count), 0) AS items,
-                          COALESCE(SUM(compressed_bytes), 0) AS compressed_bytes,
-                          COALESCE(SUM(
-                            length(CAST(compaction_id AS BLOB)) +
-                            length(CAST(schema_version AS TEXT)) +
-                            length(CAST(goal_id AS BLOB)) +
-                            length(CAST(source_sha256 AS BLOB)) +
-                            length(CAST(archive_sha256 AS BLOB)) +
-                            length(CAST(source_bytes AS TEXT)) +
-                            length(CAST(compressed_bytes AS TEXT)) +
-                            length(CAST(fact_count AS TEXT)) +
-                            length(CAST(reviewer_id AS BLOB)) +
-                            length(CAST(approval_reason AS BLOB)) +
-                            length(CAST(created_at AS BLOB)) +
-                            compressed_bytes
-                          ), 0) + COALESCE((
-                            SELECT SUM(length(CAST(fact_id AS BLOB)) +
-                                       length(CAST(compaction_id AS BLOB)) +
-                                       length(CAST(project_id AS BLOB)) +
-                                       length(CAST(goal_id AS BLOB)) +
-                                       length(CAST(dedupe_key AS BLOB)) +
-                                       length(CAST(created_at AS BLOB)) )
-                            FROM fact_archive_items WHERE project_id = ?
-                          ), 0) AS bytes
-                   FROM fact_archives WHERE project_id = ?""",
-                (project_id, project_id),
-            ).fetchone()
-            candidate_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(s.candidate_id AS BLOB)) +
-                     length(CAST(s.goal_id AS BLOB)) +
-                     length(CAST(s.materiality AS BLOB)) +
-                     length(CAST(s.rationale AS BLOB)) +
-                     COALESCE(length(CAST(s.impact AS BLOB)), 0) +
-                     COALESCE(length(CAST(s.retrieval_value AS BLOB)), 0) +
-                     length(CAST(s.fact_ids_json AS BLOB)) +
-                     length(CAST(s.dedupe_key AS BLOB)) +
-                     length(CAST(s.status AS BLOB)) +
-                     length(CAST(s.created_at AS BLOB))
-                   ), 0) AS bytes
-                   FROM sde_candidates AS s JOIN goals AS g ON g.goal_id = s.goal_id
-                   WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            correction_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(c.correction_id AS BLOB)) +
-                     length(CAST(c.candidate_id AS BLOB)) +
-                     length(CAST(c.correction AS BLOB)) +
-                     length(CAST(c.rationale AS BLOB)) +
-                     length(CAST(c.reviewer_id AS BLOB)) +
-                     length(CAST(c.created_at AS BLOB))
-                   ), 0) AS bytes
-                   FROM sde_corrections AS c
-                   JOIN sde_candidates AS s ON s.candidate_id = c.candidate_id
-                   JOIN goals AS g ON g.goal_id = s.goal_id
-                   WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            feedback_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(f.feedback_id AS BLOB)) +
-                     length(CAST(f.candidate_id AS BLOB)) +
-                     length(CAST(f.reviewer_id AS BLOB)) +
-                     length(CAST(f.label AS BLOB)) +
-                     length(CAST(f.rationale AS BLOB)) +
-                     length(CAST(f.created_at AS BLOB))
-                   ), 0) AS bytes
-                   FROM sde_quality_feedback AS f
-                   JOIN sde_candidates AS s ON s.candidate_id = f.candidate_id
-                   JOIN goals AS g ON g.goal_id = s.goal_id
-                   WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            receipt_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(r.receipt_id AS BLOB)) +
-                     length(CAST(r.candidate_id AS BLOB)) +
-                     length(CAST(r.decision AS BLOB)) +
-                     length(CAST(r.facts_sha256 AS BLOB)) +
-                     COALESCE(length(CAST(r.reviewer_id AS BLOB)), 0) +
-                     COALESCE(length(CAST(r.review_rationale AS BLOB)), 0) +
-                     COALESCE(length(CAST(r.canonical_target AS BLOB)), 0) +
-                     COALESCE(length(CAST(r.canonical_sha256 AS BLOB)), 0) +
-                     COALESCE(length(CAST(r.canonical_persisted_at AS BLOB)), 0) +
-                     length(CAST(r.purge_status AS BLOB)) +
-                     length(CAST(r.created_at AS BLOB)) +
-                     length(CAST(r.updated_at AS BLOB))
-                   ), 0) AS bytes
-                   FROM audit_receipts AS r
-                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
-                   JOIN goals AS g ON g.goal_id = s.goal_id
-                   WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            artifact_usage = self._connection.execute(
-                """SELECT COUNT(*) AS count, COALESCE(SUM(
-                     length(CAST(p.path AS BLOB)) +
-                     length(CAST(p.sha256 AS BLOB)) +
-                     length(CAST(p.status AS BLOB)) +
-                     length(CAST(p.attempts AS TEXT)) +
-                     COALESCE(length(CAST(p.error AS BLOB)), 0) +
-                     length(CAST(p.created_at AS BLOB)) +
-                     COALESCE(length(CAST(p.last_attempt_at AS BLOB)), 0) +
-                     COALESCE(length(CAST(p.next_attempt_at AS BLOB)), 0)
-                   ), 0) AS bytes
-                   FROM purge_targets AS p
-                   JOIN audit_receipts AS r ON r.receipt_id = p.receipt_id
-                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
-                   JOIN goals AS g ON g.goal_id = s.goal_id
-                   WHERE g.project_id = ?""",
-                (project_id,),
-            ).fetchone()
-            event_rows = self._connection.execute(
-                """SELECT event_type, status, COUNT(*) AS count,
-                          COALESCE(SUM(payload_bytes), 0) AS original_bytes,
-                          COALESCE(SUM(COALESCE(
-                              length(CAST(payload_json AS BLOB)), 0
-                          )), 0) AS retained_bytes,
-                          COALESCE(SUM(
-                              length(CAST(event_id AS BLOB)) +
-                              length(CAST(payload_sha256 AS BLOB)) +
-                              COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
-                              length(CAST(event_type AS BLOB)) +
-                              length(CAST(status AS BLOB)) +
-                              length(CAST(received_at AS BLOB)) +
-                              COALESCE(length(CAST(processed_at AS BLOB)), 0) +
-                   COALESCE(length(CAST(last_error AS BLOB)), 0) +
-                   COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
-                   COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
-                   COALESCE(length(CAST(lease_expires_at AS BLOB)), 0)
-                          ), 0) AS metadata_bytes
-                   FROM event_inbox WHERE project_id = ?
-                   GROUP BY event_type, status ORDER BY event_type, status""",
-                (project_id,),
-            ).fetchall()
-            event_failure_rows = self._connection.execute(
-                """SELECT CASE last_error
-                     WHEN 'EvidenceGateError' THEN 'evidence_rejected'
-                     WHEN 'EvidenceAdapterError' THEN 'evidence_adapter_error'
-                     ELSE 'other' END AS category,
-                     COUNT(*) AS count
-                   FROM event_inbox
-                   WHERE project_id = ? AND status IN (?, ?)
-                   GROUP BY category""",
-                (
-                    project_id,
-                    EventInboxStatus.FAILED.value,
-                    EventInboxStatus.QUARANTINED.value,
-                ),
-            ).fetchall()
-            global_event_count, global_event_bytes = self._event_inbox_usage(
-                self._connection
-            )
-            global_event_inbox = self._global_event_inbox_capacity(
-                global_event_count, global_event_bytes
-            )
-
-        event_classes = tuple(
-            EventClassStorageUsage(
-                event_type=row["event_type"],
-                status=row["status"],
-                count=row["count"],
-                original_payload_bytes=row["original_bytes"],
-                retained_payload_bytes=row["retained_bytes"],
-            )
-            for row in event_rows
-        )
-        failure_counts = {
-            EventFailureCategory(row["category"]): int(row["count"])
-            for row in event_failure_rows
-        }
-        event_failures = tuple(
-            EventFailureCategoryUsage(category, failure_counts.get(category, 0))
-            for category in EventFailureCategory
-        )
-        event_count = sum(item.count for item in event_classes)
-        event_original_bytes = sum(
-            item.original_payload_bytes for item in event_classes
-        )
-        event_retained_bytes = sum(
-            item.retained_payload_bytes for item in event_classes
-        )
-        event_metadata_bytes = sum(row["metadata_bytes"] for row in event_rows)
+            record_rows = self._project_record_usage_rows(project_id)
+            event_usage_rows = self._project_event_usage_rows(project_id)
+        event_summary = _summarize_project_event_usage(event_usage_rows)
         logical_bytes = sum(
             row["bytes"]
             for row in (
-                goal_usage,
-                fact_usage,
-                candidate_usage,
-                correction_usage,
-                feedback_usage,
-                receipt_usage,
-                artifact_usage,
-                archive_usage,
+                record_rows.goals,
+                record_rows.facts,
+                record_rows.candidates,
+                record_rows.corrections,
+                record_rows.feedback,
+                record_rows.receipts,
+                record_rows.artifacts,
+                record_rows.archives,
             )
-        ) + event_metadata_bytes + event_retained_bytes
+        ) + event_summary.metadata_bytes + event_summary.retained_bytes
 
         database_path = Path(self.database) if self.database != ":memory:" else None
         database_bytes = (
@@ -5848,30 +6071,30 @@ class CuratorStore:
         )
         return ProjectStorageUsage(
             project_id=project_id,
-            goal_count=goal_usage["count"],
+            goal_count=record_rows.goals["count"],
             goal_statuses=tuple(
                 GoalStatusStorageUsage(GoalStatus(row["status"]), int(row["count"]))
-                for row in goal_status_rows
+                for row in record_rows.goal_statuses
             ),
-            goal_record_bytes=goal_usage["bytes"],
-            fact_count=fact_usage["count"],
-            fact_record_bytes=fact_usage["bytes"],
-            sde_candidate_count=candidate_usage["count"],
-            sde_record_bytes=candidate_usage["bytes"],
-            sde_correction_count=correction_usage["count"],
-            sde_correction_record_bytes=correction_usage["bytes"],
-            sde_quality_feedback_count=feedback_usage["count"],
-            sde_quality_feedback_record_bytes=feedback_usage["bytes"],
-            audit_receipt_count=receipt_usage["count"],
-            audit_record_bytes=receipt_usage["bytes"],
-            artifact_count=artifact_usage["count"],
-            artifact_record_bytes=artifact_usage["bytes"],
-            event_receipt_count=event_count,
-            event_payload_bytes_received=event_original_bytes,
-            event_payload_bytes_retained=event_retained_bytes,
-            event_classes=event_classes,
-            event_failures=event_failures,
-            global_event_inbox=global_event_inbox,
+            goal_record_bytes=record_rows.goals["bytes"],
+            fact_count=record_rows.facts["count"],
+            fact_record_bytes=record_rows.facts["bytes"],
+            sde_candidate_count=record_rows.candidates["count"],
+            sde_record_bytes=record_rows.candidates["bytes"],
+            sde_correction_count=record_rows.corrections["count"],
+            sde_correction_record_bytes=record_rows.corrections["bytes"],
+            sde_quality_feedback_count=record_rows.feedback["count"],
+            sde_quality_feedback_record_bytes=record_rows.feedback["bytes"],
+            audit_receipt_count=record_rows.receipts["count"],
+            audit_record_bytes=record_rows.receipts["bytes"],
+            artifact_count=record_rows.artifacts["count"],
+            artifact_record_bytes=record_rows.artifacts["bytes"],
+            event_receipt_count=event_summary.event_count,
+            event_payload_bytes_received=event_summary.original_bytes,
+            event_payload_bytes_retained=event_summary.retained_bytes,
+            event_classes=event_summary.event_classes,
+            event_failures=event_summary.failures,
+            global_event_inbox=event_usage_rows.global_capacity,
             logical_record_bytes=logical_bytes,
             staging=None,
             global_database_bytes=database_bytes,
@@ -5879,20 +6102,78 @@ class CuratorStore:
             fact_count_limit=MAX_FACTS_PER_PROJECT,
             fact_record_bytes_limit=MAX_FACT_BYTES_PER_PROJECT,
             fact_capacity_reached=(
-                fact_usage["count"] >= MAX_FACTS_PER_PROJECT
-                or fact_usage["bytes"] >= MAX_FACT_BYTES_PER_PROJECT
+                record_rows.facts["count"] >= MAX_FACTS_PER_PROJECT
+                or record_rows.facts["bytes"] >= MAX_FACT_BYTES_PER_PROJECT
             ),
-            fact_archive_batch_count=archive_usage["batches"],
-            fact_archive_item_count=archive_usage["items"],
-            fact_archive_compressed_bytes=archive_usage["compressed_bytes"],
-            fact_archive_logical_bytes=archive_usage["bytes"],
+            fact_archive_batch_count=record_rows.archives["batches"],
+            fact_archive_item_count=record_rows.archives["items"],
+            fact_archive_compressed_bytes=record_rows.archives["compressed_bytes"],
+            fact_archive_logical_bytes=record_rows.archives["bytes"],
             fact_archive_logical_bytes_limit=MAX_FACT_ARCHIVE_BYTES_PER_PROJECT,
             fact_archive_bytes_remaining=max(
                 0,
                 MAX_FACT_ARCHIVE_BYTES_PER_PROJECT
-                - archive_usage["bytes"],
+                - record_rows.archives["bytes"],
             ),
         )
+
+    def _queue_event_payload_scrub(
+        self, connection: sqlite3.Connection, project_id: str, event_id: str
+    ) -> None:
+        """Persist only a locator for a payload whose WAL remnants need scrubbing."""
+
+        if self.database == ":memory:":
+            return
+        connection.execute(
+            """INSERT INTO event_payload_scrub_queue
+               (project_id, event_id, queued_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(project_id, event_id) DO NOTHING""",
+            (project_id, event_id, utc_now()),
+        )
+
+    @staticmethod
+    def _event_failure_next_attempt_at(
+        attempts: int, failed_at: datetime, discard_payload: bool
+    ) -> str | None:
+        """Calculate the durable exponential retry time for a retained payload."""
+
+        if discard_payload:
+            return None
+        attempt_number = attempts + 1
+        delay_seconds = min(
+            EVENT_RETRY_BASE_SECONDS * (2 ** min(attempt_number - 1, 16)),
+            EVENT_RETRY_MAX_SECONDS,
+        )
+        return (failed_at + timedelta(seconds=delay_seconds)).isoformat(
+            timespec="microseconds"
+        )
+
+    def _raise_event_failure_transition_error(
+        self, project_id: str, event_id: str, lease_owner: str | None
+    ) -> NoReturn:
+        """Classify a failed event update as lost lease or invalid transition."""
+
+        current = self._connection.execute(
+            "SELECT status, lease_owner, lease_expires_at FROM event_inbox "
+            "WHERE project_id = ? AND event_id = ?",
+            (project_id, event_id),
+        ).fetchone()
+        if current is None:
+            raise NotFoundError(f"event not found: {project_id}/{event_id}")
+        expires_at = current["lease_expires_at"]
+        has_live_claim = (
+            current["lease_owner"] is not None
+            and expires_at is not None
+            and expires_at > utc_now()
+        )
+        claim_lost = (lease_owner is None and has_live_claim) or (
+            lease_owner is not None
+            and (current["lease_owner"] != lease_owner or not has_live_claim)
+        )
+        if claim_lost:
+            raise EventClaimError("event claim is missing, expired, or owned elsewhere")
+        raise ConflictError("event is missing or already processed")
 
     def mark_event_failed(
         self,
@@ -5909,6 +6190,17 @@ class CuratorStore:
             raise ValueError("error_code must be 1-128 safe identifier characters")
         failed_at = datetime.now(UTC)
         with self._transaction() as connection:
+            payload_row = connection.execute(
+                "SELECT payload_json FROM event_inbox "
+                "WHERE project_id = ? AND event_id = ?",
+                (project_id, event_id),
+            ).fetchone()
+            if (
+                discard_payload
+                and payload_row is not None
+                and payload_row["payload_json"] is not None
+            ):
+                self._queue_event_payload_scrub(connection, project_id, event_id)
             existing = connection.execute(
                 "SELECT attempts FROM event_inbox WHERE project_id = ? AND event_id = ? "
                 "AND status IN (?, ?)",
@@ -5921,16 +6213,9 @@ class CuratorStore:
             ).fetchone()
             if existing is None:
                 raise ConflictError("event is missing or already processed")
-            next_attempt_at = None
-            if not discard_payload:
-                attempt_number = int(existing["attempts"]) + 1
-                delay_seconds = min(
-                    EVENT_RETRY_BASE_SECONDS * (2 ** min(attempt_number - 1, 16)),
-                    EVENT_RETRY_MAX_SECONDS,
-                )
-                next_attempt_at = (
-                    failed_at + timedelta(seconds=delay_seconds)
-                ).isoformat(timespec="microseconds")
+            next_attempt_at = self._event_failure_next_attempt_at(
+                int(existing["attempts"]), failed_at, discard_payload
+            )
             cursor = connection.execute(
                 """UPDATE event_inbox SET status = ?, last_error = ?,
                    attempts = attempts + 1,
@@ -5958,33 +6243,11 @@ class CuratorStore:
                 ),
             )
             if cursor.rowcount != 1:
-                current = connection.execute(
-                    "SELECT status, lease_owner, lease_expires_at FROM event_inbox "
-                    "WHERE project_id = ? AND event_id = ?",
-                    (project_id, event_id),
-                ).fetchone()
-                if current is None:
-                    raise NotFoundError(f"event not found: {project_id}/{event_id}")
-                expires_at = current["lease_expires_at"]
-                has_live_claim = (
-                    current["lease_owner"] is not None
-                    and expires_at is not None
-                    and expires_at > utc_now()
+                self._raise_event_failure_transition_error(
+                    project_id, event_id, lease_owner
                 )
-                claim_lost = (
-                    lease_owner is None and has_live_claim
-                ) or (
-                    lease_owner is not None
-                    and (
-                        current["lease_owner"] != lease_owner
-                        or not has_live_claim
-                    )
-                )
-                if claim_lost:
-                    raise EventClaimError(
-                        "event claim is missing, expired, or owned elsewhere"
-                    )
-                raise ConflictError("event is missing or already processed")
+        if discard_payload:
+            self.retry_pending_event_payload_scrubs()
         return self.event_receipt(project_id, event_id)
     def mark_event_processed(
         self,
@@ -5997,6 +6260,13 @@ class CuratorStore:
         """Finalize an event and discard its payload, retaining its digest receipt."""
 
         with self._transaction() as connection:
+            payload_row = connection.execute(
+                "SELECT payload_json FROM event_inbox "
+                "WHERE project_id = ? AND event_id = ?",
+                (project_id, event_id),
+            ).fetchone()
+            if payload_row is not None and payload_row["payload_json"] is not None:
+                self._queue_event_payload_scrub(connection, project_id, event_id)
             cursor = connection.execute(
                 """UPDATE event_inbox SET status = ?, payload_json = NULL,
                    processed_at = ?, last_error = NULL, next_attempt_at = NULL,
@@ -6055,6 +6325,7 @@ class CuratorStore:
                             "event claim is missing, expired, or owned elsewhere"
                         )
                     raise ConflictError("event cannot transition to processed")
+        self.retry_pending_event_payload_scrubs()
         return self.event_receipt(project_id, event_id)
 
     def quarantine_event(

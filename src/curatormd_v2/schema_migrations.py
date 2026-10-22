@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 21
+SQLITE_SCHEMA_VERSION = 22
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -501,6 +502,70 @@ def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 21")
 
 
+def migrate_event_payload_scrub_queue_v22(connection: sqlite3.Connection) -> None:
+    """Track WAL truncation needed after transient event payload deletion."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS event_payload_scrub_queue (
+               scrub_id INTEGER PRIMARY KEY,
+               project_id TEXT,
+               event_id TEXT,
+               queued_at TEXT NOT NULL,
+               attempts INTEGER NOT NULL DEFAULT 0,
+               last_error_code TEXT,
+               CHECK ((project_id IS NULL AND event_id IS NULL)
+                   OR (project_id IS NOT NULL AND event_id IS NOT NULL)),
+               UNIQUE(project_id, event_id),
+               FOREIGN KEY(project_id, event_id)
+                   REFERENCES event_inbox(project_id, event_id)
+           )"""
+    )
+    connection.execute(
+        """CREATE INDEX IF NOT EXISTS event_payload_scrub_project
+           ON event_payload_scrub_queue(project_id, scrub_id)"""
+    )
+    has_event_inbox = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'event_inbox'"
+    ).fetchone() is not None
+    if has_event_inbox and connection.execute(
+        "SELECT 1 FROM event_inbox LIMIT 1"
+    ).fetchone() is not None:
+        connection.execute(
+            """INSERT INTO event_payload_scrub_queue
+               (project_id, event_id, queued_at)
+               SELECT NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM event_payload_scrub_queue WHERE project_id IS NULL
+               )"""
+        )
+    connection.execute("PRAGMA user_version = 22")
+
+
+_MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
+    migrate_event_router_v2,
+    migrate_purge_observability_v3,
+    migrate_event_retry_backoff_v4,
+    migrate_event_claim_leases_v5,
+    migrate_purge_retry_backoff_v6,
+    migrate_goal_intake_provenance_v7,
+    migrate_verification_attestations_v8,
+    migrate_artifact_retention_holds_v9,
+    migrate_artifact_hold_release_audit_v10,
+    migrate_durable_project_access_v11,
+    migrate_sde_quality_feedback_v12,
+    migrate_shared_request_limiter_v13,
+    migrate_event_dispositions_v14,
+    migrate_fact_source_events_v15,
+    migrate_content_free_purge_errors_v16,
+    migrate_semantic_event_replay_v17,
+    migrate_sde_proposal_context_v18,
+    migrate_staging_artifact_age_v19,
+    migrate_expiry_purge_receipts_v20,
+    migrate_cleanup_authorizations_v21,
+    migrate_event_payload_scrub_queue_v22,
+)
+
+
 def apply_schema_migrations(
     connection: sqlite3.Connection,
     schema_version: int,
@@ -515,90 +580,16 @@ def apply_schema_migrations(
         )
     if schema_version == SQLITE_SCHEMA_VERSION:
         return
-    if schema_version == 1:
-        migrate_event_router_v2(connection)
-        schema_version = 2
-    if schema_version == 2:
-        migrate_purge_observability_v3(connection)
-        schema_version = 3
-    if schema_version == 3:
-        migrate_event_retry_backoff_v4(connection)
-        schema_version = 4
-    if schema_version == 4:
-        migrate_event_claim_leases_v5(connection)
-        schema_version = 5
-    if schema_version == 5:
-        migrate_purge_retry_backoff_v6(connection)
-        schema_version = 6
-    if schema_version == 6:
-        migrate_goal_intake_provenance_v7(connection)
-        schema_version = 7
-    if schema_version == 7:
-        migrate_verification_attestations_v8(connection)
-        schema_version = 8
-    if schema_version == 8:
-        migrate_artifact_retention_holds_v9(connection)
-        schema_version = 9
-    if schema_version == 9:
-        migrate_artifact_hold_release_audit_v10(connection)
-        schema_version = 10
-    if schema_version == 10:
-        migrate_durable_project_access_v11(connection)
-        schema_version = 11
-    if schema_version == 11:
-        migrate_sde_quality_feedback_v12(connection)
-        schema_version = 12
-    if schema_version == 12:
-        migrate_shared_request_limiter_v13(connection)
-        schema_version = 13
-    if schema_version == 13:
-        migrate_event_dispositions_v14(connection)
-        schema_version = 14
-    if schema_version == 14:
-        migrate_fact_source_events_v15(connection)
-        schema_version = 15
-    if schema_version == 15:
-        migrate_content_free_purge_errors_v16(connection)
-        schema_version = 16
-    if schema_version == 16:
-        migrate_semantic_event_replay_v17(connection)
-        schema_version = 17
-    if schema_version == 17:
-        migrate_sde_proposal_context_v18(connection)
-        schema_version = 18
-    if schema_version == 18:
-        migrate_staging_artifact_age_v19(connection)
-        schema_version = 19
-    if schema_version == 19:
-        migrate_expiry_purge_receipts_v20(connection)
-        schema_version = 20
-    if schema_version == 20:
-        migrate_cleanup_authorizations_v21(connection)
+    if schema_version == 0:
         return
-    if schema_version != 0:
+    if schema_version < 1:
         raise RuntimeError(f"no migration path from database schema version {schema_version}")
+    for migration in _MIGRATION_STEPS[schema_version - 1 :]:
+        migration(connection)
 
 
 def finish_unversioned_migrations(connection: sqlite3.Connection) -> None:
     """Apply ordered upgrades after the unversioned legacy schema reaches v1."""
 
-    migrate_event_router_v2(connection)
-    migrate_purge_observability_v3(connection)
-    migrate_event_retry_backoff_v4(connection)
-    migrate_event_claim_leases_v5(connection)
-    migrate_purge_retry_backoff_v6(connection)
-    migrate_goal_intake_provenance_v7(connection)
-    migrate_verification_attestations_v8(connection)
-    migrate_artifact_retention_holds_v9(connection)
-    migrate_artifact_hold_release_audit_v10(connection)
-    migrate_durable_project_access_v11(connection)
-    migrate_sde_quality_feedback_v12(connection)
-    migrate_shared_request_limiter_v13(connection)
-    migrate_event_dispositions_v14(connection)
-    migrate_fact_source_events_v15(connection)
-    migrate_content_free_purge_errors_v16(connection)
-    migrate_semantic_event_replay_v17(connection)
-    migrate_sde_proposal_context_v18(connection)
-    migrate_staging_artifact_age_v19(connection)
-    migrate_expiry_purge_receipts_v20(connection)
-    migrate_cleanup_authorizations_v21(connection)
+    for migration in _MIGRATION_STEPS:
+        migration(connection)

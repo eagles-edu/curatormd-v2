@@ -54,6 +54,8 @@ def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
 class GitCommitDiffResolver(EvidenceSourceResolver):
     """Resolve only full commit-ID diff references inside one configured repo."""
 
+    # pylint: disable=too-few-public-methods  # One bounded resolve operation is the adapter contract.
+
     def __init__(
         self,
         repository_root: str | Path,
@@ -258,6 +260,8 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
     proves which configured command ran against which commit and hashes its
     bounded combined output; it does not authenticate a CI service or human.
     """
+
+    # pylint: disable=too-few-public-methods  # One bounded resolve operation is the adapter contract.
 
     def __init__(
         self,

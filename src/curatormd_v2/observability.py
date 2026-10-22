@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import TypeAlias
 
 from .events import EventInboxStatus, EventKind
 from .models import (
@@ -16,6 +17,8 @@ from .staging_models import StagingArtifactClass
 _KNOWN_EVENT_TYPES = frozenset(item.value for item in EventKind) | {"legacy.unknown"}
 _KNOWN_EVENT_STATUSES = frozenset(item.value for item in EventInboxStatus)
 _SAFE_GATE_RE = re.compile(r"^[a-zA-Z0-9_.:-]{1,128}$")
+MetricFamilies: TypeAlias = dict[str, tuple[str, list[str]]]
+ProjectLabels: TypeAlias = tuple[tuple[str, str], ...]
 
 
 def _label(value: str) -> str:
@@ -55,17 +58,12 @@ def _metric(
     samples.append(_sample(name, labels, value))
 
 
-def render_project_metrics(
+def _add_health_metrics(
+    families: MetricFamilies,
     health: ProjectHealthSnapshot,
-    usage: ProjectStorageUsage,
-    feedback: SDEQualityFeedbackSummary | None = None,
-) -> str:
-    """Render authorized project metrics; never include text or artifact paths."""
-
-    if health.project_id != usage.project_id:
-        raise ValueError("health and usage snapshots must belong to the same project")
-    project = (("project_id", health.project_id),)
-    families: dict[str, tuple[str, list[str]]] = {}
+    project: ProjectLabels,
+) -> None:
+    """Add the one-hot health state and current open gates."""
     for state in OperationalHealth:
         _metric(
             families,
@@ -84,7 +82,14 @@ def render_project_metrics(
             1,
         )
 
-    queue_metrics = (
+
+def _add_queue_metrics(
+    families: MetricFamilies,
+    health: ProjectHealthSnapshot,
+    project: ProjectLabels,
+) -> None:
+    """Add bounded event, review, purge, and expiry queue counts."""
+    metrics = (
         ("event_queue_received", health.event_received_count, "Received events."),
         ("event_queue_failed", health.event_failed_count, "Failed events."),
         ("event_queue_quarantined", health.event_quarantined_count, "Quarantined events."),
@@ -127,15 +132,16 @@ def render_project_metrics(
             "Pending attended expiry purge artifact targets.",
         ),
     )
-    for suffix, value, help_text in queue_metrics:
-        _metric(
-            families,
-            f"curatormd_{suffix}",
-            help_text,
-            project,
-            value,
-        )
+    for suffix, value, help_text in metrics:
+        _metric(families, f"curatormd_{suffix}", help_text, project, value)
 
+
+def _add_dependency_metrics(
+    families: MetricFamilies,
+    health: ProjectHealthSnapshot,
+    project: ProjectLabels,
+) -> None:
+    """Add observed dependency readiness and age."""
     for dependency in health.dependencies:
         _metric(
             families,
@@ -152,6 +158,13 @@ def render_project_metrics(
             dependency.age_seconds if dependency.age_seconds is not None else -1,
         )
 
+
+def _add_goal_metrics(
+    families: MetricFamilies,
+    usage: ProjectStorageUsage,
+    project: ProjectLabels,
+) -> None:
+    """Add project goal counts by lifecycle state."""
     for item in usage.goal_statuses:
         _metric(
             families,
@@ -161,7 +174,14 @@ def render_project_metrics(
             item.count,
         )
 
-    storage_metrics = (
+
+def _add_storage_metrics(
+    families: MetricFamilies,
+    usage: ProjectStorageUsage,
+    project: ProjectLabels,
+) -> None:
+    """Add bounded permanent-record and event-inbox measurements."""
+    metrics = (
         ("facts", usage.fact_count, "Active compact facts in this project."),
         ("facts_bytes", usage.fact_record_bytes, "UTF-8 bytes in active project facts."),
         (
@@ -212,23 +232,36 @@ def render_project_metrics(
             "Whether the global inbox can accept another event ID.",
         ),
     )
-    for suffix, value, help_text in storage_metrics:
+    for suffix, value, help_text in metrics:
         _metric(families, f"curatormd_{suffix}", help_text, project, value)
 
-    if feedback is not None:
-        if feedback.project_id != health.project_id:
-            raise ValueError("feedback summary must belong to the health project")
-        for label, count in feedback.counts:
-            _metric(
-                families,
-                "curatormd_sde_reviewer_feedback_total",
-                "Explicit human reviewer labels; not model output or ground truth.",
-                project + (("label", label.value),),
-                count,
-            )
 
+def _add_feedback_metrics(
+    families: MetricFamilies,
+    feedback: SDEQualityFeedbackSummary | None,
+    project: ProjectLabels,
+) -> None:
+    """Add explicit human-review labels when a summary is available."""
+    if feedback is None:
+        return
+    for label, count in feedback.counts:
+        _metric(
+            families,
+            "curatormd_sde_reviewer_feedback_total",
+            "Explicit human reviewer labels; not model output or ground truth.",
+            project + (("label", label.value),),
+            count,
+        )
+
+
+def _add_staging_metrics(
+    families: MetricFamilies,
+    usage: ProjectStorageUsage,
+    project: ProjectLabels,
+) -> None:
+    """Add bounded staging totals and fixed-class measurements."""
     staging = usage.staging
-    staging_metrics = (
+    metrics = (
         (
             "staging_project_byte_limit",
             usage.staging_project_byte_limit
@@ -259,16 +292,16 @@ def render_project_metrics(
             "Complete staging inventory: one true, zero false, -1 unavailable.",
         ),
     )
-    for suffix, value, help_text in staging_metrics:
+    for suffix, value, help_text in metrics:
         _metric(families, f"curatormd_{suffix}", help_text, project, value)
 
-    staging_by_class = (
+    usage_by_class = (
         {item.artifact_class: item for item in staging.classes}
         if staging is not None
         else {}
     )
     for artifact_class in StagingArtifactClass:
-        class_usage = staging_by_class.get(artifact_class)
+        class_usage = usage_by_class.get(artifact_class)
         unavailable = -1 if staging is None else 0
         _metric(
             families,
@@ -287,10 +320,15 @@ def render_project_metrics(
             else unavailable,
         )
 
+
+def _add_event_metrics(
+    families: MetricFamilies,
+    usage: ProjectStorageUsage,
+    project: ProjectLabels,
+) -> None:
+    """Add retained event counts and fixed-category current failures."""
     for item in usage.event_classes:
-        event_type = (
-            item.event_type if item.event_type in _KNOWN_EVENT_TYPES else "other"
-        )
+        event_type = item.event_type if item.event_type in _KNOWN_EVENT_TYPES else "other"
         status = item.status if item.status in _KNOWN_EVENT_STATUSES else "other"
         _metric(
             families,
@@ -308,8 +346,35 @@ def render_project_metrics(
             project + (("category", item.category.value),),
             item.count,
         )
+
+
+def _render_families(families: MetricFamilies) -> str:
+    """Render registered metric families in insertion order."""
     lines: list[str] = []
     for name, (help_text, samples) in families.items():
         lines.extend((f"# HELP {name} {help_text}", f"# TYPE {name} gauge"))
         lines.extend(samples)
     return "\n".join(lines) + "\n"
+
+
+def render_project_metrics(
+    health: ProjectHealthSnapshot,
+    usage: ProjectStorageUsage,
+    feedback: SDEQualityFeedbackSummary | None = None,
+) -> str:
+    """Render authorized project metrics; never include text or artifact paths."""
+    if health.project_id != usage.project_id:
+        raise ValueError("health and usage snapshots must belong to the same project")
+    if feedback is not None and feedback.project_id != health.project_id:
+        raise ValueError("feedback summary must belong to the health project")
+    project = (("project_id", health.project_id),)
+    families: MetricFamilies = {}
+    _add_health_metrics(families, health, project)
+    _add_queue_metrics(families, health, project)
+    _add_dependency_metrics(families, health, project)
+    _add_goal_metrics(families, usage, project)
+    _add_storage_metrics(families, usage, project)
+    _add_feedback_metrics(families, feedback, project)
+    _add_staging_metrics(families, usage, project)
+    _add_event_metrics(families, usage, project)
+    return _render_families(families)

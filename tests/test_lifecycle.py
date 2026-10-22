@@ -36,6 +36,7 @@ from curatormd_v2 import (
     SuccessCriterion,
 )
 from curatormd_v2.events import EventEnvelope, FactRecorded, GoalStarted
+from curatormd_v2.reporting import GoalReportPage
 
 
 class TransactionCheckingVerifier:
@@ -793,7 +794,9 @@ class CuratorLifecycleTests(unittest.TestCase):
             "transaction",
             side_effect=AssertionError("read report opened a write transaction"),
         ):
-            report = self.service.goal_report(self.goal.goal_id, fact_limit=1)
+            report = self.service.goal_report(
+                self.goal.goal_id, GoalReportPage(fact_limit=1)
+            )
 
         self.assertIn("## Success criteria", report)
         self.assertIn("## Facts to date (showing 1–1 of", report)
@@ -810,13 +813,15 @@ class CuratorLifecycleTests(unittest.TestCase):
         self.assertNotIn("test-proof:", report)
 
         second_page = self.service.goal_report(
-            self.goal.goal_id, fact_offset=1, fact_limit=3
+            self.goal.goal_id, GoalReportPage(fact_offset=1, fact_limit=3)
         )
         self.assertIn("Verified facts", second_page)
         self.assertIn("Unverified claims or checks", second_page)
         self.assertIn("completion claim", second_page)
         with self.assertRaisesRegex(ValueError, "fact_limit"):
-            self.service.goal_report(self.goal.goal_id, fact_limit=17)
+            self.service.goal_report(
+                self.goal.goal_id, GoalReportPage(fact_limit=17)
+            )
 
     def test_goal_intake_report_preserves_next_action_and_names_open_criteria(self) -> None:
         """Expose the caller's concrete first step without inventing one."""
@@ -950,7 +955,7 @@ class CuratorLifecycleTests(unittest.TestCase):
         ):
             first_page = self.service.goal_report(self.goal.goal_id)
             second_page = self.service.goal_report(
-                self.goal.goal_id, child_offset=32
+                self.goal.goal_id, GoalReportPage(child_offset=32)
             )
 
         self.assertIn("35 child goal(s) remain open overall", first_page)

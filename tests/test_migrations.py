@@ -258,6 +258,50 @@ class SchemaMigrationTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_v21_migration_queues_one_content_free_legacy_wal_scrub(self) -> None:
+        """Schedule one database-wide scrub without copying legacy payloads."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute(
+                """CREATE TABLE event_inbox (
+                       project_id TEXT NOT NULL,
+                       event_id TEXT NOT NULL,
+                       payload_json TEXT,
+                       PRIMARY KEY(project_id, event_id)
+                   )"""
+            )
+            connection.execute(
+                "INSERT INTO event_inbox VALUES (?, ?, ?)",
+                ("project-a", "legacy-event", '{"private":"legacy-canary"}'),
+            )
+            connection.execute("PRAGMA user_version = 21")
+
+            apply_schema_migrations(connection, 21)
+
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                SQLITE_SCHEMA_VERSION,
+            )
+            row = connection.execute(
+                "SELECT project_id, event_id, attempts, last_error_code "
+                "FROM event_payload_scrub_queue"
+            ).fetchone()
+            self.assertEqual(
+                tuple(row),
+                (None, None, 0, None),
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT payload_json FROM event_inbox WHERE event_id = ?",
+                    ("legacy-event",),
+                ).fetchone()[0],
+                '{"private":"legacy-canary"}',
+            )
+        finally:
+            connection.close()
+
     def test_v20_migration_rejects_incompatible_cleanup_authorization_table(self) -> None:
         """Do not stamp v21 over a conflicting object with the expected table name."""
 

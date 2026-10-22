@@ -17,13 +17,10 @@ from .models import (
     EvidenceOutcome,
     EvidenceRef,
     Fact,
-    FactCapacity,
     FactArchiveReceipt,
     FactKind,
     PurgeFailureCode,
     FactCompactionProposal,
-    GoalBullet,
-    GoalBulletCategory,
     GoalBulletProjection,
     GoalCard,
     GoalListPage,
@@ -82,7 +79,11 @@ from .reporting import (
     MAX_GOAL_REPORT_CHILDREN,
     MAX_GOAL_REPORT_RECEIPTS,
     MAX_GOAL_REPORT_SDE_CANDIDATES,
+    GoalReportData,
+    GoalReportPage,
     GoalReportSummary,
+    goal_bullet_projection,
+    open_child_goals,
     render_goal_report,
 )
 from .store import (
@@ -131,6 +132,29 @@ class _PreparedEvent:
     prepared_fact: Fact | None = None
     finish_snapshot: tuple[GoalCard, tuple[Fact, ...], set[str]] | None = None
     expected_finish_revision: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _GoalReportSnapshot:
+    """Goal-local data loaded for one bounded status report."""
+
+    snapshot: GoalSnapshot
+    projection: GoalBulletProjection
+    pending_sde_total: int
+    pending_receipt_total: int
+
+
+@dataclass(frozen=True, slots=True)
+class _GoalReportRelations:
+    """Bounded child/dependency/receipt pages and their exact aggregates."""
+
+    child_total: int
+    children: tuple[GoalCard, ...]
+    open_child_total: int
+    dependencies: tuple[GoalCard, ...]
+    receipt_total: int
+    receipts: tuple[AuditReceipt, ...]
+    purge_status_counts: tuple[tuple[str, int], ...]
 
 
 def _timestamp_age_seconds(
@@ -197,6 +221,59 @@ class CuratorService:
         self.review_authorizer = review_authorizer or RejectUnauthenticatedReview()
         self.project_id = project_id
 
+    def _validate_goal_start_relations(
+        self,
+        parent_goal_id: str | None,
+        depends_on_goal_ids: tuple[str, ...],
+        goal_id: str | None,
+    ) -> None:
+        """Reject invalid parent/dependency links inside the intake transaction."""
+
+        parent_ancestors: set[str] = set()
+        if parent_goal_id is not None:
+            parent = self.store.get_goal(parent_goal_id, self.project_id)
+            if parent.status in {
+                GoalStatus.COMPLETE,
+                GoalStatus.CANCELLED,
+                GoalStatus.SUPERSEDED,
+            }:
+                raise ConflictError("cannot add a child to a terminal goal")
+            ancestor_id = parent.parent_goal_id
+            while ancestor_id is not None:
+                if ancestor_id in parent_ancestors:
+                    raise ConflictError("existing goal hierarchy contains a cycle")
+                parent_ancestors.add(ancestor_id)
+                ancestor_id = self.store.get_goal(
+                    ancestor_id, self.project_id
+                ).parent_goal_id
+        for dependency_id in depends_on_goal_ids:
+            if dependency_id == goal_id:
+                raise ValueError("a goal cannot depend on itself")
+            if dependency_id == parent_goal_id or dependency_id in parent_ancestors:
+                raise ValueError("a child cannot depend on its parent or ancestor")
+            dependency = self.store.get_goal(dependency_id, self.project_id)
+            if dependency.status in {GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}:
+                raise ConflictError(
+                    "cannot depend on a cancelled or superseded goal; "
+                    "reference its active replacement instead"
+                )
+
+    @staticmethod
+    def _normalize_goal_start_status(initial_status: GoalStatus) -> GoalStatus:
+        """Accept only the two valid states for a newly captured goal."""
+
+        parse_failed = False
+        normalized_status: GoalStatus | None = None
+        try:
+            normalized_status = GoalStatus(initial_status)
+        except ValueError:
+            parse_failed = True
+        if parse_failed or normalized_status is None:
+            raise ValueError("initial_status must be planned or active")
+        if normalized_status not in {GoalStatus.PLANNED, GoalStatus.ACTIVE}:
+            raise ValueError("initial_status must be planned or active")
+        return normalized_status
+
     def goal_start(
         self,
         problem: str,
@@ -215,46 +292,11 @@ class CuratorService:
     ) -> GoalCard:
         """Create a goal with an explicit problem and testable success criteria."""
 
-        parse_failed = False
-        normalized_status: GoalStatus | None = None
-        try:
-            normalized_status = GoalStatus(initial_status)
-        except ValueError:
-            parse_failed = True
-        if parse_failed or normalized_status is None:
-            raise ValueError("initial_status must be planned or active")
-        initial_status = normalized_status
-        if initial_status not in {GoalStatus.PLANNED, GoalStatus.ACTIVE}:
-            raise ValueError("initial_status must be planned or active")
+        initial_status = self._normalize_goal_start_status(initial_status)
         with self.store.transaction():
-            parent_ancestors: set[str] = set()
-            if parent_goal_id is not None:
-                parent = self.store.get_goal(parent_goal_id, self.project_id)
-                if parent.status in {
-                    GoalStatus.COMPLETE,
-                    GoalStatus.CANCELLED,
-                    GoalStatus.SUPERSEDED,
-                }:
-                    raise ConflictError("cannot add a child to a terminal goal")
-                ancestor_id = parent.parent_goal_id
-                while ancestor_id is not None:
-                    if ancestor_id in parent_ancestors:
-                        raise ConflictError("existing goal hierarchy contains a cycle")
-                    parent_ancestors.add(ancestor_id)
-                    ancestor_id = self.store.get_goal(
-                        ancestor_id, self.project_id
-                    ).parent_goal_id
-            for dependency_id in depends_on_goal_ids:
-                if dependency_id == goal_id:
-                    raise ValueError("a goal cannot depend on itself")
-                if dependency_id == parent_goal_id or dependency_id in parent_ancestors:
-                    raise ValueError("a child cannot depend on its parent or ancestor")
-                dependency = self.store.get_goal(dependency_id, self.project_id)
-                if dependency.status in {GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}:
-                    raise ConflictError(
-                        "cannot depend on a cancelled or superseded goal; "
-                        "reference its active replacement instead"
-                    )
+            self._validate_goal_start_relations(
+                parent_goal_id, depends_on_goal_ids, goal_id
+            )
             goal = GoalCard(
                 goal_id=goal_id or new_id(),
                 problem=problem,
@@ -488,6 +530,64 @@ class CuratorService:
             "facts kept changing during evidence verification; retry finish"
         )
 
+    @staticmethod
+    def _goal_finish_open_gate_payload(
+        goal_id: str,
+        missing: tuple[SuccessCriterion, ...],
+        open_children: tuple[GoalCard, ...],
+        blocked_dependencies: tuple[GoalCard, ...],
+    ) -> tuple[str, tuple[Fact, ...]]:
+        """Build the bounded next action and exact facts for an open outcome."""
+
+        reasons: list[str] = []
+        facts: list[Fact] = []
+        if missing:
+            descriptions = "; ".join(item.description for item in missing)
+            reasons.append(f"Verify unmet success criteria: {descriptions}")
+            facts.extend(
+                Fact(
+                    goal_id=goal_id,
+                    kind=FactKind.OPEN_GATE,
+                    bullet=(
+                        f"Open: success criterion '{criterion.description}' "
+                        "lacks passing evidence"
+                    ),
+                    criterion_id=criterion.criterion_id,
+                )
+                for criterion in missing
+            )
+        if open_children:
+            child_ids = ", ".join(child.goal_id for child in open_children)
+            reasons.append(f"Finish open child goals: {child_ids}")
+            facts.extend(
+                Fact(
+                    goal_id=goal_id,
+                    kind=FactKind.OPEN_GATE,
+                    bullet=(
+                        f"Open: child goal '{child.goal_id}' remains "
+                        f"{child.status.value}"
+                    ),
+                )
+                for child in open_children
+            )
+        if blocked_dependencies:
+            dependency_ids = ", ".join(
+                dependency.goal_id for dependency in blocked_dependencies
+            )
+            reasons.append(f"Complete dependencies first: {dependency_ids}")
+            facts.extend(
+                Fact(
+                    goal_id=goal_id,
+                    kind=FactKind.OPEN_GATE,
+                    bullet=(
+                        f"Open: dependency '{dependency.goal_id}' remains "
+                        f"{dependency.status.value}"
+                    ),
+                )
+                for dependency in blocked_dependencies
+            )
+        return "; ".join(reasons)[:1000], tuple(facts)
+
     def _goal_finish_in_transaction(
         self,
         goal_id: str,
@@ -528,12 +628,8 @@ class CuratorService:
             for criterion in goal.success_criteria
             if criterion.criterion_id not in verified
         )
-        children = self.store.list_child_goals(goal_id, self.project_id)
-        open_children = tuple(
-            child
-            for child in children
-            if child.status
-            not in {GoalStatus.COMPLETE, GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}
+        open_children = open_child_goals(
+            self.store.list_child_goals(goal_id, self.project_id)
         )
         blocked_dependencies = tuple(
             dependency
@@ -542,55 +638,10 @@ class CuratorService:
             is not GoalStatus.COMPLETE
         )
         if missing or open_children or blocked_dependencies:
-            open_reasons: list[str] = []
-            if missing:
-                descriptions = "; ".join(item.description for item in missing)
-                open_reasons.append(f"Verify unmet success criteria: {descriptions}")
-            if open_children:
-                child_ids = ", ".join(child.goal_id for child in open_children)
-                open_reasons.append(f"Finish open child goals: {child_ids}")
-            if blocked_dependencies:
-                dependency_ids = ", ".join(
-                    dependency.goal_id for dependency in blocked_dependencies
-                )
-                open_reasons.append(f"Complete dependencies first: {dependency_ids}")
-            next_action = "; ".join(open_reasons)[:1000]
-            for criterion in missing:
-                facts.append(
-                    Fact(
-                        goal_id=goal_id,
-                        kind=FactKind.OPEN_GATE,
-                        bullet=(
-                            f"Open: success criterion '{criterion.description}' "
-                            "lacks passing evidence"
-                        ),
-                        criterion_id=criterion.criterion_id,
-                    )
-                )
-            if open_children:
-                for child in open_children:
-                    facts.append(
-                        Fact(
-                            goal_id=goal_id,
-                            kind=FactKind.OPEN_GATE,
-                            bullet=(
-                                f"Open: child goal '{child.goal_id}' remains "
-                                f"{child.status.value}"
-                            ),
-                        )
-                    )
-            if blocked_dependencies:
-                for dependency in blocked_dependencies:
-                    facts.append(
-                        Fact(
-                            goal_id=goal_id,
-                            kind=FactKind.OPEN_GATE,
-                            bullet=(
-                                f"Open: dependency '{dependency.goal_id}' remains "
-                                f"{dependency.status.value}"
-                            ),
-                        ),
-                    )
+            next_action, open_gate_facts = self._goal_finish_open_gate_payload(
+                goal_id, missing, open_children, blocked_dependencies
+            )
+            facts.extend(open_gate_facts)
             facts.append(
                 Fact(
                     goal_id=goal_id,
@@ -868,30 +919,23 @@ class CuratorService:
     def goal_bullet_projection(self, goal_id: str) -> GoalBulletProjection:
         """Build compact bullets with evidence-derived truth labels and open gates."""
 
-        return self._goal_bullet_projection(self.goal_status(goal_id))
+        return goal_bullet_projection(self.goal_status(goal_id))
 
-    def goal_report(
-        self,
-        goal_id: str,
-        *,
-        fact_offset: int = 0,
-        fact_limit: int = 16,
-        child_offset: int = 0,
-        sde_offset: int = 0,
-        receipt_offset: int = 0,
-    ) -> str:
-        """Render one bounded read without holding a write lock during evidence checks."""
+    def _goal_report_snapshot(
+        self, goal_id: str, page: GoalReportPage
+    ) -> _GoalReportSnapshot:
+        """Load goal-local report facts and their bounded review pages."""
 
         goal = self.store.get_goal(goal_id, self.project_id)
         facts = self.store.list_facts(goal_id, self.project_id)
-        criterion_progress = tuple(
+        criteria = tuple(
             self._criterion_progress(goal, criterion, facts)
             for criterion in goal.success_criteria
         )
         pending_sde_total, pending_sdes = self.store.list_sde_candidate_page(
             goal_id,
             self.project_id,
-            sde_offset,
+            page.sde_offset,
             MAX_GOAL_REPORT_SDE_CANDIDATES,
             SDEStatus.PENDING_REVIEW,
         )
@@ -903,69 +947,119 @@ class CuratorService:
             facts=facts,
             sde_candidates=pending_sdes,
             pending_purges=pending_receipts,
-            criteria=criterion_progress,
+            criteria=criteria,
             criteria_history=self.store.list_goal_criteria_versions(
                 goal_id, self.project_id
             ),
             fact_capacity=self.store.goal_fact_capacity(goal_id, self.project_id),
         )
-        projection = self._goal_bullet_projection(snapshot)
+        return _GoalReportSnapshot(
+            snapshot=snapshot,
+            projection=goal_bullet_projection(snapshot),
+            pending_sde_total=pending_sde_total,
+            pending_receipt_total=pending_receipt_total,
+        )
+
+    def _goal_report_relations(
+        self, goal_id: str, goal: GoalCard, page: GoalReportPage
+    ) -> _GoalReportRelations:
+        """Load bounded related-goal and receipt pages with exact totals."""
+
         child_total, children = self.store.list_child_goal_page(
             goal_id,
             self.project_id,
-            child_offset,
+            page.child_offset,
             MAX_GOAL_REPORT_CHILDREN,
         )
         child_status_counts = self.store.child_goal_status_counts(
             goal_id, self.project_id
         )
+        terminal_child_statuses = {
+            GoalStatus.COMPLETE.value,
+            GoalStatus.CANCELLED.value,
+            GoalStatus.SUPERSEDED.value,
+        }
         open_child_total = sum(
             count
             for status, count in child_status_counts.items()
-            if status
-            not in {
-                GoalStatus.COMPLETE.value,
-                GoalStatus.CANCELLED.value,
-                GoalStatus.SUPERSEDED.value,
-            }
+            if status not in terminal_child_statuses
         )
         dependencies = tuple(
             self.store.get_goal(dependency_id, self.project_id)
             for dependency_id in goal.depends_on_goal_ids
         )
         receipt_total, receipts = self.store.receipt_page_for_goal(
-            goal_id, self.project_id, receipt_offset, MAX_GOAL_REPORT_RECEIPTS
+            goal_id,
+            self.project_id,
+            page.receipt_offset,
+            MAX_GOAL_REPORT_RECEIPTS,
         )
         purge_status_counts = self.store.receipt_purge_status_counts(
             goal_id, self.project_id
         )
-        summary = GoalReportSummary(
+        return _GoalReportRelations(
             child_total=child_total,
+            children=children,
             open_child_total=open_child_total,
-            sde_status_counts=tuple(
-                sorted(self.store.sde_candidate_status_counts(goal_id, self.project_id).items())
-            ),
-            pending_sde_total=pending_sde_total,
+            dependencies=dependencies,
             receipt_total=receipt_total,
-            pending_receipt_total=purge_status_counts.get(
-                PurgeStatus.PURGE_PENDING.value, pending_receipt_total
-            ),
+            receipts=receipts,
             purge_status_counts=tuple(sorted(purge_status_counts.items())),
         )
+
+    def _goal_report_summary(
+        self,
+        goal_id: str,
+        local: _GoalReportSnapshot,
+        related: _GoalReportRelations,
+    ) -> GoalReportSummary:
+        """Join SQL aggregates for one bounded report without loading extra pages."""
+
+        pending_total = related.purge_status_counts
+        pending_by_status = dict(pending_total)
+        return GoalReportSummary(
+            child_total=related.child_total,
+            open_child_total=related.open_child_total,
+            sde_status_counts=tuple(
+                sorted(
+                    self.store.sde_candidate_status_counts(
+                        goal_id, self.project_id
+                    ).items()
+                )
+            ),
+            pending_sde_total=local.pending_sde_total,
+            receipt_total=related.receipt_total,
+            pending_receipt_total=pending_by_status.get(
+                PurgeStatus.PURGE_PENDING.value,
+                local.pending_receipt_total,
+            ),
+            purge_status_counts=related.purge_status_counts,
+        )
+
+    def goal_report(
+        self,
+        goal_id: str,
+        page: GoalReportPage | None = None,
+    ) -> str:
+        """Render one bounded read without holding a write lock during evidence checks."""
+        selected_page = page or GoalReportPage()
+        local = self._goal_report_snapshot(goal_id, selected_page)
+        related = self._goal_report_relations(
+            goal_id, local.snapshot.goal, selected_page
+        )
+        summary = self._goal_report_summary(goal_id, local, related)
         intake = self.store.goal_report_context(goal_id, self.project_id)
         return render_goal_report(
-            snapshot,
-            projection,
-            children,
-            dependencies,
-            receipts,
+            GoalReportData(
+                snapshot=local.snapshot,
+                projection=local.projection,
+                children=related.children,
+                dependencies=related.dependencies,
+                receipts=related.receipts,
+            ),
             intake=intake,
             summary=summary,
-            fact_offset=fact_offset,
-            fact_limit=fact_limit,
-            child_offset=child_offset,
-            sde_offset=sde_offset,
-            receipt_offset=receipt_offset,
+            page=selected_page,
         )
 
     def fact_compaction_propose(
@@ -1008,179 +1102,6 @@ class CuratorService:
         return self.store.list_fact_archive_receipts(
             goal_id, self.project_id, offset=offset, limit=limit
         )
-
-    def _goal_bullet_projection(
-        self, snapshot: GoalSnapshot
-    ) -> GoalBulletProjection:
-        """Build the truth-labeled projection for an already read snapshot."""
-
-        verified_fact_ids = {
-            fact_id
-            for criterion in snapshot.criteria
-            if criterion.status is CriterionStatus.VERIFIED
-            for fact_id in criterion.verification_fact_ids
-        }
-        bullets: list[GoalBullet] = [
-            GoalBullet(GoalBulletCategory.PROBLEM, snapshot.goal.problem)
-        ]
-        bullets.extend(self._criterion_bullets(snapshot.criteria))
-        bullets.extend(
-            self._fact_bullet(fact, verified_fact_ids) for fact in snapshot.facts
-        )
-        bullets.extend(self._goal_state_bullets(snapshot.goal))
-        bullets.extend(self._pending_review_bullets(snapshot))
-        bullets.extend(self._pending_purge_bullets(snapshot))
-        if snapshot.fact_capacity is not None:
-            bullets.extend(self._fact_capacity_bullets(snapshot.fact_capacity))
-        if snapshot.goal.next_action:
-            bullets.append(
-                GoalBullet(GoalBulletCategory.NEXT, snapshot.goal.next_action)
-            )
-        return GoalBulletProjection(
-            goal_id=snapshot.goal.goal_id,
-            problem=snapshot.goal.problem,
-            status=snapshot.goal.status,
-            criteria=snapshot.criteria,
-            bullets=tuple(bullets),
-            next_action=snapshot.goal.next_action,
-        )
-
-    @staticmethod
-    def _criterion_bullets(
-        criteria: tuple[CriterionProgress, ...],
-    ) -> list[GoalBullet]:
-        bullets: list[GoalBullet] = []
-        for criterion in criteria:
-            bullets.append(
-                GoalBullet(
-                    GoalBulletCategory.CRITERION,
-                    f"{criterion.criterion_id}: {criterion.status.value} — "
-                    f"{criterion.description}",
-                    criterion_id=criterion.criterion_id,
-                )
-            )
-            if criterion.status is CriterionStatus.OPEN:
-                bullets.append(
-                    GoalBullet(
-                        GoalBulletCategory.OPEN,
-                        "Required criterion remains unverified: "
-                        f"{criterion.criterion_id} — {criterion.description}",
-                        criterion_id=criterion.criterion_id,
-                    )
-                )
-        return bullets
-
-    @staticmethod
-    def _fact_bullet(
-        fact: Fact, verified_fact_ids: set[str]
-    ) -> GoalBullet:
-        text = f"{fact.kind.value.replace('_', ' ').capitalize()}: {fact.bullet}"
-        if fact.kind is FactKind.OPEN_GATE:
-            category = GoalBulletCategory.RECORDED
-            text = f"Prior gate fact: {fact.bullet}"
-        elif fact.kind is FactKind.OUTCOME:
-            category = GoalBulletCategory.RECORDED
-            text = f"Outcome: {fact.bullet}"
-        elif fact.kind is FactKind.COMPLETION_CLAIM:
-            category = GoalBulletCategory.UNVERIFIED
-        elif fact.kind is FactKind.VERIFICATION:
-            category = (
-                GoalBulletCategory.VERIFIED
-                if fact.fact_id in verified_fact_ids
-                else GoalBulletCategory.UNVERIFIED
-            )
-        else:
-            category = GoalBulletCategory.RECORDED
-        return GoalBullet(
-            category,
-            text,
-            fact_id=fact.fact_id,
-            criterion_id=fact.criterion_id,
-            evidence=fact.evidence,
-        )
-
-    @staticmethod
-    def _goal_state_bullets(goal: GoalCard) -> list[GoalBullet]:
-        if goal.status not in (
-            GoalStatus.OPEN,
-            GoalStatus.BLOCKED,
-            GoalStatus.DEFERRED,
-        ):
-            return []
-        status_gate = goal.status.value
-        if goal.next_action:
-            status_gate += f"; next action: {goal.next_action}"
-        return [GoalBullet(GoalBulletCategory.OPEN, status_gate)]
-
-    @staticmethod
-    def _pending_review_bullets(snapshot: GoalSnapshot) -> list[GoalBullet]:
-        bullets = [
-            GoalBullet(
-                GoalBulletCategory.OPEN,
-                f"SDE candidate {candidate.candidate_id} awaits human review",
-            )
-            for candidate in snapshot.sde_candidates
-            if candidate.status is SDEStatus.PENDING_REVIEW
-        ]
-        pending_total = sum(
-            count
-            for status, count in snapshot.sde_candidate_status_counts
-            if status == SDEStatus.PENDING_REVIEW.value
-        )
-        visible_total = len(bullets)
-        if pending_total > visible_total:
-            continuation = (
-                f"; next page: goal_status(sde_offset={snapshot.sde_candidate_next_offset})"
-                if snapshot.sde_candidate_next_offset is not None
-                else ""
-            )
-            bullets.append(
-                GoalBullet(
-                    GoalBulletCategory.OPEN,
-                    f"{pending_total} SDE candidate(s) await review overall; "
-                    f"this page shows {visible_total}{continuation}",
-                )
-            )
-        return bullets
-
-    @staticmethod
-    def _pending_purge_bullets(snapshot: GoalSnapshot) -> list[GoalBullet]:
-        bullets = [
-            GoalBullet(
-                GoalBulletCategory.OPEN,
-                f"Purge receipt {receipt.receipt_id} remains pending",
-            )
-            for receipt in snapshot.pending_purges
-        ]
-        if (
-            snapshot.pending_purge_total is not None
-            and snapshot.pending_purge_total > len(snapshot.pending_purges)
-        ):
-            continuation = (
-                f"; next page: goal_status(purge_offset={snapshot.pending_purge_next_offset})"
-                if snapshot.pending_purge_next_offset is not None
-                else ""
-            )
-            bullets.append(
-                GoalBullet(
-                    GoalBulletCategory.OPEN,
-                    f"{snapshot.pending_purge_total} purge receipt(s) remain pending; "
-                    f"this page shows {len(snapshot.pending_purges)}{continuation}",
-                )
-            )
-        return bullets
-
-    @staticmethod
-    def _fact_capacity_bullets(capacity: FactCapacity) -> list[GoalBullet]:
-        if capacity.append_available:
-            return []
-        return [
-            GoalBullet(
-                GoalBulletCategory.OPEN,
-                capacity.open_gate
-                or "Fact capacity reached; new facts are not being accepted",
-            )
-        ]
 
     @staticmethod
     def _evidence_epoch_cutoff(facts: tuple[Fact, ...]) -> str | None:
