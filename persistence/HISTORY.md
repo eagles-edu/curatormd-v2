@@ -3598,3 +3598,15 @@
 **Open gate:** This closes one progress-log/status sink only. The broader privacy review remains open for historical transcript rows, WAL/recovery, other traces and backups, and provider-side retention. No live gateway or Vhost application workflow was exercised.
 
 **Outcome:** Curator V2 call previews no longer reach the tested Hermes gateway progress log or status projections; the privacy and runtime gates remain open.
+
+## 2026-10-22 — Add bounded local service-probe evidence
+
+**Intent:** Implement the locally testable service-probe source path while preserving the deployment-authentication boundary.
+
+**Changed fact:** `LocalServiceProbeResolver` executes only its host-configured argv for its pinned project/probe ID, bounds runtime to 30 seconds and stdout to 64 KiB, and emits only the stdout digest plus short-lived provenance. It rejects shell-style evidence locators, wrong projects, nonzero exits, empty/oversized output, and timeouts. The resolver's subject is explicitly a local host assertion, not deployment-authenticated service identity.
+
+**Verification:** Four focused service-probe tests pass. Strict Pyright reports zero diagnostics; repository errors-only Pylint, Bandit, and `git diff --check` pass. No full suite was rerun.
+
+**Open gate:** Deployment credentials/trust roots, independent service identity and revocation, and a live service probe remain unverified. The source-specific evidence integration items remain open.
+
+**Outcome:** Curator V2 can locally verify bounded output from an exact host-configured service probe without persisting the output; production trust and runtime are not claimed.

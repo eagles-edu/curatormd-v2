@@ -436,6 +436,16 @@ consumer plugin, Hermes integration, or production deployment.
       (350 tests) pass;
       strict Pyright, errors-only Pylint, Bandit, locked dependency audit, lock
       check, and `git diff --check` pass for the current local tree.
+      Additional local progress (2026-10-22): `LocalServiceProbeResolver`
+      now runs one host-configured argv for one opaque probe ID and project,
+      with no shell interpolation, a 30-second maximum runtime, and a 64 KiB
+      stdout ceiling. It hashes stdout without retaining or exposing it, rejects
+      nonzero/empty/oversized/timed-out runs, and emits a short-lived receipt
+      consumed by the existing `ServiceProbeEvidenceAdapter`. Four focused
+      tests pass; strict Pyright, repository errors-only Pylint, Bandit, and
+      `git diff --check` pass. The configured local subject is a host assertion;
+      service credentials, deployment trust roots, revocation, and live probes
+      remain open, so this does not close either source-integration gate.
 - [x] Bound immutable fact history to 512 facts/512 KiB per goal and 10,000
       facts/16 MiB per project; reject over-limit appends atomically without
       pruning, expose capacity gates in goal/project status, and test count/byte
