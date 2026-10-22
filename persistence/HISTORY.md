@@ -2789,3 +2789,15 @@
 **Open gate:** The Vhost consumer's installed alpha wheel and repository-owned workflow have not yet been updated or reverified against the new approval tool. Hermes profile identity remains `auth=none`; production identity, retention/recovery, deployment, and live-runtime gates remain open. Existing dirty `docs/git-1.md` is preserved; no GPTMD or V1 runtime/repository state was touched.
 
 **Outcome:** The local Curator backend now enforces separate canonicalized cleanup approval; the full Curator V2 goal remains active.
+
+## 2026-10-22 — Show cleanup authorization in canonical goal reports
+
+**Intent:** Make the separate cleanup gate visible in goal reports so `purge_pending` distinguishes unapproved cleanup from approved retry work.
+
+**Changed fact:** Markdown review-receipt projections now state whether cleanup is awaiting a separate human approval, approved, or not required for an empty inventory. Approved receipts show the cleanup reviewer, exact manifest hash, and approval time. The projection still excludes temporary file contents and does not claim a final purge outcome until retry state is reconciled.
+
+**Verification:** The focused Curator V2 MCP SDE/cleanup integration passes, including changed-manifest refusal, authorization projection before deletion, and approved retry. Strict Pyright reports zero diagnostics; `git diff --check` passes.
+
+**Open gate:** The installed Vhost alpha wheel has not yet been updated to use the separate cleanup tool. Hermes authenticated identity, production retention/recovery, deployment, and live-runtime evidence remain open.
+
+**Outcome:** Canonical goal reports now expose cleanup authorization separately from SDE disposition and purge status.

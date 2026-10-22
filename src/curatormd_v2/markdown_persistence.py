@@ -745,6 +745,15 @@ def _render_receipts(
             + f"facts SHA-256 `{receipt.facts_sha256}`; "
             + f"purge `{receipt.purge_status.value}`; "
             + f"inventory complete `{str(receipt.artifact_inventory_complete).lower()}`; "
+            + "cleanup authorization `"
+            + (
+                "approved"
+                if receipt.cleanup_authorized
+                else "awaiting separate human approval"
+                if receipt.artifacts
+                else "not required for empty inventory"
+            )
+            + "`; "
             + f"artifacts `{len(receipt.artifacts)}`"
         )
         if receipt.review_rationale:
