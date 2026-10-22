@@ -155,8 +155,9 @@ flowchart TB
 - `goal.start`, `goal.fact`, `goal.finish`, `goal.defer`, `goal.status`,
   `goal.reopen`, `goal.criteria_amended`
 - `sde.assess`, `sde.confirm`, `artifact.purge_status`
-- `artifact.purge_approve` (proposed; human approval bound to a complete,
-  exact inventory and recorded separately from SDE disposition)
+- `artifact.cleanup_approve` (implemented as `artifact_cleanup_approve` in the
+  API/MCP surface; human approval is bound to a complete exact inventory and
+  recorded separately from SDE disposition)
 - `steward.inventory`, `steward.propose_cleanup`, `steward.execute_cleanup`
 
 Tests must prove that:
@@ -535,10 +536,11 @@ consumer plugin, Hermes integration, or production deployment.
       bound to the current Linux UID; the `renew-ssl-coding` Hermes profile has
       no authenticated human subject and remains unable to review or purge.
       A disposable end-to-end CLI test now exercises its actual grant ledger,
-      pending SDE, exact staged inventory, canonical write, and purge. This
-      is evidence of the current direct SDE-to-purge path, not the separate
-      cleanup-approval gate required by this contract; it also does not close
-      the Hermes identity gate.
+      pending SDE, exact staged inventory, canonical write, and purge. Schema
+      v21 now requires a distinct cleanup approval bound to the complete exact
+      manifest and canonical projection proof before deletion; focused lifecycle
+      and MCP regressions cover missing, mismatched, stale, and approved cleanup.
+      It does not close the Hermes identity gate.
       Additional verification (2026-10-22): the current Codex client attempted
       the read-only Curator V2 `goal_list` tool without Hermes profile context;
       the server returned `unauthenticated` / trusted Hermes context required,
@@ -614,9 +616,9 @@ consumer plugin, Hermes integration, or production deployment.
       content canary is absent from Markdown. The current full V2 suite passes
       336 tests; strict Pyright, errors-only Pylint, Bandit, locked dependency
       audit, and `git diff --check` pass. This remains local synthetic-reviewer
-      evidence of the current SDE-to-purge behavior, not evidence of the
-      separately approved cleanup gate required by this contract, production
-      purge scheduling, or retention approval.
+      evidence of canonical persistence, held-artifact exclusion, and purge
+      recovery. The separate cleanup-approval gate is implemented; production
+      purge scheduling and retention approval remain open.
 - [x] Implement inventory discovery in each staging adapter and prove it
       accounts for every temporary artifact class (raw chat, cue, import, scratch,
       generated intermediate, and duplicate). Progress (2026-10-18): the
@@ -1313,8 +1315,8 @@ consumer plugin, Hermes integration, or production deployment.
       This local-alpha checklist item is complete: it covers goal-scoped bounded
       staging, full fail-closed inventory, separate canonical facts, an attended
       exact-inventory approval for expiry, and durable purge receipts with retry
-      status. That expiry approval does not gate the current SDE-confirm purge
-      path; the separate approval requirement for that path remains open.
+      status. SDE-related cleanup separately requires the schema-v21 approval,
+      bound to the complete exact manifest and canonical projection proof.
       Real source-producer wiring and network-filesystem locking remain open in
       their respective integration work. Production retention policy, scheduler
       deployment, and Hermes-authenticated reviewer identity remain separate
