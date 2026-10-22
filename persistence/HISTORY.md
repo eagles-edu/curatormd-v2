@@ -2,6 +2,18 @@
 
 ## 2026-10-22
 
+- **Intent:** Verify the next locally testable Curator V2 domain-slice criteria.
+  **Changed fact:** No runtime behavior or delivery checklist status changed.
+  **Verification:** The focused bounds, validation, schema/privacy, concurrency,
+  event, lifecycle, property, and migration modules pass 146 tests, including
+  generated lifecycle/parent sequences and v20-to-v21 cleanup-authorization
+  migration checks. Strict Pyright, errors-only Pylint, Bandit, and
+  `git diff --check` were already verified on this worktree in the prior
+  quality checkpoint; the full suite was not rerun.
+  **Open gate:** Slice B remains open for broader transition/privacy coverage
+  and production migration support. Deployment, verified human identity,
+  production retention/recovery, and live-runtime evidence remain open.
+  **Outcome:** Strengthened the local evidence for slice B without closing it.
 - **Intent:** Reconcile the published Curator V2 checklist snapshot with its
   declared delivery-row scope.
   **Changed fact:** The snapshot now reports 137 of 175 delivery rows complete
