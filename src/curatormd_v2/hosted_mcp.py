@@ -23,6 +23,7 @@ from mcp.server import MCPServer
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .evidence import EvidenceVerifier
+from .local_evidence_config import load_local_service_probe_verifier
 from .mcp_server import build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
@@ -36,6 +37,23 @@ from .store import CuratorStore
 
 _PROFILE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+
+
+def validate_host_evidence_config_path(
+    path: str | Path, project_root: Path
+) -> Path:
+    """Reject local evidence config paths that resolve inside a consumer repo."""
+
+    selected = Path(path).expanduser()
+    if not selected.is_absolute():
+        raise ValueError("host evidence config must use an absolute path")
+    try:
+        resolved = selected.resolve(strict=False)
+    except (OSError, RuntimeError):
+        raise ValueError("host evidence config path is invalid") from None
+    if resolved == project_root or project_root in resolved.parents:
+        raise ValueError("host evidence config must be outside the consumer repository")
+    return selected
 
 
 @dataclass(slots=True)
@@ -54,6 +72,7 @@ class LocalProfileMCP:
         self.store.close()
 
 
+# pylint: disable=too-many-arguments,too-many-locals
 def build_local_profile_mcp(
     *,
     project_root: str | Path,
@@ -63,6 +82,7 @@ def build_local_profile_mcp(
     allow_write: bool = False,
     allow_review: bool = False,
     evidence_verifier: EvidenceVerifier | None = None,
+    evidence_config: str | Path | None = None,
 ) -> LocalProfileMCP:
     """Bind one local profile to the project declared by its repo config.
 
@@ -73,7 +93,9 @@ def build_local_profile_mcp(
     project. The repository-owned config is validated by ``ProjectConfig.load``
     before any plugin is bound. A supplied verifier must be built from
     host-owned trust configuration, never the consumer repository config.
-    Omitting it preserves the reject-all evidence default.
+    ``evidence_config`` loads one owner-only local service probe from a
+    separate host file. Supplying both forms is rejected. Omitting both
+    preserves the reject-all evidence default.
     """
 
     if not _PROFILE_ID_RE.fullmatch(profile_id):
@@ -86,6 +108,17 @@ def build_local_profile_mcp(
         raise ValueError("database must be an absolute path")
 
     config = ProjectConfig.load(project_root)
+    if evidence_verifier is not None and evidence_config is not None:
+        raise ValueError("supply either a host verifier or host evidence config")
+    selected_evidence_verifier = evidence_verifier
+    if evidence_config is not None:
+        host_evidence_path = validate_host_evidence_config_path(
+            evidence_config, config.project_root
+        )
+        selected_evidence_verifier = load_local_service_probe_verifier(
+            host_evidence_path,
+            project_id=config.project_id,
+        )
     store = CuratorStore(database_path)
     try:
         caller = AuthenticatedCaller(profile_id)
@@ -115,7 +148,7 @@ def build_local_profile_mcp(
         api = AuthenticatedCuratorAPI(
             {
                 config.project_id: ProjectPlugin.bind(
-                    config, store, evidence_verifier=evidence_verifier
+                    config, store, evidence_verifier=selected_evidence_verifier
                 )
             },
             authorizer=authorizer,
@@ -148,6 +181,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--source-id")
     parser.add_argument(
+        "--evidence-config",
+        type=Path,
+        help="owner-only host evidence config; never read from consumer repository",
+    )
+    parser.add_argument(
         "--allow-write",
         action="store_true",
         help="allow writes only when this profile has an exact durable write grant",
@@ -172,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
             source_id=args.source_id,
             allow_write=args.allow_write,
             allow_review=args.allow_review,
+            evidence_config=args.evidence_config,
         )
     except Exception:  # pylint: disable=broad-exception-caught  # Keep startup errors private.
         print(

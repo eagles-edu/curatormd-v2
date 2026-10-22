@@ -52,6 +52,7 @@ from .events import (
 )
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
 from .service_evidence import LocalServiceProbeResolver, LocalServiceProbeSpec
+from .local_evidence_config import load_local_service_probe_verifier
 from .errors import APIError, APIErrorCode, to_api_error
 from .models import (
     ArtifactRef,
@@ -216,6 +217,7 @@ __all__ = [
     "HumanObservationEvidenceAdapter",
     "LocalServiceProbeResolver",
     "LocalServiceProbeSpec",
+    "load_local_service_probe_verifier",
     "EVENT_SCHEMA_VERSION",
     "EventEnvelope",
     "EventClassStorageUsage",

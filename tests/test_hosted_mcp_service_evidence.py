@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -13,28 +14,24 @@ from project_fixtures import create_consumer_repo
 from curatormd_v2 import (
     AuthenticatedCaller,
     CuratorStore,
-    EvidenceAdapterPolicy,
     EvidenceOutcome,
     EvidenceRef,
     EventEnvelope,
     FactKind,
     FactRecorded,
     GoalStarted,
-    LocalServiceProbeResolver,
-    LocalServiceProbeSpec,
     ProjectAccessManager,
     ProjectAction,
     ProjectAdministrationAction,
     ProjectConfig,
     ProjectRegistrationRequest,
-    ServiceProbeEvidenceAdapter,
     SuccessCriterion,
     hosted_mcp,
 )
 from curatormd_v2.models import CriterionStatus
 
 
-class _TestProjectAdmin:
+class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
     """Provision only the disposable project and grants used by this test."""
 
     def authorize_project_administration(
@@ -43,6 +40,8 @@ class _TestProjectAdmin:
         project_id: str,
         action: ProjectAdministrationAction,
     ) -> bool:
+        """Allow registration and grants only for the disposable test actor."""
+
         del project_id
         return caller.subject_id == "test-operator" and action in {
             ProjectAdministrationAction.REGISTER,
@@ -50,10 +49,15 @@ class _TestProjectAdmin:
         }
 
 
-class HostedServiceEvidenceTests(unittest.TestCase):
+class HostedServiceEvidenceTests(
+    unittest.TestCase
+):  # pylint: disable=too-few-public-methods
     """A host-owned resolver can verify a project fact without repo config."""
 
-    def test_profile_builder_injects_host_verifier_into_event_processing(self) -> None:
+# pylint: disable=too-many-locals
+    def test_profile_builder_injects_host_verifier_into_event_processing(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             create_consumer_repo(root)
@@ -105,38 +109,36 @@ class HostedServiceEvidenceTests(unittest.TestCase):
             finally:
                 store.close()
 
-            resolver = LocalServiceProbeResolver(
-                LocalServiceProbeSpec(
-                    project_id="probe-project",
-                    probe_id="readiness",
-                    source_subject="local-probe:test-host",
-                    command=(sys.executable, "-c", "print('healthy')"),
-                    working_directory=root,
-                )
+            host_config = Path(temporary) / "host-evidence.json"
+            host_config.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "project_id": "probe-project",
+                        "probe": {
+                            "adapter_id": "local-readiness",
+                            "probe_id": "readiness",
+                            "source_subject": "local-probe:test-host",
+                            "command": [sys.executable, "-c", "print('healthy')"],
+                            "working_directory": str(root),
+                        },
+                    }
+                ),
+                encoding="utf-8",
             )
+            host_config.chmod(0o600)
             initial = EvidenceRef(
                 "service_probe",
                 "service-probe:readiness",
                 hashlib.sha256(b"healthy\n").hexdigest(),
                 EvidenceOutcome.PASSED,
             )
-            adapter = ServiceProbeEvidenceAdapter(
-                adapter_id="local-readiness",
-                scope_id=resolver.spec.scope_id,
-                resolver=resolver,
-                policy=EvidenceAdapterPolicy(
-                    allowed_projects={"probe-project"},
-                    allowed_subjects={"local-probe:test-host"},
-                    max_observation_age_seconds=30,
-                    max_validity_seconds=30,
-                ),
-            )
             runtime = hosted_mcp.build_local_profile_mcp(
                 project_root=root,
                 database=database,
                 profile_id="profile-a",
                 allow_write=True,
-                evidence_verifier=adapter,
+                evidence_config=host_config,
             )
             try:
                 started = EventEnvelope(

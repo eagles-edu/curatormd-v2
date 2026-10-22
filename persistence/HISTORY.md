@@ -3622,3 +3622,15 @@
 **Open gate:** The production CLI remains reject-all absent a separately implemented host-owned probe configuration; the installed Vhost profile was not changed. This test does not establish service authentication, a live probe, deployment identity, or runtime readiness.
 
 **Outcome:** The host factory now exposes a tested trust-injection seam while preserving consumer-config isolation and the fail-closed default.
+
+## 2026-10-22 — Add owner-only local probe config loading
+
+**Intent:** Make the host-injected local service probe selectable by the stdio launcher without storing trust configuration in a consumer repository.
+
+**Changed fact:** The launcher accepts optional `--evidence-config` and loads one strict project-bound service-probe definition from a separate owner-only file. It opens without following a final symlink, checks OS ownership, mode, regular-file type, hardlink count, and a 16 KiB limit; rejects duplicate JSON keys and unknown fields; and binds the probe to the project's exact ID. Missing config still uses reject-all verification.
+
+**Verification:** The profile-builder event integration now loads the host config from outside the disposable consumer repo and verifies a criterion. Six config-security tests and five service-resolver/integration tests pass; strict Pyright, targeted warning-level Pylint, repository errors-only Pylint, Bandit, and `git diff --check` pass.
+
+**Open gate:** No host config was installed into the `renew-ssl-coding` Hermes profile. `local-probe:` is an OS-account assertion only; service credentials, remote identity/revocation, production trust roots, deployment, and live Vhost behavior remain unverified.
+
+**Outcome:** Local service-probe verification is now reachable through the profile-bound stdio launcher when an operator supplies a private host config; absence remains fail-closed.

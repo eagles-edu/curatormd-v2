@@ -455,6 +455,18 @@ consumer plugin, Hermes integration, or production deployment.
       launcher CLI and installed Vhost profile remain reject-all until a
       separate host-owned probe configuration is provided; no service or
       deployment credentials are configured here.
+      Local CLI wiring (2026-10-22): `--evidence-config` now accepts the
+      separate host-owned schema documented in
+      [`local-service-probes.md`](local-service-probes.md). The loader rejects
+      final-component symlinks, wrong ownership, group/world access, hardlinks,
+      oversized or
+      duplicate-key JSON, unknown schema fields, and a project ID different
+      from the bound consumer. A disposable profile-builder event test uses
+      this file to verify a criterion. The launcher remains reject-all unless
+      this separate host-owned file is supplied; no host file was installed in
+      the Vhost profile. Six config-security tests and five
+      service-resolver/integration tests pass; credentials, remote trust, and
+      live service evidence remain open.
 - [x] Bound immutable fact history to 512 facts/512 KiB per goal and 10,000
       facts/16 MiB per project; reject over-limit appends atomically without
       pruning, expose capacity gates in goal/project status, and test count/byte
