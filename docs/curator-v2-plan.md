@@ -1876,7 +1876,14 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       bounded excerpts. This is local source/test evidence only. Other Hermes
       logging paths, traces, backups, replay/trajectory content, and the wider
       source-to-sink review remain open, so this privacy checklist item stays
-      unchecked.
+      unchecked. Further follow-up (2026-10-22): Hermes spillover now preserves
+      the Curator V2 tool identity through direct result persistence and aggregate
+      turn-budget enforcement. Oversized Curator V2 results are truncated inline
+      with an explicit no-archive marker; the full result is not written to Hermes
+      spillover or sandbox temp files. Three focused regressions cover direct,
+      aggregate string, and aggregate multimodal-text paths. This closes those
+      Hermes spillover paths only; broader logging, traces, old transcript rows,
+      WAL/recovery, other backup paths, and provider retention remain open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth.
 - [x] Add dependency, static-analysis, type, and security checks to CI with

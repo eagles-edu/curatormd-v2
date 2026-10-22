@@ -2881,3 +2881,15 @@
 **Open gate:** Live root-account activation, measured live host/service attribution, authenticated approver identity, cross-process supervision, and production recovery remain open. Direct Curator MCP access remains unauthenticated in this Codex session; no goal-ledger mutation is claimed.
 
 **Outcome:** Two locally evidenced delivery checklist items are closed; deployment, identity, and live-runtime gates remain open.
+
+## 2026-10-22 — Prevent Hermes spillover of Curator V2 results
+
+**Intent:** Close a local Hermes persistence path that could archive oversized Curator V2 tool output outside the V2 ledger.
+
+**Changed fact:** Hermes now truncates oversized Curator V2 tool results inline rather than writing them to profile spillover or sandbox temp files. Aggregate turn-budget enforcement preserves each tool message's identity for the same policy, including multimodal text parts. Other tools keep their existing spillover behavior.
+
+**Verification:** Three focused Hermes regressions pass for direct results, aggregate string results, and aggregate multimodal text. Targeted Ruff passes for the changed source and regression file; Hermes `git diff --check` passes.
+
+**Open gate:** The broader V2 privacy item remains open for other logging and exception paths, traces, old transcript rows, WAL/recovery, other backup paths, and provider-side retention. Direct Curator MCP access remains unauthenticated from this Codex session.
+
+**Outcome:** Oversized Curator V2 results no longer spill into Hermes files on the covered paths; no deployment or live-runtime claim is made.
