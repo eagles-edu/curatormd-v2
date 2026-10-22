@@ -2257,6 +2257,16 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       All 44 project-plugin tests pass; strict Pyright and errors-only Pylint
       pass for the changed source and test modules. Other source-to-sink paths
       remain open, so this does not close the privacy item.
+      Hermes trace-export follow-up (2026-10-22): Curator V2 MCP tool arguments
+      and results are now replaced with fixed markers before local or uploaded
+      trace rendering, even when `--no-redact` disables generic secret
+      redaction. A regression confirms both canaries are absent while the tool
+      name/call association and ordinary non-Curator content remain available.
+      The full trace-export test file passes seven tests (one optional-upload
+      test skipped), Hermes `scripts/check` passes all 12 checks, and
+      `git diff --check` passes. This covers the trace converter sink only;
+      historical rows, WAL/recovery, other backup paths, provider retention,
+      and the wider source-to-sink review remain open.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth. The local-alpha
       72-hour maximum and prompt post-record/disposition expiry are implemented;

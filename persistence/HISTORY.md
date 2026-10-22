@@ -4063,3 +4063,15 @@
 **Open gate:** The full Curator suite and repository-wide warning-level Pylint inventory were not rerun. Production scheduler, deployment, authenticated identity, retention-policy ownership, alerts, and live-runtime evidence remain open.
 
 **Outcome:** Purge result handling is divided into smaller auditable phases without changing deletion authority or `purge_pending` semantics; no checklist item was closed.
+
+## 2026-10-22 — Omit Curator V2 content from Hermes trace exports
+
+**Intent:** Keep Curator V2 tool payloads out of Hermes local and uploaded trace exports, including when the user disables generic secret redaction.
+
+**Changed fact:** Hermes trace conversion now preserves the Curator V2 tool name and call association but replaces its arguments and result with fixed markers. Non-Curator tool content continues to follow the existing `redact` choice. The trace CLI help and user guide describe this exception.
+
+**Verification:** The focused trace-export test file passes seven tests with one optional-upload test skipped; Hermes `python3 scripts/check` passes all 12 checks; both repositories pass `git diff --check`.
+
+**Open gate:** This covers the trace converter only. Historical transcript rows, WAL/recovery, remaining backup paths, provider retention, and the broad source-to-sink privacy review remain open; no checklist item was closed.
+
+**Outcome:** The dedicated trace-export sink no longer serializes Curator V2 arguments or results, independent of the generic secret-redaction option.
