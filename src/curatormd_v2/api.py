@@ -368,13 +368,24 @@ class AuthenticatedCuratorAPI:
         if normally_authorized:
             if not self.limiter.allow(caller.subject_id, project_id):
                 raise RateLimitExceeded("project request budget exceeded")
-        elif not plugin.service.store.consumer_drain_allows(
-            caller.subject_id, caller.profile_id, event
-        ):
-            raise PermissionError("project is not authorized")
         else:
             if not self.limiter.allow(caller.subject_id, project_id):
                 raise RateLimitExceeded("project request budget exceeded")
+            replay_receipt = (
+                plugin.service.store.reconcile_suspended_processed_event(
+                    event,
+                    caller.subject_id,
+                    plugin.config.repository_fingerprint,
+                    plugin.config.config_sha256,
+                    plugin.config.backend_api_version,
+                )
+            )
+            if replay_receipt is not None:
+                return replay_receipt
+            if not plugin.service.store.consumer_drain_allows(
+                caller.subject_id, caller.profile_id, event
+            ):
+                raise PermissionError("project is not authorized")
         registration = plugin.service.store.get_project_registration(project_id)
         with plugin.project_effect_lock():
             with plugin.service.store.project_revision_fence(
@@ -411,11 +422,24 @@ class AuthenticatedCuratorAPI:
             raise PermissionError("project is not authorized")
         binding = plugin.service.store.get_consumer_binding(project_id)
         if binding.status == "active":
-            if not self.authorizer.authorize(caller, project_id, ProjectAction.WRITE):
-                raise PermissionError("project is not authorized")
             if not self.limiter.allow(caller.subject_id, project_id):
                 raise RateLimitExceeded("project request budget exceeded")
-            return binding.source_epoch
+            if self.authorizer.authorize(caller, project_id, ProjectAction.WRITE):
+                return binding.source_epoch
+            if event_id is not None:
+                replay_epoch = (
+                    plugin.service.store.suspended_processed_event_source_epoch(
+                        caller.subject_id,
+                        project_id,
+                        event_id,
+                        plugin.config.repository_fingerprint,
+                        plugin.config.config_sha256,
+                        plugin.config.backend_api_version,
+                    )
+                )
+                if replay_epoch is not None:
+                    return replay_epoch
+            raise PermissionError("project is not authorized")
         if binding.status == "deregistration_pending" and event_id is not None:
             drain_epoch = plugin.service.store.consumer_drain_epoch(
                 project_id, caller.subject_id, caller.profile_id, event_id

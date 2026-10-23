@@ -466,6 +466,8 @@ class ProjectPlugin:
         later changes; the store still rejects changed payload reuse.
         """
 
+        if event.project_id != self.config.project_id:
+            raise PermissionError("event project does not match this plugin")
         with self._locked_staging_root():
             expected_revision = self._capture_active_project_revision()
             token = (

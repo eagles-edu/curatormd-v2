@@ -5027,3 +5027,15 @@
 **Open gate:** This closes receipt identity validation only. It does not close the race between a Curator response and Hermes' SQLite outbox update, nor the deployment identity, source-epoch/binding revision, or production lifecycle gates.
 
 **Outcome:** Hermes no longer acknowledges a lifecycle outbox event based on a processed receipt for a different project or event.
+
+## 2026-10-24 — Reconcile an exact processed event after suspension
+
+**Intent:** Recover the lost-response case where Curator committed an event but the Hermes outbox did not receive the response before project suspension.
+
+**Changed fact:** A suspended project can return a receipt for an already processed event only when the active binding and exact repository/config fingerprints still match and the caller retains an unrevoked project write grant. Curator compares the full serialized envelope digest, source ID, and source sequence before returning the receipt. The corresponding source-epoch lookup is available only for an already processed event. Unprocessed IDs, changed payloads, revoked grants, and changed bindings remain denied. This is a read-only receipt reconciliation; it cannot apply a new event while suspended.
+
+**Verification:** The focused hosted-MCP, project-access, and Hermes-hook suites pass (22 tests). Strict Pyright reports zero diagnostics; errors-only Pylint passes; Bandit exits successfully; `git diff --check` passes. The regression commits an event, suspends the project, recovers the exact receipt, and rejects an unprocessed ID and changed payload.
+
+**Open gate:** This addresses response loss after suspension only. Reconciliation after deregistration or retirement, consumer-binding revision races, broader source-acknowledgement/unlink failure injection, authenticated deployment identity, and production lifecycle acceptance remain open.
+
+**Outcome:** A previously committed event can free its Hermes outbox entry after suspension without reopening project writes or accepting changed content.

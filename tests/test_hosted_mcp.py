@@ -682,7 +682,12 @@ class HostedMcpTests(unittest.TestCase):
                             "bound-project",
                             event.to_json(),
                         )
-                        self.assertTrue(entered_effect.wait(timeout=5))
+                        self.assertTrue(
+                            entered_effect.wait(timeout=5),
+                            str(write_future.exception(timeout=0))
+                            if write_future.done()
+                            else "event worker did not reach its durable commit",
+                        )
 
                         def suspend_after_effect_admission():
                             status_started.set()
@@ -712,6 +717,34 @@ class HostedMcpTests(unittest.TestCase):
                 self.assertEqual(transition.receipt.action, "suspended")
                 self.assertEqual(transition.receipt.revision, 2)
                 self.assertEqual(transition.registration.status, "suspended")
+                self.assertEqual(
+                    runtime.api.consumer_source_epoch(
+                        runtime.caller, "bound-project", event.event_id
+                    ),
+                    1,
+                )
+                with self.assertRaisesRegex(PermissionError, "not authorized"):
+                    runtime.api.consumer_source_epoch(
+                        runtime.caller, "bound-project", "unprocessed-event"
+                    )
+                replayed_receipt = runtime.api.process_event_json(
+                    runtime.caller, "bound-project", event.to_json()
+                )
+                self.assertEqual(replayed_receipt, receipt)
+
+                changed_event = EventEnvelope(
+                    event.event_id,
+                    event.project_id,
+                    GoalStarted(
+                        "fenced-goal",
+                        "Changed event payload must not reuse the processed receipt",
+                        (SuccessCriterion("recorded", "The event payload changed"),),
+                    ),
+                )
+                with self.assertRaisesRegex(PermissionError, "not authorized"):
+                    runtime.api.process_event_json(
+                        runtime.caller, "bound-project", changed_event.to_json()
+                    )
             finally:
                 release_effect.set()
                 runtime.close()

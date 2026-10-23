@@ -5840,6 +5840,17 @@ substitute for evidence at a later integration boundary.
       pending for retry. Focused Curator hook integration tests pass. This
       closes wrong-receipt acknowledgment, not a cutover race between Curator's
       durable reply and Hermes' local outbox update; that race remains open.
+      Additional local progress (2026-10-24): a lost response after event
+      commit can now be reconciled after project suspension. The retry receives
+      a source epoch only when that event already has a processed receipt, and
+      Curator returns it only when the full envelope hash, source, and sequence
+      match under the unchanged config, active binding, and unrevoked write
+      grant. An unprocessed ID or changed payload remains denied. The focused
+      hosted-MCP and access suites pass (22 tests), with strict Pyright,
+      errors-only Pylint, Bandit, and `git diff --check` passing. This covers
+      suspended-project response loss only; deregistered/retired sources,
+      consumer-binding revision races, other unlink points, and deployed
+      evidence remain open.
 - [ ] **F. Integrate one real consumer plugin:** install repository-local config
       and adapter in a pilot repo; prove checklist source mapping, scoped evidence,
       canonical bullet persistence, full artifact inventory, and independent

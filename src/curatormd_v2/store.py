@@ -8109,6 +8109,99 @@ class CuratorStore:
             raise NotFoundError(f"event not found: {project_id}/{event_id}")
         return self._event_receipt(row)
 
+    def reconcile_suspended_processed_event(
+        self,
+        event: EventEnvelope,
+        subject_id: str,
+        repository_fingerprint: str,
+        config_sha256: str,
+        backend_api_version: int,
+    ) -> EventInboxReceipt | None:
+        """Permit only an exact processed-event ack retry after suspension."""
+
+        payload_digest = hashlib.sha256(event.to_json().encode("utf-8")).hexdigest()
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT item.* FROM event_inbox AS item
+                   JOIN project_registry AS project
+                     ON project.project_id = item.project_id
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = item.project_id
+                   JOIN project_grants AS grant_row
+                     ON grant_row.project_id = item.project_id
+                    AND grant_row.subject_id = ? AND grant_row.action = 'write'
+                   LEFT JOIN project_grant_revocations AS revocation
+                     ON revocation.grant_id = grant_row.grant_id
+                   WHERE item.project_id = ? AND item.event_id = ?
+                     AND project.status = 'suspended'
+                     AND project.repository_fingerprint = ?
+                     AND project.config_sha256 = ?
+                     AND project.backend_api_version = ?
+                     AND binding.status = 'active'
+                     AND revocation.grant_id IS NULL
+                   ORDER BY grant_row.granted_at DESC LIMIT 1""",
+                (
+                    subject_id,
+                    event.project_id,
+                    event.event_id,
+                    repository_fingerprint,
+                    config_sha256,
+                    backend_api_version,
+                ),
+            ).fetchone()
+        if (
+            row is None
+            or row["status"] != EventInboxStatus.PROCESSED.value
+            or row["payload_sha256"] != payload_digest
+            or row["source_id"] != event.source_id
+            or row["source_sequence"] != event.source_sequence
+        ):
+            return None
+        return self._event_receipt(row)
+
+    def suspended_processed_event_source_epoch(
+        self,
+        subject_id: str,
+        project_id: str,
+        event_id: str,
+        repository_fingerprint: str,
+        config_sha256: str,
+        backend_api_version: int,
+    ) -> int | None:
+        """Return the epoch only for a processed receipt under suspended state."""
+
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT binding.source_epoch FROM event_inbox AS item
+                   JOIN project_registry AS project
+                     ON project.project_id = item.project_id
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = item.project_id
+                   JOIN project_grants AS grant_row
+                     ON grant_row.project_id = item.project_id
+                    AND grant_row.subject_id = ? AND grant_row.action = 'write'
+                   LEFT JOIN project_grant_revocations AS revocation
+                     ON revocation.grant_id = grant_row.grant_id
+                   WHERE item.project_id = ? AND item.event_id = ?
+                     AND item.status = 'processed'
+                     AND project.status = 'suspended'
+                     AND project.repository_fingerprint = ?
+                     AND project.config_sha256 = ?
+                     AND project.backend_api_version = ?
+                     AND binding.status = 'active'
+                     AND revocation.grant_id IS NULL
+                   ORDER BY grant_row.granted_at DESC LIMIT 1""",
+                (
+                    subject_id,
+                    project_id,
+                    event_id,
+                    repository_fingerprint,
+                    config_sha256,
+                    backend_api_version,
+                ),
+            ).fetchone()
+        return int(row["source_epoch"]) if row is not None else None
+
     @staticmethod
     def _regular_file_size(path: Path) -> int | None:
         """Read one file's current size without following a symlink."""
