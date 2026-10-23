@@ -5845,9 +5845,10 @@ substitute for evidence at a later integration boundary.
       a source epoch only when that event already has a processed receipt, and
       Curator returns it only when the full envelope hash, source, and sequence
       match under the unchanged config, active binding, and unrevoked write
-      grant. An unprocessed ID or changed payload remains denied. The focused
-      hosted-MCP and access suites pass (22 tests), with strict Pyright,
-      errors-only Pylint, Bandit, and `git diff --check` passing. This covers
+      grant. An unprocessed ID or changed payload remains denied. Focused
+      hosted-MCP, project-access, project-plugin, Hermes-hook, and migration
+      suites pass (124 tests); strict Pyright, errors-only Pylint, Bandit, and
+      `git diff --check` pass. This covers
       suspended-project response loss only; deregistered/retired sources,
       consumer-binding revision races, other unlink points, and deployed
       evidence remain open.

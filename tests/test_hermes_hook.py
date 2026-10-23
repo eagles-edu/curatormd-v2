@@ -29,6 +29,7 @@ from curatormd_v2 import (
     GoalStatus,
     InMemoryTokenBucket,
     ProjectAction,
+    ProjectStatusChangeRequest,
     SuccessCriterion,
     build_mcp_server,
     codex_hook_to_event,
@@ -381,6 +382,30 @@ class HermesHookAdapterTests(unittest.TestCase):
                         retained_ids = {fact.fact_id for fact in after_suppression.facts}
                         self.assertIn(event.payload.fact_id, retained_ids)
                         self.assertNotIn(late_event.payload.fact_id, retained_ids)
+
+                        registration = store.get_project_registration("project-a")
+                        store.set_project_status(
+                            ProjectStatusChangeRequest(
+                                project_id="project-a",
+                                status="suspended",
+                                rationale="Exercise exact outbox retry after suspension",
+                                expected_revision=registration.revision,
+                                transition_id="suspend-after-hermes-receipt-1",
+                            ),
+                            "test-operator",
+                        )
+                        self.assertTrue(
+                            await handle("codex:turn:start", hook_context)
+                        )
+                        changed_receipt_context = {
+                            **hook_context,
+                            "occurred_at": "2026-10-20T00:00:01+00:00",
+                        }
+                        self.assertFalse(
+                            await handle(
+                                "codex:turn:start", changed_receipt_context
+                            )
+                        )
 
                 asyncio.run(drive())
             finally:

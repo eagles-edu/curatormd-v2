@@ -362,15 +362,8 @@ class AuthenticatedCuratorAPI:
         plugin = self._plugins.get(project_id)
         if plugin is None:
             raise PermissionError("project is not authorized")
-        normally_authorized = self.authorizer.authorize(
-            caller, project_id, ProjectAction.WRITE
-        )
-        if normally_authorized:
-            if not self.limiter.allow(caller.subject_id, project_id):
-                raise RateLimitExceeded("project request budget exceeded")
-        else:
-            if not self.limiter.allow(caller.subject_id, project_id):
-                raise RateLimitExceeded("project request budget exceeded")
+        registration = plugin.service.store.get_project_registration(project_id)
+        if registration.status == "suspended":
             replay_receipt = (
                 plugin.service.store.reconcile_suspended_processed_event(
                     event,
@@ -381,12 +374,22 @@ class AuthenticatedCuratorAPI:
                 )
             )
             if replay_receipt is not None:
+                if not self.limiter.allow(caller.subject_id, project_id):
+                    raise RateLimitExceeded("project request budget exceeded")
                 return replay_receipt
+        normally_authorized = self.authorizer.authorize(
+            caller, project_id, ProjectAction.WRITE
+        )
+        if normally_authorized:
+            if not self.limiter.allow(caller.subject_id, project_id):
+                raise RateLimitExceeded("project request budget exceeded")
+        else:
+            if not self.limiter.allow(caller.subject_id, project_id):
+                raise RateLimitExceeded("project request budget exceeded")
             if not plugin.service.store.consumer_drain_allows(
                 caller.subject_id, caller.profile_id, event
             ):
                 raise PermissionError("project is not authorized")
-        registration = plugin.service.store.get_project_registration(project_id)
         with plugin.project_effect_lock():
             with plugin.service.store.project_revision_fence(
                 project_id,
