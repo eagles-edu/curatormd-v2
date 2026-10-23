@@ -5003,3 +5003,15 @@
 **Open gate:** This is local Curator reference-store and attended CLI evidence. Local OS UID attribution is not authenticated Hermes human identity. The external staging inventory producer, owner-approved deployed reviewer roles, production workflow, and migration/rollback acceptance remain open; the lifecycle checklist item remains open.
 
 **Outcome:** Local reactivation now requires a current, content-free, durable review receipt and fails closed when its reviewed ledger or file inventory changes.
+
+## 2026-10-24 — Fence in-flight expiry unlink at suspension
+
+**Intent:** Prove a project suspension cannot pass an already admitted expiry cleanup while its exact staged file is being unlinked.
+
+**Changed fact:** The local project revision fence already spans expiry purge selection, unlink, and durable result recording. A new two-connection regression pauses at the purge adapter, attempts suspension on the second connection, and verifies the transition waits until the file deletion and purge receipt finish. It then verifies the project reaches revision 2 and a new retry is denied.
+
+**Verification:** The focused `test_inflight_expiry_unlink_finishes_before_project_suspend_cutover` passes. This case proves one local expiry-unlink path under project suspension.
+
+**Open gate:** Source-side acknowledgement races, other purge/unlink interruption points, consumer-binding revision fencing, authenticated deployment identity, and production lifecycle acceptance remain open. The lifecycle checklist item remains open.
+
+**Outcome:** Added regression evidence that this local unlink path completes before suspension cutover or is denied after cutover.

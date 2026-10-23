@@ -5826,6 +5826,14 @@ substitute for evidence at a later integration boundary.
       compatibility path. The standalone fence does not validate a consumer
       repository/config fingerprint. Consumer-binding revisions and production
       lifecycle supervision remain open. The E checklist item remains open.
+      Further local progress (2026-10-24): an expiry-purge regression pauses
+      after the exact reviewed target enters the unlink adapter, starts project
+      suspension on a second connection, and verifies suspension waits until
+      unlink and its durable purge receipt commit. The file is absent before
+      suspension reaches revision 2, and a post-cutover retry is denied. This
+      proves the local project fence for one expiry unlink path; source-side
+      acknowledgement races, other purge/unlink interruption points, binding
+      revision fencing, and deployment evidence remain open.
 - [ ] **F. Integrate one real consumer plugin:** install repository-local config
       and adapter in a pilot repo; prove checklist source mapping, scoped evidence,
       canonical bullet persistence, full artifact inventory, and independent

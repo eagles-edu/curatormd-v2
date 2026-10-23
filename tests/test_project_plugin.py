@@ -25,6 +25,7 @@ from project_fixtures import create_consumer_repo
 from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import (
+    ArtifactRef,
     ChecklistGoalStartRequest,
     CuratorService,
     CuratorStore,
@@ -1102,6 +1103,80 @@ class ProjectPluginTests(unittest.TestCase):
             self.store.expiry_purge_receipt(receipt.receipt_id, config.project_id).status.value,
             "purge_pending",
         )
+
+    def test_inflight_expiry_unlink_finishes_before_project_suspend_cutover(
+        self,
+    ) -> None:
+        """An admitted unlink holds the project fence until its receipt commits."""
+
+        config = self._register_project("Register the expiry unlink race fixture")
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal_id = "inflight-expiry-unlink-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "scratch", "inflight-unlink", io.BytesIO(b"expiry payload")
+            )
+        snapshot = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
+        )
+        manifest = snapshot.manifest_sha256
+        if manifest is None:
+            self.fail("complete expiry inventory must have a manifest hash")
+        receipt = self.store.create_expiry_purge_receipt(
+            config.project_id, "test-admin", manifest, snapshot.eligible_artifacts
+        )
+
+        unlink_entered = Event()
+        release_unlink = Event()
+        suspension_started = Event()
+        original_purge = plugin.service.purger.purge
+
+        def pause_before_unlink(target: ArtifactRef) -> bool:
+            unlink_entered.set()
+            if not release_unlink.wait(timeout=5):
+                raise TimeoutError("test did not release the paused purge")
+            return original_purge(target)
+
+        def suspend_project():
+            suspension_started.set()
+            registration = self.store.get_project_registration(config.project_id)
+            return self.store.set_project_status(
+                ProjectStatusChangeRequest(
+                    project_id=config.project_id,
+                    status="suspended",
+                    rationale="Suspend only after admitted expiry unlink commits",
+                    expected_revision=registration.revision,
+                    transition_id="suspend-after-expiry-unlink-1",
+                ),
+                "test-admin",
+            )
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                with patch.object(plugin.service.purger, "purge", pause_before_unlink):
+                    purge_future = workers.submit(
+                        plugin.retry_expiry_purge, receipt.receipt_id
+                    )
+                    self.assertTrue(unlink_entered.wait(timeout=5))
+                    suspend_future = workers.submit(suspend_project)
+                    self.assertTrue(suspension_started.wait(timeout=5))
+                    self.assertFalse(
+                        suspend_future.done(),
+                        "suspension must wait for the fenced unlink and receipt",
+                    )
+                    release_unlink.set()
+                    completed_purge = purge_future.result(timeout=10)
+                    transition = suspend_future.result(timeout=10)
+            self.assertEqual(completed_purge.status.value, "complete")
+            self.assertFalse(Path(artifact.path).exists())
+            self.assertEqual(transition.registration.status, "suspended")
+            self.assertEqual(transition.receipt.revision, 2)
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.retry_expiry_purge(receipt.receipt_id)
+        finally:
+            release_unlink.set()
 
     def test_pending_sde_cannot_extend_the_72_hour_retention_ceiling(self) -> None:
         """Pending review delays prompt expiry but not the absolute age cap."""
