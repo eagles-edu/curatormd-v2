@@ -863,8 +863,107 @@ consumer plugin, Hermes integration, or production deployment.
       receipt forces degraded status even when host dependency probes are
       healthy. This remains local SQLite evidence; production scheduler,
       alerting, and process/database reconciliation remain open.
+      Additional local progress (2026-10-23): the required dependency contract
+      now includes explicit `database_storage_adapter` and `alert_delivery`
+      observations. API regressions prove either missing timestamped probe
+      yields `unknown`, and either unhealthy observation yields `degraded`, even
+      when the other configured dependencies are healthy; Prometheus exports the
+      matching health state and dependency labels. The API suite (38 tests), MCP
+      suite (6 tests), strict Pyright, and errors-only Pylint pass. The health
+      provider still needs deployment-owned storage and alert probes, and no
+      production alert delivery was exercised.
+      Additional local progress (2026-10-23): separated provider-call failure
+      from per-dependency observation failure. A missing or malformed probe
+      still makes project readiness unknown and adds a gate, but no longer
+      masks later healthy observations as unknown. The focused API regression
+      now asserts sibling probes remain healthy when `database_storage_adapter`
+      or `alert_delivery` is absent; that one test passes. Strict Pyright and
+      focused Pylint on the health evaluator/API test pass. This remains local
+      aggregation evidence; production scheduler state, probe ownership, and
+      alert delivery remain open.
+      Observation-scope progress (2026-10-23): the health response now labels
+      the SQLite aggregate timestamp/completeness, staging scan timestamp and
+      completeness, and each host probe's own status/time. The SQLite counts
+      remain one consistent read transaction; staging and host probes are
+      explicitly separate samples. Three focused API/store/MCP tests pass,
+      including the snapshot-isolation regression and MCP response fields;
+      strict Pyright is clean. The API and MCP
+      tool docs list all seven required dependencies, including storage and
+      alert delivery. Database read failures, deployed freshness/alert wiring,
+      authenticated dashboard use, and cross-source reconciliation remain open.
+      Local probe bridge progress (2026-10-23): opted-in Hermes Core calls now
+      attach five bounded, content-free observations for the event outbox,
+      purge scheduler, host profile/session context, local reviewer grant, and
+      configured Curator hook manifest. Curator validates the probe names and
+      value shapes, evaluates freshness, and scopes observations to the active
+      MCP request. The read-only local probes report a missing outbox or
+      manifest as unknown, a pending outbox or absent reviewer grant as
+      degraded, and the unimplemented local purge scheduler as degraded rather
+      than healthy. One Curator handoff regression and 28 Hermes probe/trust
+      tests pass. The hook-manifest check is not exhaustive producer coverage;
+      no production scheduler heartbeat, alert receiver, deployment freshness,
+      or cross-source reconciliation was exercised, so this checklist item
+      remains open.
+      Proposed owner-gated production acceptance: enumerate every required
+      observation (event router, purge scheduler, database/storage adapter,
+      staging inventory, identity/review services, and alert delivery), name its
+      owner/source, freshness limit, failure threshold, and recovery condition.
+      At runtime, retain the current distinction between one SQLite aggregate
+      snapshot, separately sampled staging inventory, and timestamped external
+      probes; publish their observation times/completeness rather than implying
+      an atomic cross-system snapshot. Require `degraded` for known pending,
+      failed, overdue, or over-budget work; require `unknown` for a missing,
+      stale, malformed, or failed required observation; permit `healthy` only
+      after all required sources are fresh, complete, and clear. Alert on each
+      owner-approved threshold and on alert-route failure itself; keep delivery
+      attempts and recovery/escalation state visible, and do not clear a service
+      gate merely because a notification was sent or acknowledged. In a
+      deployment-like run, inject backlog, adapter outage, expired heartbeat,
+      incomplete inventory, threshold crossing, dropped/duplicate alert
+      delivery, and recovery; reconcile health, dashboard, and alert receipts
+      to the underlying observations and prove recovery clears gates only after
+      the source state recovers. Keep alerts content-free and correlate them by
+      fixed project/gate/receipt identifiers only. Keep this item open until the
+      actual production probes, scheduler heartbeats, metrics/dashboard, and
+      alert receiver have been exercised together and owners review the result;
+      local health API tests are not deployment evidence.
 - [ ] Complete a failure-injection test matrix against the production storage
-      and staging adapters, not only local temporary files.
+      and staging adapters, not only local temporary files. Proposed matrix:
+      inject unavailable/read-only storage, quota or `ENOSPC`, short/failed
+      writes, sync/commit failure, interrupted atomic replacement, held-reader
+      WAL checkpoint, corrupt or unsupported backup input, and restore-target
+      creation races at each relevant persistence boundary. Against staging,
+      inject root/lock acquisition and enumeration failures, permission changes,
+      unreadable or changing files, size/count limits, symlink substitution,
+      concurrent replacement, and unlink failure. Include interruption before
+      and after durable receipt, canonical projection, and purge transitions,
+      then restart and retry with the same operation/event IDs. Expected results:
+      no success or acknowledgement without its durable receipt; no overwrite of
+      a winning destination or deletion outside the exact approved inventory;
+      incomplete inventory blocks purge; failed projection, checkpoint, or
+      deletion stays visible and retryable; replay is idempotent; and health is
+      degraded or unknown while required work is pending, failed, or unobserved.
+      For each injected fault, owners must classify whether it is transient and
+      safely retryable or requires operator review, define its bounded retry or
+      stop condition, and assign a fixed public failure code. Exercise repeated
+      failures through that bound and prove the worker does not hot-loop, turn a
+      terminal/unsafe condition into an automatic mutation, or hide pending
+      recovery after it stops. Before retrying a write, projection, restore, or
+      unlink, revalidate the same operation ID, package/config binding, approved
+      target, manifest digest, and authorization; a changed target or stale
+      approval remains pending for a new owner decision. Error outputs and
+      operational records must not expose payloads, secrets, or raw filesystem
+      paths.
+      Run the matrix with the intended production adapter implementations and
+      filesystem/database features against disposable deployment-shaped stores,
+      with fault controls that identify the injected boundary. Capture scenario
+      IDs, adapter/filesystem versions, operation and receipt IDs, bounded
+      before/after hashes, observed state, and recovery outcome without payloads
+      or secrets. Preserve corrupt inputs and failed targets for review; restore
+      only to a new isolated path. Local temporary-file fixtures and injected
+      adapter doubles remain unit evidence, not production-adapter proof. Keep
+      this item open until each applicable fault point has a reviewed observed
+      result and deployment owners approve the recovery and rollback evidence.
 
 ### 5. Global backend, persistence, and operations
 

@@ -1,5 +1,27 @@
 # Curator V2 history
 
+## 2026-10-23
+
+- **Intent:** Replace missing host-owned Curator health observations with
+  bounded probes from the opted-in Hermes Core local stdio integration.
+  **Changed fact:** Hermes now reports read-only event-outbox, local reviewer
+  grant, hook-manifest, and trusted profile/session observations. The local
+  purge scheduler is explicitly reported unavailable. Curator validates the
+  metadata and exposes it only during the current MCP request; stale and
+  missing probes remain unknown, and known unavailable dependencies degrade
+  health. No raw content, paths, or reviewer identifiers are included.
+  **Verification:** The Curator metadata handoff regression passes, Hermes
+  probe and trust-gating tests pass (28 total), Curator Pyright and errors-only
+  Pylint pass for changed modules, and `git diff --check` passes in both
+  repositories. The broad Hermes check was stopped after extended time in
+  unrelated repository scans.
+  **Open gate:** The hook manifest is not exhaustive producer coverage. There
+  is no production purge-scheduler heartbeat or alert receiver, and no live
+  deployment or cross-source reconciliation was exercised. The health
+  checklist item remains open.
+  **Outcome:** Added a local diagnostic slice without changing checklist
+  completion counts or claiming deployed readiness.
+
 ## 2026-10-22
 
 - **Intent:** Remove the sensitive-config value from retained validation

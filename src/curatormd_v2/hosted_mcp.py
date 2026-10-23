@@ -24,7 +24,7 @@ from mcp.server import MCPServer
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .evidence import EvidenceVerifier
 from .local_evidence_config import load_local_service_probe_verifier
-from .mcp_server import build_mcp_server
+from .mcp_server import RequestHostReadiness, build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .project_access import (
@@ -153,6 +153,7 @@ def build_local_profile_mcp(
             },
             authorizer=authorizer,
             limiter=SQLiteTokenBucket(store),
+            dependency_readiness=RequestHostReadiness(),
         )
         server = build_mcp_server(
             api,

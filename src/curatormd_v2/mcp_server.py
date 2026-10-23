@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextvars import ContextVar
 import json
 import re
-from typing import Any
+from typing import Any, cast
 
 from mcp.server import MCPServer
 from mcp.server.context import ServerRequestContext
 from mcp.types import CallToolResult, TextContent
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI
+from .health_evaluation import REQUIRED_HEALTH_DEPENDENCIES
+from .models import DependencyProbeObservation
 from .mcp_tool_registration import register_mcp_tools
 from .mcp_tool_support import ArtifactInput, safe_tool_handler
 
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+host_readiness_context: ContextVar[Mapping[str, object]] = ContextVar(
+    "curator_v2_host_readiness", default={}
+)
 __all__ = ["ArtifactInput", "build_mcp_server", "safe_tool_handler"]
 SERVER_INSTRUCTIONS = """\
 Curator V2 work protocol:
@@ -93,9 +99,54 @@ def _hermes_identity_middleware(expected_profile_id: str):
                 ],
                 is_error=True,
             )
-        return await call_next(ctx)
+        token = host_readiness_context.set(validate_host_readiness(metadata))
+        try:
+            return await call_next(ctx)
+        finally:
+            host_readiness_context.reset(token)
 
     return enforce_profile
+
+
+def validate_host_readiness(metadata: object) -> dict[str, object]:
+    """Convert only bounded, host-injected dependency observations."""
+
+    if not isinstance(metadata, dict):
+        return {}
+    metadata_values = cast(dict[object, object], metadata)
+    raw_value = metadata_values.get("hermes/readiness")
+    if not isinstance(raw_value, dict):
+        return {}
+    raw = cast(dict[object, object], raw_value)
+    if len(raw) > len(REQUIRED_HEALTH_DEPENDENCIES):
+        return {}
+    observations: dict[str, object] = {}
+    for name_value, value_value in raw.items():
+        if (
+            not isinstance(name_value, str)
+            or name_value not in REQUIRED_HEALTH_DEPENDENCIES
+            or not isinstance(value_value, dict)
+        ):
+            continue
+        value = cast(dict[object, object], value_value)
+        ready = value.get("ready")
+        observed_at = value.get("observed_at")
+        if ready is not None and type(ready) is not bool:
+            continue
+        if not isinstance(observed_at, str) or not 1 <= len(observed_at) <= 64:
+            continue
+        observations[name_value] = DependencyProbeObservation(ready, observed_at)
+    return observations
+
+
+class RequestHostReadiness:
+    """Request-local view of observations injected by trusted Hermes Core."""
+
+    # pylint: disable=too-few-public-methods
+
+    def readiness(self, project_id: str) -> Mapping[str, object]:
+        del project_id  # this stdio process is pinned to one project at launch
+        return host_readiness_context.get()
 
 
 
