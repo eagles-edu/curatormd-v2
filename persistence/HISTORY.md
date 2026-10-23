@@ -2,6 +2,22 @@
 
 ## 2026-10-23
 
+- **Intent:** Continue the open repository-wide Pylint cleanup without
+  suppressing structural findings or changing Curator V2 behavior.
+  **Changed fact:** Twelve low-risk diagnostics were removed across the current
+  V2 tree: overlong lines, one import-order issue, a missing request-readiness
+  method docstring, and an unidiomatic bool check. No lint suppressions were
+  added for this cleanup.
+  **Verification:** The full Pylint scan reports 124 findings, down from 136
+  immediately before this slice; remaining findings are mainly duplicate-code
+  and structural/design limits. The focused health/readiness and project-access/
+  CLI suites pass 17 tests. Strict Pyright reports zero diagnostics;
+  `git diff --check` passes.
+  **Open gate:** Repository-wide Pylint cleanup remains incomplete; no checkbox
+  changed.
+  **Outcome:** Reduced the current full-scan inventory by twelve findings
+  without claiming the broader cleanup complete.
+
 - **Intent:** Replace missing host-owned Curator health observations with
   bounded probes from the opted-in Hermes Core local stdio integration.
   **Changed fact:** Hermes now reports read-only event-outbox and SQLite storage

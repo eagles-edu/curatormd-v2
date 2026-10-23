@@ -8,6 +8,8 @@ from pathlib import Path
 from mcp import Client
 from mcp.types import TextContent
 
+from project_fixtures import bind_test_project, configure_stdio_consumer
+
 from curatormd_v2 import CuratorStore
 from curatormd_v2.hosted_mcp import build_local_profile_mcp
 from curatormd_v2.mcp_server import (
@@ -16,8 +18,6 @@ from curatormd_v2.mcp_server import (
     validate_host_readiness,
 )
 from curatormd_v2.models import DependencyProbeObservation
-from project_fixtures import bind_test_project, configure_stdio_consumer
-
 
 def test_trusted_host_readiness_metadata_is_bounded_and_request_local():
     timestamp = "2026-10-23T00:00:00+00:00"

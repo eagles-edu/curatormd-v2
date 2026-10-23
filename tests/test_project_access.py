@@ -597,7 +597,10 @@ class DurableProjectAccessTests(unittest.TestCase):
         pending = self.manager.transition_consumer_binding(
             self.operator, pending_request
         )
-        self.assertEqual((pending.binding.status, pending.binding.revision), ("deregistration_pending", 2))
+        self.assertEqual(
+            (pending.binding.status, pending.binding.revision),
+            ("deregistration_pending", 2),
+        )
         self.assertFalse(launcher.authorize(self.reader, self.project_id, ProjectAction.READ))
         self.assertFalse(
             SQLiteProjectGrantAuthorizer(self.store).authorize(
@@ -617,7 +620,9 @@ class DurableProjectAccessTests(unittest.TestCase):
                 ),
                 "config-after-cutover-1",
             )
-        replay = self.manager.transition_consumer_binding(self.operator, pending_request)
+        replay = self.manager.transition_consumer_binding(
+            self.operator, pending_request
+        )
         self.assertTrue(replay.replayed)
         self.assertEqual(replay.receipt, pending.receipt)
         with self.assertRaisesRegex(ConflictError, "not active"):
@@ -635,7 +640,10 @@ class DurableProjectAccessTests(unittest.TestCase):
         self.assertEqual((final.binding.status, final.binding.revision), ("deregistered", 3))
         self.assertEqual(final.binding.source_epoch, 1)
         self._allow_admin(ProjectAdministrationAction.VIEW)
-        self.assertEqual(len(self.manager.list_consumer_binding_audit(self.operator, self.project_id)), 3)
+        self.assertEqual(
+            len(self.manager.list_consumer_binding_audit(self.operator, self.project_id)),
+            3,
+        )
         closed_grant = self.store.project_grants(self.project_id)[0]
         self.assertEqual(closed_grant.grant_id, grant.grant_id)
         self.assertEqual(closed_grant.revoked_by, self.operator.subject_id)
@@ -672,7 +680,10 @@ class DurableProjectAccessTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ConflictError, "unresolved source events"):
             self.manager.transition_consumer_binding(self.operator, final_request)
-        self.assertEqual(self.store.get_consumer_binding(self.project_id).status, "deregistration_pending")
+        self.assertEqual(
+            self.store.get_consumer_binding(self.project_id).status,
+            "deregistration_pending",
+        )
         history = self.store.consumer_binding_audit(self.project_id)
         self.assertEqual(len(history), 2)
         self.assertEqual(history[-1], pending.receipt)

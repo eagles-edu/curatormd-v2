@@ -292,15 +292,23 @@ class AccessCliTests(unittest.TestCase):
                 "--expected-revision", "1", "--transition-id", "cli-deregister-1",
             )
             self.assertEqual(pending, 0, errors)
-            self.assertEqual(json.loads(pending_output)["binding"]["status"], "deregistration_pending")
+            self.assertEqual(
+                json.loads(pending_output)["binding"]["status"],
+                "deregistration_pending",
+            )
             finalized, final_output, errors = self._run(
-                "deregister_finalize", root, database,
-                "DEREGISTER_FINALIZE cli-project AT BINDING REVISION 2 TRANSITION cli-deregister-final-1",
+                "deregister_finalize",
+                root,
+                database,
+                "DEREGISTER_FINALIZE cli-project AT BINDING REVISION 2 "
+                "TRANSITION cli-deregister-final-1",
                 "--rationale", "Finalize after local event reconciliation",
                 "--expected-revision", "2", "--transition-id", "cli-deregister-final-1",
             )
             self.assertEqual(finalized, 0, errors)
-            self.assertEqual(json.loads(final_output)["binding"]["status"], "deregistered")
+            self.assertEqual(
+                json.loads(final_output)["binding"]["status"], "deregistered"
+            )
             viewed, view_output, errors = self._run(
                 "view", root, database, "VIEW cli-project ACCESS"
             )

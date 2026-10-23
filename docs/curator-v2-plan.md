@@ -4488,7 +4488,7 @@ production health, or deployment recovery.
       `33751864fee6f107a283d5470854b51b5a74efcca43b89abfaf5058592c4aa67`.
       No behavioral tests were needed for these comment/directive-only edits.
       Repository-wide Pylint remains open; no checklist status changed.
-      Current rerun (2026-10-23): the exact end-to-end purge acceptance test
+      Prior snapshot (2026-10-23): the exact end-to-end purge acceptance test
       `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end`
       passes by itself. A fresh pinned full-tree Pylint run reports 122
       diagnostics (111 refactor, 11 convention) and exits 24; the warning
@@ -4500,6 +4500,14 @@ production health, or deployment recovery.
       (event router, purge scheduler, host identity, human review, and artifact
       producer inventory). This verifies profile-scoped ledger reads, not a
       healthy runtime or live event delivery.
+      Additional local progress (2026-10-23): a fresh repository-wide Pylint
+      inventory reported 136 findings before this cleanup and 124 afterward.
+      Twelve low-risk findings were removed through line wrapping, import
+      ordering, a method docstring, and an idiomatic bool check, without new
+      suppressions. Focused health/readiness and project-access/CLI suites pass
+      17 tests; strict Pyright and `git diff --check` pass. The remaining
+      duplicate-code and structural/design findings keep this checklist row
+      open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

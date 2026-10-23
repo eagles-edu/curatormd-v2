@@ -1635,7 +1635,9 @@ class CuratorStore:
         self._validate_access_identity(request.transition_id, "transition_id")
         self._validate_access_rationale(request.rationale)
         if request.status not in {"deregistration_pending", "deregistered"}:
-            raise ValueError("consumer binding status must be deregistration_pending or deregistered")
+            raise ValueError(
+                "consumer binding status must be deregistration_pending or deregistered"
+            )
         if not is_exact_int(request.expected_revision) or request.expected_revision < 1:
             raise ValueError("expected_revision must be a positive integer")
         action = request.status
@@ -1653,7 +1655,9 @@ class CuratorStore:
                     or prior["revision"] != request.expected_revision + 1
                     or prior["rationale"] != request.rationale
                 ):
-                    raise ConflictError("consumer transition ID was already used with different input")
+                    raise ConflictError(
+                        "consumer transition ID was already used with different input"
+                    )
                 current = connection.execute(
                     "SELECT * FROM consumer_bindings WHERE project_id = ?",
                     (request.project_id,),
@@ -1673,7 +1677,9 @@ class CuratorStore:
                 raise NotFoundError("consumer binding not found")
             if current["revision"] != request.expected_revision:
                 raise ConflictError("consumer binding revision is stale")
-            expected_from = "active" if action == "deregistration_pending" else "deregistration_pending"
+            expected_from = (
+                "active" if action == "deregistration_pending" else "deregistration_pending"
+            )
             if current["status"] != expected_from:
                 raise ConflictError("consumer binding is not in the required lifecycle state")
             if action == "deregistered":

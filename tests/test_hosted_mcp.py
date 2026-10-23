@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr
 from io import StringIO
 import json
@@ -10,8 +11,8 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from typing import Callable, cast
 import unittest
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     CuratorStore,
     EventEnvelope,
+    EventInboxReceipt,
     EventInboxStatus,
     GoalStarted,
     ProjectAccessManager,
@@ -512,7 +514,13 @@ class HostedMcpTests(unittest.TestCase):
             release_effect = Event()
             status_started = Event()
             plugin = getattr(runtime.api, "_plugins")["bound-project"]
-            original_commit_event = plugin.service._commit_event
+            # Pause at the exact transaction boundary to prove suspension waits.
+            original_commit_event = cast(
+                Callable[
+                    [EventEnvelope, _PreparedEvent, str | None], EventInboxReceipt
+                ],
+                getattr(plugin.service, "_commit_event"),
+            )
 
             def pause_inside_fenced_event_commit(
                 event: EventEnvelope,

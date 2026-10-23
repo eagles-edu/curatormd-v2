@@ -131,7 +131,7 @@ def validate_host_readiness(metadata: object) -> dict[str, object]:
         value = cast(dict[object, object], value_value)
         ready = value.get("ready")
         observed_at = value.get("observed_at")
-        if ready is not None and type(ready) is not bool:
+        if ready is not None and not isinstance(ready, bool):
             continue
         if not isinstance(observed_at, str) or not 1 <= len(observed_at) <= 64:
             continue
@@ -145,6 +145,8 @@ class RequestHostReadiness:
     # pylint: disable=too-few-public-methods
 
     def readiness(self, project_id: str) -> Mapping[str, object]:
+        """Return this request's trusted host probes for its pinned project."""
+
         del project_id  # this stdio process is pinned to one project at launch
         return host_readiness_context.get()
 
