@@ -26,8 +26,12 @@ the exact commit only.
 
 ## Known limitations
 
-- Hermes profile and project values are operator assertions; authenticated
-  human and Hermes identity binding is not implemented.
+- Local alpha project access uses the kernel-reported real/effective OS UID as
+  the authorization subject, while Hermes profile/session values stay separate
+  routing context. The approved `eaglesvn` UID is the local alpha reviewer and
+  has exact project read/write/review grants. Hermes still reports MCP transport
+  auth as `none`; a Hermes-authenticated human subject and production identity
+  binding are not established.
 - Trusted repository, service, browser, and human evidence adapters remain
   reject-all/reference implementations until their trust roots are approved.
 - No production router, scheduler, monitoring/alert delivery, or real
@@ -92,6 +96,24 @@ reports only the default-profile PID, so this does not establish that the
 isolated profile is served by the running gateway. No Vhost Manager UI/request
 workflow or canonical application-target write was exercised, and
 `project_health` remains `unknown`.
+
+Vhost alpha lifecycle deployment (2026-10-23): rebuilt and installed wheel
+`curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
+`7f5f646d047e9f5907e1d033fff92b0145c4fa647ea6a4fa601620e2f1ea0539`) into the
+isolated `renew-ssl-coding` profile. The profile is configured for local-alpha
+review and write. The active SQLite ledger was backed up before migration from
+schema v22 to v35; it passes `PRAGMA quick_check=ok`, retains the active Vhost
+project/binding, and has exactly three active grants for `local-uid:1000`
+(read, write, review). Obsolete `renew-ssl-coding` subject grants were revoked.
+Hermes MCP connects and discovers 48 tools. Its profile outbox currently has
+11 acknowledged events, no pending events, and 22 attempts; the Curator ledger
+has 12 processed receipts. These counts are independent reads, not a claim that
+all events correspond one-to-one. The 0600 DB, package, and profile-config
+recovery copies are under `/home/eaglesvn/.local/share/curatormd-v2-alpha/
+backups/`. This verifies only the owner-approved local UID and profile flow;
+source terminal disposition, complete retirement status, production identity,
+production acceptance, and rollback drills remain open. The active Vhost
+project was not retired.
 
 Vhost alpha endpoint check (2026-10-21): `hermes -p renew-ssl-coding gateway
 ensure --json --timeout 45` returned `state=ready` with a profile-scoped

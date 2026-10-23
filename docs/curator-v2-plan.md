@@ -2413,9 +2413,12 @@ consumer plugin, Hermes integration, or production deployment.
       starts the package and discovers all 48 MCP tools. Hermes still reports
       transport auth as `none`; this verifies the approved local OS identity,
       not a Hermes-authenticated human or production identity. Source-side
-      acknowledgement fencing, terminal disposition/reconciliation, complete
-      retirement status/count reporting, and authenticated production
-      lifecycle evidence remain open.
+      acknowledgement is receipt-gated: the Hermes hook returns success only
+      for a processed or duplicate Curator receipt. A read-only check of the
+      deployed profile outbox found 11 acknowledged events, 0 pending, and 22
+      attempts; the Vhost ledger has 12 processed receipts. Terminal
+      disposition/reconciliation, complete retirement status/count reporting,
+      and authenticated production lifecycle evidence remain open.
       Represent binding state separately from project lifecycle state and expose
       `active`, `deregistration_pending`, or `deregistered` in content-free
       operator status; deregistration must never appear as project retirement.
