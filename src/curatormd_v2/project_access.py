@@ -20,7 +20,14 @@ from .store import (
     ProjectRegistrationRecord,
     ProjectRegistrationRequest,
     ProjectRegistryAuditRecord,
+    ProjectRegistrationTransitionResult,
+    ProjectStatusChangeRequest,
+    ConsumerBindingRecord,
+    ConsumerBindingAuditRecord,
+    ConsumerBindingTransitionRequest,
+    ConsumerBindingTransitionResult,
     NotFoundError,
+    ProjectControlPlaneStorageUsage,
 )
 
 
@@ -32,6 +39,8 @@ class ProjectAdministrationAction(StrEnum):
     UPDATE = "update"
     SUSPEND = "suspend"
     REACTIVATE = "reactivate"
+    DEREGISTER = "deregister"
+    DEREGISTER_FINALIZE = "deregister_finalize"
     GRANT = "grant"
     REVOKE = "revoke"
 
@@ -53,6 +62,30 @@ def _project_admin_action_for_status(
         "active": ProjectAdministrationAction.REACTIVATE,
         "suspended": ProjectAdministrationAction.SUSPEND,
     }.get(value)
+
+
+def _registration_matches_binding(
+    registration: ProjectRegistrationRecord,
+    binding: ProjectAuthorizationBinding,
+    expected_revision: int | None,
+) -> bool:
+    """Require the active registration to match captured host config."""
+
+    return (
+        registration.status == "active"
+        and expected_revision is not None
+        and registration.revision == expected_revision
+        and (
+            registration.repository_fingerprint,
+            registration.config_sha256,
+            registration.backend_api_version,
+        )
+        == (
+            binding.repository_fingerprint,
+            binding.config_sha256,
+            binding.backend_api_version,
+        )
+    )
 
 
 class ProjectAdministrationAuthorizer(Protocol):
@@ -123,10 +156,10 @@ class SQLiteProjectGrantAuthorizer:
 class FingerprintBoundSQLiteProjectGrantAuthorizer:
     """Require a live registration matching one loaded repository config.
 
-    The bound fingerprints are computed by the trusted repository adapter at
-    startup. Registry status and exact grants are read from SQLite on every
-    authorization decision, so suspension and revocation take effect without
-    restarting the MCP process.
+    The bound fingerprints and project revision are captured by the repository
+    adapter at startup. Registry status, revision, and exact grants are checked
+    on every authorization decision. Any project lifecycle transition fences
+    this launcher; a new process must bind to the new revision.
     """
 
     # pylint: disable=too-few-public-methods  # Implements the one-operation project authorizer contract.
@@ -136,6 +169,15 @@ class FingerprintBoundSQLiteProjectGrantAuthorizer:
     ) -> None:
         self._store = store
         self._binding = binding
+        try:
+            registration = store.get_project_registration(binding.project_id)
+            consumer_binding = store.get_consumer_binding(binding.project_id)
+        except NotFoundError:
+            self._registration_revision: int | None = None
+            self._consumer_binding_revision: int | None = None
+        else:
+            self._registration_revision = registration.revision
+            self._consumer_binding_revision = consumer_binding.revision
 
     def authorize(
         self,
@@ -153,15 +195,18 @@ class FingerprintBoundSQLiteProjectGrantAuthorizer:
             return False
         try:
             registration = self._store.get_project_registration(project_id)
+            consumer_binding = self._store.get_consumer_binding(project_id)
         except NotFoundError:
             return False
         if (
-            registration.status != "active"
-            or registration.repository_fingerprint
-            != self._binding.repository_fingerprint
-            or registration.config_sha256 != self._binding.config_sha256
-            or registration.backend_api_version
-            != self._binding.backend_api_version
+            consumer_binding.status != "active"
+            or consumer_binding.revision != self._consumer_binding_revision
+        ):
+            return False
+        if not _registration_matches_binding(
+            registration,
+            self._binding,
+            self._registration_revision,
         ):
             return False
         return self._store.has_project_grant(
@@ -212,30 +257,67 @@ class ProjectAccessManager:
         self,
         caller: AuthenticatedCaller,
         request: ProjectRegistrationRequest,
-    ) -> ProjectRegistrationRecord:
+        transition_id: str,
+    ) -> ProjectRegistrationTransitionResult:
         """Update the host-verified fingerprint after an explicit admin check."""
 
         self._require_admin(
             caller, request.project_id, ProjectAdministrationAction.UPDATE
         )
-        return self._store.update_project_registration(request, caller.subject_id)
+        return self._store.update_project_registration(
+            request, caller.subject_id, transition_id
+        )
 
     def set_project_status(
         self,
         caller: AuthenticatedCaller,
-        project_id: str,
-        status: str,
-        rationale: str,
-    ) -> ProjectRegistrationRecord:
+        request: ProjectStatusChangeRequest,
+    ) -> ProjectRegistrationTransitionResult:
         """Suspend or reactivate a project under distinct host permissions."""
 
-        action = _project_admin_action_for_status(status)
+        action = _project_admin_action_for_status(request.status)
         if action is None:
             raise ValueError("project status must be active or suspended")
-        self._require_admin(caller, project_id, action)
+        self._require_admin(caller, request.project_id, action)
         return self._store.set_project_status(
-            project_id, status, caller.subject_id, rationale
+            request,
+            caller.subject_id,
         )
+
+    def transition_consumer_binding(
+        self,
+        caller: AuthenticatedCaller,
+        request: ConsumerBindingTransitionRequest,
+    ) -> ConsumerBindingTransitionResult:
+        """Deregister a consumer without suspending or retiring its project."""
+
+        action = (
+            ProjectAdministrationAction.DEREGISTER
+            if request.status == "deregistration_pending"
+            else ProjectAdministrationAction.DEREGISTER_FINALIZE
+            if request.status == "deregistered"
+            else None
+        )
+        if action is None:
+            raise ValueError("unsupported consumer binding lifecycle transition")
+        self._require_admin(caller, request.project_id, action)
+        return self._store.transition_consumer_binding(request, caller.subject_id)
+
+    def get_consumer_binding(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> ConsumerBindingRecord:
+        """Read separate consumer lifecycle state after host authorization."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.get_consumer_binding(project_id)
+
+    def list_consumer_binding_audit(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> tuple[ConsumerBindingAuditRecord, ...]:
+        """Read append-only binding transition receipts after host authorization."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.consumer_binding_audit(project_id)
 
     def grant(
         self,
@@ -294,3 +376,11 @@ class ProjectAccessManager:
 
         self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
         return self._store.project_registry_audit(project_id)
+
+    def storage_usage(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> ProjectControlPlaneStorageUsage:
+        """Read aggregate control-plane storage after host VIEW authorization."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.project_control_plane_storage_usage(project_id)

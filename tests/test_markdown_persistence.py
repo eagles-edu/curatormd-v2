@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import os
+import io
+from dataclasses import replace
 from pathlib import Path
 import hashlib
+import subprocess
+import sys
 import tempfile
+from threading import Event
 import unittest
 from typing import BinaryIO, cast
 from unittest.mock import patch
@@ -17,9 +23,11 @@ from purge_fixtures import TestReviewAuthorizer
 from curatormd_v2 import (
     ArtifactPurger,
     ArtifactRef,
+    ChecklistGoalStartRequest,
     CuratorStore,
     EventEnvelope,
     EvidenceOutcome,
+    EvidenceAttestation,
     EvidenceRef,
     EvidenceVerificationContext,
     FactRecorded,
@@ -29,10 +37,16 @@ from curatormd_v2 import (
     MarkdownReconciliationStatus,
     Materiality,
     ProjectPlugin,
+    ProjectRegistrationRequest,
+    ProjectStatusChangeRequest,
+    ReacquisitionAction,
     ReviewDecision,
     SuccessCriterion,
+    backup_database,
+    restore_database,
 )
 from curatormd_v2.project_config import ProjectConfig, ProjectConfigError
+from curatormd_v2.store import ConflictError
 
 
 class TestVerifier:  # pylint: disable=too-few-public-methods
@@ -112,13 +126,102 @@ class MarkdownPersistenceTests(unittest.TestCase):
         self.config = ProjectConfig.load(self.root)
         self.store = CuratorStore(base / "global.sqlite3")
         self.addCleanup(self.store.close)
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                self.config, "Register the Markdown persistence test project"
+            ),
+            "test-admin",
+        )
         self.plugin = ProjectPlugin.bind(self.config, self.store)
         self.goal = self.plugin.goal_start_from_checklist(
-            "tasks",
-            "Implement the canonical Markdown projection",
-            (SuccessCriterion("write", "A scoped goal is written as compact bullets"),),
-            exact_item_text="- [ ] Implement adapter",
+            ChecklistGoalStartRequest(
+                checklist_id="tasks",
+                problem="Implement the canonical Markdown projection",
+                success_criteria=(
+                    SuccessCriterion(
+                        "write", "A scoped goal is written as compact bullets"
+                    ),
+                ),
+                exact_item_text="- [ ] Implement adapter",
+            )
         )
+
+    def test_suspend_during_evidence_check_prevents_projection_write(self) -> None:
+        """Recheck the captured project revision after external verification."""
+
+        verification_started = Event()
+        allow_verification = Event()
+
+        class BlockingVerifier:  # pylint: disable=too-few-public-methods
+            """Pause one external attestation between snapshot and write fence."""
+
+            def __init__(self, store: CuratorStore) -> None:
+                self.store = store
+                self.block = False
+
+            def attest(
+                self,
+                evidence: EvidenceRef,
+                context: EvidenceVerificationContext,
+            ) -> EvidenceAttestation:
+                """Block at the resolver boundary and attest after release."""
+
+                if self.store.transaction_active:
+                    raise AssertionError("evidence verification ran in a transaction")
+                if self.block and not verification_started.is_set():
+                    verification_started.set()
+                    if not allow_verification.wait(timeout=10):
+                        raise AssertionError("projection verification was not released")
+                return attest_test_evidence(evidence, context)
+
+        verifier = BlockingVerifier(self.store)
+        self.plugin = ProjectPlugin.bind(self.config, self.store, verifier)
+        self.plugin.goal_activate(
+            self.goal.goal_id, "Enable the persistence race regression", 1
+        )
+        evidence = EvidenceRef(
+            "unit-test",
+            "test-proof:passed",
+            hashlib.sha256(b"projection proof").hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        self.plugin.service.goal_fact(
+            self.goal.goal_id,
+            FactKind.VERIFICATION,
+            "Projection evidence is valid",
+            criterion_id="write",
+            evidence=(evidence,),
+        )
+        original = self.target.read_bytes()
+        verifier.block = True
+        suspend_store = CuratorStore(self.store.database)
+        self.addCleanup(suspend_store.close)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                self.plugin.persist_goal, self.goal.goal_id, self.target
+            )
+            try:
+                self.assertTrue(
+                    verification_started.wait(timeout=10),
+                    "projection did not reach external evidence verification",
+                )
+                suspend_store.set_project_status(
+                    ProjectStatusChangeRequest(
+                        project_id=self.config.project_id,
+                        status="suspended",
+                        rationale="Suspend between evidence verification and write",
+                        expected_revision=1,
+                        transition_id="suspend-during-projection-1",
+                    ),
+                    "test-admin",
+                )
+            finally:
+                allow_verification.set()
+            with self.assertRaises(ConflictError):
+                future.result(timeout=10)
+
+        self.assertEqual(self.target.read_bytes(), original)
 
     def test_projection_preserves_unrelated_content_and_is_idempotent(self) -> None:
         """Replace one goal block and retain all unrelated project Markdown."""
@@ -280,7 +383,7 @@ class MarkdownPersistenceTests(unittest.TestCase):
             self.plugin.persist_goal(self.goal.goal_id, self.target)
         self.assertEqual(self.target.read_text(), edited)
 
-    def test_projection_recovers_ledger_first_update_after_store_reopen(self) -> None:
+    def test_projection_recovers_ledger_first_update_after_backup_restore(self) -> None:
         """Rebuild a missing canonical block from durable ledger state."""
 
         self.plugin.goal_activate(
@@ -291,8 +394,13 @@ class MarkdownPersistenceTests(unittest.TestCase):
             FactKind.CHANGE,
             "The ledger update survived before Markdown projection",
         )
+        source_database = Path(self.temporary) / "global.sqlite3"
+        backup_path = Path(self.temporary) / "review-recovery.sqlite3"
+        restored_path = Path(self.temporary) / "review-recovered.sqlite3"
+        backup_database(source_database, backup_path)
+        restore_database(backup_path, restored_path)
         self.store.close()
-        self.store = CuratorStore(Path(self.temporary) / "global.sqlite3")
+        self.store = CuratorStore(restored_path)
         self.addCleanup(self.store.close)
         self.plugin = ProjectPlugin.bind(self.config, self.store)
 
@@ -433,24 +541,24 @@ class MarkdownPersistenceTests(unittest.TestCase):
         )
         self.assertIsNotNone(candidate)
         assert candidate is not None
-        artifact_path = (
-            self.root
-            / ".curatormd-v2"
-            / "staging"
-            / self.goal.goal_id
-            / "scratch.json"
+        artifact = self.plugin.stage_artifact(
+            self.goal.goal_id,
+            "scratch",
+            "markdown-persistence-test",
+            io.BytesIO(b"temporary test artifact"),
         )
-        artifact_path.parent.mkdir(parents=True)
-        artifact_path.write_text("temporary test artifact")
-        artifact = ArtifactRef(
-            str(artifact_path),
-            hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+        artifact_path = Path(artifact.path)
+        review_packet = self.plugin.sde_review_packet(
+            candidate.candidate_id,
+            (replace(artifact, reacquisition_action=ReacquisitionAction.REACQUIRE_FROM_SOURCE),),
         )
+        artifact = review_packet.review_artifacts[0]
         receipt = self.plugin.sde_confirm(
             candidate.candidate_id,
             ReviewDecision.APPROVED,
             (artifact,),
             artifact_inventory_complete=True,
+            dependency_map_sha256=review_packet.dependency_map_sha256,
         )
         self.assertTrue(artifact_path.exists())
         self.assertFalse(receipt.canonical_persisted)
@@ -463,6 +571,25 @@ class MarkdownPersistenceTests(unittest.TestCase):
         self.assertTrue(artifact_path.exists())
         self.assertFalse(purger.called)
 
+        source_database = Path(self.temporary) / "global.sqlite3"
+        backup_path = Path(self.temporary) / "review-receipt-backup.sqlite3"
+        restored_path = Path(self.temporary) / "review-receipt-restored.sqlite3"
+        backup_database(source_database, backup_path)
+        restore_database(backup_path, restored_path)
+        self.store.close()
+        self.store = CuratorStore(restored_path)
+        self.addCleanup(self.store.close)
+        self.plugin = ProjectPlugin.bind(
+            self.config, self.store, TestVerifier(self.store), TestReviewAuthorizer()
+        )
+        self.plugin.service.purger = purger
+        reopened_receipt = self.store.get_receipt(
+            receipt.receipt_id, self.config.project_id
+        )
+        self.assertFalse(reopened_receipt.canonical_persisted)
+        self.assertTrue(artifact_path.exists())
+        self.assertFalse(purger.called)
+
         projection = self.plugin.persist_goal(self.goal.goal_id, self.target)
 
         final_receipt = self.store.get_receipt(receipt.receipt_id, "consumer-a")
@@ -471,13 +598,21 @@ class MarkdownPersistenceTests(unittest.TestCase):
         self.assertTrue(final_receipt.canonical_persisted)
         self.assertEqual(final_receipt.canonical_target, "persistence/HISTORY.md")
         self.assertEqual(final_receipt.canonical_sha256, purger.persisted_digest)
+        original_store = CuratorStore(source_database)
+        try:
+            original_receipt = original_store.get_receipt(
+                receipt.receipt_id, self.config.project_id
+            )
+            self.assertFalse(original_receipt.canonical_persisted)
+        finally:
+            original_store.close()
         content = self.target.read_text()
         self.assertIn(f"`{receipt.receipt_id}`", content)
         self.assertIn("purge `complete`", content)
         self.assertEqual(projection.sha256, hashlib.sha256(self.target.read_bytes()).hexdigest())
 
-    def test_retries_projection_when_receipt_commit_fails_after_markdown_write(self) -> None:
-        """A durable projection is safely replayed after its receipt update fails."""
+    def test_recovers_projection_after_process_dies_before_receipt_commit(self) -> None:
+        """Recover when a worker exits after Markdown replacement, before receipt commit."""
 
         self.plugin = ProjectPlugin.bind(
             self.config, self.store, TestVerifier(self.store), TestReviewAuthorizer()
@@ -511,55 +646,88 @@ class MarkdownPersistenceTests(unittest.TestCase):
             retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
+        review_packet = self.plugin.sde_review_packet(candidate.candidate_id)
         receipt = self.plugin.sde_confirm(
             candidate.candidate_id,
             ReviewDecision.APPROVED,
             (),
             artifact_inventory_complete=True,
+            dependency_map_sha256=review_packet.dependency_map_sha256,
         )
-        commit_receipt = self.store.mark_receipt_canonical_persisted
-        fail_once = True
+        self.store.close()
+        database = Path(self.temporary) / "global.sqlite3"
+        crash_after_projection = """\
+import os
+import sys
+from pathlib import Path
 
-        def interrupt_receipt_commit(
-            receipt_id: str, target: str, sha256: str, project_id: str
-        ):
-            nonlocal fail_once
-            if fail_once:
-                fail_once = False
-                raise RuntimeError("injected interruption after Markdown replacement")
-            return commit_receipt(receipt_id, target, sha256, project_id)
+from evidence_fixtures import attest_test_evidence
+from curatormd_v2 import CuratorStore, ProjectPlugin
+from curatormd_v2.project_config import ProjectConfig
 
-        with patch.object(
+class TestVerifier:
+    def attest(self, evidence, context):
+        if evidence.locator == "test-proof:passed":
+            return attest_test_evidence(evidence, context)
+        return None
+
+config = ProjectConfig.load(Path(sys.argv[1]))
+store = CuratorStore(Path(sys.argv[2]))
+plugin = ProjectPlugin.bind(config, store, TestVerifier())
+
+def terminate_before_receipt_commit(*_args, **_kwargs):
+    os._exit(73)
+
+store.mark_receipt_canonical_persisted = terminate_before_receipt_commit
+plugin.persist_goal(sys.argv[3], Path(sys.argv[4]))
+raise SystemExit(0)
+"""
+        crashed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                crash_after_projection,
+                str(self.root),
+                str(database),
+                self.goal.goal_id,
+                str(self.target),
+            ],
+            capture_output=True,
+            check=False,
+            cwd=Path(__file__).resolve().parents[1],
+                env={
+                    **os.environ,
+                    "PYTHONPATH": os.pathsep.join(
+                        filter(
+                            None,
+                            (
+                                str(Path(__file__).resolve().parent),
+                                os.environ.get("PYTHONPATH", ""),
+                            ),
+                        )
+                    ),
+                },
+            timeout=30,
+        )
+        self.assertEqual(crashed.returncode, 73, crashed.stderr.decode("utf-8", "replace"))
+
+        self.store = CuratorStore(database)
+        self.addCleanup(self.store.close)
+        self.plugin = ProjectPlugin.bind(
+            self.config,
             self.store,
-            "mark_receipt_canonical_persisted",
-            side_effect=interrupt_receipt_commit,
-        ):
-            with self.assertRaisesRegex(RuntimeError, "injected interruption"):
-                self.plugin.persist_goal(self.goal.goal_id, self.target)
-
-            after_interruption = self.store.get_receipt(
-                receipt.receipt_id, self.config.project_id
-            )
-            self.assertFalse(after_interruption.canonical_persisted)
-            self.assertEqual(
-                self.plugin.reconcile_goal(self.goal.goal_id, self.target).status,
-                MarkdownReconciliationStatus.SYNCED,
-            )
-
-            self.store.close()
-            self.store = CuratorStore(Path(self.temporary) / "global.sqlite3")
-            self.addCleanup(self.store.close)
-            self.plugin = ProjectPlugin.bind(
-                self.config,
-                self.store,
-                TestVerifier(self.store),
-                TestReviewAuthorizer(),
-            )
-            after_store_restart = self.store.get_receipt(
-                receipt.receipt_id, self.config.project_id
-            )
-            self.assertFalse(after_store_restart.canonical_persisted)
-            self.plugin.persist_goal(self.goal.goal_id, self.target)
+            TestVerifier(self.store),
+            TestReviewAuthorizer(),
+        )
+        after_process_exit = self.store.get_receipt(
+            receipt.receipt_id, self.config.project_id
+        )
+        self.assertFalse(after_process_exit.canonical_persisted)
+        self.assertEqual(
+            self.plugin.reconcile_goal(self.goal.goal_id, self.target).status,
+            MarkdownReconciliationStatus.SYNCED,
+        )
+        self.plugin.persist_goal(self.goal.goal_id, self.target)
 
         recovered = self.store.get_receipt(receipt.receipt_id, self.config.project_id)
         self.assertTrue(recovered.canonical_persisted)
@@ -604,11 +772,13 @@ class MarkdownPersistenceTests(unittest.TestCase):
             retrieval_value="Useful for future maintenance review",
         )
         assert candidate is not None
+        review_packet = self.plugin.sde_review_packet(candidate.candidate_id)
         receipt = self.plugin.sde_confirm(
             candidate.candidate_id,
             ReviewDecision.REJECTED,
             (),
             artifact_inventory_complete=True,
+            dependency_map_sha256=review_packet.dependency_map_sha256,
         )
         correction = self.plugin.sde_correction_record(
             "markdown-correction-1",
@@ -632,13 +802,20 @@ class MarkdownPersistenceTests(unittest.TestCase):
     def test_project_scope_and_explicit_configured_target_are_required(self) -> None:
         """Do not project another project's goal or an unconfigured target."""
 
-        other = ProjectPlugin.bind(
-            ProjectConfig.load(self._create_other_repo()), self.store
-        ).goal_start_from_checklist(
-            "tasks",
-            "Other project goal",
-            (SuccessCriterion("other", "Complete"),),
-            exact_item_text="- [ ] Other task",
+        other_config = ProjectConfig.load(self._create_other_repo())
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                other_config, "Register the second isolated persistence fixture"
+            ),
+            "test-admin",
+        )
+        other = ProjectPlugin.bind(other_config, self.store).goal_start_from_checklist(
+            ChecklistGoalStartRequest(
+                checklist_id="tasks",
+                problem="Other project goal",
+                success_criteria=(SuccessCriterion("other", "Complete"),),
+                exact_item_text="- [ ] Other task",
+            )
         )
 
         with self.assertRaises(LookupError):

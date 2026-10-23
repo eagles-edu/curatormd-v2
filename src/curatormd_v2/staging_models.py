@@ -7,6 +7,7 @@ from enum import StrEnum
 import re
 
 from .validation import is_exact_bool, is_exact_int
+from .record_validation import parse_aware_timestamp
 
 
 MAX_STAGING_SCAN_ENTRIES = 10_000
@@ -57,6 +58,7 @@ class StagingUsage:
     inventory_complete: bool
     error_code: str | None = None
     classes: tuple[StagingClassUsage, ...] = ()
+    observed_at: str | None = None
 
     def __post_init__(self) -> None:
         """Keep per-class observations consistent with scan totals."""
@@ -94,6 +96,8 @@ def _validate_staging_counts(usage: StagingUsage) -> None:
         raise ValueError("complete staging inventory must not have an error_code")
     if not usage.inventory_complete and usage.error_code is None:
         raise ValueError("incomplete staging inventory must include an error_code")
+    if usage.observed_at is not None:
+        parse_aware_timestamp("staging observed_at", usage.observed_at)
 
 
 def _validate_staging_classes(usage: StagingUsage) -> None:

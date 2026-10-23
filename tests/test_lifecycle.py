@@ -34,12 +34,14 @@ from curatormd_v2 import (
     Materiality,
     RejectUnverifiedEvidence,
     SuccessCriterion,
+    GoalTransitionRequest,
 )
 from curatormd_v2.events import EventEnvelope, FactRecorded, GoalStarted
 from curatormd_v2.reporting import GoalReportPage
 
 
-class TransactionCheckingVerifier:
+# EvidenceVerifier test double intentionally implements only `attest`.
+class TransactionCheckingVerifier:  # pylint: disable=too-few-public-methods
     """Fail tests if external proof verification runs inside SQLite work."""
 
     def __init__(self, store: CuratorStore) -> None:
@@ -127,22 +129,26 @@ class CuratorLifecycleTests(unittest.TestCase):
         """Apply one lifecycle-matrix action using explicit loop inputs."""
 
         if action == "activate":
-            return self.service.goal_activate(
+            result = self.service.goal_activate(
                 goal.goal_id, "Matrix acceptance", goal.lifecycle_revision
             )
-        if action == "change_fact":
+        elif action == "change_fact":
             self.service.goal_fact(goal.goal_id, FactKind.CHANGE, "Matrix change fact")
-            return self.store.get_goal(goal.goal_id)
-        if action == "finish":
-            return self.service.goal_finish(
+            result = self.store.get_goal(goal.goal_id)
+        elif action == "finish":
+            result = self.service.goal_finish(
                 goal.goal_id, "Matrix completion request", goal.lifecycle_revision
             )
-        if action == "block":
-            return self.service.goal_block(goal.goal_id, "Matrix dependency", "Resolve it")
-        if action == "defer":
-            return self.service.goal_defer(goal.goal_id, "Matrix deferral", "Resume it")
-        if action == "amend":
-            return self.service.goal_amend_criteria(
+        elif action == "block":
+            result = self.service.goal_block(
+                goal.goal_id, "Matrix dependency", "Resolve it"
+            )
+        elif action == "defer":
+            result = self.service.goal_defer(
+                goal.goal_id, "Matrix deferral", "Resume it"
+            )
+        elif action == "amend":
+            result = self.service.goal_amend_criteria(
                 goal.goal_id,
                 1,
                 (SuccessCriterion("revised", "Revised criterion passes"),),
@@ -150,20 +156,22 @@ class CuratorLifecycleTests(unittest.TestCase):
                 "Verify revised criterion",
                 goal.lifecycle_revision,
             )
-        if action == "cancel":
-            return self.service.goal_cancel(goal.goal_id, "Matrix cancellation")
-        if action == "supersede":
+        elif action == "cancel":
+            result = self.service.goal_cancel(goal.goal_id, "Matrix cancellation")
+        elif action == "supersede":
             assert replacement is not None
-            return self.service.goal_supersede(
+            result = self.service.goal_supersede(
                 goal.goal_id, replacement.goal_id, "Matrix supersession"
             )
-        assert action == "reopen"
-        return self.service.goal_reopen(
-            goal.goal_id,
-            "Matrix reopen",
-            "Reverify the criterion",
-            goal.lifecycle_revision,
-        )
+        else:
+            assert action == "reopen"
+            result = self.service.goal_reopen(
+                goal.goal_id,
+                "Matrix reopen",
+                "Reverify the criterion",
+                goal.lifecycle_revision,
+            )
+        return result
 
     def _goal_in_status(self, status: GoalStatus, label: str):
         criteria = (SuccessCriterion("done", f"{label} work passes verification"),)
@@ -630,12 +638,14 @@ class CuratorLifecycleTests(unittest.TestCase):
                 before = self.store.get_goal(goal.goal_id)
                 with self.assertRaisesRegex(ConflictError, "transition_goal may target only"):
                     self.store.transition_goal(
-                        goal.goal_id,
-                        target,
-                        None,
-                        (),
-                        goal.lifecycle_revision,
-                        self.service.project_id,
+                        GoalTransitionRequest(
+                            goal_id=goal.goal_id,
+                            status=target,
+                            next_action=None,
+                            facts=(),
+                            expected_lifecycle_revision=goal.lifecycle_revision,
+                            project_id=self.service.project_id,
+                        )
                     )
                 self.assertEqual(self.store.get_goal(goal.goal_id), before)
 
@@ -1230,57 +1240,243 @@ class CuratorLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(reopened.status, GoalStatus.ACTIVE)
 
+    def _completed_linked_goal(self) -> tuple[GoalCard, GoalCard, GoalCard]:
+        """Create a completed child with one parent and one prerequisite."""
+
+        parent = self.service.goal_start(
+            "Original parent",
+            (SuccessCriterion("parent", "Parent work passes"),),
+        )
+        dependency = self.service.goal_start(
+            "Original dependency",
+            (SuccessCriterion("dependency", "Dependency passes"),),
+        )
+        goal = self.service.goal_start(
+            "Completed linked work",
+            (SuccessCriterion("goal", "Linked work passes"),),
+            parent_goal_id=parent.goal_id,
+            depends_on_goal_ids=(dependency.goal_id,),
+        )
+        for linked, label in ((dependency, "dependency"), (goal, "goal")):
+            self.service.goal_fact(
+                linked.goal_id,
+                FactKind.VERIFICATION,
+                f"{label} verified",
+                criterion_id=label,
+                evidence=(self.proof(f"terminal-links-{label}"),),
+            )
+            self.service.goal_finish(linked.goal_id, f"Complete {label}")
+        return parent, dependency, goal
+
+    def _make_linked_records_terminal(
+        self,
+        parent: GoalCard,
+        dependency: GoalCard,
+        parent_terminal: GoalStatus,
+        dependency_terminal: GoalStatus,
+    ) -> tuple[GoalCard, GoalCard]:
+        """Retire the parent and seed the otherwise unreachable legacy dependency."""
+
+        parent_replacement = self.service.goal_start(
+            "Replacement parent",
+            (SuccessCriterion("replacement", "Replacement parent passes"),),
+        )
+        dependency_replacement = self.service.goal_start(
+            "Replacement dependency",
+            (SuccessCriterion("replacement", "Replacement dependency passes"),),
+        )
+        if parent_terminal is GoalStatus.CANCELLED:
+            self.service.goal_cancel(parent.goal_id, "Parent scope withdrawn")
+        else:
+            self.service.goal_supersede(
+                parent.goal_id, parent_replacement.goal_id, "Parent scope changed"
+            )
+
+        # Current rules require a completed dependency before its dependent can
+        # complete, and completed goals are terminal. Seed legacy persisted state.
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE goals SET status = ?, superseded_by_goal_id = ? "
+                "WHERE project_id = ? AND goal_id = ?",
+                (
+                    dependency_terminal.value,
+                    dependency_replacement.goal_id
+                    if dependency_terminal is GoalStatus.SUPERSEDED
+                    else None,
+                    self.service.project_id,
+                    dependency.goal_id,
+                ),
+            )
+        return parent_replacement, dependency_replacement
+
+    def test_reopen_rejects_terminal_parents_and_dependencies_atomically(self) -> None:
+        """Terminal relationship history stays fixed; continuation gets new links."""
+
+        for parent_terminal in (GoalStatus.CANCELLED, GoalStatus.SUPERSEDED):
+            for dependency_terminal in (GoalStatus.CANCELLED, GoalStatus.SUPERSEDED):
+                with self.subTest(
+                    parent=parent_terminal, dependency=dependency_terminal
+                ):
+                    parent, dependency, goal = self._completed_linked_goal()
+                    _parent_replacement, dependency_replacement = (
+                        self._make_linked_records_terminal(
+                            parent,
+                            dependency,
+                            parent_terminal,
+                            dependency_terminal,
+                        )
+                    )
+
+                    before_goal = self.store.get_goal(goal.goal_id)
+                    before_parent = self.store.get_goal(parent.goal_id)
+                    before_dependency = self.store.get_goal(dependency.goal_id)
+                    before_facts = self.store.list_facts(goal.goal_id)
+                    with self.assertRaisesRegex(
+                        ConflictError,
+                        "terminal parent|cancelled or superseded dependency",
+                    ):
+                        self.service.goal_reopen(
+                            goal.goal_id,
+                            "Resume with repaired relationships",
+                            "Start a new linked goal",
+                            before_goal.lifecycle_revision,
+                        )
+                    self.assertEqual(self.store.get_goal(goal.goal_id), before_goal)
+                    self.assertEqual(self.store.list_facts(goal.goal_id), before_facts)
+                    self.assertEqual(self.store.get_goal(parent.goal_id), before_parent)
+                    self.assertEqual(self.store.get_goal(dependency.goal_id), before_dependency)
+                    self.assertEqual(before_goal.parent_goal_id, parent.goal_id)
+                    self.assertEqual(before_goal.depends_on_goal_ids, (dependency.goal_id,))
+
+                    next_parent = self.service.goal_start(
+                        "Continuation parent",
+                        (SuccessCriterion("next-parent", "Continuation parent passes"),),
+                    )
+                    continuation = self.service.goal_start(
+                        "Continuation dependency",
+                        (SuccessCriterion("next-goal", "Continuation passes"),),
+                        parent_goal_id=next_parent.goal_id,
+                        depends_on_goal_ids=(dependency_replacement.goal_id,),
+                    )
+                    self.assertEqual(continuation.status, GoalStatus.ACTIVE)
+                    self.assertEqual(continuation.parent_goal_id, next_parent.goal_id)
+                    self.assertEqual(
+                        continuation.depends_on_goal_ids,
+                        (dependency_replacement.goal_id,),
+                    )
+
+    def _completed_reopen_order_fixture(self, scenario: str) -> dict[str, GoalCard]:
+        """Build a fully evidenced nested parent/dependency completion graph."""
+
+        criteria = {
+            label: SuccessCriterion(f"{scenario}-{label}", f"{label} criterion passes")
+            for label in ("root", "middle", "leaf", "dependency")
+        }
+        dependency = self.service.goal_start(
+            f"{scenario} dependency", (criteria["dependency"],)
+        )
+        root = self.service.goal_start(f"{scenario} root", (criteria["root"],))
+        middle = self.service.goal_start(
+            f"{scenario} middle",
+            (criteria["middle"],),
+            parent_goal_id=root.goal_id,
+        )
+        leaf = self.service.goal_start(
+            f"{scenario} leaf",
+            (criteria["leaf"],),
+            parent_goal_id=middle.goal_id,
+            depends_on_goal_ids=(dependency.goal_id,),
+        )
+        goals = {
+            "root": root,
+            "middle": middle,
+            "leaf": leaf,
+            "dependency": dependency,
+        }
+        for label in ("dependency", "leaf", "middle", "root"):
+            goal = goals[label]
+            self.service.goal_fact(
+                goal.goal_id,
+                FactKind.VERIFICATION,
+                f"{scenario} {label} passed",
+                criterion_id=criteria[label].criterion_id,
+                evidence=(self.proof(f"{scenario}-{label}"),),
+            )
+            goals[label] = self.service.goal_finish(
+                goal.goal_id, f"Complete {scenario} {label}"
+            )
+            self.assertEqual(goals[label].status, GoalStatus.COMPLETE)
+        return goals
+
+    def _assert_reopen_order_step(
+        self,
+        scenario: str,
+        label: str,
+        goals: dict[str, GoalCard],
+        expected_status: dict[str, GoalStatus],
+        expected_revision: dict[str, int],
+    ) -> None:
+        """Check one reopen edge and prove rejected attempts are atomic."""
+
+        before_goals = {
+            name: self.store.get_goal(goal.goal_id)
+            for name, goal in goals.items()
+        }
+        before_facts = {
+            name: self.store.list_facts(goal.goal_id)
+            for name, goal in goals.items()
+        }
+        allowed = (
+            label == "root"
+            or (label == "middle" and expected_status["root"] is GoalStatus.ACTIVE)
+            or (label == "leaf" and expected_status["middle"] is GoalStatus.ACTIVE)
+            or (
+                label == "dependency"
+                and expected_status["leaf"] is not GoalStatus.COMPLETE
+            )
+        )
+        try:
+            reopened = self.service.goal_reopen(
+                goals[label].goal_id,
+                f"Reopen {scenario} {label}",
+                f"Reverify {scenario} {label}",
+                expected_revision[label],
+            )
+        except ConflictError:
+            self.assertFalse(allowed, f"unexpected refusal reopening {label}")
+            for name, goal in goals.items():
+                self.assertEqual(self.store.get_goal(goal.goal_id), before_goals[name])
+                self.assertEqual(self.store.list_facts(goal.goal_id), before_facts[name])
+        else:
+            self.assertTrue(allowed, f"unexpectedly reopened {label}")
+            self.assertEqual(reopened.status, GoalStatus.ACTIVE)
+            expected_status[label] = GoalStatus.ACTIVE
+            expected_revision[label] += 1
+            retained_fact_ids = {fact.fact_id for fact in before_facts[label]}
+            reopened_facts = self.store.list_facts(goals[label].goal_id)
+            self.assertTrue(
+                retained_fact_ids.issubset(
+                    {fact.fact_id for fact in reopened_facts}
+                )
+            )
+            self.assertEqual(
+                self.service.goal_status(goals[label].goal_id).criteria[0].status,
+                CriterionStatus.OPEN,
+            )
+
+        for name, goal in goals.items():
+            actual = self.store.get_goal(goal.goal_id)
+            self.assertEqual(actual.status, expected_status[name])
+            self.assertEqual(actual.lifecycle_revision, expected_revision[name])
+
     def test_every_reopen_order_obeys_nested_parent_and_dependency_gates(self) -> None:
         """Exhaust all four-goal reopen orders and preserve facts on rejected edges."""
 
-        for index, order in enumerate(
-            permutations(("root", "middle", "leaf", "dependency"))
-        ):
+        labels = ("root", "middle", "leaf", "dependency")
+        for index, order in enumerate(permutations(labels)):
             with self.subTest(order=order):
                 scenario = f"reopen-order-{index}"
-                criteria = {
-                    label: SuccessCriterion(
-                        f"{scenario}-{label}", f"{label} criterion passes"
-                    )
-                    for label in ("root", "middle", "leaf", "dependency")
-                }
-                dependency = self.service.goal_start(
-                    f"{scenario} dependency", (criteria["dependency"],)
-                )
-                root = self.service.goal_start(
-                    f"{scenario} root", (criteria["root"],)
-                )
-                middle = self.service.goal_start(
-                    f"{scenario} middle",
-                    (criteria["middle"],),
-                    parent_goal_id=root.goal_id,
-                )
-                leaf = self.service.goal_start(
-                    f"{scenario} leaf",
-                    (criteria["leaf"],),
-                    parent_goal_id=middle.goal_id,
-                    depends_on_goal_ids=(dependency.goal_id,),
-                )
-                goals = {
-                    "root": root,
-                    "middle": middle,
-                    "leaf": leaf,
-                    "dependency": dependency,
-                }
-                for label in ("dependency", "leaf", "middle", "root"):
-                    goal = goals[label]
-                    self.service.goal_fact(
-                        goal.goal_id,
-                        FactKind.VERIFICATION,
-                        f"{scenario} {label} passed",
-                        criterion_id=criteria[label].criterion_id,
-                        evidence=(self.proof(f"{scenario}-{label}"),),
-                    )
-                    goals[label] = self.service.goal_finish(
-                        goal.goal_id, f"Complete {scenario} {label}"
-                    )
-                    self.assertEqual(goals[label].status, GoalStatus.COMPLETE)
-
+                goals = self._completed_reopen_order_fixture(scenario)
                 expected_status = {
                     label: GoalStatus.COMPLETE for label in goals
                 }
@@ -1288,65 +1484,13 @@ class CuratorLifecycleTests(unittest.TestCase):
                     label: goal.lifecycle_revision for label, goal in goals.items()
                 }
                 for label in order:
-                    before_goals = {
-                        name: self.store.get_goal(goal.goal_id)
-                        for name, goal in goals.items()
-                    }
-                    before_facts = {
-                        name: self.store.list_facts(goal.goal_id)
-                        for name, goal in goals.items()
-                    }
-                    allowed = (
-                        label == "root"
-                        or (label == "middle" and expected_status["root"] is GoalStatus.ACTIVE)
-                        or (label == "leaf" and expected_status["middle"] is GoalStatus.ACTIVE)
-                        or (
-                            label == "dependency"
-                            and expected_status["leaf"] is not GoalStatus.COMPLETE
-                        )
+                    self._assert_reopen_order_step(
+                        scenario,
+                        label,
+                        goals,
+                        expected_status,
+                        expected_revision,
                     )
-
-                    try:
-                        reopened = self.service.goal_reopen(
-                            goals[label].goal_id,
-                            f"Reopen {scenario} {label}",
-                            f"Reverify {scenario} {label}",
-                            expected_revision[label],
-                        )
-                    except ConflictError:
-                        self.assertFalse(allowed, f"unexpected refusal reopening {label}")
-                        for name, goal in goals.items():
-                            self.assertEqual(
-                                self.store.get_goal(goal.goal_id), before_goals[name]
-                            )
-                            self.assertEqual(
-                                self.store.list_facts(goal.goal_id), before_facts[name]
-                            )
-                    else:
-                        self.assertTrue(allowed, f"unexpectedly reopened {label}")
-                        self.assertEqual(reopened.status, GoalStatus.ACTIVE)
-                        expected_status[label] = GoalStatus.ACTIVE
-                        expected_revision[label] += 1
-                        retained_fact_ids = {
-                            fact.fact_id for fact in before_facts[label]
-                        }
-                        reopened_facts = self.store.list_facts(goals[label].goal_id)
-                        self.assertTrue(
-                            retained_fact_ids.issubset(
-                                {fact.fact_id for fact in reopened_facts}
-                            )
-                        )
-                        self.assertEqual(
-                            self.service.goal_status(goals[label].goal_id)
-                            .criteria[0]
-                            .status,
-                            CriterionStatus.OPEN,
-                        )
-
-                    for name, goal in goals.items():
-                        actual = self.store.get_goal(goal.goal_id)
-                        self.assertEqual(actual.status, expected_status[name])
-                        self.assertEqual(actual.lifecycle_revision, expected_revision[name])
 
     def test_criteria_amendment_is_versioned_and_starts_a_fresh_evidence_epoch(self) -> None:
         original_criteria = self.goal.success_criteria
@@ -1797,11 +1941,13 @@ class CuratorLifecycleTests(unittest.TestCase):
         )
         with self.assertRaises(ConflictError):
             self.store.transition_goal(
-                self.goal.goal_id,
-                GoalStatus.COMPLETE,
-                None,
-                (misplaced_fact,),
-                1,
+                GoalTransitionRequest(
+                    goal_id=self.goal.goal_id,
+                    status=GoalStatus.COMPLETE,
+                    next_action=None,
+                    facts=(misplaced_fact,),
+                    expected_lifecycle_revision=1,
+                )
             )
         self.assertEqual(self.store.get_goal(self.goal.goal_id).status, GoalStatus.ACTIVE)
         self.assertEqual(self.store.list_facts(self.goal.goal_id), ())

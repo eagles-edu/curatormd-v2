@@ -35,7 +35,8 @@ from curatormd_v2.store import CuratorStore
 SAFE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 
 
-class _TrustedFixtureEvidence:
+# EvidenceVerifier test double intentionally implements only `attest`.
+class _TrustedFixtureEvidence:  # pylint: disable=too-few-public-methods
     """Accept only the two explicit local references used by this regression."""
 
     def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):

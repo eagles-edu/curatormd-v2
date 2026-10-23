@@ -19,7 +19,8 @@
         "evidence_kind": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\r\\n]+$"},
         "locator": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "outcome": {"enum": ["passed", "failed", "observed"]}
+        "outcome": {"enum": ["passed", "failed", "observed"]},
+        "occurrence_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{32}$"}
       },
       "additionalProperties": false
     },
@@ -39,7 +40,8 @@
         "observed_at": {"type": "string", "minLength": 1, "maxLength": 64},
         "verified_at": {"type": "string", "minLength": 1, "maxLength": 64},
         "valid_until": {"type": "string", "minLength": 1, "maxLength": 64},
-        "revocation_checked_at": {"type": "string", "minLength": 1, "maxLength": 64}
+        "revocation_checked_at": {"type": "string", "minLength": 1, "maxLength": 64},
+        "occurrence_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{32}$"}
       },
       "additionalProperties": false
     },
@@ -134,7 +136,7 @@
     "stagingUsage": {
       "description": "Content-free bounded scan totals; incomplete scans are not purge approval.",
       "type": "object",
-      "required": ["entries_scanned", "regular_file_count", "observed_file_bytes", "directory_count", "symlink_count", "special_file_count", "inventory_complete", "error_code", "classes"],
+      "required": ["entries_scanned", "regular_file_count", "observed_file_bytes", "directory_count", "symlink_count", "special_file_count", "inventory_complete", "error_code", "classes", "observed_at"],
       "properties": {
         "entries_scanned": {"type": "integer", "minimum": 0, "maximum": 10000},
         "regular_file_count": {"type": "integer", "minimum": 0},
@@ -144,7 +146,8 @@
         "special_file_count": {"type": "integer", "minimum": 0},
         "inventory_complete": {"type": "boolean"},
         "error_code": {"type": ["string", "null"], "maxLength": 64, "pattern": "^[a-z][a-z0-9_]{0,63}$"},
-        "classes": {"type": "array", "maxItems": 7, "items": {"$ref": "#/$defs/stagingClassUsage"}}
+        "classes": {"type": "array", "maxItems": 7, "items": {"$ref": "#/$defs/stagingClassUsage"}},
+        "observed_at": {"type": ["string", "null"], "maxLength": 64}
       },
       "allOf": [
         {
@@ -182,12 +185,40 @@
       "additionalProperties": false
     },
     "sdeReviewPacket": {
-      "description": "Review-scoped composition of selected SDE facts and current artifact inventory.",
+      "description": "Review-scoped composition of selected SDE facts, current inventory, and a content-free dependency map. Path/digest matches do not prove occurrence identity.",
       "type": "object",
-      "required": ["detail", "artifact_inventory"],
+      "required": ["detail", "artifact_inventory", "review_artifacts", "artifact_dependencies", "dependency_map_sha256"],
       "properties": {
         "detail": {"$ref": "#/$defs/sdeReviewDetail"},
-        "artifact_inventory": {"$ref": "#/$defs/stagingArtifactInventory"}
+        "artifact_inventory": {"$ref": "#/$defs/stagingArtifactInventory"},
+        "review_artifacts": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/artifactRef"}},
+        "artifact_dependencies": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/artifactReviewDependency"}},
+        "dependency_map_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "artifactEvidenceDependency": {
+      "description": "A content-free fact/evidence/criterion link in an SDE review packet.",
+      "type": "object",
+      "required": ["fact_id", "criterion_id", "criterion_status", "evidence", "attested_occurrence_id"],
+      "properties": {
+        "fact_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "criterion_id": {"type": ["string", "null"], "maxLength": 128},
+        "criterion_status": {"enum": ["open", "verified", null]},
+        "evidence": {"$ref": "#/$defs/evidenceRef"},
+        "attested_occurrence_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{32}$"}
+      },
+      "additionalProperties": false
+    },
+    "artifactReviewDependency": {
+      "description": "Dependency and hold view for one exact staging occurrence, including evidence occurrence-match, mismatch, or legacy-unbound state.",
+      "type": "object",
+      "required": ["artifact", "binding", "evidence_dependencies", "reacquisition_action"],
+      "properties": {
+        "artifact": {"$ref": "#/$defs/artifactRef"},
+        "binding": {"enum": ["unmapped", "path_and_digest_match_occurrence_unbound", "occurrence_match", "occurrence_mismatch", "occurrence_unattested", "occurrence_mixed"]},
+        "evidence_dependencies": {"type": "array", "maxItems": 8192, "items": {"$ref": "#/$defs/artifactEvidenceDependency"}},
+        "reacquisition_action": {"enum": ["not_recorded", "not_required", "reacquire_from_source", "retain_under_hold"]}
       },
       "additionalProperties": false
     },
@@ -236,14 +267,18 @@
       "properties": {
         "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\r\\n]+$"},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "retention_hold": {"enum": ["legal", "operational", null]}
+        "retention_hold": {"enum": ["legal", "operational", null]},
+        "device_id": {"type": ["integer", "null"], "minimum": 0},
+        "inode_id": {"type": ["integer", "null"], "minimum": 0},
+        "occurrence_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{32}$"},
+        "reacquisition_action": {"enum": ["not_recorded", "not_required", "reacquire_from_source", "retain_under_hold"]}
       },
       "additionalProperties": false
     },
     "auditReceipt": {
       "description": "Canonical JSON-compatible shape of curatormd_v2.models.AuditReceipt.",
       "type": "object",
-      "required": ["candidate_id", "decision", "facts_sha256", "artifacts", "artifact_inventory_complete", "reviewer_id", "review_rationale", "canonical_persisted", "canonical_target", "canonical_sha256", "canonical_persisted_at", "receipt_id", "purge_status", "created_at", "updated_at", "cleanup_authorized", "cleanup_reviewer_id", "cleanup_manifest_sha256", "cleanup_approved_at", "cleanup_canonical_persisted"],
+      "required": ["candidate_id", "decision", "facts_sha256", "artifacts", "artifact_inventory_complete", "reviewer_id", "review_rationale", "canonical_persisted", "canonical_target", "canonical_sha256", "canonical_persisted_at", "receipt_id", "purge_status", "created_at", "updated_at", "cleanup_authorized", "cleanup_reviewer_id", "cleanup_manifest_sha256", "cleanup_dependency_map_sha256", "cleanup_approved_at", "cleanup_canonical_persisted"],
       "properties": {
         "candidate_id": {"type": "string", "minLength": 1},
         "decision": {"enum": ["approved", "rejected"]},
@@ -263,6 +298,7 @@
         "cleanup_authorized": {"type": "boolean"},
         "cleanup_reviewer_id": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
         "cleanup_manifest_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "cleanup_dependency_map_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "cleanup_approved_at": {"type": ["string", "null"]},
         "cleanup_canonical_persisted": {"type": "boolean"}
       },
@@ -287,7 +323,7 @@
     "purgeTargetStatus": {
       "description": "Canonical JSON-compatible shape of curatormd_v2.service.PurgeTargetStatus. The error field is null or a fixed content-free code, never exception text.",
       "type": "object",
-      "required": ["artifact", "status", "attempts", "error", "created_at", "last_attempt_at", "next_attempt_at", "next_attempt_in_seconds", "age_seconds", "last_attempt_age_seconds", "safe_recovery_action", "hold_created_at", "hold_created_by", "hold_released_at", "hold_released_by", "hold_release_rationale"],
+      "required": ["artifact", "status", "attempts", "error", "created_at", "last_attempt_at", "next_attempt_at", "next_attempt_in_seconds", "age_seconds", "last_attempt_age_seconds", "safe_recovery_action", "hold_created_at", "hold_created_by", "hold_released_at", "hold_released_by", "hold_release_rationale", "approval_stale"],
       "properties": {
         "artifact": {"$ref": "#/$defs/artifactRef"},
         "status": {"enum": ["pending", "purged", "failed", "held"]},
@@ -299,12 +335,13 @@
         "next_attempt_in_seconds": {"type": ["integer", "null"], "minimum": 0},
         "age_seconds": {"type": ["integer", "null"], "minimum": 0},
         "last_attempt_age_seconds": {"type": ["integer", "null"], "minimum": 0},
-        "safe_recovery_action": {"enum": ["artifact_inventory_complete", "goal_persist", "retry_pending_purges", "release_artifact_hold", "none"]},
+        "safe_recovery_action": {"enum": ["artifact_inventory_complete", "goal_persist", "retry_pending_purges", "release_artifact_hold", "fresh_inventory_review", "none"]},
         "hold_created_at": {"type": ["string", "null"]},
         "hold_created_by": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
         "hold_released_at": {"type": ["string", "null"]},
         "hold_released_by": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
-        "hold_release_rationale": {"type": ["string", "null"], "maxLength": 500, "pattern": "^[^\\r\\n]+$"}
+        "hold_release_rationale": {"type": ["string", "null"], "maxLength": 500, "pattern": "^[^\\r\\n]+$"},
+        "approval_stale": {"type": "boolean"}
       },
       "additionalProperties": false
     },

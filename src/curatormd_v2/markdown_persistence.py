@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -105,6 +107,27 @@ class MarkdownProjectReconciliation:
     scanned_bytes: int
 
 
+@dataclass(frozen=True, slots=True)
+class _VerifiedProjectionSnapshot:
+    """Evidence state validated before the canonical-write transaction."""
+
+    criteria_revision: int
+    lifecycle_revision: int
+    fact_ids: tuple[str, ...]
+    progress: tuple[CriterionProgress, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _GoalProjectionRecords:
+    """Durable review and purge records used to render one goal block."""
+
+    candidates: tuple[SDECandidate, ...]
+    pending_receipts: tuple[AuditReceipt, ...]
+    receipts: tuple[AuditReceipt, ...]
+    corrections: tuple[SDECorrection, ...]
+    progress_snapshot: tuple[CriterionProgress, ...] | None
+
+
 class MarkdownPersistenceAdapter:
     """Upsert one compact per-goal block without rewriting unrelated content.
 
@@ -126,38 +149,53 @@ class MarkdownPersistenceAdapter:
         self.target = config.validated_persistence_target(target)
         self.evidence_verifier = evidence_verifier or RejectUnverifiedEvidence()
 
-    def persist_goal(self, goal_id: str) -> MarkdownProjectionResult:
+    def persist_goal(
+        self,
+        goal_id: str,
+        *,
+        effect_fence: Callable[[], AbstractContextManager[object]] | None = None,
+    ) -> MarkdownProjectionResult:
         """Render current facts/receipts and atomically upsert the goal block."""
 
         target = self.config.validated_persistence_target(self.target)
-        initial_goal = self.store.get_goal(goal_id, self.project_id)
-        initial_facts = self.store.list_facts(goal_id, self.project_id)
-        progress = self._criterion_progress(initial_goal, initial_facts)
-        with self.store.transaction():
-            current_goal = self.store.get_goal(goal_id, self.project_id)
-            current_facts = self.store.list_facts(goal_id, self.project_id)
-            if (
-                current_goal.criteria_revision != initial_goal.criteria_revision
-                or current_goal.lifecycle_revision != initial_goal.lifecycle_revision
-                or tuple(fact.fact_id for fact in current_facts)
-                != tuple(fact.fact_id for fact in initial_facts)
-            ):
-                raise MarkdownPersistenceError(
-                    "goal changed during evidence verification; retry projection"
-                )
-            block = self._render_goal(goal_id, progress=progress)
-            start_marker, end_marker = _goal_markers(goal_id)
-            current, mode = self._read_target(target)
-            updated = _upsert_block(current, block, start_marker, end_marker)
-            encoded = updated.encode("utf-8")
-            if len(encoded) > MAX_MARKDOWN_BYTES:
-                raise MarkdownPersistenceError(
-                    f"canonical Markdown target exceeds {MAX_MARKDOWN_BYTES} bytes"
-                )
-            digest = hashlib.sha256(encoded).hexdigest()
-            changed = updated != current
-            if changed:
-                self._atomic_replace(target, encoded, mode)
+        snapshot = self._verified_projection_snapshot(goal_id)
+        return self._persist_verified_snapshot(goal_id, target, snapshot, effect_fence)
+
+    def _persist_verified_snapshot(
+        self,
+        goal_id: str,
+        target: Path,
+        snapshot: _VerifiedProjectionSnapshot,
+        effect_fence: Callable[[], AbstractContextManager[object]] | None,
+    ) -> MarkdownProjectionResult:
+        """Fence and atomically write a snapshot after external verification."""
+
+        with (effect_fence or nullcontext)():
+            with self.store.transaction():
+                current_goal = self.store.get_goal(goal_id, self.project_id)
+                current_facts = self.store.list_facts(goal_id, self.project_id)
+                if (
+                    current_goal.criteria_revision != snapshot.criteria_revision
+                    or current_goal.lifecycle_revision != snapshot.lifecycle_revision
+                    or tuple(fact.fact_id for fact in current_facts)
+                    != snapshot.fact_ids
+                ):
+                    raise MarkdownPersistenceError(
+                        "goal changed during evidence verification; retry projection"
+                    )
+                block = self._render_goal(goal_id, progress=snapshot.progress)
+                markers = _goal_markers(goal_id)
+                current, mode = self._read_target(target)
+                updated = _upsert_block(current, block, *markers)
+                encoded = updated.encode("utf-8")
+                if len(encoded) > MAX_MARKDOWN_BYTES:
+                    raise MarkdownPersistenceError(
+                        f"canonical Markdown target exceeds {MAX_MARKDOWN_BYTES} bytes"
+                    )
+                digest = hashlib.sha256(encoded).hexdigest()
+                changed = updated != current
+                if changed:
+                    self._atomic_replace(target, encoded, mode)
         return MarkdownProjectionResult(
             target=target,
             project_id=self.project_id,
@@ -165,6 +203,20 @@ class MarkdownPersistenceAdapter:
             sha256=digest,
             changed=changed,
             size_bytes=len(encoded),
+        )
+
+    def _verified_projection_snapshot(
+        self, goal_id: str
+    ) -> _VerifiedProjectionSnapshot:
+        """Verify evidence once and retain the revision fence for the write."""
+
+        goal = self.store.get_goal(goal_id, self.project_id)
+        facts = self.store.list_facts(goal_id, self.project_id)
+        return _VerifiedProjectionSnapshot(
+            criteria_revision=goal.criteria_revision,
+            lifecycle_revision=goal.lifecycle_revision,
+            fact_ids=tuple(fact.fact_id for fact in facts),
+            progress=self._criterion_progress(goal, facts),
         )
 
     def render_goal(self, goal_id: str) -> str:
@@ -391,18 +443,22 @@ class MarkdownPersistenceAdapter:
             )
         )
         return self._render_block(
-            goal, facts, candidates, pending, receipts, corrections, progress
+            goal,
+            facts,
+            _GoalProjectionRecords(
+                candidates=candidates,
+                pending_receipts=pending,
+                receipts=receipts,
+                corrections=corrections,
+                progress_snapshot=progress,
+            ),
         )
 
     def _render_block(
         self,
         goal: GoalCard,
         facts: tuple[Fact, ...],
-        candidates: tuple[SDECandidate, ...],
-        pending: tuple[AuditReceipt, ...],
-        receipts: tuple[AuditReceipt, ...],
-        corrections: tuple[SDECorrection, ...],
-        progress_snapshot: tuple[CriterionProgress, ...] | None = None,
+        records: _GoalProjectionRecords,
     ) -> str:
         start_marker, end_marker = _goal_markers(goal.goal_id)
         lines = [
@@ -443,8 +499,8 @@ class MarkdownPersistenceAdapter:
         progress = {
             item.criterion_id: item.status.value
             for item in (
-                progress_snapshot
-                if progress_snapshot is not None
+                records.progress_snapshot
+                if records.progress_snapshot is not None
                 else self._criterion_progress(goal, facts)
             )
         }
@@ -459,12 +515,15 @@ class MarkdownPersistenceAdapter:
         if goal.next_action:
             lines.append(f"- Next: {_markdown_text(goal.next_action)}")
         lines.extend(_render_facts(facts))
-        lines.extend(_render_candidates(candidates))
-        lines.extend(_render_receipts(receipts, self.store, self.project_id))
-        lines.extend(_render_corrections(corrections))
-        if pending:
+        lines.extend(_render_candidates(records.candidates))
+        lines.extend(
+            _render_receipts(records.receipts, self.store, self.project_id)
+        )
+        lines.extend(_render_corrections(records.corrections))
+        if records.pending_receipts:
             lines.append(
-                f"- Open gate: `{len(pending)}` purge receipt(s) remain pending."
+                "- Open gate: "
+                f"`{len(records.pending_receipts)}` purge receipt(s) remain pending."
             )
         lines.append(end_marker)
         return _seal_goal_block("\n".join(lines))
@@ -778,6 +837,8 @@ def _render_receipts(
                 + _markdown_text(receipt.cleanup_reviewer_id or "")
                 + "`; manifest SHA-256 `"
                 + _markdown_text(receipt.cleanup_manifest_sha256 or "")
+                + "`; dependency map SHA-256 `"
+                + _markdown_text(receipt.cleanup_dependency_map_sha256 or "unbound")
                 + "`; approved at `"
                 + _markdown_text(receipt.cleanup_approved_at or "")
                 + "`"

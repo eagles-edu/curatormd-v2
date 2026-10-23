@@ -154,6 +154,19 @@ class ArtifactPurger:
                 PurgeFailureCode.NOT_REGULAR_FILE,
                 "only regular files are eligible for purge",
             )
+        if (
+            artifact.device_id is None
+            or artifact.inode_id is None
+            or artifact.occurrence_id is None
+            or (
+                before.st_dev != artifact.device_id
+                or before.st_ino != artifact.inode_id
+            )
+        ):
+            raise PurgeError(
+                PurgeFailureCode.PATH_CHANGED,
+                "artifact occurrence differs from the reviewed file",
+            )
         digest = hashlib.sha256()
         with os.fdopen(os.dup(file_fd), "rb") as source:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):

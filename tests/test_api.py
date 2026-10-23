@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import UTC, datetime, timedelta
+from dataclasses import replace
 import hashlib
 import json
 from io import BytesIO
@@ -47,7 +48,9 @@ from curatormd_v2 import (
     ProjectConfig,
     ProjectGrantAuthorizer,
     ProjectPlugin,
+    ProjectRegistrationRequest,
     RateLimitExceeded,
+    ReacquisitionAction,
     ReviewDecision,
     RetentionHoldKind,
     SDEQualityFeedbackLabel,
@@ -78,9 +81,14 @@ class AllowProject:  # pylint: disable=too-few-public-methods
 class TestVerifier:  # pylint: disable=too-few-public-methods
     """Verify only the exact stable evidence locator used by this test."""
 
+    def __init__(self, store: CuratorStore | None = None) -> None:
+        self.store = store
+
     def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
         """Attest only the exact proof locator used by API tests."""
 
+        if self.store is not None and self.store.transaction_active:
+            raise AssertionError("evidence verification ran inside a write transaction")
         return (
             attest_test_evidence(evidence, context)
             if evidence.locator == "test-proof:verified"
@@ -228,7 +236,14 @@ class ApiFacadeTests(unittest.TestCase):
         (self.root / ".curatormd-v2.toml").chmod(0o600)
         self.store = CuratorStore(Path(temporary) / "global.sqlite3")
         self.addCleanup(self.store.close)
-        self.plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        config = ProjectConfig.load(self.root)
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                config, "Register the API facade fixture"
+            ),
+            "test-admin",
+        )
+        self.plugin = ProjectPlugin.bind(config, self.store)
         self.caller = AuthenticatedCaller("hermes-user-1")
         self.authorizer = AllowProject(
             {
@@ -405,12 +420,26 @@ class ApiFacadeTests(unittest.TestCase):
             )
 
     def test_canonical_goal_projection_requires_reviewer_scope(self) -> None:
-        api = AuthenticatedCuratorAPI(
-            {"project-a": self.plugin}, self.authorizer
+        plugin = ProjectPlugin.bind(
+            self.plugin.config, self.store, TestVerifier(self.store)
         )
-        goal = self.plugin.service.goal_start(
+        api = AuthenticatedCuratorAPI({"project-a": plugin}, self.authorizer)
+        goal = plugin.service.goal_start(
             "Persist a reviewed, compact goal record",
             (SuccessCriterion("verified", "The goal remains evidence-linked"),),
+        )
+        evidence = EvidenceRef(
+            "unit-test",
+            "test-proof:verified",
+            hashlib.sha256(b"proof").hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        plugin.service.goal_fact(
+            goal.goal_id,
+            FactKind.VERIFICATION,
+            "The bounded persistence check passed",
+            criterion_id="verified",
+            evidence=(evidence,),
         )
         target = self.root / "persistence" / "HISTORY.md"
 
@@ -468,6 +497,7 @@ class ApiFacadeTests(unittest.TestCase):
 
         self.assertEqual(health.status.value, "unknown")
         self.assertEqual(health.event_received_count, 0)
+        assert health.operational_counts is not None
         self.assertEqual(health.operational_counts.pending_review_count, 0)
         self.assertIsNotNone(health.staging_inventory_complete)
         self.assertIn("dependency_unknown:event_router", health.gate_codes)
@@ -558,7 +588,117 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertEqual(health.gate_codes, ())
         self.assertTrue(health.event_capacity_available)
         self.assertTrue(health.staging_inventory_complete)
+        self.assertTrue(health.database_observation_complete)
+        assert health.database_observed_at is not None
+        self.assertIsNotNone(
+            datetime.fromisoformat(health.database_observed_at).tzinfo
+        )
+        self.assertIsNotNone(health.staging_observed_at)
+        self.assertTrue(
+            all(item.observed_at is not None for item in health.dependencies)
+        )
         self.assertTrue(all(item.status.value == "healthy" for item in health.dependencies))
+
+    def test_project_health_reports_unknown_when_database_snapshot_fails(self) -> None:
+        """A failed aggregate read must not be rendered as zero-valued health."""
+
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin},
+            self.authorizer,
+            dependency_readiness=DependencyReadiness(
+                {name: True for name in REQUIRED_HEALTH_DEPENDENCIES}
+            ),
+        )
+        with patch.object(
+            self.plugin,
+            "operational_health_inputs",
+            side_effect=sqlite3.OperationalError("database read failed"),
+        ):
+            health = api.project_health(self.caller, "project-a")
+            metrics = api.project_prometheus_metrics(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "unknown")
+        self.assertFalse(health.database_observation_complete)
+        self.assertIsNone(health.database_observed_at)
+        self.assertIsNone(health.event_received_count)
+        self.assertIsNone(health.operational_counts)
+        self.assertIsNone(health.event_capacity_available)
+        self.assertIn("database_observation_failed", health.gate_codes)
+        self.assertIn(
+            'curatormd_database_observation_complete{project_id="project-a"} 0',
+            metrics,
+        )
+        self.assertIn(
+            'curatormd_project_health_state{project_id="project-a",'
+            'state="unknown"} 1',
+            metrics,
+        )
+        self.assertNotIn("curatormd_event_queue_received", metrics)
+        self.assertNotIn("curatormd_facts{", metrics)
+
+    def test_project_health_requires_storage_and_alert_delivery_observations(self) -> None:
+        """Missing storage or alert observations cannot leave local health green."""
+
+        for dependency in ("database_storage_adapter", "alert_delivery"):
+            with self.subTest(dependency=dependency):
+                readiness = DependencyReadiness(
+                    {
+                        name: True
+                        for name in REQUIRED_HEALTH_DEPENDENCIES
+                        if name != dependency
+                    }
+                )
+                api = AuthenticatedCuratorAPI(
+                    {"project-a": self.plugin},
+                    self.authorizer,
+                    dependency_readiness=readiness,
+                )
+
+                health = api.project_health(self.caller, "project-a")
+                metrics = api.project_prometheus_metrics(self.caller, "project-a")
+
+                self.assertEqual(health.status.value, "unknown")
+                self.assertIn(f"dependency_unknown:{dependency}", health.gate_codes)
+                self.assertTrue(
+                    all(
+                        item.status.value
+                        == ("unknown" if item.name == dependency else "healthy")
+                        for item in health.dependencies
+                    )
+                )
+                self.assertIn(
+                    'curatormd_project_health_state{project_id="project-a",'
+                    'state="unknown"} 1',
+                    metrics,
+                )
+                self.assertIn(
+                    f'curatormd_dependency_readiness{{project_id="project-a",'
+                    f'dependency="{dependency}",state="unknown"}} 1',
+                    metrics,
+                )
+
+                failed_values: dict[str, bool | None] = {
+                    name: True for name in REQUIRED_HEALTH_DEPENDENCIES
+                }
+                failed_values[dependency] = False
+                failed_api = AuthenticatedCuratorAPI(
+                    {"project-a": self.plugin},
+                    self.authorizer,
+                    dependency_readiness=DependencyReadiness(failed_values),
+                )
+                failed_health = failed_api.project_health(self.caller, "project-a")
+                failed_metrics = failed_api.project_prometheus_metrics(
+                    self.caller, "project-a"
+                )
+                self.assertEqual(failed_health.status.value, "degraded")
+                self.assertIn(
+                    f"dependency_unavailable:{dependency}", failed_health.gate_codes
+                )
+                self.assertIn(
+                    f'curatormd_dependency_readiness{{project_id="project-a",'
+                    f'dependency="{dependency}",state="degraded"}} 1',
+                    failed_metrics,
+                )
 
     def test_project_health_degrades_while_event_is_pending(self) -> None:
         """Do not report green while a received event has not been processed."""
@@ -675,8 +815,10 @@ class ApiFacadeTests(unittest.TestCase):
             {
                 "event_router": True,
                 "purge_scheduler": False,
+                "database_storage_adapter": True,
                 "host_identity": True,
                 "human_review": True,
+                "alert_delivery": True,
                 "artifact_producer_inventory": True,
             }
         )
@@ -739,6 +881,19 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertIn("dependency_probe_failed", malformed_health.gate_codes)
 
     def test_project_metrics_are_authorized_bounded_and_content_free(self) -> None:
+        api, problem, config_path, config_text = self._prepare_project_metrics_fixture()
+        metrics = api.project_prometheus_metrics(self.caller, "project-a")
+
+        self._assert_project_metrics_content_free(metrics, problem)
+        self._assert_project_metrics_format(metrics)
+        self._assert_project_staging_budget_metrics(config_path, config_text)
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.project_prometheus_metrics(AuthenticatedCaller("other-user"), "project-a")
+
+    def _prepare_project_metrics_fixture(
+        self,
+    ) -> tuple[AuthenticatedCuratorAPI, str, Path, str]:
+        """Create one goal and private staging artifact for the metrics contract."""
         api = AuthenticatedCuratorAPI(
             {"project-a": self.plugin}, self.authorizer
         )
@@ -751,6 +906,8 @@ class ApiFacadeTests(unittest.TestCase):
                 problem,
                 (SuccessCriterion("done", "A metrics sample exists"),),
             ),
+            source_id="metrics-source",
+            source_sequence=1,
         )
         api.process_event_json(self.caller, "project-a", event.to_json())
         staged = (
@@ -763,7 +920,16 @@ class ApiFacadeTests(unittest.TestCase):
         )
         staged.parent.mkdir(parents=True)
         staged.write_text("private artifact payload", encoding="utf-8")
-
+        self.store.record_staging_artifact_time(
+            "project-a",
+            ArtifactRef(
+                str(staged),
+                hashlib.sha256(b"private artifact payload").hexdigest(),
+                device_id=1,
+                inode_id=2,
+                occurrence_id="b" * 32,
+            ),
+        )
         config_path = self.root / ".curatormd-v2.toml"
         config_text = config_path.read_text(encoding="utf-8").replace(
             'root = ".curatormd-v2/staging"',
@@ -774,17 +940,44 @@ class ApiFacadeTests(unittest.TestCase):
         config_path.write_text(config_text, encoding="utf-8")
         config_path.chmod(0o600)
         configured_plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
-        api = AuthenticatedCuratorAPI(
+        configured_api = AuthenticatedCuratorAPI(
             {"project-a": configured_plugin}, self.authorizer
         )
+        return configured_api, problem, config_path, config_text
 
-        metrics = api.project_prometheus_metrics(self.caller, "project-a")
+    def _assert_project_metrics_content_free(
+        self, metrics: str, problem: str
+    ) -> None:
+        """Check bounded counters and ensure private source content is absent."""
         self.assertIn(
             'curatormd_project_health_state{project_id="project-a",state="degraded"} 1',
             metrics,
         )
         self.assertIn('curatormd_goals{project_id="project-a",status="active"} 1', metrics)
         self.assertIn('event_type="goal.started",status="processed"', metrics)
+        self.assertIn('curatormd_event_cursors{project_id="project-a"} 1', metrics)
+        self.assertIn(
+            'curatormd_staging_artifact_time_records{project_id="project-a"} 1',
+            metrics,
+        )
+        self.assertIn(
+            'curatormd_staging_artifact_occurrence_records{project_id="project-a"} 1',
+            metrics,
+        )
+        self.assertIn(
+            'curatormd_staging_artifact_occurrence_bytes{project_id="project-a"}',
+            metrics,
+        )
+        self.assertNotIn("b" * 32, metrics)
+        self.assertIn('curatormd_event_cursor_bytes{project_id="project-a"}', metrics)
+        self.assertIn(
+            'curatormd_cleanup_authorization_records{project_id="project-a"} 0',
+            metrics,
+        )
+        self.assertIn(
+            'curatormd_event_payload_scrub_records{project_id="project-a"}',
+            metrics,
+        )
         self.assertIn("curatormd_staging_bytes", metrics)
         self.assertIn(
             'curatormd_staging_project_byte_limit{project_id="project-a"} 4096',
@@ -807,6 +1000,9 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertNotIn("private artifact payload", metrics)
         self.assertNotIn("private-cue.json", metrics)
         self.assertNotIn("global_database_bytes", metrics)
+
+    def _assert_project_metrics_format(self, metrics: str) -> None:
+        """Validate unique Prometheus TYPE declarations and family samples."""
         type_families = [
             line.split()[2]
             for line in metrics.splitlines()
@@ -827,6 +1023,10 @@ class ApiFacadeTests(unittest.TestCase):
                 self.assertEqual(line.split("{", maxsplit=1)[0], current_family)
         self.assertIsNone(pending_help)
 
+    def _assert_project_staging_budget_metrics(
+        self, config_path: Path, config_text: str
+    ) -> None:
+        """Confirm either project budget limit blocks healthy staging status."""
         for byte_limit, file_limit in ((24, 25), (4096, 1)):
             with self.subTest(byte_limit=byte_limit, file_limit=file_limit):
                 limited_config = config_text.replace(
@@ -854,9 +1054,6 @@ class ApiFacadeTests(unittest.TestCase):
                     'gate="staging_budget_reached"} 1',
                     limited_metrics,
                 )
-
-        with self.assertRaisesRegex(PermissionError, "not authorized"):
-            api.project_prometheus_metrics(AuthenticatedCaller("other-user"), "project-a")
 
     def test_event_failure_metrics_classify_rejection_and_adapter_error_without_details(
         self,
@@ -910,7 +1107,8 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertEqual(rejected.status, EventInboxStatus.FAILED)
         self.assertEqual(rejected.last_error_code, "EvidenceGateError")
 
-        class BrokenVerifier:
+        # EvidenceVerifier test double implements only `attest`.
+        class BrokenVerifier:  # pylint: disable=too-few-public-methods
             """Simulate a trusted adapter that fails with sensitive details."""
 
             def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
@@ -1095,6 +1293,16 @@ class ApiFacadeTests(unittest.TestCase):
 
     def test_project_usage_is_authorized_and_reports_processed_payload_discard(self) -> None:
         api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        self.store.record_staging_artifact_time(
+            "project-a",
+            ArtifactRef(
+                "usage-goal/import/artifact.json",
+                "e" * 64,
+                device_id=1,
+                inode_id=2,
+                occurrence_id="a" * 32,
+            ),
+        )
         event = EventEnvelope(
             "usage-event-1",
             "project-a",
@@ -1103,6 +1311,8 @@ class ApiFacadeTests(unittest.TestCase):
                 "Measure project storage",
                 (SuccessCriterion("measured", "Usage can be queried"),),
             ),
+            source_id="storage-usage-source",
+            source_sequence=1,
         )
         api.process_event_json(self.caller, "project-a", event.to_json())
 
@@ -1110,6 +1320,22 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertEqual(usage.project_id, "project-a")
         self.assertEqual(usage.goal_count, 1)
         self.assertEqual(usage.event_receipt_count, 1)
+        self.assertEqual(usage.event_cursor_count, 1)
+        self.assertGreater(usage.event_cursor_record_bytes, 0)
+        self.assertEqual(usage.event_retry_audit_count, 0)
+        self.assertEqual(usage.event_retry_audit_record_bytes, 0)
+        self.assertEqual(usage.staging_artifact_time_count, 1)
+        self.assertGreater(usage.staging_artifact_time_record_bytes, 0)
+        self.assertEqual(usage.staging_artifact_occurrence_count, 1)
+        self.assertGreater(usage.staging_artifact_occurrence_record_bytes, 0)
+        self.assertEqual(usage.expiry_purge_receipt_count, 0)
+        self.assertEqual(usage.expiry_purge_receipt_record_bytes, 0)
+        self.assertEqual(usage.expiry_purge_target_count, 0)
+        self.assertEqual(usage.expiry_purge_target_record_bytes, 0)
+        self.assertEqual(usage.cleanup_authorization_count, 0)
+        self.assertEqual(usage.cleanup_authorization_record_bytes, 0)
+        self.assertGreaterEqual(usage.event_payload_scrub_count, 0)
+        self.assertGreaterEqual(usage.event_payload_scrub_record_bytes, 0)
         self.assertEqual(usage.global_event_inbox.receipt_count, 1)
         self.assertEqual(usage.global_event_inbox.receipt_count_limit, 250_000)
         self.assertTrue(usage.global_event_inbox.can_accept_new_event)
@@ -1157,18 +1383,32 @@ class ApiFacadeTests(unittest.TestCase):
         )
 
     def test_published_producer_fixture_runs_through_authenticated_backend(self) -> None:
-        config_path = self.root / ".curatormd-v2.toml"
-        config_text = config_path.read_text(encoding="utf-8").replace(
+        gptmd_root = create_consumer_repo(self.root.parent / "gptmd-consumer")
+        (gptmd_root / "docs" / "tasks.md").write_text(
+            "- [ ] Add readiness endpoint\n", encoding="utf-8"
+        )
+        (gptmd_root / "persistence" / "HISTORY.md").write_text(
+            "# History\n", encoding="utf-8"
+        )
+        config_path = gptmd_root / ".curatormd-v2.toml"
+        config_text = (self.root / ".curatormd-v2.toml").read_text(
+            encoding="utf-8"
+        ).replace(
             'project_id = "project-a"', 'project_id = "gptmd"'
         ).replace(
             'tasks = "docs/tasks.md"',
             'tasks = "docs/tasks.md"\n            api-readiness = "docs/tasks.md"',
         )
         config_path.write_text(config_text, encoding="utf-8")
-        (self.root / "docs" / "tasks.md").write_text(
-            "- [ ] Add readiness endpoint\n", encoding="utf-8"
+        config_path.chmod(0o600)
+        config = ProjectConfig.load(gptmd_root)
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                config, "Register the published producer fixture"
+            ),
+            "test-admin",
         )
-        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        plugin = ProjectPlugin.bind(config, self.store)
         for goal_id in ("goal-api-modernization", "goal-health-contract"):
             plugin.service.goal_start(
                 f"Prerequisite {goal_id}",
@@ -1369,7 +1609,10 @@ class ApiFacadeTests(unittest.TestCase):
 
     def test_review_receipt_binds_to_the_api_authenticated_subject(self) -> None:
         plugin = ProjectPlugin.bind(
-            ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
+            ProjectConfig.load(self.root),
+            self.store,
+            TestVerifier(self.store),
+            ReviewHost(),
         )
         goal = plugin.service.goal_start(
             "Implement a verified change",
@@ -1418,16 +1661,52 @@ class ApiFacadeTests(unittest.TestCase):
         staged_dir.mkdir()
         staged = staged_dir / "cue.json"
         staged.write_bytes(b'{"temporary":true}')
+        staged_evidence = EvidenceRef(
+            "staging_artifact",
+            str(staged),
+            hashlib.sha256(staged.read_bytes()).hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        mapped_fact, _ = plugin.service.goal_fact(
+            goal.goal_id,
+            FactKind.RESEARCH,
+            "Staged evidence source recorded",
+            criterion_id="verified",
+            evidence=(staged_evidence,),
+        )
+        displayed_packet = api.sde_review_packet(
+            self.caller, "project-a", candidate.candidate_id
+        )
+        plugin.service.goal_fact(
+            goal.goal_id,
+            FactKind.RESEARCH,
+            "A later fact changes the displayed dependency map",
+            criterion_id="verified",
+            evidence=(staged_evidence,),
+        )
+        with self.assertRaisesRegex(ConflictError, "dependency map changed"):
+            api.sde_confirm(
+                self.caller,
+                "project-a",
+                candidate.candidate_id,
+                ReviewDecision.APPROVED,
+                displayed_packet.artifact_inventory.artifacts,
+                artifact_inventory_complete=True,
+                dependency_map_sha256=displayed_packet.dependency_map_sha256,
+            )
+        self.assertTrue(staged.exists())
         unrelated_dir = stage_root / unrelated_goal.goal_id
         unrelated_dir.mkdir()
         unrelated_staged = unrelated_dir / "cue.json"
         unrelated_staged.write_bytes(b'{"unrelated":true}')
+        unmapped_staged = staged_dir / "unmapped.json"
+        unmapped_staged.write_bytes(b'{"unmapped":true}')
         inventory = api.discover_artifact_inventory(
             self.caller, "project-a", goal.goal_id
         )
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.scope_goal_id, goal.goal_id)
-        self.assertEqual(len(inventory.artifacts), 1)
+        self.assertEqual(len(inventory.artifacts), 2)
 
         orphan = stage_root / "orphaned-goal" / "scratch" / "unbound.bin"
         orphan.parent.mkdir(parents=True)
@@ -1437,7 +1716,7 @@ class ApiFacadeTests(unittest.TestCase):
         )
         self.assertTrue(project_inventory.usage.inventory_complete)
         self.assertIsNone(project_inventory.scope_goal_id)
-        self.assertEqual(len(project_inventory.artifacts), 3)
+        self.assertEqual(len(project_inventory.artifacts), 4)
         self.assertIn(
             str(orphan), {item.path for item in project_inventory.artifacts}
         )
@@ -1445,7 +1724,7 @@ class ApiFacadeTests(unittest.TestCase):
             self.caller, "project-a"
         )
         self.assertFalse(expiry_inventory.inventory_complete)
-        self.assertEqual(expiry_inventory.unknown_age_count, 3)
+        self.assertEqual(expiry_inventory.unknown_age_count, 4)
         self.assertEqual(expiry_inventory.eligible_artifacts, ())
         self.assertIsNone(expiry_inventory.manifest_sha256)
 
@@ -1462,7 +1741,7 @@ class ApiFacadeTests(unittest.TestCase):
                 self.caller, "project-a"
             )
 
-        with self.assertRaisesRegex(ConflictError, "does not match current staging"):
+        with self.assertRaisesRegex(ConflictError, "does not match current inventory"):
             api.sde_confirm(
                 self.caller,
                 "project-a",
@@ -1480,11 +1759,24 @@ class ApiFacadeTests(unittest.TestCase):
             (),
             artifact_inventory_complete=False,
         )
+        completion_packet = api.sde_review_packet(
+            self.caller,
+            "project-a",
+            candidate.candidate_id,
+            tuple(
+                replace(
+                    item,
+                    reacquisition_action=ReacquisitionAction.NOT_REQUIRED,
+                )
+                for item in inventory.artifacts
+            ),
+        )
         receipt = api.artifact_inventory_complete(
             self.caller,
             "project-a",
             receipt.receipt_id,
-            inventory.artifacts,
+            completion_packet.review_artifacts,
+            completion_packet.dependency_map_sha256,
         )
 
         self.assertEqual(receipt.reviewer_id, self.caller.subject_id)
@@ -1501,7 +1793,10 @@ class ApiFacadeTests(unittest.TestCase):
             self.caller, "project-a", candidate.candidate_id
         )
         packet = api.sde_review_packet(
-            self.caller, "project-a", candidate.candidate_id
+            self.caller,
+            "project-a",
+            candidate.candidate_id,
+            receipt.artifacts,
         )
 
         self.assertEqual(correction.reviewer_id, self.caller.subject_id)
@@ -1515,21 +1810,50 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertEqual(packet.artifact_inventory.scope_goal_id, goal.goal_id)
         self.assertEqual(
             tuple(item.path for item in packet.artifact_inventory.artifacts),
-            (str(staged),),
+            tuple(sorted((str(staged), str(unmapped_staged)))),
         )
+        self.assertEqual(len(packet.artifact_dependencies), 2)
+        dependency = packet.artifact_dependencies[0]
+        self.assertEqual(dependency.artifact.path, str(staged))
+        self.assertEqual(
+            dependency.binding.value,
+            "path_and_digest_match_occurrence_unbound",
+        )
+        self.assertEqual(len(dependency.evidence_dependencies), 2)
+        self.assertIn(
+            mapped_fact.fact_id,
+            {item.fact_id for item in dependency.evidence_dependencies},
+        )
+        self.assertTrue(
+            all(item.criterion_id == "verified" for item in dependency.evidence_dependencies)
+        )
+        self.assertTrue(
+            all(item.criterion_status == "verified" for item in dependency.evidence_dependencies)
+        )
+        unmapped_dependency = packet.artifact_dependencies[1]
+        self.assertEqual(unmapped_dependency.artifact.path, str(unmapped_staged))
+        self.assertEqual(unmapped_dependency.binding.value, "unmapped")
+        self.assertEqual(unmapped_dependency.evidence_dependencies, ())
+        self.assertEqual(len(packet.dependency_map_sha256), 64)
         cleanup_manifest = packet.artifact_inventory.manifest_sha256
         assert cleanup_manifest is not None
         api.authorize_artifact_cleanup(
             self.caller,
             "project-a",
             receipt.receipt_id,
-            inventory.artifacts,
+            packet.review_artifacts,
             cleanup_manifest,
+            packet.dependency_map_sha256,
             "persistence/HISTORY.md",
         )
         self.assertFalse(staged.exists())
+        self.assertFalse(unmapped_staged.exists())
         self.assertTrue(unrelated_staged.exists())
         saved_receipt = self.store.get_receipt(receipt.receipt_id, "project-a")
+        self.assertEqual(
+            saved_receipt.cleanup_dependency_map_sha256,
+            packet.dependency_map_sha256,
+        )
         feedback = api.sde_quality_feedback_record(
             self.caller,
             "project-a",
@@ -1659,11 +1983,9 @@ class ApiFacadeTests(unittest.TestCase):
             )),
             (candidate.candidate_id,),
         )
-        self.assertEqual(
-            api.project_health(self.caller, "project-a")
-            .operational_counts.pending_review_count,
-            1,
-        )
+        review_health = api.project_health(self.caller, "project-a")
+        assert review_health.operational_counts is not None
+        self.assertEqual(review_health.operational_counts.pending_review_count, 1)
         fully_probed_api = AuthenticatedCuratorAPI(
             {"project-a": plugin},
             self.authorizer,
@@ -1763,8 +2085,18 @@ class ApiFacadeTests(unittest.TestCase):
         staged = plugin.stage_artifact(
             goal.goal_id, "scratch", "held-health-artifact", BytesIO(b"held")
         )
-        held = ArtifactRef(staged.path, staged.sha256, RetentionHoldKind.LEGAL)
+        held = ArtifactRef(
+            staged.path, staged.sha256, RetentionHoldKind.LEGAL,
+            staged.device_id, staged.inode_id, staged.occurrence_id,
+            ReacquisitionAction.RETAIN_UNDER_HOLD,
+        )
 
+        hold_review_packet = api.sde_review_packet(
+            self.caller,
+            "project-a",
+            candidate.candidate_id,
+            (held,),
+        )
         receipt = api.sde_confirm(
             self.caller,
             "project-a",
@@ -1772,12 +2104,14 @@ class ApiFacadeTests(unittest.TestCase):
             ReviewDecision.APPROVED,
             (held,),
             artifact_inventory_complete=True,
+            dependency_map_sha256=hold_review_packet.dependency_map_sha256,
             rationale="Keep the legal hold visible to operations",
         )
 
         self.assertEqual(receipt.purge_status.value, "purge_pending")
         health = api.project_health(self.caller, "project-a")
         self.assertEqual(health.status.value, "degraded")
+        assert health.operational_counts is not None
         self.assertEqual(health.operational_counts.pending_purge_receipt_count, 1)
         self.assertEqual(health.operational_counts.pending_purge_artifact_count, 1)
         self.assertIn("purge_pending", health.gate_codes)
@@ -1789,7 +2123,8 @@ class ApiFacadeTests(unittest.TestCase):
 
         artifact = ArtifactRef("expiry-goal/scratch/transient", "a" * 64)
         manifest = json.dumps(
-            [(artifact.path, artifact.sha256)], separators=(",", ":")
+            [(artifact.path, artifact.sha256, artifact.occurrence_id)],
+            separators=(",", ":")
         )
         manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
         self.store.create_expiry_purge_receipt(
@@ -1810,6 +2145,7 @@ class ApiFacadeTests(unittest.TestCase):
         metrics = api.project_prometheus_metrics(self.caller, "project-a")
 
         self.assertEqual(health.status.value, "degraded")
+        assert health.operational_counts is not None
         self.assertEqual(
             health.operational_counts.pending_expiry_purge_receipt_count, 1
         )

@@ -5,14 +5,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from project_fixtures import bind_test_project
+
 from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     CuratorStore,
     InMemoryTokenBucket,
     ProjectAction,
-    ProjectConfig,
-    ProjectPlugin,
     build_mcp_server,
 )
 
@@ -41,7 +41,7 @@ def main() -> None:
     project_root = Path(os.environ["CURATOR_TEST_PROJECT_ROOT"])
     store = CuratorStore(project_root / ".curatormd-v2" / "stdio.sqlite3")
     try:
-        plugin = ProjectPlugin.bind(ProjectConfig.load(project_root), store)
+        plugin = bind_test_project(store, project_root, "stdio-test-subject")
         api = AuthenticatedCuratorAPI(
             {"stdio-project": plugin}, _TestAuthorizer(), InMemoryTokenBucket()
         )

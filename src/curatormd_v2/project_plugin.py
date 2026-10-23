@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from threading import RLock, local
 from typing import BinaryIO, Generator, Mapping
 
 from .evidence import EvidenceVerifier
@@ -33,6 +34,7 @@ from .models import (
     ArtifactRef,
     ArtifactStatus,
     AuditReceipt,
+    ChecklistGoalStartRequest,
     CleanupAuthorizationReceipt,
     ExpiryPurgeReceipt,
     FactArchiveReceipt,
@@ -47,6 +49,7 @@ from .models import (
     ProjectStorageUsage,
     ProjectOperationalCounts,
     PurgeFailureCode,
+    ReacquisitionAction,
     ReviewDecision,
     SDECandidate,
     SDECorrection,
@@ -54,13 +57,19 @@ from .models import (
     SDEQualityFeedbackLabel,
     SDEQualityFeedbackSummary,
     SDEReviewDetail,
+    SDEReviewPacket,
     StagingArtifactInventory,
     StagingExpirySnapshot,
     SuccessCriterion,
+    utc_now,
 )
 from .staging_models import (
     MAX_STAGING_SCAN_ENTRIES,
     StagingUsage,
+)
+from .read_models import (
+    artifact_dependency_map_sha256,
+    build_artifact_review_dependencies,
 )
 from .staging_scan import StagingTreeScanner
 from .staging_write import (
@@ -72,7 +81,7 @@ from .project_config import ProjectConfig, ProjectConfigError
 from .purge import ArtifactPurger, PurgeError
 from .reporting import GoalReportPage
 from .reviews import ReviewAuthorizer
-from .service import CuratorService, PurgeTargetStatus
+from .service import CuratorService, PurgeTargetStatus, SDEAssessmentRequest
 from .store import ConflictError, CuratorStore, NotFoundError
 
 MAX_STAGING_HASH_BYTES = 8 * 1024**3
@@ -175,10 +184,10 @@ def _artifact_expiry_state(
 
 
 def _expiry_manifest_sha256(artifacts: tuple[ArtifactRef, ...]) -> str:
-    """Hash the exact eligible path/digest pairs in canonical order."""
+    """Hash the exact eligible path/digest/occurrence triples in order."""
 
     manifest = json.dumps(
-        [(item.path, item.sha256) for item in artifacts],
+        [(item.path, item.sha256, item.occurrence_id) for item in artifacts],
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -193,32 +202,94 @@ class ProjectPlugin:
             raise ProjectConfigError("service project does not match repository config")
         self.config = config
         self.service = service
+        self._staging_thread_lock = RLock()
+        self._staging_lock_state = local()
 
     @contextmanager
     def _locked_staging_root(self) -> Generator[int, None, None]:
         """Serialize supported plugin operations on this staging directory."""
 
-        no_follow = getattr(os, "O_NOFOLLOW", None)
-        directory_flag = getattr(os, "O_DIRECTORY", None)
-        if no_follow is None or directory_flag is None:
-            raise ProjectConfigError("platform lacks safe staging lock primitives")
-        root = self.config.validated_staging_root()
-        root_open_failed = False
-        root_fd = -1
-        try:
-            root_fd = os.open(root, os.O_RDONLY | directory_flag | no_follow)
-        except OSError:
-            root_open_failed = True
-        if root_open_failed:
-            raise ProjectConfigError("staging root cannot be opened safely")
-        try:
-            fcntl.flock(root_fd, fcntl.LOCK_EX)
-            yield root_fd
-        finally:
+        with self._staging_thread_lock:
+            existing_fd = getattr(self._staging_lock_state, "root_fd", None)
+            if existing_fd is not None:
+                self._staging_lock_state.depth += 1
+                try:
+                    yield existing_fd
+                finally:
+                    self._staging_lock_state.depth -= 1
+                return
+
+            no_follow = getattr(os, "O_NOFOLLOW", None)
+            directory_flag = getattr(os, "O_DIRECTORY", None)
+            if no_follow is None or directory_flag is None:
+                raise ProjectConfigError("platform lacks safe staging lock primitives")
+            root = self.config.validated_staging_root()
+            root_open_failed = False
+            root_fd = -1
             try:
-                fcntl.flock(root_fd, fcntl.LOCK_UN)
+                root_fd = os.open(root, os.O_RDONLY | directory_flag | no_follow)
+            except OSError:
+                root_open_failed = True
+            if root_open_failed:
+                raise ProjectConfigError("staging root cannot be opened safely")
+            try:
+                fcntl.flock(root_fd, fcntl.LOCK_EX)
+                self._staging_lock_state.root_fd = root_fd
+                self._staging_lock_state.depth = 1
+                try:
+                    yield root_fd
+                finally:
+                    del self._staging_lock_state.root_fd
+                    del self._staging_lock_state.depth
             finally:
-                os.close(root_fd)
+                try:
+                    fcntl.flock(root_fd, fcntl.LOCK_UN)
+                finally:
+                    os.close(root_fd)
+
+    @contextmanager
+    def project_effect_lock(self) -> Generator[None, None, None]:
+        """Acquire the repository staging lock before an API revision fence."""
+
+        with self._locked_staging_root():
+            yield
+
+    @contextmanager
+    def _active_project_revision_fence(self) -> Generator[None, None, None]:
+        """Fence an effect to this config's currently active revision."""
+
+        revision = self._capture_active_project_revision()
+        with self._project_revision_fence(revision):
+            yield
+
+    def _capture_active_project_revision(self) -> int:
+        """Capture the active revision before an external verification phase."""
+
+        registration = self.service.store.get_project_registration(
+            self.config.project_id
+        )
+        if (
+            registration.repository_fingerprint,
+            registration.config_sha256,
+            registration.backend_api_version,
+        ) != (
+            self.config.repository_fingerprint,
+            self.config.config_sha256,
+            self.config.backend_api_version,
+        ):
+            raise ConflictError("maintenance project binding changed")
+        if registration.status != "active":
+            raise ConflictError("project lifecycle changed before the effect")
+        return registration.revision
+
+    @contextmanager
+    def _project_revision_fence(self, expected_revision: int) -> Generator[None, None, None]:
+        """Fence an effect to a previously captured project revision."""
+
+        with self.service.store.project_revision_fence(
+            self.config.project_id, expected_revision
+        ):
+            yield
 
     @classmethod
     def bind(
@@ -238,7 +309,12 @@ class ProjectPlugin:
             review_authorizer,
             project_id=config.project_id,
         )
-        return cls(config, service)
+        plugin = cls(config, service)
+        service.bind_project_effect_boundary(
+            plugin._capture_active_project_revision,
+            plugin._project_revision_fence,
+        )
+        return plugin
 
     @property
     def repository_root(self) -> Path:
@@ -262,13 +338,20 @@ class ProjectPlugin:
         """
 
         with self._locked_staging_root():
+            expected_revision = self._capture_active_project_revision()
+
+            def effect_fence():
+                """Fence each durable projection effect to the captured revision."""
+
+                return self._project_revision_fence(expected_revision)
+
             adapter = MarkdownPersistenceAdapter(
                 self.config,
                 self.service.store,
                 target,
                 self.service.evidence_verifier,
             )
-            projection = adapter.persist_goal(goal_id)
+            projection = adapter.persist_goal(goal_id, effect_fence=effect_fence)
             unpersisted = tuple(
                 receipt
                 for receipt in self.service.store.receipts_for_goal(
@@ -278,11 +361,14 @@ class ProjectPlugin:
             )
             for receipt in unpersisted:
                 adapter.verify_projection(projection)
-                self.service.mark_canonical_persisted(
-                    receipt.receipt_id,
-                    projection.target.relative_to(self.config.project_root).as_posix(),
-                    projection.sha256,
-                )
+                with effect_fence():
+                    self.service.mark_canonical_persisted(
+                        receipt.receipt_id,
+                        projection.target.relative_to(
+                            self.config.project_root
+                        ).as_posix(),
+                        projection.sha256,
+                    )
             cleanup_unpersisted = tuple(
                 receipt
                 for receipt in self.service.store.receipts_for_goal(
@@ -293,13 +379,18 @@ class ProjectPlugin:
             )
             for receipt in cleanup_unpersisted:
                 adapter.verify_projection(projection)
-                self.service.mark_cleanup_authorization_canonical_persisted(
-                    receipt.receipt_id,
-                    projection.target.relative_to(self.config.project_root).as_posix(),
-                    projection.sha256,
-                )
+                with effect_fence():
+                    self.service.mark_cleanup_authorization_canonical_persisted(
+                        receipt.receipt_id,
+                        projection.target.relative_to(
+                            self.config.project_root
+                        ).as_posix(),
+                        projection.sha256,
+                    )
             if unpersisted or cleanup_unpersisted:
-                projection = adapter.persist_goal(goal_id)
+                projection = adapter.persist_goal(
+                    goal_id, effect_fence=effect_fence
+                )
             return projection
 
     def reconcile_goal(
@@ -351,6 +442,15 @@ class ProjectPlugin:
         later changes; the store still rejects changed payload reuse.
         """
 
+        with self._locked_staging_root():
+            expected_revision = self._capture_active_project_revision()
+            return self._process_event_locked(event, expected_revision)
+
+    def _process_event_locked(
+        self, event: EventEnvelope, expected_revision: int
+    ) -> EventInboxReceipt:
+        """Validate repository-bound fields, then fence durable event effects."""
+
         payload = event.payload
         if isinstance(payload, GoalStarted) and payload.checklist_id is not None:
             try:
@@ -374,7 +474,10 @@ class ProjectPlugin:
                         "checklist snapshot does not match the configured source revision"
                     )
 
-        return self.service.process_event(event)
+        def effect_fence():
+            return self._project_revision_fence(expected_revision)
+
+        return self.service.process_event(event, effect_fence=effect_fence)
 
     def event_queue_status(self) -> EventQueueStatus:
         """Return event backlog metrics for this project's authorized binding."""
@@ -391,9 +494,10 @@ class ProjectPlugin:
     ) -> EventInboxReceipt:
         """Audit and retry one quarantined event within this project only."""
 
-        return self.service.store.retry_quarantined_event(
-            self.config.project_id, event_id, actor_id
-        )
+        with self._active_project_revision_fence():
+            return self.service.store.retry_quarantined_event(
+                self.config.project_id, event_id, actor_id
+            )
 
     def goal_start_from_request(
         self,
@@ -411,14 +515,15 @@ class ProjectPlugin:
         set is rejected rather than synthesized from the problem statement.
         """
 
-        return self.service.goal_start(
-            problem,
-            success_criteria,
-            owner=owner,
-            initial_status=GoalStatus.PLANNED,
-            next_action=next_action,
-            source_event_id=source_event_id,
-        )
+        with self._active_project_revision_fence():
+            return self.service.goal_start(
+                problem,
+                success_criteria,
+                owner=owner,
+                initial_status=GoalStatus.PLANNED,
+                next_action=next_action,
+                source_event_id=source_event_id,
+            )
 
     def goal_start_subtask(
         self,
@@ -439,49 +544,41 @@ class ProjectPlugin:
         dependency rules and rejects missing criteria.
         """
 
-        return self.service.goal_start(
-            problem,
-            success_criteria,
-            owner=owner,
-            parent_goal_id=parent_goal_id,
-            depends_on_goal_ids=depends_on_goal_ids,
-            initial_status=GoalStatus.PLANNED,
-            next_action=next_action,
-            source_event_id=source_event_id,
-        )
+        with self._active_project_revision_fence():
+            return self.service.goal_start(
+                problem,
+                success_criteria,
+                owner=owner,
+                parent_goal_id=parent_goal_id,
+                depends_on_goal_ids=depends_on_goal_ids,
+                initial_status=GoalStatus.PLANNED,
+                next_action=next_action,
+                source_event_id=source_event_id,
+            )
 
     def goal_start_from_checklist(
         self,
-        checklist_id: str,
-        problem: str,
-        success_criteria: tuple[SuccessCriterion, ...],
-        *,
-        exact_item_text: str,
-        owner: str | None = None,
-        next_action: str | None = None,
-        parent_goal_id: str | None = None,
-        depends_on_goal_ids: tuple[str, ...] = (),
-        initial_status: GoalStatus = GoalStatus.PLANNED,
-        source_event_id: str | None = None,
+        request: ChecklistGoalStartRequest,
     ) -> GoalCard:
         """Start a goal with an exact checklist line and source-file revision."""
 
-        source_version, source_text = self.config.checklist_snapshot(
-            checklist_id, exact_item_text
-        )
-        return self.service.goal_start(
-            problem,
-            success_criteria,
-            owner=owner,
-            checklist_id=checklist_id,
-            checklist_version=source_version,
-            checklist_source_text=source_text,
-            parent_goal_id=parent_goal_id,
-            depends_on_goal_ids=depends_on_goal_ids,
-            initial_status=initial_status,
-            next_action=next_action,
-            source_event_id=source_event_id,
-        )
+        with self._active_project_revision_fence():
+            source_version, source_text = self.config.checklist_snapshot(
+                request.checklist_id, request.exact_item_text
+            )
+            return self.service.goal_start(
+                request.problem,
+                request.success_criteria,
+                owner=request.options.owner,
+                checklist_id=request.checklist_id,
+                checklist_version=source_version,
+                checklist_source_text=source_text,
+                parent_goal_id=request.options.parent_goal_id,
+                depends_on_goal_ids=request.options.depends_on_goal_ids,
+                initial_status=request.options.initial_status,
+                next_action=request.options.next_action,
+                source_event_id=request.options.source_event_id,
+            )
 
     def goal_status(
         self, goal_id: str, sde_offset: int = 0, purge_offset: int = 0
@@ -497,7 +594,10 @@ class ProjectPlugin:
     ) -> GoalCard:
         """Activate one planned goal under this plugin's project binding."""
 
-        return self.service.goal_activate(goal_id, reason, expected_lifecycle_revision)
+        with self._active_project_revision_fence():
+            return self.service.goal_activate(
+                goal_id, reason, expected_lifecycle_revision
+            )
 
     def goal_bullet_projection(self, goal_id: str) -> GoalBulletProjection:
         """Return compact truth-labeled bullets inside this project boundary."""
@@ -531,14 +631,15 @@ class ProjectPlugin:
     ) -> FactArchiveReceipt:
         """Apply a hash-matched archive only after host review authorization."""
 
-        return self.service.fact_compaction_approve(
-            compaction_id,
-            goal_id,
-            fact_ids,
-            source_sha256,
-            reviewer_id,
-            approval_reason,
-        )
+        with self._active_project_revision_fence():
+            return self.service.fact_compaction_approve(
+                compaction_id,
+                goal_id,
+                fact_ids,
+                source_sha256,
+                reviewer_id,
+                approval_reason,
+            )
 
     def fact_archive_receipts(
         self, goal_id: str, offset: int = 0, limit: int = 50
@@ -566,12 +667,16 @@ class ProjectPlugin:
 
     def operational_health_inputs(
         self,
-    ) -> tuple[EventQueueStatus, ProjectOperationalCounts, ProjectStorageUsage]:
+    ) -> tuple[EventQueueStatus, ProjectOperationalCounts, ProjectStorageUsage, int, str]:
         """Read consistent SQLite health inputs and scan bounded staging state."""
 
-        queue, counts, usage = self.service.store.project_health_inputs(
-            self.config.project_id
-        )
+        (
+            queue,
+            counts,
+            usage,
+            scrub_count,
+            database_observed_at,
+        ) = self.service.store.project_health_inputs(self.config.project_id)
         try:
             with self._locked_staging_root() as root_fd:
                 staging = self._scan_staging_tree(
@@ -579,18 +684,34 @@ class ProjectPlugin:
                 ).usage
         except ProjectConfigError:
             staging = StagingUsage(
-                0, 0, 0, 0, 0, 0, False, "staging_root_unavailable"
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                False,
+                "staging_root_unavailable",
+                observed_at=utc_now(),
             )
         except OSError:
             staging = StagingUsage(
-                0, 0, 0, 0, 0, 0, False, "staging_lock_unavailable"
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                False,
+                "staging_lock_unavailable",
+                observed_at=utc_now(),
             )
         return queue, counts, replace(
             usage,
             staging=staging,
             staging_project_byte_limit=self.config.staging_max_project_bytes,
             staging_project_file_limit=self.config.staging_max_project_files,
-        )
+        ), scrub_count, database_observed_at
 
     def discover_staging_artifacts(
         self, goal_id: str
@@ -599,8 +720,8 @@ class ProjectPlugin:
 
         if not _STAGING_SCOPE_ID_RE.fullmatch(goal_id):
             raise ValueError("goal_id must be a bounded opaque identifier")
-        self.service.store.get_goal(goal_id, self.config.project_id)
         with self._locked_staging_root() as root_fd:
+            self.service.store.get_goal(goal_id, self.config.project_id)
             return self._scan_staging_tree(
                 discover_artifacts=True,
                 scope_goal_id=goal_id,
@@ -685,7 +806,14 @@ class ProjectPlugin:
             self.config.project_id, expired
         )
         held = tuple(
-            ArtifactRef(item.path, item.sha256, active_holds[item.path])
+            ArtifactRef(
+                item.path,
+                item.sha256,
+                active_holds[item.path],
+                item.device_id,
+                item.inode_id,
+                item.occurrence_id,
+            )
             for item in sorted(expired, key=lambda item: item.path)
             if item.path in active_holds
         )
@@ -708,25 +836,53 @@ class ProjectPlugin:
 
         observed_at = _aware_utc_now(now)
         with self._locked_staging_root() as root_fd:
-            snapshot = self._expiry_snapshot_locked(root_fd, observed_at)
-            if not snapshot.inventory_complete or snapshot.manifest_sha256 is None:
-                raise ConflictError("expiry inventory is incomplete")
-            if not artifacts or artifacts != snapshot.eligible_artifacts:
-                raise ConflictError("expiry inventory does not match current eligibility")
-            if manifest_sha256 != snapshot.manifest_sha256:
-                raise ConflictError("expiry manifest changed before approval")
-            reviewer_id = self.service.review_authorizer.authorize_expiry_purge(
-                self.config.project_id,
-                manifest_sha256,
-                authenticated_subject,
-            )
-            receipt = self.service.store.create_expiry_purge_receipt(
-                self.config.project_id,
-                reviewer_id,
-                manifest_sha256,
-                artifacts,
-            )
-            return self._process_expiry_purge(receipt.receipt_id)
+            with self._active_project_revision_fence():
+                snapshot = self._expiry_snapshot_locked(root_fd, observed_at)
+                if not snapshot.inventory_complete or snapshot.manifest_sha256 is None:
+                    raise ConflictError("expiry inventory is incomplete")
+                submitted = tuple(
+                    (
+                        item.path, item.sha256, item.device_id, item.inode_id,
+                        item.occurrence_id,
+                    )
+                    for item in artifacts
+                )
+                current = tuple(
+                    (
+                        item.path, item.sha256, item.device_id, item.inode_id,
+                        item.occurrence_id,
+                    )
+                    for item in snapshot.eligible_artifacts
+                )
+                if not artifacts or len(submitted) != len(current) or any(
+                    supplied[:2] != observed[:2]
+                    or (
+                        supplied[2] is not None
+                        and (supplied[2], supplied[3]) != (observed[2], observed[3])
+                    )
+                    or (
+                        supplied[4] is not None and supplied[4] != observed[4]
+                    )
+                    for supplied, observed in zip(submitted, current)
+                ):
+                    raise ConflictError(
+                        "expiry inventory does not match current eligibility"
+                    )
+                artifacts = snapshot.eligible_artifacts
+                if manifest_sha256 != snapshot.manifest_sha256:
+                    raise ConflictError("expiry manifest changed before approval")
+                reviewer_id = self.service.review_authorizer.authorize_expiry_purge(
+                    self.config.project_id,
+                    manifest_sha256,
+                    authenticated_subject,
+                )
+                receipt = self.service.store.create_expiry_purge_receipt(
+                    self.config.project_id,
+                    reviewer_id,
+                    manifest_sha256,
+                    artifacts,
+                )
+                return self._process_expiry_purge(receipt.receipt_id)
 
     def expiry_purge_receipt(self, receipt_id: str) -> ExpiryPurgeReceipt:
         """Read the durable project-scoped result of an expiry approval."""
@@ -741,19 +897,43 @@ class ProjectPlugin:
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         with self._locked_staging_root():
-            receipts = self.service.store.due_expiry_purge_receipts(
-                self.config.project_id, limit
-            )
-            return tuple(self._process_expiry_purge(item) for item in receipts)
+            with self._active_project_revision_fence():
+                return self._retry_due_expiry_purges_locked(limit)
+
+    def retry_due_purge_pass(
+        self, limit: int = 100
+    ) -> tuple[tuple[AuditReceipt, ...], tuple[ExpiryPurgeReceipt, ...]]:
+        """Run both approved retry queues under one active project fence.
+
+        Acquire the staging lock before the SQLite revision fence. File-producing
+        plugin operations use the same order when persisting their receipts.
+        """
+
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        with self._locked_staging_root():
+            with self._active_project_revision_fence():
+                receipts = self.service.retry_due_purges(limit)
+                expiry_receipts = self._retry_due_expiry_purges_locked(limit)
+        return receipts, expiry_receipts
+
+    def _retry_due_expiry_purges_locked(
+        self, limit: int
+    ) -> tuple[ExpiryPurgeReceipt, ...]:
+        receipts = self.service.store.due_expiry_purge_receipts(
+            self.config.project_id, limit
+        )
+        return tuple(self._process_expiry_purge(item) for item in receipts)
 
     def retry_expiry_purge(self, receipt_id: str) -> ExpiryPurgeReceipt:
         """Retry due targets from one exact, previously approved receipt."""
 
         with self._locked_staging_root():
-            self.service.store.expiry_purge_receipt(
-                receipt_id, self.config.project_id
-            )
-            return self._process_expiry_purge(receipt_id)
+            with self._active_project_revision_fence():
+                self.service.store.expiry_purge_receipt(
+                    receipt_id, self.config.project_id
+                )
+                return self._process_expiry_purge(receipt_id)
 
     def _process_expiry_purge(self, receipt_id: str) -> ExpiryPurgeReceipt:
         """Attempt due exact targets from an already approved expiry receipt."""
@@ -835,16 +1015,17 @@ class ProjectPlugin:
             raise ValueError("artifact_class is not a supported temporary class")
         if not _STAGING_SCOPE_ID_RE.fullmatch(artifact_id):
             raise ValueError("artifact_id must be a bounded opaque identifier")
-        self.service.store.get_goal(goal_id, self.config.project_id)
         no_follow = getattr(os, "O_NOFOLLOW", None)
         directory_flag = getattr(os, "O_DIRECTORY", None)
         if no_follow is None or directory_flag is None:
             raise ProjectConfigError("platform lacks safe staging write primitives")
 
         with self._locked_staging_root() as root_fd:
-            return self._stage_artifact_locked(
-                root_fd, goal_id, artifact_class, artifact_id, source
-            )
+            self.service.store.get_goal(goal_id, self.config.project_id)
+            with self._active_project_revision_fence():
+                return self._stage_artifact_locked(
+                    root_fd, goal_id, artifact_class, artifact_id, source
+                )
 
     def _stage_artifact_locked(
         self,
@@ -946,7 +1127,7 @@ class ProjectPlugin:
         artifacts: tuple[ArtifactRef, ...],
         *,
         staging_root_fd: int | None = None,
-    ) -> None:
+    ) -> tuple[ArtifactRef, ...]:
         if staging_root_fd is None:
             inventory = self.discover_staging_artifacts(goal_id)
         else:
@@ -960,18 +1141,86 @@ class ProjectPlugin:
                 "staging inventory is incomplete: "
                 f"{inventory.usage.error_code or 'unknown'}"
             )
-        submitted_manifest = tuple(
-            (item.path, item.sha256)
-            for item in sorted(artifacts, key=lambda item: item.path)
-        )
-        discovered_manifest = tuple(
-            (item.path, item.sha256)
-            for item in sorted(inventory.artifacts, key=lambda item: item.path)
-        )
-        if submitted_manifest != discovered_manifest:
-            raise ConflictError(
-                "submitted artifact manifest does not match current staging inventory"
+        submitted = tuple(sorted(artifacts, key=lambda item: item.path))
+        discovered = tuple(sorted(inventory.artifacts, key=lambda item: item.path))
+        if len(submitted) != len(discovered) or any(
+            requested.path != observed.path
+            or requested.sha256 != observed.sha256
+            or (
+                observed.retention_hold is not None
+                and requested.retention_hold != observed.retention_hold
             )
+            or (
+                requested.device_id is not None
+                and (requested.device_id, requested.inode_id)
+                != (observed.device_id, observed.inode_id)
+            )
+            or (
+                requested.occurrence_id is not None
+                and requested.occurrence_id != observed.occurrence_id
+            )
+            for requested, observed in zip(submitted, discovered)
+        ):
+            raise ConflictError(
+                "submitted artifact manifest or hold state does not match current inventory"
+            )
+        holds = {item.path: item.retention_hold for item in submitted}
+        actions = {item.path: item.reacquisition_action for item in submitted}
+        return tuple(
+            replace(
+                item,
+                retention_hold=holds[item.path],
+                reacquisition_action=actions[item.path],
+            )
+            for item in discovered
+        )
+
+    def _require_current_dependency_map(
+        self,
+        goal_id: str,
+        artifacts: tuple[ArtifactRef, ...],
+        expected_sha256: str,
+    ) -> None:
+        """Reject a review action if evidence or criterion links changed after display."""
+
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise ConflictError("cleanup review requires the displayed dependency map digest")
+        snapshot = self.service.goal_status(goal_id)
+        dependencies = build_artifact_review_dependencies(
+            snapshot.facts, snapshot.criteria, artifacts
+        )
+        if artifact_dependency_map_sha256(dependencies) != expected_sha256:
+            raise ConflictError(
+                "artifact dependency map changed before the review decision"
+            )
+        for dependency in dependencies:
+            artifact = dependency.artifact
+            action = dependency.reacquisition_action
+            if action is ReacquisitionAction.NOT_RECORDED:
+                raise ConflictError(
+                    "cleanup review requires an explicit retention or "
+                    "reacquisition action for every artifact"
+                )
+            if artifact.retention_hold is not None:
+                if action is not ReacquisitionAction.RETAIN_UNDER_HOLD:
+                    raise ConflictError(
+                        "held artifacts require the retain_under_hold review action"
+                    )
+            elif action is ReacquisitionAction.RETAIN_UNDER_HOLD:
+                raise ConflictError(
+                    "retain_under_hold requires an active artifact retention hold"
+                )
+            elif (
+                any(
+                    item.criterion_status == "open"
+                    for item in dependency.evidence_dependencies
+                )
+                and action is not ReacquisitionAction.REACQUIRE_FROM_SOURCE
+            ):
+                raise ConflictError(
+                    "artifacts linked to open criteria require "
+                    "reacquire_from_source or a retention hold"
+                )
 
     def _scan_staging_tree(
         self,
@@ -989,9 +1238,29 @@ class ProjectPlugin:
             max_hash_bytes=MAX_STAGING_HASH_BYTES,
         )
         if discover_artifacts:
-            return scanner.discover(
+            inventory = scanner.discover(
                 scope_goal_id=scope_goal_id,
                 staging_root_fd=staging_root_fd,
+            )
+            artifacts = self.service.store.bind_staging_artifact_occurrences(
+                self.config.project_id, inventory.artifacts
+            )
+            active_holds = self.service.store.active_staging_artifact_holds(
+                self.config.project_id, artifacts
+            )
+            artifacts = tuple(
+                replace(item, retention_hold=active_holds.get(item.path))
+                for item in artifacts
+            )
+            manifest_sha256 = (
+                _artifact_manifest_sha256(artifacts)
+                if inventory.usage.inventory_complete
+                else None
+            )
+            return replace(
+                inventory,
+                artifacts=artifacts,
+                manifest_sha256=manifest_sha256,
             )
         return scanner.measure(
             scope_goal_id=scope_goal_id,
@@ -1046,7 +1315,12 @@ class ProjectPlugin:
         after_state = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
         if before_state != after_state or bytes_read != before.st_size:
             raise ValueError("artifact changed during inventory discovery")
-        return ArtifactRef(str(absolute_path), digest.hexdigest())
+        return ArtifactRef(
+            str(absolute_path),
+            digest.hexdigest(),
+            device_id=before.st_dev,
+            inode_id=before.st_ino,
+        )
 
     def goal_list(
         self, statuses: tuple[GoalStatus, ...] = ()
@@ -1093,7 +1367,8 @@ class ProjectPlugin:
     def goal_reopen(self, goal_id: str, reason: str, next_action: str) -> GoalCard:
         """Reopen one completed goal within this project's scope."""
 
-        return self.service.goal_reopen(goal_id, reason, next_action)
+        with self._active_project_revision_fence():
+            return self.service.goal_reopen(goal_id, reason, next_action)
 
     def goal_amend_criteria(
         self,
@@ -1105,9 +1380,10 @@ class ProjectPlugin:
     ) -> GoalCard:
         """Amend criteria through this repository's project-bound service."""
 
-        return self.service.goal_amend_criteria(
-            goal_id, expected_revision, success_criteria, reason, next_action
-        )
+        with self._active_project_revision_fence():
+            return self.service.goal_amend_criteria(
+                goal_id, expected_revision, success_criteria, reason, next_action
+            )
 
     def sde_review_queue(self, limit: int = 100) -> tuple[SDEReviewDetail, ...]:
         """List bounded pending SDE review packets in this project only."""
@@ -1125,14 +1401,57 @@ class ProjectPlugin:
     ) -> SDECandidate | None:
         """Create a review proposal only from verified facts in this project."""
 
-        return self.service.sde_assess(
+        expected_revision = self._capture_active_project_revision()
+        request = SDEAssessmentRequest(
             goal_id, materiality, rationale, fact_ids, impact, retrieval_value
         )
+
+        def effect_fence():
+            """Fence candidate insertion after the external evidence check."""
+
+            return self._project_revision_fence(expected_revision)
+
+        return self.service.sde_assess_with_effect_fence(request, effect_fence)
 
     def sde_review_detail(self, candidate_id: str) -> SDEReviewDetail:
         """Read one candidate and its selected evidence within this project."""
 
         return self.service.sde_review_detail(candidate_id)
+
+    def sde_review_packet(
+        self,
+        candidate_id: str,
+        review_artifacts: tuple[ArtifactRef, ...] | None = None,
+    ) -> SDEReviewPacket:
+        """Compose selected evidence, full goal links, and current staging inventory."""
+
+        detail = self.sde_review_detail(candidate_id)
+        goal_snapshot = self.service.goal_status(detail.candidate.goal_id)
+        with self._locked_staging_root() as root_fd:
+            inventory = self._scan_staging_tree(
+                discover_artifacts=True,
+                scope_goal_id=detail.candidate.goal_id,
+                staging_root_fd=root_fd,
+            )
+            approved_artifacts = (
+                inventory.artifacts
+                if review_artifacts is None
+                else self._require_current_artifact_inventory(
+                    detail.candidate.goal_id,
+                    review_artifacts,
+                    staging_root_fd=root_fd,
+                )
+            )
+        dependencies = build_artifact_review_dependencies(
+            goal_snapshot.facts, goal_snapshot.criteria, approved_artifacts
+        )
+        return SDEReviewPacket(
+            detail=detail,
+            artifact_inventory=inventory,
+            review_artifacts=approved_artifacts,
+            artifact_dependencies=dependencies,
+            dependency_map_sha256=artifact_dependency_map_sha256(dependencies),
+        )
 
     def sde_correction_record(
         self,
@@ -1145,13 +1464,14 @@ class ProjectPlugin:
     ) -> SDECorrection:
         """Append a reviewer-authorized correction to a decided SDE."""
 
-        return self.service.sde_correction_record(
-            correction_id,
-            candidate_id,
-            correction,
-            rationale,
-            authenticated_subject=authenticated_subject,
-        )
+        with self._active_project_revision_fence():
+            return self.service.sde_correction_record(
+                correction_id,
+                candidate_id,
+                correction,
+                rationale,
+                authenticated_subject=authenticated_subject,
+            )
 
     def sde_quality_feedback_record(
         self,
@@ -1164,13 +1484,14 @@ class ProjectPlugin:
     ) -> SDEQualityFeedback:
         """Record one authenticated feedback label after candidate disposition."""
 
-        return self.service.sde_quality_feedback_record(
-            feedback_id,
-            candidate_id,
-            label,
-            rationale,
-            authenticated_subject=authenticated_subject,
-        )
+        with self._active_project_revision_fence():
+            return self.service.sde_quality_feedback_record(
+                feedback_id,
+                candidate_id,
+                label,
+                rationale,
+                authenticated_subject=authenticated_subject,
+            )
 
     def sde_quality_feedback_summary(self) -> SDEQualityFeedbackSummary:
         """Return only aggregate labels for this project's reviewed candidates."""
@@ -1184,64 +1505,88 @@ class ProjectPlugin:
         artifacts: tuple[ArtifactRef, ...],
         *,
         artifact_inventory_complete: bool,
+        dependency_map_sha256: str | None = None,
         rationale: str | None = None,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
         """Record disposition and exact cleanup authorization in one review action."""
 
         with self._locked_staging_root() as root_fd:
+            expected_revision = self._capture_active_project_revision()
+            validated_dependency_map_sha256: str | None = None
             if artifact_inventory_complete:
                 candidate = self.sde_review_detail(candidate_id).candidate
-                self._require_current_artifact_inventory(
+                artifacts = self._require_current_artifact_inventory(
                     candidate.goal_id, artifacts, staging_root_fd=root_fd
                 )
-            receipt = self.service.sde_confirm(
-                candidate_id,
-                decision,
-                artifacts,
-                artifact_inventory_complete=artifact_inventory_complete,
-                rationale=rationale,
-                authenticated_subject=authenticated_subject,
-            )
-            if artifact_inventory_complete:
-                self.service.authorize_artifact_cleanup(
-                    receipt.receipt_id,
-                    _artifact_manifest_sha256(artifacts),
+                if dependency_map_sha256 is None:
+                    raise ConflictError(
+                        "cleanup review requires the displayed dependency map digest"
+                    )
+                self._require_current_dependency_map(
+                    candidate.goal_id, artifacts, dependency_map_sha256
+                )
+                validated_dependency_map_sha256 = dependency_map_sha256
+            with self._project_revision_fence(expected_revision):
+                receipt = self.service.sde_confirm(
+                    candidate_id,
+                    decision,
+                    artifacts,
+                    artifact_inventory_complete=artifact_inventory_complete,
+                    rationale=rationale,
                     authenticated_subject=authenticated_subject,
                 )
-                receipt = self.service.store.get_receipt(
-                    receipt.receipt_id, self.config.project_id
-                )
-            return receipt
+                if artifact_inventory_complete:
+                    if validated_dependency_map_sha256 is None:
+                        raise ConflictError(
+                            "cleanup review did not retain its validated dependency map digest"
+                        )
+                    self.service.authorize_artifact_cleanup(
+                        receipt.receipt_id,
+                        _artifact_manifest_sha256(artifacts),
+                        validated_dependency_map_sha256,
+                        authenticated_subject=authenticated_subject,
+                    )
+                    receipt = self.service.store.get_receipt(
+                        receipt.receipt_id, self.config.project_id
+                    )
+                return receipt
 
     def artifact_inventory_complete(
         self,
         receipt_id: str,
         artifacts: tuple[ArtifactRef, ...],
+        dependency_map_sha256: str,
         *,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
         """Finalize this project's exact artifact manifest before cleanup."""
 
         with self._locked_staging_root() as root_fd:
+            expected_revision = self._capture_active_project_revision()
             receipt = self.service.store.get_receipt(
                 receipt_id, self.config.project_id
             )
             candidate = self.sde_review_detail(receipt.candidate_id).candidate
-            self._require_current_artifact_inventory(
+            artifacts = self._require_current_artifact_inventory(
                 candidate.goal_id, artifacts, staging_root_fd=root_fd
             )
-            return self.service.artifact_inventory_complete(
-                receipt_id,
-                artifacts,
-                authenticated_subject=authenticated_subject,
+            self._require_current_dependency_map(
+                candidate.goal_id, artifacts, dependency_map_sha256
             )
+            with self._project_revision_fence(expected_revision):
+                return self.service.artifact_inventory_complete(
+                    receipt_id,
+                    artifacts,
+                    authenticated_subject=authenticated_subject,
+                )
 
     def authorize_artifact_cleanup(
         self,
         receipt_id: str,
         artifacts: tuple[ArtifactRef, ...],
         manifest_sha256: str,
+        dependency_map_sha256: str,
         target: str | Path,
         *,
         authenticated_subject: str | None = None,
@@ -1249,21 +1594,27 @@ class ProjectPlugin:
         """Recheck a displayed manifest and record compatibility cleanup approval."""
 
         with self._locked_staging_root() as root_fd:
+            expected_revision = self._capture_active_project_revision()
             receipt = self.service.store.get_receipt(
                 receipt_id, self.config.project_id
             )
             candidate = self.sde_review_detail(receipt.candidate_id).candidate
-            self._require_current_artifact_inventory(
+            artifacts = self._require_current_artifact_inventory(
                 candidate.goal_id, artifacts, staging_root_fd=root_fd
+            )
+            self._require_current_dependency_map(
+                candidate.goal_id, artifacts, dependency_map_sha256
             )
             current_manifest = _artifact_manifest_sha256(artifacts)
             if current_manifest != manifest_sha256:
                 raise ConflictError("cleanup manifest changed before approval")
-            authorization, _receipt = self.service.authorize_artifact_cleanup(
-                receipt_id,
-                manifest_sha256,
-                authenticated_subject=authenticated_subject,
-            )
+            with self._project_revision_fence(expected_revision):
+                authorization, _receipt = self.service.authorize_artifact_cleanup(
+                    receipt_id,
+                    manifest_sha256,
+                    dependency_map_sha256,
+                    authenticated_subject=authenticated_subject,
+                )
         self.persist_goal(candidate.goal_id, target)
         receipt, _targets = self.service.artifact_purge_status(receipt_id)
         authorization = self.service.store.cleanup_authorization(
@@ -1291,31 +1642,37 @@ class ProjectPlugin:
         """Release one exact hold through the configured human reviewer."""
 
         with self._locked_staging_root():
-            return self.service.release_artifact_hold(
-                receipt_id,
-                path,
-                rationale,
-                authenticated_subject=authenticated_subject,
-            )
+            with self._active_project_revision_fence():
+                return self.service.release_artifact_hold(
+                    receipt_id,
+                    path,
+                    rationale,
+                    authenticated_subject=authenticated_subject,
+                )
 
     def retry_due_purges(self, limit: int = 100) -> tuple[AuditReceipt, ...]:
         """Run one bounded scheduler pass for due, already-authorized purges."""
 
         with self._locked_staging_root():
-            return self.service.retry_due_purges(limit)
+            with self._active_project_revision_fence():
+                return self.service.retry_due_purges(limit)
 
     def retry_pending_purges(self) -> tuple[AuditReceipt, ...]:
         """Retry only reviewed, persisted, project-scoped pending manifests."""
 
         with self._locked_staging_root():
-            return self.service.retry_pending_purges()
+            with self._active_project_revision_fence():
+                return self.service.retry_pending_purges()
 
 
 def _artifact_manifest_sha256(artifacts: tuple[ArtifactRef, ...]) -> str:
-    """Hash the sorted exact path/hash inventory shown for approval."""
+    """Hash the sorted exact path/hash/occurrence inventory for approval."""
 
     manifest = json.dumps(
-        [(item.path, item.sha256) for item in sorted(artifacts, key=lambda item: item.path)],
+        [
+            (item.path, item.sha256, item.occurrence_id)
+            for item in sorted(artifacts, key=lambda item: item.path)
+        ],
         ensure_ascii=False,
         separators=(",", ":"),
     )

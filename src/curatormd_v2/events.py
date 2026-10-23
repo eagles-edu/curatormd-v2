@@ -601,6 +601,11 @@ def _payload_to_dict(payload: EventPayload) -> dict[str, object]:
                     "locator": item.locator,
                     "sha256": item.sha256,
                     "outcome": item.outcome.value,
+                    **(
+                        {"occurrence_id": item.occurrence_id}
+                        if item.occurrence_id is not None
+                        else {}
+                    ),
                 }
                 for item in payload.evidence
             ],
@@ -754,7 +759,11 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
     evidence: list[EvidenceRef] = []
     for item_value in cast(list[object], evidence_value):
         item = require_event_object(item_value, "evidence reference")
-        require_event_fields(item, {"evidence_kind", "locator", "sha256", "outcome"})
+        require_event_fields(
+            item,
+            {"evidence_kind", "locator", "sha256", "outcome"},
+            {"occurrence_id"},
+        )
         outcome = parse_event_enum(
             EvidenceOutcome,
             event_string(item["outcome"], "outcome") or "",
@@ -766,6 +775,9 @@ def _fact_recorded_from_dict(value: dict[str, object]) -> FactRecorded:
                 locator=event_string(item["locator"], "locator") or "",
                 sha256=event_string(item["sha256"], "sha256") or "",
                 outcome=outcome,
+                occurrence_id=event_string(
+                    item.get("occurrence_id"), "occurrence_id", optional=True
+                ),
             )
         )
     return FactRecorded(

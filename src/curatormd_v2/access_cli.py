@@ -12,26 +12,58 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import TextIO
 
 from .api import AuthenticatedCaller, ProjectAction
+from .cli_interaction import confirm_exact_phrase
 from .project_access import (
     ProjectAccessManager,
     ProjectAdministrationAction,
 )
 from .project_config import ProjectConfig
-from .store import CuratorStore, ProjectRegistrationRequest
+from .store import (
+    ConsumerBindingTransitionRequest,
+    CuratorStore,
+    ProjectRegistrationRequest,
+    ProjectStatusChangeRequest,
+)
 
 _OPERATION_ACTIONS = {
     "register": ProjectAdministrationAction.REGISTER,
     "update": ProjectAdministrationAction.UPDATE,
     "suspend": ProjectAdministrationAction.SUSPEND,
     "reactivate": ProjectAdministrationAction.REACTIVATE,
+    "deregister": ProjectAdministrationAction.DEREGISTER,
+    "deregister_finalize": ProjectAdministrationAction.DEREGISTER_FINALIZE,
     "grant": ProjectAdministrationAction.GRANT,
     "revoke": ProjectAdministrationAction.REVOKE,
     "view": ProjectAdministrationAction.VIEW,
 }
+_TRANSITION_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+
+
+def _transition_id(value: str) -> str:
+    """Reject control characters before an identifier enters a TTY prompt."""
+
+    if not _TRANSITION_ID_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError(
+            "transition ID must be a bounded opaque identifier"
+        )
+    return value
+
+
+def _positive_revision(value: str) -> int:
+    """Parse a positive reviewed revision before displaying confirmation."""
+
+    try:
+        revision = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("revision must be a positive integer") from exc
+    if revision < 1:
+        raise argparse.ArgumentTypeError("revision must be a positive integer")
+    return revision
 
 
 class _SingleOperationPolicy:
@@ -77,8 +109,16 @@ def _parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--project-root", required=True, type=Path)
         command.add_argument("--database", required=True, type=Path)
-        if name in {"register", "update", "suspend", "reactivate", "grant", "revoke"}:
+        if name in {
+            "register", "update", "suspend", "reactivate", "deregister",
+            "deregister_finalize", "grant", "revoke",
+        }:
             command.add_argument("--rationale", required=True)
+        if name in {"update", "suspend", "reactivate", "deregister", "deregister_finalize"}:
+            command.add_argument(
+                "--expected-revision", required=True, type=_positive_revision
+            )
+            command.add_argument("--transition-id", required=True, type=_transition_id)
         if name in {"grant", "revoke"}:
             command.add_argument("--subject-id", required=True)
             command.add_argument(
@@ -99,26 +139,38 @@ def _actor_id() -> str:
     return f"local-uid:{os.geteuid()}"
 
 
-def _confirmation_phrase(operation: str, project_id: str, arguments: argparse.Namespace) -> str:
+def _confirmation_phrase(
+    operation: str, config: ProjectConfig, arguments: argparse.Namespace
+) -> str:
     """Return the exact confirmation text for the selected operation."""
 
     if operation in {"grant", "revoke"}:
-        return f"{operation.upper()} {arguments.action} {project_id} {arguments.subject_id}"
+        return (
+            f"{operation.upper()} {arguments.action} {config.project_id} "
+            f"{arguments.subject_id}"
+        )
     if operation == "view":
-        return f"VIEW {project_id} ACCESS"
-    return f"{operation.upper()} {project_id}"
-
-
-def _confirm(phrase: str, input_stream: TextIO, errors: TextIO) -> bool:
-    if not input_stream.isatty():
-        errors.write("Refusing project-access changes without an interactive TTY.\n")
-        return False
-    errors.write(f"Type exactly: {phrase}\n> ")
-    errors.flush()
-    try:
-        return input_stream.readline(512).rstrip("\r\n") == phrase
-    except (OSError, ValueError):
-        return False
+        return f"VIEW {config.project_id} ACCESS"
+    if operation == "update":
+        return (
+            f"UPDATE {config.project_id} TRANSITION {arguments.transition_id} "
+            f"AT REVISION {arguments.expected_revision} "
+            f"TO REPOSITORY {config.repository_fingerprint} CONFIG "
+            f"{config.config_sha256} API {config.backend_api_version}"
+        )
+    if operation in {"suspend", "reactivate"}:
+        return (
+            f"{operation.upper()} {config.project_id} "
+            f"AT REVISION {arguments.expected_revision} "
+            f"TRANSITION {arguments.transition_id}"
+        )
+    if operation in {"deregister", "deregister_finalize"}:
+        return (
+            f"{operation.upper()} {config.project_id} "
+            f"AT BINDING REVISION {arguments.expected_revision} "
+            f"TRANSITION {arguments.transition_id}"
+        )
+    return f"{operation.upper()} {config.project_id}"
 
 
 def _confirmed_caller(
@@ -130,8 +182,13 @@ def _confirmed_caller(
     """Return the local actor only after the operation phrase is confirmed."""
 
     actor_id = _actor_id()
-    phrase = _confirmation_phrase(arguments.operation, config.project_id, arguments)
-    if not _confirm(phrase, input_stream, errors):
+    phrase = _confirmation_phrase(arguments.operation, config, arguments)
+    if not confirm_exact_phrase(
+        phrase,
+        input_stream,
+        errors,
+        "Refusing project-access changes without an interactive TTY.\n",
+    ):
         return None
     return AuthenticatedCaller(actor_id)
 
@@ -153,19 +210,57 @@ def _perform(
         )
         return {"operation": operation, "registration": asdict(record)}
     if operation == "update":
-        record = manager.update_project_registration(
+        result = manager.update_project_registration(
             caller,
-            ProjectRegistrationRequest.from_project_config(config, rationale),
+            ProjectRegistrationRequest.from_project_config(
+                config, rationale, arguments.expected_revision
+            ),
+            arguments.transition_id,
         )
-        return {"operation": operation, "registration": asdict(record)}
+        return {
+            "operation": operation,
+            "registration": asdict(result.registration),
+            "transition_receipt": asdict(result.receipt),
+            "replayed": result.replayed,
+        }
     if operation in {"suspend", "reactivate"}:
-        record = manager.set_project_status(
+        result = manager.set_project_status(
             caller,
-            config.project_id,
-            "suspended" if operation == "suspend" else "active",
-            rationale,
+            ProjectStatusChangeRequest(
+                project_id=config.project_id,
+                status="suspended" if operation == "suspend" else "active",
+                rationale=rationale,
+                expected_revision=arguments.expected_revision,
+                transition_id=arguments.transition_id,
+            ),
         )
-        return {"operation": operation, "registration": asdict(record)}
+        return {
+            "operation": operation,
+            "registration": asdict(result.registration),
+            "transition_receipt": asdict(result.receipt),
+            "replayed": result.replayed,
+        }
+    if operation in {"deregister", "deregister_finalize"}:
+        result = manager.transition_consumer_binding(
+            caller,
+            ConsumerBindingTransitionRequest(
+                project_id=config.project_id,
+                status=(
+                    "deregistration_pending"
+                    if operation == "deregister"
+                    else "deregistered"
+                ),
+                rationale=rationale,
+                expected_revision=arguments.expected_revision,
+                transition_id=arguments.transition_id,
+            ),
+        )
+        return {
+            "operation": operation,
+            "binding": asdict(result.binding),
+            "transition_receipt": asdict(result.receipt),
+            "replayed": result.replayed,
+        }
     if operation in {"grant", "revoke"}:
         action = ProjectAction(arguments.action)
         method = manager.grant if operation == "grant" else manager.revoke
@@ -182,11 +277,21 @@ def _perform(
         return {
             "operation": operation,
             "registration": asdict(registration),
+            "consumer_binding": asdict(
+                manager.get_consumer_binding(caller, config.project_id)
+            ),
             "grants": [asdict(item) for item in manager.list_grants(caller, config.project_id)],
             "audit": [
                 asdict(item)
                 for item in manager.list_registration_audit(caller, config.project_id)
             ],
+            "consumer_binding_audit": [
+                asdict(item)
+                for item in manager.list_consumer_binding_audit(caller, config.project_id)
+            ],
+            "control_plane_storage_usage": asdict(
+                manager.storage_usage(caller, config.project_id)
+            ),
         }
     raise ValueError("unsupported operation")
 

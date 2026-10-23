@@ -50,8 +50,7 @@ def _execute_retry_pass(
 
     with CuratorStore(database) as store:
         plugin = ProjectPlugin.bind(config, store)
-        receipts = plugin.retry_due_purges(batch_limit)
-        expiry_receipts = plugin.retry_due_expiry_purges(batch_limit)
+        receipts, expiry_receipts = plugin.retry_due_purge_pass(batch_limit)
         completed = sum(
             receipt.purge_status is PurgeStatus.COMPLETE for receipt in receipts
         )

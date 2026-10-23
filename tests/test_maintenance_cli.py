@@ -31,6 +31,10 @@ class MaintenanceCliTests(unittest.TestCase):
         store.__exit__.side_effect = close_without_suppressing
         return store
 
+    @staticmethod
+    def _project_config() -> SimpleNamespace:
+        return SimpleNamespace(project_id="project-a")
+
     def test_invalid_limit_error_does_not_retain_source_value(self) -> None:
         """Argument errors must not chain the rejected command-line value."""
 
@@ -57,14 +61,14 @@ class MaintenanceCliTests(unittest.TestCase):
             database = Path(temporary) / "curator.sqlite"
             store = self._store_context()
             plugin = SimpleNamespace(
-                retry_due_purges=Mock(
+                retry_due_purge_pass=Mock(
                     return_value=(
-                        SimpleNamespace(purge_status=PurgeStatus.COMPLETE),
-                        SimpleNamespace(purge_status=PurgeStatus.PURGE_PENDING),
+                        (
+                            SimpleNamespace(purge_status=PurgeStatus.COMPLETE),
+                            SimpleNamespace(purge_status=PurgeStatus.PURGE_PENDING),
+                        ),
+                        (SimpleNamespace(status=PurgeStatus.PURGE_PENDING),),
                     )
-                ),
-                retry_due_expiry_purges=Mock(
-                    return_value=(SimpleNamespace(status=PurgeStatus.PURGE_PENDING),)
                 ),
             )
             output = StringIO()
@@ -72,7 +76,7 @@ class MaintenanceCliTests(unittest.TestCase):
             with (
                 patch(
                     "curatormd_v2.maintenance_cli.ProjectConfig.load",
-                    return_value=SimpleNamespace(project_id="project-a"),
+                    return_value=self._project_config(),
                 ),
                 patch(
                     "curatormd_v2.maintenance_cli.CuratorStore",
@@ -98,8 +102,7 @@ class MaintenanceCliTests(unittest.TestCase):
                 )
 
         self.assertEqual(result, 1)
-        plugin.retry_due_purges.assert_called_once_with(7)
-        plugin.retry_due_expiry_purges.assert_called_once_with(7)
+        plugin.retry_due_purge_pass.assert_called_once_with(7)
         store.close.assert_called_once_with()
         self.assertEqual(
             output.getvalue(),
@@ -115,14 +118,13 @@ class MaintenanceCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             store = self._store_context()
             plugin = SimpleNamespace(
-                retry_due_purges=Mock(return_value=()),
-                retry_due_expiry_purges=Mock(return_value=()),
+                retry_due_purge_pass=Mock(return_value=((), ())),
             )
             output = StringIO()
             with (
                 patch(
                     "curatormd_v2.maintenance_cli.ProjectConfig.load",
-                    return_value=SimpleNamespace(project_id="project-a"),
+                    return_value=self._project_config(),
                 ),
                 patch(
                     "curatormd_v2.maintenance_cli.CuratorStore",
@@ -160,7 +162,7 @@ class MaintenanceCliTests(unittest.TestCase):
             with (
                 patch(
                     "curatormd_v2.maintenance_cli.ProjectConfig.load",
-                    return_value=SimpleNamespace(project_id="project-a"),
+                    return_value=self._project_config(),
                 ),
                 patch(
                     "curatormd_v2.maintenance_cli.CuratorStore",

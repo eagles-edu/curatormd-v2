@@ -30,8 +30,10 @@ class ProjectDependencyReadiness(Protocol):
 REQUIRED_HEALTH_DEPENDENCIES = (
     "event_router",
     "purge_scheduler",
+    "database_storage_adapter",
     "host_identity",
     "human_review",
+    "alert_delivery",
     "artifact_producer_inventory",
 )
 MAX_DEPENDENCY_PROBE_AGE_SECONDS = 60
@@ -115,6 +117,9 @@ def evaluate_local_health(
     staging = usage.staging
     staging_complete = staging.inventory_complete if staging is not None else None
     staging_count = staging.regular_file_count if staging is not None else None
+    if staging is not None and staging.observed_at is None:
+        gates.append("staging_observation_time_unavailable")
+        unknown = True
     _add_staging_budget_gate(staging, usage, gates)
     degraded = degraded or "staging_budget_reached" in gates
     if staging_complete is False:
@@ -256,26 +261,27 @@ def evaluate_dependencies(
     """Read required host probes and aggregate unknown/degraded results."""
 
     readiness: Mapping[str, object] = {}
-    probe_failed = False
+    provider_failed = False
     if readiness_provider is not None:
         try:
             readiness = readiness_provider.readiness(project_id)
         # A readiness adapter may fail with any exception; unknown must not go green.
         except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-            probe_failed = True
+            provider_failed = True
 
     dependencies: list[DependencyHealth] = []
     gates: list[str] = []
     degraded = False
     unknown = False
+    dependency_probe_failed = provider_failed
     for name in REQUIRED_HEALTH_DEPENDENCIES:
-        result = _evaluate_dependency(name, readiness, probe_failed, now)
-        probe_failed = result.probe_failed
+        result = _evaluate_dependency(name, readiness, provider_failed, now)
+        dependency_probe_failed = dependency_probe_failed or result.probe_failed
         dependencies.append(result.health)
         gates.extend(result.gates)
         degraded = degraded or result.degraded
         unknown = unknown or result.unknown
-    if probe_failed:
+    if dependency_probe_failed:
         gates.append("dependency_probe_failed")
         unknown = True
     return _HealthEvaluation(tuple(gates), degraded, unknown, tuple(dependencies))

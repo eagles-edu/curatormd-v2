@@ -7,7 +7,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 22
+SQLITE_SCHEMA_VERSION = 33
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -480,9 +480,14 @@ def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
                 "PRAGMA foreign_key_list(cleanup_authorizations)"
             )
         }
-        if actual_columns != expected_columns or actual_foreign_keys != {
-            ("audit_receipts", "receipt_id", "receipt_id")
-        }:
+        forward_compatible_columns = {
+            **expected_columns,
+            "dependency_map_sha256": ("TEXT", 0, 0, None),
+        }
+        if (
+            actual_columns not in (expected_columns, forward_compatible_columns)
+            or actual_foreign_keys != {("audit_receipts", "receipt_id", "receipt_id")}
+        ):
             raise RuntimeError("cleanup authorization table schema is incompatible")
     else:
         connection.execute(
@@ -541,6 +546,341 @@ def migrate_event_payload_scrub_queue_v22(connection: sqlite3.Connection) -> Non
     connection.execute("PRAGMA user_version = 22")
 
 
+def migrate_purge_target_file_identity_v23(connection: sqlite3.Connection) -> None:
+    """Bind new purge approvals to the inventoried filesystem occurrence."""
+
+    has_targets = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'purge_targets'"
+    ).fetchone() is not None
+    if not has_targets:
+        connection.execute("PRAGMA user_version = 23")
+        return
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+    }
+    for column in ("device_id", "inode_id"):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE purge_targets ADD COLUMN {column} INTEGER")
+    # Legacy rows remain unchanged and visible. Purger rejects them because
+    # they have no review-time filesystem identity.
+    connection.execute("PRAGMA user_version = 23")
+
+
+def migrate_expiry_target_file_identity_v24(connection: sqlite3.Connection) -> None:
+    """Bind expiry approvals to the exact staged file occurrence."""
+
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'expiry_purge_targets'"
+    ).fetchone() is not None
+    if exists:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(expiry_purge_targets)"
+            ).fetchall()
+        }
+        for column in ("device_id", "inode_id"):
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE expiry_purge_targets ADD COLUMN {column} INTEGER"
+                )
+    connection.execute("PRAGMA user_version = 24")
+
+
+def migrate_staging_age_file_identity_v25(connection: sqlite3.Connection) -> None:
+    """Associate expiry age metadata with the published file occurrence."""
+
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'staging_artifact_times'"
+    ).fetchone() is not None
+    if exists:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(staging_artifact_times)"
+            ).fetchall()
+        }
+        for column in ("device_id", "inode_id"):
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE staging_artifact_times ADD COLUMN {column} INTEGER"
+                )
+    connection.execute("PRAGMA user_version = 25")
+
+
+def migrate_staging_occurrence_ids_v26(connection: sqlite3.Connection) -> None:
+    """Persist content-free generation IDs on age and purge records."""
+
+    for table in (
+        "staging_artifact_times",
+        "purge_targets",
+        "expiry_purge_targets",
+    ):
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone() is not None
+        if not exists:
+            continue
+        columns = {
+            row["name"]
+            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if "occurrence_id" not in columns:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN occurrence_id TEXT")
+    connection.execute("PRAGMA user_version = 26")
+
+
+def migrate_staging_occurrence_registry_v27(connection: sqlite3.Connection) -> None:
+    """Persist content-free identity for every observed staging file occurrence."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS staging_artifact_occurrences (
+            project_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            device_id INTEGER NOT NULL,
+            inode_id INTEGER NOT NULL,
+            occurrence_id TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY(project_id, path)
+        )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS staging_artifact_occurrences_id "
+        "ON staging_artifact_occurrences(project_id, occurrence_id)"
+    )
+    connection.execute("PRAGMA user_version = 27")
+
+
+def migrate_stale_legacy_purge_approvals_v28(
+    connection: sqlite3.Connection,
+) -> None:
+    """Freeze unpurged approvals that predate durable file occurrence IDs."""
+
+    for table, stale_approval_update in (
+        (
+            "purge_targets",
+            "UPDATE purge_targets SET approval_stale = 1, next_attempt_at = NULL "
+            "WHERE occurrence_id IS NULL AND status != 'purged'",
+        ),
+        (
+            "expiry_purge_targets",
+            "UPDATE expiry_purge_targets SET approval_stale = 1, next_attempt_at = NULL "
+            "WHERE occurrence_id IS NULL AND status != 'purged'",
+        ),
+    ):
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone() is not None
+        if not exists:
+            continue
+        columns = {
+            row["name"]
+            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if "approval_stale" not in columns:
+            connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN approval_stale INTEGER NOT NULL DEFAULT 0"
+            )
+        if "occurrence_id" in columns:
+            connection.execute(stale_approval_update)
+    connection.execute("PRAGMA user_version = 28")
+
+
+def migrate_cleanup_authorization_dependency_map_v29(
+    connection: sqlite3.Connection,
+) -> None:
+    """Bind cleanup receipts to the reviewed artifact/evidence dependency map."""
+
+    table_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'cleanup_authorizations'"
+    ).fetchone() is not None
+    if table_exists:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(cleanup_authorizations)"
+            ).fetchall()
+        }
+        if "dependency_map_sha256" not in columns:
+            connection.execute(
+                "ALTER TABLE cleanup_authorizations ADD COLUMN dependency_map_sha256 TEXT"
+            )
+        targets_exist = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'purge_targets'"
+        ).fetchone() is not None
+        if targets_exist:
+            target_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+            }
+            if "approval_stale" in target_columns:
+                connection.execute(
+                    """UPDATE purge_targets SET approval_stale = 1,
+                       next_attempt_at = NULL
+                       WHERE status != 'purged' AND receipt_id IN (
+                           SELECT receipt_id FROM cleanup_authorizations
+                           WHERE dependency_map_sha256 IS NULL
+                       )"""
+                )
+    connection.execute("PRAGMA user_version = 29")
+
+
+def migrate_reacquisition_actions_v30(connection: sqlite3.Connection) -> None:
+    """Persist the reviewer's per-artifact retention or reacquisition choice."""
+
+    table_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'purge_targets'"
+    ).fetchone() is not None
+    if table_exists:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+        }
+        if "reacquisition_action" not in columns:
+            connection.execute(
+                "ALTER TABLE purge_targets ADD COLUMN reacquisition_action "
+                "TEXT NOT NULL DEFAULT 'not_recorded'"
+            )
+        if "approval_stale" in columns:
+            connection.execute(
+                "UPDATE purge_targets SET approval_stale = 1, next_attempt_at = NULL "
+                "WHERE status != 'purged' AND reacquisition_action = 'not_recorded'"
+            )
+    connection.execute("PRAGMA user_version = 30")
+
+
+def migrate_project_registry_revisions_v31(connection: sqlite3.Connection) -> None:
+    """Add project-level compare-and-set revisions to registry and audit rows."""
+
+    registry_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'project_registry'"
+    ).fetchone() is not None
+    audit_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'project_registry_audit'"
+    ).fetchone() is not None
+    if registry_exists:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(project_registry)").fetchall()
+        }
+        if "revision" not in columns:
+            connection.execute(
+                "ALTER TABLE project_registry ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+            )
+    if audit_exists:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(project_registry_audit)"
+            ).fetchall()
+        }
+        if "revision" not in columns:
+            connection.execute(
+                "ALTER TABLE project_registry_audit ADD COLUMN revision INTEGER"
+            )
+        connection.execute(
+            """UPDATE project_registry_audit AS current SET revision = (
+                   SELECT COUNT(*) FROM project_registry_audit AS prior
+                   WHERE prior.project_id = current.project_id
+                     AND (prior.created_at < current.created_at
+                       OR (prior.created_at = current.created_at
+                           AND prior.audit_id <= current.audit_id))
+               ) WHERE revision IS NULL"""
+        )
+        if registry_exists:
+            connection.execute(
+                """UPDATE project_registry SET revision = MAX(1, (
+                       SELECT COUNT(*) FROM project_registry_audit
+                       WHERE project_id = project_registry.project_id
+                   ))"""
+            )
+    connection.execute("PRAGMA user_version = 31")
+
+
+def migrate_project_transition_ids_v32(connection: sqlite3.Connection) -> None:
+    """Add stable caller transition IDs without inventing keys for old audits."""
+
+    table_exists = connection.execute(
+        """SELECT 1 FROM sqlite_master
+           WHERE type = 'table' AND name = 'project_registry_audit'"""
+    ).fetchone() is not None
+    if table_exists:
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(project_registry_audit)"
+            ).fetchall()
+        }
+        if "transition_id" not in columns:
+            connection.execute(
+                "ALTER TABLE project_registry_audit ADD COLUMN transition_id TEXT"
+            )
+        connection.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS project_registry_transition_id
+               ON project_registry_audit(project_id, transition_id)
+               WHERE transition_id IS NOT NULL"""
+        )
+    connection.execute("PRAGMA user_version = 32")
+
+
+def migrate_consumer_binding_lifecycle_v33(connection: sqlite3.Connection) -> None:
+    """Add a consumer binding lifecycle independent from project status."""
+
+    registry_exists = connection.execute(
+        """SELECT 1 FROM sqlite_master
+           WHERE type = 'table' AND name = 'project_registry'"""
+    ).fetchone()
+    if registry_exists is None:
+        connection.execute("PRAGMA user_version = 33")
+        return
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS consumer_bindings (
+               project_id TEXT PRIMARY KEY REFERENCES project_registry(project_id),
+               status TEXT NOT NULL CHECK(status IN (
+                   'active', 'deregistration_pending', 'deregistered'
+               )),
+               revision INTEGER NOT NULL CHECK(revision >= 1),
+               source_epoch INTEGER NOT NULL CHECK(source_epoch >= 1),
+               updated_by TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute(
+        """INSERT OR IGNORE INTO consumer_bindings
+               (project_id, status, revision, source_epoch, updated_by, updated_at)
+           SELECT project_id, 'active', 1, 1, updated_by, updated_at
+           FROM project_registry"""
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS consumer_binding_audit (
+               audit_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL REFERENCES consumer_bindings(project_id),
+               actor_id TEXT NOT NULL,
+               action TEXT NOT NULL CHECK(action IN (
+                   'enrolled', 'deregistration_pending', 'deregistered'
+               )),
+               from_status TEXT,
+               to_status TEXT NOT NULL,
+               source_epoch INTEGER NOT NULL,
+               revision INTEGER NOT NULL,
+               transition_id TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               UNIQUE(project_id, transition_id)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS consumer_binding_audit_project "
+        "ON consumer_binding_audit(project_id, revision, audit_id)"
+    )
+    connection.execute("PRAGMA user_version = 33")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -563,6 +903,17 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_expiry_purge_receipts_v20,
     migrate_cleanup_authorizations_v21,
     migrate_event_payload_scrub_queue_v22,
+    migrate_purge_target_file_identity_v23,
+    migrate_expiry_target_file_identity_v24,
+    migrate_staging_age_file_identity_v25,
+    migrate_staging_occurrence_ids_v26,
+    migrate_staging_occurrence_registry_v27,
+    migrate_stale_legacy_purge_approvals_v28,
+    migrate_cleanup_authorization_dependency_map_v29,
+    migrate_reacquisition_actions_v30,
+    migrate_project_registry_revisions_v31,
+    migrate_project_transition_ids_v32,
+    migrate_consumer_binding_lifecycle_v33,
 )
 
 

@@ -35,6 +35,7 @@ from .models import (
     EvidenceOutcome,
     EvidenceRef,
     EventClassStorageUsage,
+    EventPayloadScrubUsage,
     EventFailureCategory,
     EventFailureCategoryUsage,
     Fact,
@@ -47,6 +48,10 @@ from .models import (
     GoalStatus,
     GoalStatusStorageUsage,
     GlobalEventInboxUsage,
+    ProjectControlPlaneStorageUsage,
+    SQLiteDatabaseFileUsage,
+    SQLiteDatabasePageUsage,
+    SQLitePhysicalStorageUsage,
     MAX_CRITERIA_REVISIONS,
     MAX_ARTIFACTS_PER_RECEIPT,
     MAX_FACTS_PER_GOAL,
@@ -69,7 +74,10 @@ from .models import (
     SDEQualityFeedbackSummary,
     MAX_SUCCESS_CRITERIA,
     Materiality,
+    StorageClassUsage,
+    StoragePhysicalClassUsage,
     ProjectStorageUsage,
+    ReacquisitionAction,
     ProjectActivitySnapshot,
     ProjectOperationalCounts,
     PurgeFailureCode,
@@ -89,12 +97,35 @@ from .schema_migrations import (
     apply_schema_migrations,
     finish_unversioned_migrations,
 )
+from .store_requests import (
+    GoalCriteriaAmendmentRequest,
+    GoalRetirementRequest,
+    GoalTransitionRequest,
+)
 from .validation import is_exact_int
 
 EVENT_RETRY_BASE_SECONDS = 5
 EVENT_RETRY_MAX_SECONDS = 900
 PURGE_RETRY_BASE_SECONDS = 5
 PURGE_RETRY_MAX_SECONDS = 900
+_EVENT_INBOX_METADATA_BYTES_SQL = """\
+length(CAST(project_id AS BLOB)) +
+length(CAST(event_id AS BLOB)) +
+length(CAST(event_type AS BLOB)) +
+length(CAST(payload_sha256 AS BLOB)) +
+COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
+length(CAST(payload_bytes AS TEXT)) +
+length(CAST(status AS BLOB)) +
+length(CAST(received_at AS BLOB)) +
+length(CAST(attempts AS TEXT)) +
+length(CAST(source_id AS BLOB)) +
+COALESCE(length(CAST(source_sequence AS TEXT)), 0) +
+COALESCE(length(CAST(processed_at AS BLOB)), 0) +
+COALESCE(length(CAST(last_error AS BLOB)), 0) +
+COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
+COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
+COALESCE(length(CAST(lease_expires_at AS BLOB)), 0) +
+COALESCE(length(CAST(disposition AS BLOB)), 0)"""
 
 
 class NotFoundError(LookupError):
@@ -142,6 +173,7 @@ class ProjectRegistrationRecord:
     registered_at: str
     updated_by: str
     updated_at: str
+    revision: int
 
 
 class _ProjectRegistrationConfig(Protocol):
@@ -177,10 +209,14 @@ class ProjectRegistrationRequest:
     config_sha256: str
     backend_api_version: int
     rationale: str
+    expected_revision: int | None = None
 
     @classmethod
     def from_project_config(
-        cls, config: _ProjectRegistrationConfig, rationale: str
+        cls,
+        config: _ProjectRegistrationConfig,
+        rationale: str,
+        expected_revision: int | None = None,
     ) -> ProjectRegistrationRequest:
         """Build a registry request from one already validated project config."""
 
@@ -190,7 +226,68 @@ class ProjectRegistrationRequest:
             config_sha256=config.config_sha256,
             backend_api_version=config.backend_api_version,
             rationale=rationale,
+            expected_revision=expected_revision,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectStatusChangeRequest:
+    """One explicit project status transition and its retry identity."""
+
+    project_id: str
+    status: str
+    rationale: str
+    expected_revision: int
+    transition_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConsumerBindingRecord:
+    """Consumer lifecycle state, independent of the project lifecycle."""
+
+    project_id: str
+    status: str
+    revision: int
+    source_epoch: int
+    updated_by: str
+    updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConsumerBindingTransitionRequest:
+    """One compare-and-set consumer binding transition."""
+
+    project_id: str
+    status: str
+    rationale: str
+    expected_revision: int
+    transition_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConsumerBindingAuditRecord:
+    """Immutable receipt for a consumer binding lifecycle transition."""
+
+    audit_id: str
+    project_id: str
+    actor_id: str
+    action: str
+    from_status: str | None
+    to_status: str
+    source_epoch: int
+    revision: int
+    transition_id: str
+    rationale: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConsumerBindingTransitionResult:
+    """Current binding state and durable receipt returned from a transition."""
+
+    binding: ConsumerBindingRecord
+    receipt: ConsumerBindingAuditRecord
+    replayed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +303,44 @@ class ProjectRegistryAuditRecord:
     backend_api_version: int
     rationale: str
     created_at: str
+    revision: int
+    transition_id: str | None
+
+
+def _project_registration_update_retry_matches(
+    row: sqlite3.Row,
+    request: ProjectRegistrationRequest,
+    actor_id: str,
+    expected_revision: int,
+) -> bool:
+    """Match an idempotent update retry against its durable audit row."""
+
+    return (
+        row["action"],
+        row["actor_id"],
+        row["revision"],
+        row["repository_fingerprint"],
+        row["config_sha256"],
+        row["backend_api_version"],
+        row["rationale"],
+    ) == (
+        "updated",
+        actor_id,
+        expected_revision + 1,
+        request.repository_fingerprint,
+        request.config_sha256,
+        request.backend_api_version,
+        request.rationale,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectRegistrationTransitionResult:
+    """Current registration plus the immutable receipt for one admin change."""
+
+    registration: ProjectRegistrationRecord
+    receipt: ProjectRegistryAuditRecord
+    replayed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,18 +400,21 @@ _ERROR_CODE_RE = re.compile(r"^[a-zA-Z0-9_.:-]{1,128}$")
 
 
 def _evidence_to_dict(evidence: EvidenceRef) -> dict[str, str]:
-    return {
+    value = {
         "evidence_kind": evidence.evidence_kind,
         "locator": evidence.locator,
         "sha256": evidence.sha256,
         "outcome": evidence.outcome.value,
     }
+    if evidence.occurrence_id is not None:
+        value["occurrence_id"] = evidence.occurrence_id
+    return value
 
 
 def _attestation_to_dict(attestation: EvidenceAttestation) -> dict[str, str]:
     """Serialize only the bounded provenance fields retained by the contract."""
 
-    return {
+    value = {
         "evidence_kind": attestation.evidence_kind,
         "evidence_sha256": attestation.evidence_sha256,
         "project_id": attestation.project_id,
@@ -290,6 +428,9 @@ def _attestation_to_dict(attestation: EvidenceAttestation) -> dict[str, str]:
         "valid_until": attestation.valid_until,
         "revocation_checked_at": attestation.revocation_checked_at,
     }
+    if attestation.occurrence_id is not None:
+        value["occurrence_id"] = attestation.occurrence_id
+    return value
 
 
 def _validate_retirement_request(
@@ -465,7 +606,7 @@ def _validate_reopen_relationships(
 
 def _requested_artifact_manifest(
     artifacts: tuple[ArtifactRef, ...],
-) -> tuple[tuple[str, str, str | None], ...]:
+) -> tuple[tuple[str, str, str | None, int | None, int | None, str | None, str], ...]:
     """Return a stable manifest key and reject duplicate artifact paths."""
 
     paths = [artifact.path for artifact in artifacts]
@@ -477,6 +618,10 @@ def _requested_artifact_manifest(
                 artifact.path,
                 artifact.sha256,
                 artifact.retention_hold.value if artifact.retention_hold else None,
+                artifact.device_id,
+                artifact.inode_id,
+                artifact.occurrence_id,
+                artifact.reacquisition_action.value,
             )
             for artifact in artifacts
         )
@@ -485,11 +630,16 @@ def _requested_artifact_manifest(
 
 def _stored_artifact_manifest(
     targets: list[sqlite3.Row],
-) -> tuple[tuple[str, str, str | None], ...]:
+) -> tuple[tuple[str, str, str | None, int | None, int | None, str | None, str], ...]:
     """Return the persisted target key in the same order as a requested manifest."""
 
     return tuple(
-        (target["path"], target["sha256"], target["retention_hold"])
+        (
+            target["path"], target["sha256"], target["retention_hold"],
+            target["device_id"], target["inode_id"],
+            target["occurrence_id"],
+            target["reacquisition_action"],
+        )
         for target in targets
     )
 
@@ -531,8 +681,9 @@ def _insert_purge_targets_from_inventory(
             """INSERT INTO purge_targets
                (receipt_id, path, sha256, status, attempts, error,
                 created_at, last_attempt_at, next_attempt_at, retention_hold,
-                hold_created_at, hold_created_by)
-               VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, NULL, ?, ?, ?)""",
+                hold_created_at, hold_created_by, device_id, inode_id, occurrence_id,
+                approval_stale, reacquisition_action)
+               VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 receipt_id,
                 artifact.path,
@@ -546,6 +697,11 @@ def _insert_purge_targets_from_inventory(
                 hold_kind,
                 hold_created_at,
                 hold_actor,
+                artifact.device_id,
+                artifact.inode_id,
+                artifact.occurrence_id,
+                int(artifact.occurrence_id is None),
+                artifact.reacquisition_action.value,
             ),
         )
 
@@ -587,6 +743,19 @@ class _ProjectRecordUsageRows:
     feedback: sqlite3.Row
     receipts: sqlite3.Row
     artifacts: sqlite3.Row
+    auxiliary: _ProjectAuxiliaryUsageRows
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectAuxiliaryUsageRows:
+    """Aggregates for project cursors and maintenance receipts."""
+
+    event_cursors: sqlite3.Row
+    staging_artifact_times: sqlite3.Row
+    staging_artifact_occurrences: sqlite3.Row
+    expiry_purge_receipts: sqlite3.Row
+    expiry_purge_targets: sqlite3.Row
+    cleanup_authorizations: sqlite3.Row
 
 
 @dataclass(frozen=True, slots=True)
@@ -595,6 +764,8 @@ class _ProjectEventUsageRows:
 
     event_classes: list[sqlite3.Row]
     failures: list[sqlite3.Row]
+    retry_audits: sqlite3.Row
+    payload_scrubs: sqlite3.Row
     global_capacity: GlobalEventInboxUsage
 
 
@@ -608,6 +779,10 @@ class _ProjectEventUsageSummary:
     original_bytes: int
     retained_bytes: int
     metadata_bytes: int
+    retry_audit_count: int
+    retry_audit_bytes: int
+    payload_scrub_count: int
+    payload_scrub_bytes: int
 
 
 def _summarize_project_event_usage(
@@ -640,7 +815,134 @@ def _summarize_project_event_usage(
         original_bytes=sum(item.original_payload_bytes for item in event_classes),
         retained_bytes=sum(item.retained_payload_bytes for item in event_classes),
         metadata_bytes=sum(row["metadata_bytes"] for row in rows.event_classes),
+        retry_audit_count=int(rows.retry_audits["count"]),
+        retry_audit_bytes=int(rows.retry_audits["bytes"]),
+        payload_scrub_count=int(rows.payload_scrubs["count"]),
+        payload_scrub_bytes=int(rows.payload_scrubs["bytes"]),
     )
+
+
+def _upgrade_unversioned_goal_schema(connection: sqlite3.Connection) -> None:
+    """Repair legacy goal and archive columns before ordered v2 migrations."""
+
+    archive_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(fact_archives)").fetchall()
+    }
+    if "schema_version" not in archive_columns:
+        connection.execute(
+            "ALTER TABLE fact_archives ADD COLUMN schema_version "
+            "INTEGER NOT NULL DEFAULT 1"
+        )
+    goal_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(goals)").fetchall()
+    }
+    if "project_id" not in goal_columns:
+        connection.execute(
+            "ALTER TABLE goals ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'"
+        )
+    if "checklist_version" not in goal_columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN checklist_version TEXT")
+    if "checklist_source_text" not in goal_columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN checklist_source_text TEXT")
+    if "parent_goal_id" not in goal_columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN parent_goal_id TEXT")
+    if "depends_on_json" not in goal_columns:
+        connection.execute(
+            "ALTER TABLE goals ADD COLUMN depends_on_json TEXT NOT NULL DEFAULT '[]'"
+        )
+    if "criteria_revision" not in goal_columns:
+        connection.execute(
+            "ALTER TABLE goals ADD COLUMN criteria_revision INTEGER NOT NULL DEFAULT 1"
+        )
+    if "superseded_by_goal_id" not in goal_columns:
+        connection.execute(
+            "ALTER TABLE goals ADD COLUMN superseded_by_goal_id TEXT"
+        )
+    if "lifecycle_revision" not in goal_columns:
+        connection.execute(
+            "ALTER TABLE goals ADD COLUMN lifecycle_revision INTEGER NOT NULL DEFAULT 1"
+        )
+        connection.execute("UPDATE goals SET lifecycle_revision = 2")
+    connection.execute(
+        "INSERT OR IGNORE INTO goal_criteria_versions "
+        "(goal_id, revision, criteria_json, reason, created_at) "
+        "SELECT goal_id, criteria_revision, criteria_json, 'Initial criteria', created_at "
+        "FROM goals"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS goals_parent "
+        "ON goals(parent_goal_id, project_id, created_at, goal_id)"
+    )
+
+
+def _upgrade_unversioned_receipt_schema(connection: sqlite3.Connection) -> None:
+    """Repair legacy receipt fields and conservatively queue unfinished purges."""
+
+    receipt_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(audit_receipts)").fetchall()
+    }
+    receipt_migrations = (
+        ("reviewer_id", "TEXT"),
+        ("review_rationale", "TEXT"),
+        ("canonical_persisted", "INTEGER NOT NULL DEFAULT 0"),
+        ("canonical_target", "TEXT"),
+        ("canonical_sha256", "TEXT"),
+        ("canonical_persisted_at", "TEXT"),
+    )
+    receipt_schema_upgraded = any(
+        column not in receipt_columns for column, _declaration in receipt_migrations
+    )
+    for column, declaration in receipt_migrations:
+        if column not in receipt_columns:
+            connection.execute(
+                f"ALTER TABLE audit_receipts ADD COLUMN {column} {declaration}"
+            )
+    if receipt_schema_upgraded:
+        connection.execute(
+            "UPDATE audit_receipts SET purge_status = ? "
+            "WHERE canonical_persisted = 0",
+            (PurgeStatus.PURGE_PENDING.value,),
+        )
+
+
+def _upgrade_unversioned_event_schema(connection: sqlite3.Connection) -> None:
+    """Repair legacy inbox metadata before recording its v1 schema stamp."""
+
+    event_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(event_inbox)").fetchall()
+    }
+    if "event_type" not in event_columns:
+        connection.execute(
+            "ALTER TABLE event_inbox ADD COLUMN event_type TEXT "
+            "NOT NULL DEFAULT 'legacy.unknown'"
+        )
+    if "payload_bytes" not in event_columns:
+        connection.execute(
+            "ALTER TABLE event_inbox ADD COLUMN payload_bytes INTEGER "
+            "NOT NULL DEFAULT 0"
+        )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_inbox_usage "
+        "ON event_inbox(project_id, event_type, status)"
+    )
+
+
+def _initialize_unversioned_schema(
+    connection: sqlite3.Connection, schema: str
+) -> None:
+    """Apply the atomic legacy bootstrap and ordered v2+ migration sequence."""
+
+    for statement in schema.split(";"):
+        if statement.strip():
+            connection.execute(statement)
+    _upgrade_unversioned_goal_schema(connection)
+    _upgrade_unversioned_receipt_schema(connection)
+    _upgrade_unversioned_event_schema(connection)
+    connection.execute("PRAGMA user_version = 1")
+    finish_unversioned_migrations(connection)
 
 
 class CuratorStore:
@@ -744,6 +1046,40 @@ class CuratorStore:
 
         return self._transaction()
 
+    @contextmanager
+    def project_revision_fence(
+        self, project_id: str, expected_revision: int
+    ) -> Generator[sqlite3.Connection, None, None]:
+        """Serialize one project effect against its reviewed lifecycle revision.
+
+        The write transaction remains open through the caller's effect. A
+        lifecycle transition on another connection either commits first and
+        makes this fence stale, or waits until the admitted effect completes.
+        """
+
+        self._validate_access_identity(project_id, "project_id")
+        if not is_exact_int(expected_revision) or expected_revision < 1:
+            raise ValueError("expected_revision must be a positive integer")
+        with self._transaction() as connection:
+            registration = connection.execute(
+                "SELECT status, revision FROM project_registry WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            binding = connection.execute(
+                "SELECT status FROM consumer_bindings WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if registration is None:
+                raise NotFoundError("project registration not found")
+            if (
+                registration["status"] != "active"
+                or registration["revision"] != expected_revision
+                or binding is None
+                or binding["status"] != "active"
+            ):
+                raise ConflictError("project or consumer lifecycle changed before the effect")
+            yield connection
+
     @property
     def transaction_active(self) -> bool:
         """Report whether this connection currently holds a transaction."""
@@ -799,6 +1135,45 @@ class CuratorStore:
             registered_at=row["registered_at"],
             updated_by=row["updated_by"],
             updated_at=row["updated_at"],
+            revision=row["revision"],
+        )
+
+    @staticmethod
+    def _project_registry_audit_from_row(
+        row: sqlite3.Row,
+    ) -> ProjectRegistryAuditRecord:
+        """Hydrate one append-only registry transition receipt."""
+
+        return ProjectRegistryAuditRecord(
+            audit_id=row["audit_id"],
+            project_id=row["project_id"],
+            actor_id=row["actor_id"],
+            action=row["action"],
+            repository_fingerprint=row["repository_fingerprint"],
+            config_sha256=row["config_sha256"],
+            backend_api_version=row["backend_api_version"],
+            rationale=row["rationale"],
+            created_at=row["created_at"],
+            revision=row["revision"],
+            transition_id=row["transition_id"],
+        )
+
+    @classmethod
+    def _project_registration_transition_result(
+        cls, connection: sqlite3.Connection, receipt_row: sqlite3.Row, *, replayed: bool
+    ) -> ProjectRegistrationTransitionResult:
+        """Return current state with the same durable receipt on exact retries."""
+
+        current = connection.execute(
+            "SELECT * FROM project_registry WHERE project_id = ?",
+            (receipt_row["project_id"],),
+        ).fetchone()
+        if current is None:
+            raise NotFoundError("project registration not found")
+        return ProjectRegistrationTransitionResult(
+            registration=cls._project_registration_from_row(current),
+            receipt=cls._project_registry_audit_from_row(receipt_row),
+            replayed=replayed,
         )
 
     @staticmethod
@@ -880,8 +1255,30 @@ class CuratorStore:
                     backend_api_version=backend_api_version,
                     rationale=rationale,
                     created_at=now,
+                    revision=1,
+                    transition_id=None,
                 ),
             )
+            connection.execute(
+                """INSERT INTO consumer_bindings
+                   (project_id, status, revision, source_epoch, updated_by, updated_at)
+                   VALUES (?, 'active', 1, 1, ?, ?)""",
+                (project_id, actor_id, now),
+            )
+            enrollment = ConsumerBindingAuditRecord(
+                audit_id=new_id(),
+                project_id=project_id,
+                actor_id=actor_id,
+                action="enrolled",
+                from_status=None,
+                to_status="active",
+                source_epoch=1,
+                revision=1,
+                transition_id=new_id(),
+                rationale=rationale,
+                created_at=now,
+            )
+            self._append_consumer_binding_audit(connection, enrollment)
             row = connection.execute(
                 "SELECT * FROM project_registry WHERE project_id = ?",
                 (project_id,),
@@ -898,8 +1295,9 @@ class CuratorStore:
         connection.execute(
             """INSERT INTO project_registry_audit
                (audit_id, project_id, actor_id, action, repository_fingerprint,
-                config_sha256, backend_api_version, rationale, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                config_sha256, backend_api_version, rationale, created_at,
+                revision, transition_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record.audit_id,
                 record.project_id,
@@ -910,37 +1308,74 @@ class CuratorStore:
                 record.backend_api_version,
                 record.rationale,
                 record.created_at,
+                record.revision,
+                record.transition_id,
             ),
         )
 
     def update_project_registration(
-        self, request: ProjectRegistrationRequest, actor_id: str
-    ) -> ProjectRegistrationRecord:
-        """Update host fingerprints with a separate attributable audit event."""
+        self,
+        request: ProjectRegistrationRequest,
+        actor_id: str,
+        transition_id: str,
+    ) -> ProjectRegistrationTransitionResult:
+        """Update fingerprints once; exact retries recover the original receipt."""
 
-        project_id = request.project_id
-        repository_fingerprint = request.repository_fingerprint
-        config_sha256 = request.config_sha256
-        backend_api_version = request.backend_api_version
-        rationale = request.rationale
-        self._validate_access_identity(project_id, "project_id")
+        self._validate_access_identity(request.project_id, "project_id")
         self._validate_access_identity(actor_id, "actor_id")
-        self._validate_access_digest(repository_fingerprint, "repository_fingerprint")
-        self._validate_access_digest(config_sha256, "config_sha256")
-        self._validate_backend_api_version(backend_api_version)
-        self._validate_access_rationale(rationale)
+        self._validate_access_identity(transition_id, "transition_id")
+        self._validate_access_digest(
+            request.repository_fingerprint, "repository_fingerprint"
+        )
+        self._validate_access_digest(request.config_sha256, "config_sha256")
+        self._validate_backend_api_version(request.backend_api_version)
+        self._validate_access_rationale(request.rationale)
+        expected_revision = request.expected_revision
+        if not is_exact_int(expected_revision) or expected_revision < 1:
+            raise ValueError("expected_revision must be a positive integer")
         now = utc_now()
         with self._transaction() as connection:
+            previous_transition = connection.execute(
+                """SELECT * FROM project_registry_audit
+                   WHERE project_id = ? AND transition_id = ?""",
+                (request.project_id, transition_id),
+            ).fetchone()
+            if previous_transition is not None:
+                if not _project_registration_update_retry_matches(
+                    previous_transition,
+                    request,
+                    actor_id,
+                    expected_revision,
+                ):
+                    raise ConflictError(
+                        "project transition ID was already used with different input"
+                    )
+                return self._project_registration_transition_result(
+                    connection, previous_transition, replayed=True
+                )
             current = connection.execute(
                 "SELECT * FROM project_registry WHERE project_id = ?",
-                (project_id,),
+                (request.project_id,),
             ).fetchone()
             if current is None:
                 raise NotFoundError("project registration not found")
+            if current["revision"] != expected_revision:
+                raise ConflictError("project registration revision is stale")
+            binding = connection.execute(
+                "SELECT status FROM consumer_bindings WHERE project_id = ?",
+                (request.project_id,),
+            ).fetchone()
+            if binding is None or binding["status"] != "active":
+                raise ConflictError("consumer binding is not active")
+            if current["repository_fingerprint"] != request.repository_fingerprint:
+                raise ConflictError(
+                    "repository fingerprint changes require deregistration "
+                    "and fresh enrollment"
+                )
             replacement = (
-                repository_fingerprint,
-                config_sha256,
-                backend_api_version,
+                request.repository_fingerprint,
+                request.config_sha256,
+                request.backend_api_version,
             )
             previous = (
                 current["repository_fingerprint"],
@@ -952,96 +1387,144 @@ class CuratorStore:
             collision = connection.execute(
                 "SELECT project_id FROM project_registry "
                 "WHERE repository_fingerprint = ? AND project_id <> ?",
-                (repository_fingerprint, project_id),
+                (request.repository_fingerprint, request.project_id),
             ).fetchone()
             if collision is not None:
                 raise ConflictError("repository fingerprint is already registered")
-            connection.execute(
+            cursor = connection.execute(
                 """UPDATE project_registry SET repository_fingerprint = ?,
                    config_sha256 = ?, backend_api_version = ?, updated_by = ?,
-                   updated_at = ? WHERE project_id = ?""",
+                   updated_at = ?, revision = revision + 1
+                   WHERE project_id = ? AND revision = ?""",
                 (
-                    repository_fingerprint,
-                    config_sha256,
-                    backend_api_version,
+                    request.repository_fingerprint,
+                    request.config_sha256,
+                    request.backend_api_version,
                     actor_id,
                     now,
-                    project_id,
+                    request.project_id,
+                    expected_revision,
                 ),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("project registration revision is stale")
+            transition_receipt = ProjectRegistryAuditRecord(
+                audit_id=new_id(),
+                project_id=request.project_id,
+                actor_id=actor_id,
+                action="updated",
+                repository_fingerprint=request.repository_fingerprint,
+                config_sha256=request.config_sha256,
+                backend_api_version=request.backend_api_version,
+                rationale=request.rationale,
+                created_at=now,
+                revision=expected_revision + 1,
+                transition_id=transition_id,
             )
             self._append_project_registry_audit(
                 connection,
-                ProjectRegistryAuditRecord(
-                    audit_id=new_id(),
-                    project_id=project_id,
-                    actor_id=actor_id,
-                    action="updated",
-                    repository_fingerprint=repository_fingerprint,
-                    config_sha256=config_sha256,
-                    backend_api_version=backend_api_version,
-                    rationale=rationale,
-                    created_at=now,
-                ),
+                transition_receipt,
             )
-            row = connection.execute(
-                "SELECT * FROM project_registry WHERE project_id = ?",
-                (project_id,),
+            receipt_row = connection.execute(
+                "SELECT * FROM project_registry_audit WHERE audit_id = ?",
+                (transition_receipt.audit_id,),
             ).fetchone()
-        if row is None:
-            raise RuntimeError("updated project registration returned no row")
-        return self._project_registration_from_row(row)
+            if receipt_row is None:
+                raise RuntimeError("project transition receipt insert returned no row")
+            return self._project_registration_transition_result(
+                connection, receipt_row, replayed=False
+            )
 
     def set_project_status(
         self,
-        project_id: str,
-        status: str,
+        request: ProjectStatusChangeRequest,
         actor_id: str,
-        rationale: str,
-    ) -> ProjectRegistrationRecord:
-        """Suspend or reactivate a registration, retaining every audit event."""
+    ) -> ProjectRegistrationTransitionResult:
+        """Change project status once and recover the receipt on exact retry."""
 
-        self._validate_access_identity(project_id, "project_id")
+        self._validate_access_identity(request.project_id, "project_id")
         self._validate_access_identity(actor_id, "actor_id")
-        status = self._validate_project_status(status)
-        self._validate_access_rationale(rationale)
+        self._validate_access_identity(request.transition_id, "transition_id")
+        status = self._validate_project_status(request.status)
+        self._validate_access_rationale(request.rationale)
+        if (
+            not is_exact_int(request.expected_revision)
+            or request.expected_revision < 1
+        ):
+            raise ValueError("expected_revision must be a positive integer")
         now = utc_now()
         with self._transaction() as connection:
+            action = "suspended" if status == "suspended" else "reactivated"
+            previous_transition = connection.execute(
+                """SELECT * FROM project_registry_audit
+                   WHERE project_id = ? AND transition_id = ?""",
+                (request.project_id, request.transition_id),
+            ).fetchone()
+            if previous_transition is not None:
+                if (
+                    previous_transition["action"] != action
+                    or previous_transition["actor_id"] != actor_id
+                    or previous_transition["revision"]
+                    != request.expected_revision + 1
+                    or previous_transition["rationale"] != request.rationale
+                ):
+                    raise ConflictError(
+                        "project transition ID was already used with different input"
+                    )
+                return self._project_registration_transition_result(
+                    connection, previous_transition, replayed=True
+                )
             current = connection.execute(
                 "SELECT * FROM project_registry WHERE project_id = ?",
-                (project_id,),
+                (request.project_id,),
             ).fetchone()
             if current is None:
                 raise NotFoundError("project registration not found")
+            if current["revision"] != request.expected_revision:
+                raise ConflictError("project registration revision is stale")
             old_status = current["status"]
             if old_status == status:
                 raise ConflictError("project registration already has that status")
-            action = "suspended" if status == "suspended" else "reactivated"
-            connection.execute(
+            cursor = connection.execute(
                 """UPDATE project_registry SET status = ?, updated_by = ?,
-                   updated_at = ? WHERE project_id = ?""",
-                (status, actor_id, now, project_id),
+                   updated_at = ?, revision = revision + 1
+                   WHERE project_id = ? AND revision = ?""",
+                (
+                    status,
+                    actor_id,
+                    now,
+                    request.project_id,
+                    request.expected_revision,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("project registration revision is stale")
+            transition_receipt = ProjectRegistryAuditRecord(
+                audit_id=new_id(),
+                project_id=request.project_id,
+                actor_id=actor_id,
+                action=action,
+                repository_fingerprint=current["repository_fingerprint"],
+                config_sha256=current["config_sha256"],
+                backend_api_version=current["backend_api_version"],
+                rationale=request.rationale,
+                created_at=now,
+                revision=request.expected_revision + 1,
+                transition_id=request.transition_id,
             )
             self._append_project_registry_audit(
                 connection,
-                ProjectRegistryAuditRecord(
-                    audit_id=new_id(),
-                    project_id=project_id,
-                    actor_id=actor_id,
-                    action=action,
-                    repository_fingerprint=current["repository_fingerprint"],
-                    config_sha256=current["config_sha256"],
-                    backend_api_version=current["backend_api_version"],
-                    rationale=rationale,
-                    created_at=now,
-                ),
+                transition_receipt,
             )
-            row = connection.execute(
-                "SELECT * FROM project_registry WHERE project_id = ?",
-                (project_id,),
+            receipt_row = connection.execute(
+                "SELECT * FROM project_registry_audit WHERE audit_id = ?",
+                (transition_receipt.audit_id,),
             ).fetchone()
-        if row is None:
-            raise RuntimeError("project status update returned no row")
-        return self._project_registration_from_row(row)
+            if receipt_row is None:
+                raise RuntimeError("project transition receipt insert returned no row")
+            return self._project_registration_transition_result(
+                connection, receipt_row, replayed=False
+            )
 
     def get_project_registration(
         self, project_id: str
@@ -1057,6 +1540,194 @@ class CuratorStore:
         if row is None:
             raise NotFoundError("project registration not found")
         return self._project_registration_from_row(row)
+
+    @staticmethod
+    def _consumer_binding_from_row(row: sqlite3.Row) -> ConsumerBindingRecord:
+        return ConsumerBindingRecord(
+            project_id=row["project_id"],
+            status=row["status"],
+            revision=row["revision"],
+            source_epoch=row["source_epoch"],
+            updated_by=row["updated_by"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _consumer_binding_audit_from_row(
+        row: sqlite3.Row,
+    ) -> ConsumerBindingAuditRecord:
+        return ConsumerBindingAuditRecord(
+            audit_id=row["audit_id"],
+            project_id=row["project_id"],
+            actor_id=row["actor_id"],
+            action=row["action"],
+            from_status=row["from_status"],
+            to_status=row["to_status"],
+            source_epoch=row["source_epoch"],
+            revision=row["revision"],
+            transition_id=row["transition_id"],
+            rationale=row["rationale"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _append_consumer_binding_audit(
+        connection: sqlite3.Connection, record: ConsumerBindingAuditRecord
+    ) -> None:
+        connection.execute(
+            """INSERT INTO consumer_binding_audit
+               (audit_id, project_id, actor_id, action, from_status, to_status,
+                source_epoch, revision, transition_id, rationale, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                record.audit_id,
+                record.project_id,
+                record.actor_id,
+                record.action,
+                record.from_status,
+                record.to_status,
+                record.source_epoch,
+                record.revision,
+                record.transition_id,
+                record.rationale,
+                record.created_at,
+            ),
+        )
+
+    def get_consumer_binding(self, project_id: str) -> ConsumerBindingRecord:
+        """Return the consumer's independent lifecycle state and source epoch."""
+
+        self._validate_access_identity(project_id, "project_id")
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError("consumer binding not found")
+        return self._consumer_binding_from_row(row)
+
+    def consumer_binding_audit(
+        self, project_id: str
+    ) -> tuple[ConsumerBindingAuditRecord, ...]:
+        """Return immutable lifecycle receipts in revision order."""
+
+        self._validate_access_identity(project_id, "project_id")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT * FROM consumer_binding_audit WHERE project_id = ?
+                   ORDER BY revision, audit_id""",
+                (project_id,),
+            ).fetchall()
+        return tuple(self._consumer_binding_audit_from_row(row) for row in rows)
+
+    def transition_consumer_binding(
+        self, request: ConsumerBindingTransitionRequest, actor_id: str
+    ) -> ConsumerBindingTransitionResult:
+        """Move active -> pending -> deregistered with CAS and retry receipts.
+
+        Deregistration finalization is fail-closed while any source event lacks
+        a processed receipt. No drain exception or new source epoch is granted.
+        """
+
+        self._validate_access_identity(request.project_id, "project_id")
+        self._validate_access_identity(actor_id, "actor_id")
+        self._validate_access_identity(request.transition_id, "transition_id")
+        self._validate_access_rationale(request.rationale)
+        if request.status not in {"deregistration_pending", "deregistered"}:
+            raise ValueError("consumer binding status must be deregistration_pending or deregistered")
+        if not is_exact_int(request.expected_revision) or request.expected_revision < 1:
+            raise ValueError("expected_revision must be a positive integer")
+        action = request.status
+        now = utc_now()
+        with self._transaction() as connection:
+            prior = connection.execute(
+                """SELECT * FROM consumer_binding_audit
+                   WHERE project_id = ? AND transition_id = ?""",
+                (request.project_id, request.transition_id),
+            ).fetchone()
+            if prior is not None:
+                if (
+                    prior["actor_id"] != actor_id
+                    or prior["action"] != action
+                    or prior["revision"] != request.expected_revision + 1
+                    or prior["rationale"] != request.rationale
+                ):
+                    raise ConflictError("consumer transition ID was already used with different input")
+                current = connection.execute(
+                    "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                    (request.project_id,),
+                ).fetchone()
+                if current is None:
+                    raise NotFoundError("consumer binding not found")
+                return ConsumerBindingTransitionResult(
+                    self._consumer_binding_from_row(current),
+                    self._consumer_binding_audit_from_row(prior),
+                    True,
+                )
+            current = connection.execute(
+                "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                (request.project_id,),
+            ).fetchone()
+            if current is None:
+                raise NotFoundError("consumer binding not found")
+            if current["revision"] != request.expected_revision:
+                raise ConflictError("consumer binding revision is stale")
+            expected_from = "active" if action == "deregistration_pending" else "deregistration_pending"
+            if current["status"] != expected_from:
+                raise ConflictError("consumer binding is not in the required lifecycle state")
+            if action == "deregistered":
+                unresolved = connection.execute(
+                    """SELECT COUNT(*) FROM event_inbox
+                       WHERE project_id = ? AND status <> 'processed'""",
+                    (request.project_id,),
+                ).fetchone()[0]
+                if unresolved:
+                    raise ConflictError("consumer binding has unresolved source events")
+            next_revision = request.expected_revision + 1
+            cursor = connection.execute(
+                """UPDATE consumer_bindings SET status = ?, revision = ?,
+                   updated_by = ?, updated_at = ?
+                   WHERE project_id = ? AND revision = ? AND status = ?""",
+                (action, next_revision, actor_id, now, request.project_id,
+                 request.expected_revision, expected_from),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("consumer binding revision is stale")
+            if action == "deregistration_pending":
+                connection.execute(
+                    """INSERT INTO project_grant_revocations
+                           (grant_id, revoked_by, rationale, revoked_at)
+                       SELECT grants.grant_id, ?, ?, ?
+                       FROM project_grants AS grants
+                       LEFT JOIN project_grant_revocations AS revocations
+                         ON revocations.grant_id = grants.grant_id
+                       WHERE grants.project_id = ? AND revocations.grant_id IS NULL""",
+                    (actor_id, request.rationale, now, request.project_id),
+                )
+            receipt = ConsumerBindingAuditRecord(
+                audit_id=new_id(),
+                project_id=request.project_id,
+                actor_id=actor_id,
+                action=action,
+                from_status=expected_from,
+                to_status=action,
+                source_epoch=current["source_epoch"],
+                revision=next_revision,
+                transition_id=request.transition_id,
+                rationale=request.rationale,
+                created_at=now,
+            )
+            self._append_consumer_binding_audit(connection, receipt)
+            updated = connection.execute(
+                "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                (request.project_id,),
+            ).fetchone()
+            if updated is None:
+                raise RuntimeError("consumer binding transition returned no state")
+            return ConsumerBindingTransitionResult(
+                self._consumer_binding_from_row(updated), receipt, False
+            )
 
     def project_registry_audit(
         self, project_id: str
@@ -1081,8 +1752,149 @@ class CuratorStore:
                 backend_api_version=row["backend_api_version"],
                 rationale=row["rationale"],
                 created_at=row["created_at"],
+                revision=row["revision"],
+                transition_id=row["transition_id"],
             )
             for row in rows
+        )
+
+    def project_control_plane_storage_usage(
+        self, project_id: str
+    ) -> ProjectControlPlaneStorageUsage:
+        """Measure project-owned access-control and rate-limit rows.
+
+        Bytes count UTF-8 text for stored fields, including decimal text for
+        numeric values. SQLite indexes, pages, WAL, and shared overhead remain
+        represented only by global database/WAL sizes in ProjectStorageUsage.
+        """
+
+        self._validate_access_identity(project_id, "project_id")
+        queries = (
+            (
+                "consumer_bindings",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(status AS BLOB)) +
+                     length(CAST(revision AS TEXT)) +
+                     length(CAST(source_epoch AS TEXT)) +
+                     length(CAST(updated_by AS BLOB)) +
+                     length(CAST(updated_at AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM consumer_bindings WHERE project_id = ?""",
+            ),
+            (
+                "consumer_binding_audit",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(audit_id AS BLOB)) +
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(actor_id AS BLOB)) +
+                     length(CAST(action AS BLOB)) +
+                     length(CAST(COALESCE(from_status, '') AS BLOB)) +
+                     length(CAST(to_status AS BLOB)) +
+                     length(CAST(source_epoch AS TEXT)) +
+                     length(CAST(revision AS TEXT)) +
+                     length(CAST(transition_id AS BLOB)) +
+                     length(CAST(rationale AS BLOB)) +
+                     length(CAST(created_at AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM consumer_binding_audit WHERE project_id = ?""",
+            ),
+            (
+                "project_registry",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(repository_fingerprint AS BLOB)) +
+                     length(CAST(config_sha256 AS BLOB)) +
+                     length(CAST(backend_api_version AS TEXT)) +
+                     length(CAST(status AS BLOB)) +
+                     length(CAST(registered_by AS BLOB)) +
+                     length(CAST(registered_at AS BLOB)) +
+                     length(CAST(updated_by AS BLOB)) +
+                     length(CAST(updated_at AS BLOB)) +
+                     length(CAST(revision AS TEXT))
+                   ), 0) AS logical_bytes
+                   FROM project_registry WHERE project_id = ?""",
+            ),
+            (
+                "project_registry_audit",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(audit_id AS BLOB)) +
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(actor_id AS BLOB)) +
+                     length(CAST(action AS BLOB)) +
+                     length(CAST(repository_fingerprint AS BLOB)) +
+                     length(CAST(config_sha256 AS BLOB)) +
+                     length(CAST(backend_api_version AS TEXT)) +
+                     length(CAST(rationale AS BLOB)) +
+                     length(CAST(created_at AS BLOB)) +
+                     length(CAST(revision AS TEXT)) +
+                     length(CAST(COALESCE(transition_id, '') AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM project_registry_audit WHERE project_id = ?""",
+            ),
+            (
+                "project_grants",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(grant_id AS BLOB)) +
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(subject_id AS BLOB)) +
+                     length(CAST(action AS BLOB)) +
+                     length(CAST(granted_by AS BLOB)) +
+                     length(CAST(rationale AS BLOB)) +
+                     length(CAST(granted_at AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM project_grants WHERE project_id = ?""",
+            ),
+            (
+                "project_grant_revocations",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(r.grant_id AS BLOB)) +
+                     length(CAST(r.revoked_by AS BLOB)) +
+                     length(CAST(r.rationale AS BLOB)) +
+                     length(CAST(r.revoked_at AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM project_grant_revocations AS r
+                   JOIN project_grants AS g ON g.grant_id = r.grant_id
+                   WHERE g.project_id = ?""",
+            ),
+            (
+                "request_rate_buckets",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(subject_id AS BLOB)) +
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(tokens AS TEXT)) +
+                     length(CAST(updated_at AS TEXT)) +
+                     length(CAST(touched_at AS TEXT))
+                   ), 0) AS logical_bytes
+                   FROM request_rate_buckets WHERE project_id = ?""",
+            ),
+        )
+        with self._lock:
+            classes = tuple(
+                StorageClassUsage(
+                    class_name=class_name,
+                    record_count=int(row["record_count"]),
+                    logical_bytes=int(row["logical_bytes"]),
+                )
+                for class_name, query in queries
+                for row in (self._connection.execute(query, (project_id,)).fetchone(),)
+            )
+            scrub_usage = self._event_payload_scrub_usage(self._connection)
+            sqlite_physical = self._sqlite_physical_storage_usage()
+        global_classes = (
+            StorageClassUsage(
+                class_name="event_payload_scrub_queue_unassigned",
+                record_count=scrub_usage.unassigned_record_count,
+                logical_bytes=scrub_usage.unassigned_logical_bytes,
+            ),
+        )
+        return ProjectControlPlaneStorageUsage(
+            project_id=project_id,
+            classes=classes,
+            logical_record_bytes=sum(item.logical_bytes for item in classes),
+            global_classes=global_classes,
+            global_logical_bytes=sum(item.logical_bytes for item in global_classes),
+            sqlite_physical=sqlite_physical,
         )
 
     def add_project_grant(
@@ -1116,6 +1928,12 @@ class CuratorStore:
                 raise NotFoundError("project registration not found")
             if project["status"] != "active":
                 raise ConflictError("project registration is not active")
+            binding = connection.execute(
+                "SELECT status FROM consumer_bindings WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if binding is None or binding["status"] != "active":
+                raise ConflictError("consumer binding is not active")
             active = connection.execute(
                 """SELECT 1 FROM project_grants AS grant_row
                    LEFT JOIN project_grant_revocations AS revocation
@@ -1214,11 +2032,14 @@ class CuratorStore:
         with self._lock:
             row = self._connection.execute(
                 """SELECT 1 FROM project_registry AS project
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = project.project_id
                    JOIN project_grants AS grant_row
                      ON grant_row.project_id = project.project_id
                    LEFT JOIN project_grant_revocations AS revocation
                      ON revocation.grant_id = grant_row.grant_id
                    WHERE project.project_id = ? AND project.status = 'active'
+                     AND binding.status = 'active'
                      AND grant_row.subject_id = ? AND grant_row.action = ?
                      AND revocation.grant_id IS NULL LIMIT 1""",
                 (project_id, subject_id, action),
@@ -1373,6 +2194,8 @@ class CuratorStore:
             hold_released_at TEXT,
             hold_released_by TEXT,
             hold_release_rationale TEXT,
+            device_id INTEGER,
+            inode_id INTEGER,
             PRIMARY KEY(receipt_id, path)
         );
         CREATE TABLE IF NOT EXISTS event_inbox (
@@ -1411,117 +2234,7 @@ class CuratorStore:
             if schema_version != 0:
                 apply_schema_migrations(connection, schema_version)
                 return
-
-            # Version 1 upgrades the previously unversioned schema in one
-            # transaction. Keep every legacy column addition and data repair
-            # below atomic with its user_version stamp.
-            for statement in schema.split(";"):
-                if statement.strip():
-                    connection.execute(statement)
-            archive_columns = {
-                row["name"]
-                for row in connection.execute(
-                    "PRAGMA table_info(fact_archives)"
-                ).fetchall()
-            }
-            if "schema_version" not in archive_columns:
-                connection.execute(
-                    "ALTER TABLE fact_archives ADD COLUMN schema_version "
-                    "INTEGER NOT NULL DEFAULT 1"
-                )
-            goal_columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(goals)").fetchall()
-            }
-            if "project_id" not in goal_columns:
-                connection.execute(
-                    "ALTER TABLE goals ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'"
-                )
-            if "checklist_version" not in goal_columns:
-                connection.execute("ALTER TABLE goals ADD COLUMN checklist_version TEXT")
-            if "checklist_source_text" not in goal_columns:
-                connection.execute("ALTER TABLE goals ADD COLUMN checklist_source_text TEXT")
-            if "parent_goal_id" not in goal_columns:
-                connection.execute("ALTER TABLE goals ADD COLUMN parent_goal_id TEXT")
-            if "depends_on_json" not in goal_columns:
-                connection.execute(
-                    "ALTER TABLE goals ADD COLUMN depends_on_json TEXT NOT NULL DEFAULT '[]'"
-                )
-            if "criteria_revision" not in goal_columns:
-                connection.execute(
-                    "ALTER TABLE goals ADD COLUMN criteria_revision INTEGER NOT NULL DEFAULT 1"
-                )
-            if "superseded_by_goal_id" not in goal_columns:
-                connection.execute(
-                    "ALTER TABLE goals ADD COLUMN superseded_by_goal_id TEXT"
-                )
-            if "lifecycle_revision" not in goal_columns:
-                connection.execute(
-                    "ALTER TABLE goals ADD COLUMN lifecycle_revision INTEGER NOT NULL DEFAULT 1"
-                )
-                connection.execute(
-                    "UPDATE goals SET lifecycle_revision = 2"
-                )
-            connection.execute(
-                "INSERT OR IGNORE INTO goal_criteria_versions "
-                "(goal_id, revision, criteria_json, reason, created_at) "
-                "SELECT goal_id, criteria_revision, criteria_json, 'Initial criteria', created_at "
-                "FROM goals"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS goals_parent "
-                "ON goals(parent_goal_id, project_id, created_at, goal_id)"
-            )
-            receipt_columns = {
-                row["name"]
-                for row in connection.execute(
-                    "PRAGMA table_info(audit_receipts)"
-                ).fetchall()
-            }
-            receipt_migrations = (
-                ("reviewer_id", "TEXT"),
-                ("review_rationale", "TEXT"),
-                ("canonical_persisted", "INTEGER NOT NULL DEFAULT 0"),
-                ("canonical_target", "TEXT"),
-                ("canonical_sha256", "TEXT"),
-                ("canonical_persisted_at", "TEXT"),
-            )
-            receipt_schema_upgraded = any(
-                column not in receipt_columns for column, _declaration in receipt_migrations
-            )
-            for column, declaration in receipt_migrations:
-                if column not in receipt_columns:
-                    connection.execute(
-                        f"ALTER TABLE audit_receipts ADD COLUMN {column} {declaration}"
-                    )
-            if receipt_schema_upgraded:
-                connection.execute(
-                    "UPDATE audit_receipts SET purge_status = ? "
-                    "WHERE canonical_persisted = 0",
-                    (PurgeStatus.PURGE_PENDING.value,),
-                )
-            event_columns = {
-                row["name"]
-                for row in connection.execute(
-                    "PRAGMA table_info(event_inbox)"
-                ).fetchall()
-            }
-            if "event_type" not in event_columns:
-                connection.execute(
-                    "ALTER TABLE event_inbox ADD COLUMN event_type TEXT "
-                    "NOT NULL DEFAULT 'legacy.unknown'"
-                )
-            if "payload_bytes" not in event_columns:
-                connection.execute(
-                    "ALTER TABLE event_inbox ADD COLUMN payload_bytes INTEGER "
-                    "NOT NULL DEFAULT 0"
-                )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS event_inbox_usage "
-                "ON event_inbox(project_id, event_type, status)"
-            )
-            connection.execute("PRAGMA user_version = 1")
-            finish_unversioned_migrations(connection)
+            _initialize_unversioned_schema(connection, schema)
 
     def record_staging_artifact_time(
         self, project_id: str, artifact: ArtifactRef
@@ -1534,21 +2247,151 @@ class CuratorStore:
             raise ValueError("project_id must be a bounded opaque identifier")
         with self._transaction() as connection:
             row = connection.execute(
-                "SELECT sha256, staged_at FROM staging_artifact_times "
+                "SELECT sha256, staged_at, device_id, inode_id, occurrence_id "
+                "FROM staging_artifact_times "
                 "WHERE project_id = ? AND path = ?",
                 (project_id, artifact.path),
             ).fetchone()
             if row is not None:
                 if row["sha256"] != artifact.sha256:
                     raise ConflictError("staging path already has different age metadata")
-                return str(row["staged_at"])
+                if (
+                    artifact.occurrence_id is not None
+                    and row["occurrence_id"] == artifact.occurrence_id
+                ):
+                    self._record_staging_occurrence(connection, project_id, artifact)
+                    return str(row["staged_at"])
+                if artifact.device_id is None or artifact.inode_id is None:
+                    return str(row["staged_at"])
+                if (row["device_id"], row["inode_id"]) == (
+                    artifact.device_id,
+                    artifact.inode_id,
+                ):
+                    if artifact.occurrence_id is not None:
+                        connection.execute(
+                            "UPDATE staging_artifact_times SET occurrence_id = ? "
+                            "WHERE project_id = ? AND path = ?",
+                            (artifact.occurrence_id, project_id, artifact.path),
+                        )
+                    self._record_staging_occurrence(connection, project_id, artifact)
+                    return str(row["staged_at"])
+                staged_at = utc_now()
+                connection.execute(
+                    "UPDATE staging_artifact_times SET device_id = ?, inode_id = ?, "
+                    "occurrence_id = ?, staged_at = ? WHERE project_id = ? AND path = ?",
+                    (
+                        artifact.device_id,
+                        artifact.inode_id,
+                        artifact.occurrence_id,
+                        staged_at,
+                        project_id,
+                        artifact.path,
+                    ),
+                )
+                self._record_staging_occurrence(connection, project_id, artifact)
+                return staged_at
             staged_at = utc_now()
             connection.execute(
                 "INSERT INTO staging_artifact_times "
-                "(project_id, path, sha256, staged_at) VALUES (?, ?, ?, ?)",
-                (project_id, artifact.path, artifact.sha256, staged_at),
+                "(project_id, path, sha256, staged_at, device_id, inode_id, occurrence_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    project_id,
+                    artifact.path,
+                    artifact.sha256,
+                    staged_at,
+                    artifact.device_id,
+                    artifact.inode_id,
+                    artifact.occurrence_id,
+                ),
             )
+            self._record_staging_occurrence(connection, project_id, artifact)
             return staged_at
+
+    @staticmethod
+    def _record_staging_occurrence(
+        connection: sqlite3.Connection, project_id: str, artifact: ArtifactRef
+    ) -> None:
+        """Remember the exact filesystem occurrence without granting expiry age."""
+
+        if (
+            artifact.device_id is None
+            or artifact.inode_id is None
+            or artifact.occurrence_id is None
+        ):
+            return
+        connection.execute(
+            """INSERT INTO staging_artifact_occurrences
+               (project_id, path, sha256, device_id, inode_id, occurrence_id, observed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(project_id, path) DO UPDATE SET
+                 sha256 = excluded.sha256,
+                 device_id = excluded.device_id,
+                 inode_id = excluded.inode_id,
+                 occurrence_id = excluded.occurrence_id,
+                 observed_at = excluded.observed_at""",
+            (
+                project_id,
+                artifact.path,
+                artifact.sha256,
+                artifact.device_id,
+                artifact.inode_id,
+                artifact.occurrence_id,
+                utc_now(),
+            ),
+        )
+
+    def bind_staging_artifact_occurrences(
+        self, project_id: str, artifacts: tuple[ArtifactRef, ...]
+    ) -> tuple[ArtifactRef, ...]:
+        """Attach durable generation IDs to exact path/hash/file identities."""
+
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id):
+            raise ValueError("project_id must be a bounded opaque identifier")
+        bound: list[ArtifactRef] = []
+        with self._transaction() as connection:
+            for artifact in artifacts:
+                occurrence_id: str | None = None
+                if artifact.device_id is not None and artifact.inode_id is not None:
+                    row = connection.execute(
+                        """SELECT occurrence_id FROM staging_artifact_occurrences
+                           WHERE project_id = ? AND path = ? AND sha256 = ?
+                             AND device_id = ? AND inode_id = ?""",
+                        (
+                            project_id,
+                            artifact.path,
+                            artifact.sha256,
+                            artifact.device_id,
+                            artifact.inode_id,
+                        ),
+                    ).fetchone()
+                    if row is not None:
+                        occurrence_id = row["occurrence_id"]
+                    else:
+                        occurrence_id = artifact.occurrence_id or new_id()
+                        self._record_staging_occurrence(
+                            connection,
+                            project_id,
+                            ArtifactRef(
+                                artifact.path,
+                                artifact.sha256,
+                                artifact.retention_hold,
+                                artifact.device_id,
+                                artifact.inode_id,
+                                occurrence_id,
+                            ),
+                        )
+                bound.append(
+                    ArtifactRef(
+                        artifact.path,
+                        artifact.sha256,
+                        artifact.retention_hold,
+                        artifact.device_id,
+                        artifact.inode_id,
+                        occurrence_id,
+                    )
+                )
+        return tuple(bound)
 
     def active_staging_artifact_holds(
         self, project_id: str, artifacts: tuple[ArtifactRef, ...]
@@ -1586,12 +2429,61 @@ class CuratorStore:
                 held[row["path"]] = RetentionHoldKind(row["retention_hold"])
         return held
 
+    @staticmethod
+    def _validate_cleanup_authorization_inventory(
+        connection: sqlite3.Connection,
+        receipt_id: str,
+        project_id: str,
+        manifest_sha256: str,
+    ) -> None:
+        """Require a complete, action-bound inventory with the exact manifest."""
+
+        receipt = connection.execute(
+            """SELECT r.artifact_inventory_complete
+               FROM audit_receipts AS r
+               JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+               JOIN goals AS g ON g.goal_id = s.goal_id
+               WHERE r.receipt_id = ? AND g.project_id = ?""",
+            (receipt_id, project_id),
+        ).fetchone()
+        if receipt is None:
+            raise NotFoundError("audit receipt not found")
+        if not bool(receipt["artifact_inventory_complete"]):
+            raise ConflictError("cleanup requires a complete artifact inventory")
+        rows = connection.execute(
+            "SELECT path, sha256, occurrence_id, retention_hold, "
+            "reacquisition_action FROM purge_targets "
+            "WHERE receipt_id = ? ORDER BY path",
+            (receipt_id,),
+        ).fetchall()
+        for row in rows:
+            action = ReacquisitionAction(row["reacquisition_action"])
+            is_held = row["retention_hold"] is not None
+            if action is ReacquisitionAction.NOT_RECORDED:
+                raise ConflictError(
+                    "cleanup authorization requires a per-artifact retention "
+                    "or reacquisition action"
+                )
+            if is_held != (action is ReacquisitionAction.RETAIN_UNDER_HOLD):
+                raise ConflictError(
+                    "artifact hold state and reacquisition action do not agree"
+                )
+        canonical = json.dumps(
+            [(row["path"], row["sha256"], row["occurrence_id"]) for row in rows],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        observed = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if observed != manifest_sha256:
+            raise ConflictError("cleanup manifest does not match the exact inventory")
+
     def create_cleanup_authorization(
         self,
         receipt_id: str,
         project_id: str,
         reviewer_id: str,
         manifest_sha256: str,
+        dependency_map_sha256: str,
     ) -> CleanupAuthorizationReceipt:
         """Durably authorize an exact complete SDE inventory before projection."""
 
@@ -1599,32 +2491,16 @@ class CuratorStore:
             raise ValueError("cleanup reviewer must be a bounded opaque identifier")
         if not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256):
             raise ValueError("cleanup manifest must be a lowercase SHA-256")
+        if not re.fullmatch(r"[0-9a-f]{64}", dependency_map_sha256):
+            raise ValueError("cleanup dependency map must be a lowercase SHA-256")
         approved_at = utc_now()
         with self._transaction() as connection:
-            receipt = connection.execute(
-                """SELECT r.artifact_inventory_complete
-                   FROM audit_receipts AS r
-                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
-                   JOIN goals AS g ON g.goal_id = s.goal_id
-                   WHERE r.receipt_id = ? AND g.project_id = ?""",
-                (receipt_id, project_id),
-            ).fetchone()
-            if receipt is None:
-                raise NotFoundError("audit receipt not found")
-            if not bool(receipt["artifact_inventory_complete"]):
-                raise ConflictError("cleanup requires a complete artifact inventory")
-            rows = connection.execute(
-                "SELECT path, sha256 FROM purge_targets WHERE receipt_id = ? ORDER BY path",
-                (receipt_id,),
-            ).fetchall()
-            canonical = json.dumps(
-                [(row["path"], row["sha256"]) for row in rows],
-                ensure_ascii=False,
-                separators=(",", ":"),
+            self._validate_cleanup_authorization_inventory(
+                connection,
+                receipt_id,
+                project_id,
+                manifest_sha256,
             )
-            observed = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-            if observed != manifest_sha256:
-                raise ConflictError("cleanup manifest does not match the exact inventory")
             existing = connection.execute(
                 "SELECT * FROM cleanup_authorizations WHERE receipt_id = ?",
                 (receipt_id,),
@@ -1633,8 +2509,11 @@ class CuratorStore:
                 if (
                     existing["project_id"] != project_id
                     or existing["manifest_sha256"] != manifest_sha256
+                    or existing["dependency_map_sha256"] != dependency_map_sha256
                 ):
-                    raise ConflictError("cleanup authorization is bound to another manifest")
+                    raise ConflictError(
+                        "cleanup authorization is bound to another inventory or dependency map"
+                    )
                 if existing["reviewer_id"] != reviewer_id:
                     raise ConflictError("cleanup authorization reviewer is immutable")
                 return CleanupAuthorizationReceipt(
@@ -1642,6 +2521,7 @@ class CuratorStore:
                     project_id=project_id,
                     reviewer_id=existing["reviewer_id"],
                     manifest_sha256=manifest_sha256,
+                    dependency_map_sha256=existing["dependency_map_sha256"],
                     approved_at=existing["approved_at"],
                     canonical_persisted=bool(existing["canonical_persisted"]),
                     canonical_target=existing["canonical_target"],
@@ -1650,12 +2530,25 @@ class CuratorStore:
                 )
             connection.execute(
                 """INSERT INTO cleanup_authorizations
-                   (receipt_id, project_id, reviewer_id, manifest_sha256, approved_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (receipt_id, project_id, reviewer_id, manifest_sha256, approved_at),
+                   (receipt_id, project_id, reviewer_id, manifest_sha256,
+                    dependency_map_sha256, approved_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    receipt_id,
+                    project_id,
+                    reviewer_id,
+                    manifest_sha256,
+                    dependency_map_sha256,
+                    approved_at,
+                ),
             )
         return CleanupAuthorizationReceipt(
-            receipt_id, project_id, reviewer_id, manifest_sha256, approved_at
+            receipt_id,
+            project_id,
+            reviewer_id,
+            manifest_sha256,
+            dependency_map_sha256,
+            approved_at,
         )
 
     def mark_cleanup_authorization_canonical_persisted(
@@ -1711,7 +2604,7 @@ class CuratorStore:
             return None
         return CleanupAuthorizationReceipt(
             row["receipt_id"], row["project_id"], row["reviewer_id"],
-            row["manifest_sha256"], row["approved_at"],
+            row["manifest_sha256"], row["dependency_map_sha256"], row["approved_at"],
             bool(row["canonical_persisted"]), row["canonical_target"],
             row["canonical_sha256"], row["canonical_persisted_at"]
         )
@@ -1734,7 +2627,10 @@ class CuratorStore:
         if len({item.path for item in artifacts}) != len(artifacts):
             raise ValueError("expiry inventory paths must be unique")
         canonical = json.dumps(
-            [(item.path, item.sha256) for item in sorted(artifacts, key=lambda item: item.path)],
+            [
+                (item.path, item.sha256, item.occurrence_id)
+                for item in sorted(artifacts, key=lambda item: item.path)
+            ],
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -1763,8 +2659,9 @@ class CuratorStore:
             )
             connection.executemany(
                 """INSERT INTO expiry_purge_targets
-                   (receipt_id, path, sha256, status, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (receipt_id, path, sha256, status, created_at, device_id, inode_id,
+                    occurrence_id, approval_stale)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     (
                         receipt_id,
@@ -1772,6 +2669,10 @@ class CuratorStore:
                         item.sha256,
                         ArtifactStatus.PENDING.value,
                         created_at,
+                        item.device_id,
+                        item.inode_id,
+                        item.occurrence_id,
+                        int(item.occurrence_id is None),
                     )
                     for item in artifacts
                 ),
@@ -1792,7 +2693,8 @@ class CuratorStore:
             if row is None:
                 raise NotFoundError("expiry purge receipt not found")
             targets = self._connection.execute(
-                "SELECT path, sha256 FROM expiry_purge_targets "
+                "SELECT path, sha256, device_id, inode_id, occurrence_id, approval_stale "
+                "FROM expiry_purge_targets "
                 "WHERE receipt_id = ? ORDER BY path",
                 (receipt_id,),
             ).fetchall()
@@ -1801,10 +2703,30 @@ class CuratorStore:
             project_id=row["project_id"],
             reviewer_id=row["reviewer_id"],
             manifest_sha256=row["manifest_sha256"],
-            artifacts=tuple(ArtifactRef(target["path"], target["sha256"]) for target in targets),
+            artifacts=tuple(
+                ArtifactRef(
+                    target["path"],
+                    target["sha256"],
+                    device_id=target["device_id"],
+                    inode_id=target["inode_id"],
+                    occurrence_id=target["occurrence_id"],
+                )
+                for target in targets
+            ),
             status=PurgeStatus(row["status"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            approval_stale_artifacts=tuple(
+                ArtifactRef(
+                    target["path"],
+                    target["sha256"],
+                    device_id=target["device_id"],
+                    inode_id=target["inode_id"],
+                    occurrence_id=target["occurrence_id"],
+                )
+                for target in targets
+                if bool(target["approval_stale"])
+            ),
         )
 
     def due_expiry_purge_receipts(
@@ -1821,6 +2743,7 @@ class CuratorStore:
                    JOIN expiry_purge_targets AS t ON t.receipt_id = r.receipt_id
                    WHERE r.project_id = ? AND r.status = ?
                      AND t.status IN (?, ?)
+                     AND t.approval_stale = 0
                      AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)
                    ORDER BY r.created_at, r.receipt_id LIMIT ?""",
                 (
@@ -1842,9 +2765,12 @@ class CuratorStore:
         now = utc_now()
         with self._lock:
             rows = self._connection.execute(
-                """SELECT t.path, t.sha256, t.attempts FROM expiry_purge_targets AS t
+                """SELECT t.path, t.sha256, t.attempts, t.device_id, t.inode_id,
+                          t.occurrence_id
+                   FROM expiry_purge_targets AS t
                    JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
                    WHERE r.receipt_id = ? AND r.project_id = ? AND t.status IN (?, ?)
+                     AND t.approval_stale = 0
                      AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)
                      AND NOT EXISTS (
                        SELECT 1 FROM purge_targets AS p
@@ -1864,7 +2790,14 @@ class CuratorStore:
                 ),
             ).fetchall()
         return tuple(
-            (ArtifactRef(row["path"], row["sha256"]), int(row["attempts"]))
+            (
+                ArtifactRef(
+                    row["path"], row["sha256"],
+                    device_id=row["device_id"], inode_id=row["inode_id"],
+                    occurrence_id=row["occurrence_id"],
+                ),
+                int(row["attempts"]),
+            )
             for row in rows
         )
 
@@ -1876,10 +2809,11 @@ class CuratorStore:
         now = utc_now()
         with self._transaction() as connection:
             target = connection.execute(
-                """SELECT t.sha256 FROM expiry_purge_targets AS t
+                """SELECT t.sha256, t.occurrence_id, t.approval_stale FROM expiry_purge_targets AS t
                    JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
                    WHERE t.receipt_id = ? AND t.path = ? AND r.project_id = ?
                      AND t.status IN (?, ?)
+                     AND t.approval_stale = 0
                      AND (t.next_attempt_at IS NULL OR t.next_attempt_at <= ?)""",
                 (
                     receipt_id,
@@ -1938,7 +2872,8 @@ class CuratorStore:
             cursor = connection.execute(
                 """UPDATE expiry_purge_targets
                    SET attempts = attempts + 1, last_attempt_at = ?
-                   WHERE receipt_id = ? AND path = ? AND status IN (?, ?)""",
+                   WHERE receipt_id = ? AND path = ? AND status IN (?, ?)
+                     AND approval_stale = 0""",
                 (
                     now,
                     receipt_id,
@@ -1972,13 +2907,15 @@ class CuratorStore:
             raise ValueError("expiry purge result has an invalid content-free error")
         with self._transaction() as connection:
             target = connection.execute(
-                """SELECT t.sha256 FROM expiry_purge_targets AS t
+                """SELECT t.sha256, t.occurrence_id, t.approval_stale FROM expiry_purge_targets AS t
                    JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
                    WHERE t.receipt_id = ? AND t.path = ? AND r.project_id = ?""",
                 (receipt_id, path, project_id),
             ).fetchone()
             if target is None:
                 raise NotFoundError("expiry purge target not found")
+            if bool(target["approval_stale"]):
+                raise ConflictError("legacy expiry approval requires fresh inventory review")
             next_attempt_at = None
             if status is ArtifactStatus.FAILED:
                 attempts = int(
@@ -2003,8 +2940,9 @@ class CuratorStore:
             if status is ArtifactStatus.PURGED:
                 connection.execute(
                     "DELETE FROM staging_artifact_times "
-                    "WHERE project_id = ? AND path = ? AND sha256 = ?",
-                    (project_id, path, target["sha256"]),
+                    "WHERE project_id = ? AND path = ? AND sha256 = ? "
+                    "AND occurrence_id = ?",
+                    (project_id, path, target["sha256"], target["occurrence_id"]),
                 )
             pending = int(
                 connection.execute(
@@ -2043,18 +2981,32 @@ class CuratorStore:
                 paths = tuple(item.path for item in page)
                 paths_json = json.dumps(paths, separators=(",", ":"))
                 rows = self._connection.execute(
-                    "SELECT path, sha256, staged_at FROM staging_artifact_times "
+                    "SELECT path, sha256, staged_at, device_id, inode_id, occurrence_id "
+                    "FROM staging_artifact_times "
                     "WHERE project_id = ? AND path IN "
                     "(SELECT value FROM json_each(?))",
                     (project_id, paths_json),
                 ).fetchall()
                 known = {
-                    row["path"]: (row["sha256"], row["staged_at"])
+                    row["path"]: (
+                        row["sha256"], row["staged_at"],
+                        row["device_id"], row["inode_id"],
+                        row["occurrence_id"],
+                    )
                     for row in rows
                 }
                 for artifact in page:
                     match = known.get(artifact.path)
-                    if match is not None and match[0] == artifact.sha256:
+                    if (
+                        match is not None
+                        and artifact.occurrence_id is not None
+                        and match[0] == artifact.sha256
+                        and match[2:] == (
+                            artifact.device_id,
+                            artifact.inode_id,
+                            artifact.occurrence_id,
+                        )
+                    ):
                         timestamps[artifact.path] = str(match[1])
         return timestamps
 
@@ -2710,18 +3662,16 @@ class CuratorStore:
 
     def transition_goal(
         self,
-        goal_id: str,
-        status: GoalStatus,
-        next_action: str | None,
-        facts: tuple[Fact, ...],
-        expected_lifecycle_revision: int,
-        project_id: str | None = None,
+        request: GoalTransitionRequest,
     ) -> GoalCard:
         """Atomically write a lifecycle transition and its compact facts."""
 
-        if not is_exact_int(expected_lifecycle_revision) or expected_lifecycle_revision < 1:
+        if (
+            not is_exact_int(request.expected_lifecycle_revision)
+            or request.expected_lifecycle_revision < 1
+        ):
             raise ValueError("expected_lifecycle_revision must be a positive integer")
-        if status not in {
+        if request.status not in {
             GoalStatus.COMPLETE,
             GoalStatus.OPEN,
             GoalStatus.BLOCKED,
@@ -2730,17 +3680,18 @@ class CuratorStore:
             raise ConflictError(
                 "transition_goal may target only complete, open, blocked, or deferred"
             )
-        if next_action is not None and len(next_action) > 1000:
+        if request.next_action is not None and len(request.next_action) > 1000:
             raise ValueError("next_action exceeds 1000 characters")
         with self._transaction() as connection:
             row = connection.execute(
                 "SELECT status, project_id, lifecycle_revision FROM goals WHERE goal_id = ?",
-                (goal_id,),
+                (request.goal_id,),
             ).fetchone()
             if row is None or (
-                project_id is not None and row["project_id"] != project_id
+                request.project_id is not None
+                and row["project_id"] != request.project_id
             ):
-                raise NotFoundError(f"goal not found: {goal_id}")
+                raise NotFoundError(f"goal not found: {request.goal_id}")
             current_status = GoalStatus(row["status"])
             if current_status in {
                 GoalStatus.COMPLETE,
@@ -2748,32 +3699,32 @@ class CuratorStore:
                 GoalStatus.SUPERSEDED,
             }:
                 raise ConflictError("terminal goals cannot transition again")
-            if current_status is GoalStatus.PLANNED and status not in {
+            if current_status is GoalStatus.PLANNED and request.status not in {
                 GoalStatus.BLOCKED,
                 GoalStatus.DEFERRED,
             }:
                 raise ConflictError(
                     "planned goals must be activated before finish evaluation"
                 )
-            if row["lifecycle_revision"] != expected_lifecycle_revision:
+            if row["lifecycle_revision"] != request.expected_lifecycle_revision:
                 raise ConflictError("goal lifecycle revision changed; reload before updating")
-            for fact in facts:
-                if fact.goal_id != goal_id:
+            for fact in request.facts:
+                if fact.goal_id != request.goal_id:
                     raise ConflictError("transition facts must belong to the goal")
-                self._append_fact(connection, fact, project_id)
+                self._append_fact(connection, fact, request.project_id)
             connection.execute(
                 "UPDATE goals SET status = ?, next_action = ?, lifecycle_revision = ?, "
                 "updated_at = ? "
                 "WHERE goal_id = ?",
                 (
-                    status.value,
-                    next_action,
-                    expected_lifecycle_revision + 1,
+                    request.status.value,
+                    request.next_action,
+                    request.expected_lifecycle_revision + 1,
                     utc_now(),
-                    goal_id,
+                    request.goal_id,
                 ),
             )
-        return self.get_goal(goal_id, project_id)
+        return self.get_goal(request.goal_id, request.project_id)
 
     def activate_goal(
         self,
@@ -2819,24 +3770,27 @@ class CuratorStore:
 
     def retire_goal(
         self,
-        goal_id: str,
-        status: GoalStatus,
-        reason: str,
-        fact: Fact,
-        project_id: str | None = None,
-        replacement_goal_id: str | None = None,
+        request: GoalRetirementRequest,
     ) -> GoalCard:
         """Atomically cancel or supersede a live goal with an immutable fact."""
 
         _validate_retirement_request(
-            goal_id, status, reason, fact, replacement_goal_id
+            request.goal_id,
+            request.status,
+            request.reason,
+            request.fact,
+            request.replacement_goal_id,
         )
         with self._transaction() as connection:
             row = connection.execute(
-                "SELECT status, project_id FROM goals WHERE goal_id = ?", (goal_id,)
+                "SELECT status, project_id FROM goals WHERE goal_id = ?",
+                (request.goal_id,),
             ).fetchone()
-            if row is None or (project_id is not None and row["project_id"] != project_id):
-                raise NotFoundError(f"goal not found: {goal_id}")
+            if row is None or (
+                request.project_id is not None
+                and row["project_id"] != request.project_id
+            ):
+                raise NotFoundError(f"goal not found: {request.goal_id}")
             if GoalStatus(row["status"]) in {
                 GoalStatus.COMPLETE,
                 GoalStatus.CANCELLED,
@@ -2845,17 +3799,22 @@ class CuratorStore:
                 raise ConflictError("terminal goals cannot be cancelled or superseded")
             project = row["project_id"]
             _validate_replacement_goal(
-                connection, goal_id, project, replacement_goal_id
+                connection, request.goal_id, project, request.replacement_goal_id
             )
-            _validate_retirement_relationships(connection, goal_id, project)
-            self._append_fact(connection, fact, project_id)
+            _validate_retirement_relationships(connection, request.goal_id, project)
+            self._append_fact(connection, request.fact, request.project_id)
             connection.execute(
                 "UPDATE goals SET status = ?, next_action = NULL, "
                 "superseded_by_goal_id = ?, lifecycle_revision = lifecycle_revision + 1, "
                 "updated_at = ? WHERE goal_id = ?",
-                (status.value, replacement_goal_id, utc_now(), goal_id),
+                (
+                    request.status.value,
+                    request.replacement_goal_id,
+                    utc_now(),
+                    request.goal_id,
+                ),
             )
-        return self.get_goal(goal_id, project_id)
+        return self.get_goal(request.goal_id, request.project_id)
 
     def reopen_goal(
         self,
@@ -2905,87 +3864,99 @@ class CuratorStore:
 
     def amend_goal_criteria(
         self,
-        goal_id: str,
-        expected_revision: int,
-        criteria: tuple[SuccessCriterion, ...],
-        reason: str,
-        next_action: str,
-        fact: Fact,
-        project_id: str | None = None,
-        expected_lifecycle_revision: int | None = None,
+        request: GoalCriteriaAmendmentRequest,
     ) -> GoalCard:
         """Replace the active contract while retaining every immutable version."""
 
-        if expected_lifecycle_revision is not None and (
-            not is_exact_int(expected_lifecycle_revision)
-            or expected_lifecycle_revision < 1
+        if request.expected_revisions.lifecycle_revision is not None and (
+            not is_exact_int(request.expected_revisions.lifecycle_revision)
+            or request.expected_revisions.lifecycle_revision < 1
         ):
             raise ValueError("expected_lifecycle_revision must be a positive integer")
-        if fact.goal_id != goal_id or fact.kind is not FactKind.CRITERIA_AMENDED:
+        if (
+            request.fact.goal_id != request.goal_id
+            or request.fact.kind is not FactKind.CRITERIA_AMENDED
+        ):
             raise ConflictError("criteria amendment requires its system amendment fact")
-        if not is_exact_int(expected_revision) or expected_revision < 1:
+        if (
+            not is_exact_int(request.expected_revisions.criteria_revision)
+            or request.expected_revisions.criteria_revision < 1
+        ):
             raise ValueError("expected_revision must be a positive integer")
-        if expected_revision >= MAX_CRITERIA_REVISIONS:
+        if request.expected_revisions.criteria_revision >= MAX_CRITERIA_REVISIONS:
             raise ValueError(
                 f"criteria history is limited to {MAX_CRITERIA_REVISIONS} revisions"
             )
-        if not criteria or len(criteria) > MAX_SUCCESS_CRITERIA:
+        if not request.criteria or len(request.criteria) > MAX_SUCCESS_CRITERIA:
             raise ValueError(
                 f"amended criteria must contain 1-{MAX_SUCCESS_CRITERIA} items"
             )
-        _validate_unique_amended_criteria_ids(criteria)
-        if not reason.strip() or not next_action.strip() or len(next_action) > 1000:
+        _validate_unique_amended_criteria_ids(request.criteria)
+        if (
+            not request.reason.strip()
+            or not request.next_action.strip()
+            or len(request.next_action) > 1000
+        ):
             raise ValueError("criteria amendment requires a bounded reason and next action")
         serialized = _json_dump([
             {"criterion_id": item.criterion_id, "description": item.description}
-            for item in criteria
+            for item in request.criteria
         ])
         with self._transaction() as connection:
             row = connection.execute(
                 "SELECT status, project_id, criteria_revision, criteria_json, lifecycle_revision "
                 "FROM goals WHERE goal_id = ?",
-                (goal_id,),
+                (request.goal_id,),
             ).fetchone()
-            if row is None or (project_id is not None and row["project_id"] != project_id):
-                raise NotFoundError(f"goal not found: {goal_id}")
+            if row is None or (
+                request.project_id is not None
+                and row["project_id"] != request.project_id
+            ):
+                raise NotFoundError(f"goal not found: {request.goal_id}")
             if GoalStatus(row["status"]) in {
                 GoalStatus.COMPLETE,
                 GoalStatus.CANCELLED,
                 GoalStatus.SUPERSEDED,
             }:
                 raise ConflictError("terminal goals cannot amend their criteria")
-            if row["criteria_revision"] != expected_revision:
+            if row["criteria_revision"] != request.expected_revisions.criteria_revision:
                 raise ConflictError("criteria revision changed; reload before amending")
             expected_state_revision = (
                 row["lifecycle_revision"]
-                if expected_lifecycle_revision is None
-                else expected_lifecycle_revision
+                if request.expected_revisions.lifecycle_revision is None
+                else request.expected_revisions.lifecycle_revision
             )
             if row["lifecycle_revision"] != expected_state_revision:
                 raise ConflictError("goal lifecycle revision changed; reload before amending")
             if row["criteria_json"] == serialized:
                 raise ConflictError("criteria amendment has no change")
-            revision = expected_revision + 1
+            revision = request.expected_revisions.criteria_revision + 1
             created_at = utc_now()
-            self._append_fact(connection, fact, project_id)
+            self._append_fact(connection, request.fact, request.project_id)
             connection.execute(
                 "UPDATE goals SET criteria_json = ?, criteria_revision = ?, "
                 "next_action = ?, lifecycle_revision = ?, updated_at = ? WHERE goal_id = ?",
                 (
                     serialized,
                     revision,
-                    next_action.strip(),
+                    request.next_action.strip(),
                     expected_state_revision + 1,
                     created_at,
-                    goal_id,
+                    request.goal_id,
                 ),
             )
             connection.execute(
                 "INSERT INTO goal_criteria_versions "
                 "(goal_id, revision, criteria_json, reason, created_at) VALUES (?, ?, ?, ?, ?)",
-                (goal_id, revision, serialized, reason.strip(), created_at),
+                (
+                    request.goal_id,
+                    revision,
+                    serialized,
+                    request.reason.strip(),
+                    created_at,
+                ),
             )
-        return self.get_goal(goal_id, project_id)
+        return self.get_goal(request.goal_id, request.project_id)
 
     @staticmethod
     def _fact_from_row(row: sqlite3.Row) -> Fact:
@@ -3001,6 +3972,7 @@ class CuratorStore:
                 item["locator"],
                 item["sha256"],
                 EvidenceOutcome(item["outcome"]),
+                item.get("occurrence_id"),
             )
             for item in evidence_data
         )
@@ -3059,7 +4031,10 @@ class CuratorStore:
                     "fact archive evidence item schema is invalid"
                 )
             item = cast(dict[str, object], raw_item)
-            if set(item) != {"evidence_kind", "locator", "sha256", "outcome"}:
+            required = {"evidence_kind", "locator", "sha256", "outcome"}
+            if not required.issubset(item) or not set(item).issubset(
+                required | {"occurrence_id"}
+            ):
                 raise FactArchiveIntegrityError(
                     "fact archive evidence item fields are invalid"
                 )
@@ -3067,7 +4042,10 @@ class CuratorStore:
                 item[key]
                 for key in ("evidence_kind", "locator", "sha256", "outcome")
             )
-            if any(not isinstance(item_value, str) for item_value in values):
+            occurrence_id = item.get("occurrence_id")
+            if any(not isinstance(item_value, str) for item_value in values) or (
+                occurrence_id is not None and not isinstance(occurrence_id, str)
+            ):
                 raise FactArchiveIntegrityError(
                     "fact archive evidence values must be strings"
                 )
@@ -3077,6 +4055,7 @@ class CuratorStore:
                     cast(str, values[1]),
                     cast(str, values[2]),
                     EvidenceOutcome(cast(str, values[3])),
+                    occurrence_id,
                 )
             )
         return tuple(evidence)
@@ -3108,7 +4087,9 @@ class CuratorStore:
                     "fact archive attestation item schema is invalid"
                 )
             attestation = cast(dict[str, object], raw_attestation)
-            if set(attestation) != attestation_fields or any(
+            if not attestation_fields.issubset(attestation) or not set(attestation).issubset(
+                attestation_fields | {"occurrence_id"}
+            ) or any(
                 not isinstance(item, str) for item in attestation.values()
             ):
                 raise FactArchiveIntegrityError(
@@ -4085,8 +5066,10 @@ class CuratorStore:
 
     def project_health_inputs(
         self, project_id: str
-    ) -> tuple[EventQueueStatus, ProjectOperationalCounts, ProjectStorageUsage]:
-        """Read health aggregates from one SQLite snapshot transaction."""
+    ) -> tuple[
+        EventQueueStatus, ProjectOperationalCounts, ProjectStorageUsage, int, str
+    ]:
+        """Read queue/review/purge/storage/scrub health and time in one snapshot."""
 
         with self._lock:
             if self._connection.in_transaction:
@@ -4096,11 +5079,13 @@ class CuratorStore:
                 queue = self.event_queue_status(project_id)
                 counts = self.project_operational_counts(project_id)
                 usage = self.project_storage_usage(project_id)
+                scrub_count = self.event_payload_scrub_pending_count(project_id)
+                observed_at = utc_now()
             except BaseException:
                 self._connection.rollback()
                 raise
             self._connection.commit()
-        return queue, counts, usage
+        return queue, counts, usage, scrub_count, observed_at
 
     def receipt_for_candidate(
         self, candidate_id: str, project_id: str
@@ -4153,7 +5138,9 @@ class CuratorStore:
                 ):
                     raise ConflictError("candidate already has a different audit receipt")
                 saved_targets = connection.execute(
-                    "SELECT path, sha256, retention_hold FROM purge_targets WHERE receipt_id = ? "
+                    "SELECT path, sha256, retention_hold, device_id, inode_id, occurrence_id, "
+                    "reacquisition_action "
+                    "FROM purge_targets WHERE receipt_id = ? "
                     "ORDER BY path",
                     (existing["receipt_id"],),
                 ).fetchall()
@@ -4162,11 +5149,20 @@ class CuratorStore:
                         item.path,
                         item.sha256,
                         item.retention_hold.value if item.retention_hold else None,
+                        item.device_id,
+                        item.inode_id,
+                        item.occurrence_id,
+                        item.reacquisition_action.value,
                     )
                     for item in receipt.artifacts
                 )
                 saved_target_values = [
-                    (item["path"], item["sha256"], item["retention_hold"])
+                    (
+                        item["path"], item["sha256"], item["retention_hold"],
+                        item["device_id"], item["inode_id"],
+                        item["occurrence_id"],
+                        item["reacquisition_action"],
+                    )
                     for item in saved_targets
                 ]
                 if saved_target_values != requested_targets:
@@ -4219,8 +5215,9 @@ class CuratorStore:
                         """INSERT INTO purge_targets
                            (receipt_id, path, sha256, status, attempts, error,
                             created_at, last_attempt_at, next_attempt_at, retention_hold,
-                            hold_created_at, hold_created_by)
-                           VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, NULL, ?, ?, ?)""",
+                            hold_created_at, hold_created_by, device_id, inode_id,
+                            occurrence_id, approval_stale, reacquisition_action)
+                           VALUES (?, ?, ?, ?, 0, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             receipt_id,
                             artifact.path,
@@ -4234,6 +5231,11 @@ class CuratorStore:
                             artifact.retention_hold.value if artifact.retention_hold else None,
                             receipt.created_at if artifact.retention_hold else None,
                             receipt.reviewer_id if artifact.retention_hold else None,
+                            artifact.device_id,
+                            artifact.inode_id,
+                            artifact.occurrence_id,
+                            int(artifact.occurrence_id is None),
+                            artifact.reacquisition_action.value,
                         ),
                     )
                 status = (
@@ -4486,6 +5488,7 @@ class CuratorStore:
                 row = self._connection.execute(
                     """SELECT r.*, c.reviewer_id AS cleanup_reviewer_id,
                               c.manifest_sha256 AS cleanup_manifest_sha256,
+                              c.dependency_map_sha256 AS cleanup_dependency_map_sha256,
                               c.approved_at AS cleanup_approved_at,
                               c.canonical_persisted AS cleanup_canonical_persisted
                        FROM audit_receipts AS r
@@ -4498,6 +5501,7 @@ class CuratorStore:
                 row = self._connection.execute(
                     """SELECT r.*, c.reviewer_id AS cleanup_reviewer_id,
                               c.manifest_sha256 AS cleanup_manifest_sha256,
+                              c.dependency_map_sha256 AS cleanup_dependency_map_sha256,
                               c.approved_at AS cleanup_approved_at,
                               c.canonical_persisted AS cleanup_canonical_persisted
                        FROM audit_receipts AS r
@@ -4511,7 +5515,9 @@ class CuratorStore:
             if row is None:
                 raise NotFoundError(f"audit receipt not found: {receipt_id}")
             targets = self._connection.execute(
-                "SELECT path, sha256, retention_hold FROM purge_targets WHERE receipt_id = ? "
+                "SELECT path, sha256, retention_hold, device_id, inode_id, occurrence_id, "
+                "reacquisition_action "
+                "FROM purge_targets WHERE receipt_id = ? "
                 "ORDER BY path",
                 (receipt_id,),
             ).fetchall()
@@ -4520,6 +5526,10 @@ class CuratorStore:
                 item["path"],
                 item["sha256"],
                 RetentionHoldKind(item["retention_hold"]) if item["retention_hold"] else None,
+                item["device_id"],
+                item["inode_id"],
+                item["occurrence_id"],
+                ReacquisitionAction(item["reacquisition_action"]),
             )
             for item in targets
         )
@@ -4542,6 +5552,7 @@ class CuratorStore:
             cleanup_authorized=row["cleanup_reviewer_id"] is not None,
             cleanup_reviewer_id=row["cleanup_reviewer_id"],
             cleanup_manifest_sha256=row["cleanup_manifest_sha256"],
+            cleanup_dependency_map_sha256=row["cleanup_dependency_map_sha256"],
             cleanup_approved_at=row["cleanup_approved_at"],
             cleanup_canonical_persisted=bool(row["cleanup_canonical_persisted"]),
         )
@@ -4582,7 +5593,9 @@ class CuratorStore:
                 raise NotFoundError(f"audit receipt not found: {receipt_id}")
             existing_targets = connection.execute(
                 "SELECT path, sha256, status, attempts, retention_hold, "
-                "hold_created_at, hold_created_by FROM purge_targets "
+                "hold_created_at, hold_created_by, device_id, inode_id, occurrence_id, "
+                "reacquisition_action "
+                "FROM purge_targets "
                 "WHERE receipt_id = ? ORDER BY path",
                 (receipt_id,),
             ).fetchall()
@@ -4700,7 +5713,7 @@ class CuratorStore:
         released_at = utc_now()
         with self._transaction() as connection:
             row = connection.execute(
-                """SELECT p.status, p.retention_hold, p.attempts,
+                """SELECT p.status, p.retention_hold, p.attempts, p.approval_stale,
                           p.hold_released_at, p.hold_released_by,
                           p.hold_release_rationale, r.artifact_inventory_complete,
                           r.canonical_persisted
@@ -4731,7 +5744,8 @@ class CuratorStore:
             ):
                 raise ConflictError("hold release is blocked by an open receipt gate")
             cursor = connection.execute(
-                """UPDATE purge_targets SET status = ?, error = NULL,
+                """UPDATE purge_targets SET status = ?,
+                          error = CASE WHEN approval_stale = 1 THEN error ELSE NULL END,
                           next_attempt_at = NULL, hold_released_at = ?,
                           hold_released_by = ?, hold_release_rationale = ?
                    WHERE receipt_id = ? AND path = ? AND status = ?
@@ -4780,6 +5794,7 @@ class CuratorStore:
                 rows = self._connection.execute(
                     "SELECT * FROM purge_targets WHERE receipt_id = ? "
                     "AND status IN (?, ?) "
+                    "AND approval_stale = 0 "
                     "AND (retention_hold IS NULL OR hold_released_at IS NOT NULL) "
                     "AND (next_attempt_at IS NULL OR next_attempt_at <= ?) "
                     "ORDER BY path",
@@ -4794,6 +5809,7 @@ class CuratorStore:
                 rows = self._connection.execute(
                     "SELECT * FROM purge_targets WHERE receipt_id = ? "
                     "AND status IN (?, ?) "
+                    "AND approval_stale = 0 "
                     "AND (retention_hold IS NULL OR hold_released_at IS NOT NULL) "
                     "ORDER BY path",
                     (receipt_id, ArtifactStatus.PENDING.value, ArtifactStatus.FAILED.value),
@@ -4809,6 +5825,10 @@ class CuratorStore:
                     row["path"],
                     row["sha256"],
                     RetentionHoldKind(row["retention_hold"]) if row["retention_hold"] else None,
+                    row["device_id"],
+                    row["inode_id"],
+                    row["occurrence_id"],
+                    ReacquisitionAction(row["reacquisition_action"]),
                 ),
                 ArtifactStatus(row["status"]),
                 row["attempts"],
@@ -4844,6 +5864,10 @@ class CuratorStore:
                     row["path"],
                     row["sha256"],
                     RetentionHoldKind(row["retention_hold"]) if row["retention_hold"] else None,
+                    row["device_id"],
+                    row["inode_id"],
+                    row["occurrence_id"],
+                    ReacquisitionAction(row["reacquisition_action"]),
                 ),
                 status=ArtifactStatus(row["status"]),
                 attempts=row["attempts"],
@@ -4856,6 +5880,7 @@ class CuratorStore:
                 hold_released_at=row["hold_released_at"],
                 hold_released_by=row["hold_released_by"],
                 hold_release_rationale=row["hold_release_rationale"],
+                approval_stale=bool(row["approval_stale"]),
             )
             for row in rows
         )
@@ -4888,6 +5913,7 @@ class CuratorStore:
                 """UPDATE purge_targets SET attempts = attempts + 1,
                    last_attempt_at = ?, next_attempt_at = NULL
                    WHERE receipt_id = ? AND path = ? AND status IN (?, ?)
+                     AND approval_stale = 0
                      AND (retention_hold IS NULL OR hold_released_at IS NOT NULL)""",
                 (
                     attempted_at,
@@ -4979,7 +6005,8 @@ class CuratorStore:
             ).fetchone() is None:
                 raise NotFoundError(f"audit receipt not found: {receipt_id}")
             target = connection.execute(
-                """SELECT p.attempts, p.sha256, g.project_id
+                """SELECT p.attempts, p.sha256, p.occurrence_id, p.approval_stale,
+                          g.project_id
                    FROM purge_targets AS p
                    JOIN audit_receipts AS r ON r.receipt_id = p.receipt_id
                    JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
@@ -4989,6 +6016,8 @@ class CuratorStore:
             ).fetchone()
             if target is None:
                 raise NotFoundError("purge target not found in receipt")
+            if bool(target["approval_stale"]):
+                raise ConflictError("legacy purge approval requires fresh inventory review")
             held = connection.execute(
                 "SELECT retention_hold, hold_released_at FROM purge_targets "
                 "WHERE receipt_id = ? AND path = ?",
@@ -5012,8 +6041,12 @@ class CuratorStore:
             if status is ArtifactStatus.PURGED:
                 connection.execute(
                     "DELETE FROM staging_artifact_times "
-                    "WHERE project_id = ? AND path = ? AND sha256 = ?",
-                    (target["project_id"], path, target["sha256"]),
+                    "WHERE project_id = ? AND path = ? AND sha256 = ? "
+                    "AND occurrence_id = ?",
+                    (
+                        target["project_id"], path, target["sha256"],
+                        target["occurrence_id"],
+                    ),
                 )
             self._refresh_purge_receipt_status(connection, receipt_id)
         return self.get_receipt(receipt_id, project_id)
@@ -5068,6 +6101,7 @@ class CuratorStore:
                        SELECT 1 FROM purge_targets AS p
                        WHERE p.receipt_id = r.receipt_id
                          AND p.status IN (?, ?)
+                         AND p.approval_stale = 0
                          AND (p.retention_hold IS NULL OR p.hold_released_at IS NOT NULL)
                          AND (p.next_attempt_at IS NULL OR p.next_attempt_at <= ?)
                      )
@@ -5258,24 +6292,9 @@ class CuratorStore:
         """Measure retained event-row content across every project in the DB."""
 
         row = connection.execute(
-            """SELECT COUNT(*) AS count, COALESCE(SUM(
-                   length(CAST(project_id AS BLOB)) +
-                   length(CAST(event_id AS BLOB)) +
-                   length(CAST(event_type AS BLOB)) +
-                   length(CAST(payload_sha256 AS BLOB)) +
-                   COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
-                   length(CAST(payload_bytes AS TEXT)) +
-                   COALESCE(length(CAST(payload_json AS BLOB)), 0) +
-                   length(CAST(status AS BLOB)) +
-                   length(CAST(received_at AS BLOB)) +
-                   length(CAST(attempts AS TEXT)) +
-                   length(CAST(source_id AS BLOB)) +
-                   COALESCE(length(CAST(source_sequence AS TEXT)), 0) +
-                   COALESCE(length(CAST(processed_at AS BLOB)), 0) +
-                   COALESCE(length(CAST(last_error AS BLOB)), 0) +
-                   COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
-                   COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
-                   COALESCE(length(CAST(lease_expires_at AS BLOB)), 0)
+            f"""SELECT COUNT(*) AS count, COALESCE(SUM(
+                   {_EVENT_INBOX_METADATA_BYTES_SQL} +
+                   COALESCE(length(CAST(payload_json AS BLOB)), 0)
                  ), 0) AS bytes FROM event_inbox"""
         ).fetchone()
         audit = connection.execute(
@@ -5293,11 +6312,47 @@ class CuratorStore:
 
         with self._lock:
             count, retained_bytes = self._event_inbox_usage(self._connection)
-        return self._global_event_inbox_capacity(count, retained_bytes)
+            scrub_usage = self._event_payload_scrub_usage(self._connection)
+        return self._global_event_inbox_capacity(count, retained_bytes, scrub_usage)
+
+    @staticmethod
+    def _event_payload_scrub_usage(
+        connection: sqlite3.Connection,
+    ) -> EventPayloadScrubUsage:
+        """Measure all scrub rows and their unassigned subset as logical bytes."""
+
+        row = connection.execute(
+            """WITH measured AS (
+                   SELECT project_id,
+                          length(CAST(scrub_id AS TEXT)) +
+                          COALESCE(length(CAST(project_id AS BLOB)), 0) +
+                          COALESCE(length(CAST(event_id AS BLOB)), 0) +
+                          length(CAST(queued_at AS BLOB)) +
+                          length(CAST(attempts AS TEXT)) +
+                          COALESCE(length(CAST(last_error_code AS BLOB)), 0)
+                            AS record_bytes
+                   FROM event_payload_scrub_queue
+                 )
+                 SELECT COUNT(*) AS record_count,
+                        COALESCE(SUM(record_bytes), 0) AS record_bytes,
+                        COALESCE(SUM(CASE WHEN project_id IS NULL THEN 1 ELSE 0 END), 0)
+                          AS unassigned_count,
+                        COALESCE(SUM(CASE WHEN project_id IS NULL THEN record_bytes
+                                          ELSE 0 END), 0) AS unassigned_bytes
+                 FROM measured"""
+        ).fetchone()
+        return EventPayloadScrubUsage(
+            record_count=int(row["record_count"]),
+            logical_bytes=int(row["record_bytes"]),
+            unassigned_record_count=int(row["unassigned_count"]),
+            unassigned_logical_bytes=int(row["unassigned_bytes"]),
+        )
 
     @staticmethod
     def _global_event_inbox_capacity(
-        count: int, retained_bytes: int
+        count: int,
+        retained_bytes: int,
+        scrub_usage: EventPayloadScrubUsage,
     ) -> GlobalEventInboxUsage:
         can_accept = (
             count < MAX_EVENT_RECEIPTS_GLOBAL
@@ -5314,6 +6369,7 @@ class CuratorStore:
             receipt_count_limit=MAX_EVENT_RECEIPTS_GLOBAL,
             retained_record_bytes_limit=MAX_EVENT_RECEIPT_BYTES_GLOBAL,
             can_accept_new_event=can_accept,
+            payload_scrub_queue=scrub_usage,
             open_gate=gate,
         )
 
@@ -5826,11 +6882,95 @@ class CuratorStore:
             return None
         return metadata.st_size
 
+    def _sqlite_physical_storage_usage(self) -> SQLitePhysicalStorageUsage:
+        """Attribute main-database table/index pages without exposing rows."""
+
+        page_size = int(self._connection.execute("PRAGMA page_size").fetchone()[0])
+        page_count = int(self._connection.execute("PRAGMA page_count").fetchone()[0])
+        freelist_count = int(
+            self._connection.execute("PRAGMA freelist_count").fetchone()[0]
+        )
+        database_bytes = page_size * page_count
+        database_path = Path(self.database) if self.database != ":memory:" else None
+        database_file_bytes = (
+            self._regular_file_size(database_path) if database_path is not None else None
+        )
+        wal_file_bytes = (
+            self._regular_file_size(Path(f"{self.database}-wal"))
+            if self.database != ":memory:"
+            else None
+        )
+        try:
+            rows = self._connection.execute(
+                """SELECT m.tbl_name AS class_name,
+                          COUNT(*) AS page_count,
+                          SUM(d.pgsize) AS allocated_bytes,
+                          SUM(d.payload) AS payload_bytes,
+                          SUM(d.unused) AS unused_bytes
+                   FROM dbstat('main') AS d
+                   JOIN sqlite_master AS m ON m.name = d.name
+                   WHERE m.type IN ('table', 'index')
+                     AND m.tbl_name NOT LIKE 'sqlite_%'
+                   GROUP BY m.tbl_name
+                   ORDER BY m.tbl_name"""
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table: dbstat" not in str(exc).lower() and (
+                "no such module: dbstat" not in str(exc).lower()
+            ):
+                raise
+            return SQLitePhysicalStorageUsage(
+                status="unsupported",
+                classes=(),
+                pages=SQLiteDatabasePageUsage(
+                    page_size=page_size,
+                    page_count=page_count,
+                    freelist_page_count=freelist_count,
+                    allocated_bytes=database_bytes,
+                    attributed_btree_bytes=None,
+                    unattributed_database_bytes=None,
+                ),
+                files=SQLiteDatabaseFileUsage(
+                    database_bytes=database_file_bytes,
+                    wal_file_bytes=wal_file_bytes,
+                ),
+            )
+        classes = tuple(
+            StoragePhysicalClassUsage(
+                class_name=row["class_name"],
+                page_count=int(row["page_count"]),
+                allocated_bytes=int(row["allocated_bytes"]),
+                payload_bytes=int(row["payload_bytes"]),
+                unused_bytes=int(row["unused_bytes"]),
+            )
+            for row in rows
+        )
+        attributed_bytes = sum(item.allocated_bytes for item in classes)
+        if attributed_bytes > database_bytes:
+            raise sqlite3.DatabaseError("dbstat page attribution exceeds database pages")
+        return SQLitePhysicalStorageUsage(
+            status="available",
+            classes=classes,
+            pages=SQLiteDatabasePageUsage(
+                page_size=page_size,
+                page_count=page_count,
+                freelist_page_count=freelist_count,
+                allocated_bytes=database_bytes,
+                attributed_btree_bytes=attributed_bytes,
+                unattributed_database_bytes=database_bytes - attributed_bytes,
+            ),
+            files=SQLiteDatabaseFileUsage(
+                database_bytes=database_file_bytes,
+                wal_file_bytes=wal_file_bytes,
+            ),
+        )
+
     def _project_record_usage_rows(self, project_id: str) -> _ProjectRecordUsageRows:
         """Query logical non-event record usage for one project."""
 
         goal_usage = self._connection.execute(
             """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(g.project_id AS BLOB)) +
                  length(CAST(g.goal_id AS BLOB)) +
                  length(CAST(g.problem AS BLOB)) +
                  length(CAST(g.criteria_json AS BLOB)) +
@@ -5850,6 +6990,7 @@ class CuratorStore:
                  length(CAST(g.created_at AS BLOB)) +
                  length(CAST(g.updated_at AS BLOB)) +
                  COALESCE((SELECT SUM(
+                   length(CAST(v.goal_id AS BLOB)) +
                    length(CAST(v.criteria_json AS BLOB)) +
                    length(CAST(v.reason AS BLOB)) +
                    length(CAST(v.created_at AS BLOB)) +
@@ -5866,6 +7007,7 @@ class CuratorStore:
         fact_usage = self._connection.execute(
             """SELECT COUNT(*) AS count, COALESCE(SUM(
                  length(CAST(f.fact_id AS BLOB)) +
+                 length(CAST(f.goal_id AS BLOB)) +
                  length(CAST(f.kind AS BLOB)) +
                  length(CAST(f.bullet AS BLOB)) +
                  COALESCE(length(CAST(f.criterion_id AS BLOB)), 0) +
@@ -5886,6 +7028,7 @@ class CuratorStore:
                       COALESCE(SUM(
                         length(CAST(compaction_id AS BLOB)) +
                         length(CAST(schema_version AS TEXT)) +
+                        length(CAST(project_id AS BLOB)) +
                         length(CAST(goal_id AS BLOB)) +
                         length(CAST(source_sha256 AS BLOB)) +
                         length(CAST(archive_sha256 AS BLOB)) +
@@ -5895,7 +7038,7 @@ class CuratorStore:
                         length(CAST(reviewer_id AS BLOB)) +
                         length(CAST(approval_reason AS BLOB)) +
                         length(CAST(created_at AS BLOB)) +
-                        compressed_bytes
+                        length(CAST(payload_zlib AS BLOB))
                       ), 0) + COALESCE((
                         SELECT SUM(length(CAST(fact_id AS BLOB)) +
                                    length(CAST(compaction_id AS BLOB)) +
@@ -5961,8 +7104,10 @@ class CuratorStore:
                  length(CAST(r.candidate_id AS BLOB)) +
                  length(CAST(r.decision AS BLOB)) +
                  length(CAST(r.facts_sha256 AS BLOB)) +
+                 length(CAST(r.artifact_inventory_complete AS TEXT)) +
                  COALESCE(length(CAST(r.reviewer_id AS BLOB)), 0) +
                  COALESCE(length(CAST(r.review_rationale AS BLOB)), 0) +
+                 length(CAST(r.canonical_persisted AS TEXT)) +
                  COALESCE(length(CAST(r.canonical_target AS BLOB)), 0) +
                  COALESCE(length(CAST(r.canonical_sha256 AS BLOB)), 0) +
                  COALESCE(length(CAST(r.canonical_persisted_at AS BLOB)), 0) +
@@ -5985,7 +7130,18 @@ class CuratorStore:
                  COALESCE(length(CAST(p.error AS BLOB)), 0) +
                  length(CAST(p.created_at AS BLOB)) +
                  COALESCE(length(CAST(p.last_attempt_at AS BLOB)), 0) +
-                 COALESCE(length(CAST(p.next_attempt_at AS BLOB)), 0)
+                 COALESCE(length(CAST(p.next_attempt_at AS BLOB)), 0) +
+                 length(CAST(p.retention_hold AS TEXT)) +
+                 COALESCE(length(CAST(p.hold_created_at AS BLOB)), 0) +
+                 COALESCE(length(CAST(p.hold_created_by AS BLOB)), 0) +
+                 COALESCE(length(CAST(p.hold_released_at AS BLOB)), 0) +
+                 COALESCE(length(CAST(p.hold_released_by AS BLOB)), 0) +
+                 COALESCE(length(CAST(p.hold_release_rationale AS BLOB)), 0) +
+                 COALESCE(length(CAST(p.device_id AS TEXT)), 0) +
+                 COALESCE(length(CAST(p.inode_id AS TEXT)), 0) +
+                 COALESCE(length(CAST(p.occurrence_id AS BLOB)), 0) +
+                 length(CAST(p.approval_stale AS TEXT)) +
+                 COALESCE(length(CAST(p.reacquisition_action AS BLOB)), 0)
                ), 0) AS bytes
                FROM purge_targets AS p
                JOIN audit_receipts AS r ON r.receipt_id = p.receipt_id
@@ -5994,6 +7150,7 @@ class CuratorStore:
                WHERE g.project_id = ?""",
             (project_id,),
         ).fetchone()
+        auxiliary_usage = self._project_auxiliary_usage_rows(project_id)
         return _ProjectRecordUsageRows(
             goals=goal_usage,
             goal_statuses=goal_statuses,
@@ -6004,29 +7161,120 @@ class CuratorStore:
             feedback=feedback_usage,
             receipts=receipt_usage,
             artifacts=artifact_usage,
+            auxiliary=auxiliary_usage,
+        )
+
+    def _project_auxiliary_usage_rows(
+        self, project_id: str
+    ) -> _ProjectAuxiliaryUsageRows:
+        """Query project cursor, staging-age, and maintenance receipt usage."""
+
+        event_cursor_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(source_id AS BLOB)) +
+                 length(CAST(last_sequence AS TEXT)) +
+                 length(CAST(updated_at AS BLOB))
+               ), 0) AS bytes
+               FROM event_cursors WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        staging_time_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(path AS BLOB)) +
+                 length(CAST(sha256 AS BLOB)) +
+                 length(CAST(staged_at AS BLOB)) +
+                 COALESCE(length(CAST(device_id AS TEXT)), 0) +
+                 COALESCE(length(CAST(inode_id AS TEXT)), 0) +
+                 COALESCE(length(CAST(occurrence_id AS BLOB)), 0)
+               ), 0) AS bytes
+               FROM staging_artifact_times WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        staging_occurrence_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(path AS BLOB)) +
+                 length(CAST(sha256 AS BLOB)) +
+                 length(CAST(device_id AS TEXT)) +
+                 length(CAST(inode_id AS TEXT)) +
+                 length(CAST(occurrence_id AS BLOB)) +
+                 length(CAST(observed_at AS BLOB))
+               ), 0) AS bytes
+               FROM staging_artifact_occurrences WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        expiry_receipt_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(receipt_id AS BLOB)) +
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(reviewer_id AS BLOB)) +
+                 length(CAST(manifest_sha256 AS BLOB)) +
+                 length(CAST(status AS BLOB)) +
+                 length(CAST(created_at AS BLOB)) +
+                 length(CAST(updated_at AS BLOB))
+               ), 0) AS bytes
+               FROM expiry_purge_receipts WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        expiry_target_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(t.receipt_id AS BLOB)) +
+                 length(CAST(t.path AS BLOB)) +
+                 length(CAST(t.sha256 AS BLOB)) +
+                 length(CAST(t.status AS BLOB)) +
+                 length(CAST(t.attempts AS TEXT)) +
+                 COALESCE(length(CAST(t.error AS BLOB)), 0) +
+                 length(CAST(t.created_at AS BLOB)) +
+                 COALESCE(length(CAST(t.last_attempt_at AS BLOB)), 0) +
+                 COALESCE(length(CAST(t.next_attempt_at AS BLOB)), 0) +
+                 COALESCE(length(CAST(t.device_id AS TEXT)), 0) +
+                 COALESCE(length(CAST(t.inode_id AS TEXT)), 0) +
+                 COALESCE(length(CAST(t.occurrence_id AS BLOB)), 0) +
+                 length(CAST(t.approval_stale AS TEXT))
+               ), 0) AS bytes
+               FROM expiry_purge_targets AS t
+               JOIN expiry_purge_receipts AS r ON r.receipt_id = t.receipt_id
+               WHERE r.project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        cleanup_authorization_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(receipt_id AS BLOB)) +
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(reviewer_id AS BLOB)) +
+                 length(CAST(manifest_sha256 AS BLOB)) +
+                 length(CAST(approved_at AS BLOB)) +
+                 length(CAST(canonical_persisted AS TEXT)) +
+                 COALESCE(length(CAST(canonical_target AS BLOB)), 0) +
+                 COALESCE(length(CAST(canonical_sha256 AS BLOB)), 0) +
+                 COALESCE(length(CAST(canonical_persisted_at AS BLOB)), 0) +
+                 length(CAST(dependency_map_sha256 AS BLOB))
+               ), 0) AS bytes
+               FROM cleanup_authorizations WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        return _ProjectAuxiliaryUsageRows(
+            event_cursors=event_cursor_usage,
+            staging_artifact_times=staging_time_usage,
+            staging_artifact_occurrences=staging_occurrence_usage,
+            expiry_purge_receipts=expiry_receipt_usage,
+            expiry_purge_targets=expiry_target_usage,
+            cleanup_authorizations=cleanup_authorization_usage,
         )
 
     def _project_event_usage_rows(self, project_id: str) -> _ProjectEventUsageRows:
         """Query content-free event usage and global inbox capacity."""
 
         event_rows = self._connection.execute(
-            """SELECT event_type, status, COUNT(*) AS count,
+            f"""SELECT event_type, status, COUNT(*) AS count,
                       COALESCE(SUM(payload_bytes), 0) AS original_bytes,
                       COALESCE(SUM(COALESCE(
                           length(CAST(payload_json AS BLOB)), 0
                       )), 0) AS retained_bytes,
                       COALESCE(SUM(
-                          length(CAST(event_id AS BLOB)) +
-                          length(CAST(payload_sha256 AS BLOB)) +
-                          COALESCE(length(CAST(idempotency_sha256 AS BLOB)), 0) +
-                          length(CAST(event_type AS BLOB)) +
-                          length(CAST(status AS BLOB)) +
-                          length(CAST(received_at AS BLOB)) +
-                          COALESCE(length(CAST(processed_at AS BLOB)), 0) +
-                          COALESCE(length(CAST(last_error AS BLOB)), 0) +
-                          COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
-                          COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
-                          COALESCE(length(CAST(lease_expires_at AS BLOB)), 0)
+                          {_EVENT_INBOX_METADATA_BYTES_SQL}
                       ), 0) AS metadata_bytes
                FROM event_inbox WHERE project_id = ?
                GROUP BY event_type, status ORDER BY event_type, status""",
@@ -6047,13 +7295,42 @@ class CuratorStore:
                 EventInboxStatus.QUARANTINED.value,
             ),
         ).fetchall()
+        retry_audit_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(event_id AS BLOB)) +
+                 length(CAST(actor_id AS BLOB)) +
+                 length(CAST(created_at AS BLOB))
+               ), 0) AS bytes
+               FROM event_retry_audit WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
+        payload_scrub_usage = self._connection.execute(
+            """SELECT COUNT(*) AS count, COALESCE(SUM(
+                 length(CAST(scrub_id AS TEXT)) +
+                 length(CAST(project_id AS BLOB)) +
+                 length(CAST(event_id AS BLOB)) +
+                 length(CAST(queued_at AS BLOB)) +
+                 length(CAST(attempts AS TEXT)) +
+                 COALESCE(length(CAST(last_error_code AS BLOB)), 0)
+               ), 0) AS bytes
+               FROM event_payload_scrub_queue WHERE project_id = ?""",
+            (project_id,),
+        ).fetchone()
         global_event_count, global_event_bytes = self._event_inbox_usage(
             self._connection
         )
+        global_scrub_usage = self._event_payload_scrub_usage(self._connection)
         global_capacity = self._global_event_inbox_capacity(
-            global_event_count, global_event_bytes
+            global_event_count, global_event_bytes, global_scrub_usage
         )
-        return _ProjectEventUsageRows(event_rows, failure_rows, global_capacity)
+        return _ProjectEventUsageRows(
+            event_rows,
+            failure_rows,
+            retry_audit_usage,
+            payload_scrub_usage,
+            global_capacity,
+        )
 
     def project_storage_usage(self, project_id: str) -> ProjectStorageUsage:
         """Report logical retained bytes per project and physical DB files globally.
@@ -6077,9 +7354,20 @@ class CuratorStore:
                 record_rows.feedback,
                 record_rows.receipts,
                 record_rows.artifacts,
+                record_rows.auxiliary.event_cursors,
+                record_rows.auxiliary.staging_artifact_times,
+                record_rows.auxiliary.staging_artifact_occurrences,
+                record_rows.auxiliary.expiry_purge_receipts,
+                record_rows.auxiliary.expiry_purge_targets,
+                record_rows.auxiliary.cleanup_authorizations,
                 record_rows.archives,
             )
-        ) + event_summary.metadata_bytes + event_summary.retained_bytes
+        ) + (
+            event_summary.metadata_bytes
+            + event_summary.retained_bytes
+            + event_summary.retry_audit_bytes
+            + event_summary.payload_scrub_bytes
+        )
 
         database_path = Path(self.database) if self.database != ":memory:" else None
         database_bytes = (
@@ -6113,6 +7401,34 @@ class CuratorStore:
             event_receipt_count=event_summary.event_count,
             event_payload_bytes_received=event_summary.original_bytes,
             event_payload_bytes_retained=event_summary.retained_bytes,
+            event_cursor_count=record_rows.auxiliary.event_cursors["count"],
+            event_cursor_record_bytes=record_rows.auxiliary.event_cursors["bytes"],
+            event_retry_audit_count=event_summary.retry_audit_count,
+            event_retry_audit_record_bytes=event_summary.retry_audit_bytes,
+            staging_artifact_time_count=record_rows.auxiliary.staging_artifact_times["count"],
+            staging_artifact_time_record_bytes=record_rows.auxiliary.staging_artifact_times[
+                "bytes"
+            ],
+            staging_artifact_occurrence_count=record_rows.auxiliary.staging_artifact_occurrences[
+                "count"
+            ],
+            staging_artifact_occurrence_record_bytes=(
+                record_rows.auxiliary.staging_artifact_occurrences["bytes"]
+            ),
+            expiry_purge_receipt_count=record_rows.auxiliary.expiry_purge_receipts["count"],
+            expiry_purge_receipt_record_bytes=record_rows.auxiliary.expiry_purge_receipts[
+                "bytes"
+            ],
+            expiry_purge_target_count=record_rows.auxiliary.expiry_purge_targets["count"],
+            expiry_purge_target_record_bytes=record_rows.auxiliary.expiry_purge_targets[
+                "bytes"
+            ],
+            cleanup_authorization_count=record_rows.auxiliary.cleanup_authorizations["count"],
+            cleanup_authorization_record_bytes=record_rows.auxiliary.cleanup_authorizations[
+                "bytes"
+            ],
+            event_payload_scrub_count=event_summary.payload_scrub_count,
+            event_payload_scrub_record_bytes=event_summary.payload_scrub_bytes,
             event_classes=event_summary.event_classes,
             event_failures=event_summary.failures,
             global_event_inbox=event_usage_rows.global_capacity,

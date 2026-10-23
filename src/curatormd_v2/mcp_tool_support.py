@@ -17,6 +17,7 @@ from .models import (
     ArtifactRef,
     EvidenceOutcome,
     EvidenceRef,
+    ReacquisitionAction,
     RetentionHoldKind,
     SuccessCriterion,
 )
@@ -51,11 +52,15 @@ def safe_tool_handler(handler: Any) -> Any:
     return invoke
 
 class ArtifactInput(TypedDict):
-    """MCP artifact manifest entry with an optional explicit retention hold."""
+    """MCP manifest entry with optional hold and observed file identity."""
 
     path: str
     sha256: str
     retention_hold: NotRequired[str | None]
+    device_id: NotRequired[int | None]
+    inode_id: NotRequired[int | None]
+    occurrence_id: NotRequired[str | None]
+    reacquisition_action: NotRequired[str]
 
 def parse_criteria(values: list[dict[str, str]]) -> tuple[SuccessCriterion, ...]:
     """Parse the exact compact criterion objects accepted by MCP tools."""
@@ -72,7 +77,10 @@ def parse_evidence(values: list[dict[str, str]]) -> tuple[EvidenceRef, ...]:
 
     evidence: list[EvidenceRef] = []
     for value in values:
-        if set(value) != {"evidence_kind", "locator", "sha256", "outcome"}:
+        required = {"evidence_kind", "locator", "sha256", "outcome"}
+        if not required.issubset(value) or not set(value).issubset(
+            required | {"occurrence_id"}
+        ):
             raise ValueError("evidence requires kind, locator, sha256, and outcome")
         evidence.append(
             EvidenceRef(
@@ -80,6 +88,7 @@ def parse_evidence(values: list[dict[str, str]]) -> tuple[EvidenceRef, ...]:
                 locator=value["locator"],
                 sha256=value["sha256"],
                 outcome=EvidenceOutcome(value["outcome"]),
+                occurrence_id=value.get("occurrence_id"),
             )
         )
     return tuple(evidence)
@@ -89,13 +98,28 @@ def parse_artifacts(values: list[ArtifactInput]) -> tuple[ArtifactRef, ...]:
 
     artifacts: list[ArtifactRef] = []
     for value in values:
-        if set(value) not in ({"path", "sha256"}, {"path", "sha256", "retention_hold"}):
-            raise ValueError("artifacts require path and sha256, with optional retention_hold")
+        allowed = {
+            "path", "sha256", "retention_hold", "device_id", "inode_id",
+            "occurrence_id",
+            "reacquisition_action",
+        }
+        if not {"path", "sha256"} <= set(value) or set(value) - allowed:
+            raise ValueError("artifact has missing or unsupported fields")
         hold_value = value.get("retention_hold")
         if hold_value is not None and not hold_value:
             raise ValueError("retention_hold must be omitted or legal/operational")
         hold = RetentionHoldKind(hold_value) if hold_value is not None else None
-        artifacts.append(ArtifactRef(value["path"], value["sha256"], hold))
+        artifacts.append(
+            ArtifactRef(
+                value["path"],
+                value["sha256"],
+                hold,
+                value.get("device_id"),
+                value.get("inode_id"),
+                value.get("occurrence_id"),
+                ReacquisitionAction(value.get("reacquisition_action", "not_recorded")),
+            )
+        )
     return tuple(artifacts)
 
 def json_result(value: object) -> str:

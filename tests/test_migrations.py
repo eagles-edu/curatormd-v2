@@ -28,10 +28,14 @@ from curatormd_v2 import (
     SQLITE_SCHEMA_VERSION,
     SuccessCriterion,
 )
-from curatormd_v2.schema_migrations import apply_schema_migrations
+from curatormd_v2.schema_migrations import (
+    apply_schema_migrations,
+    migrate_consumer_binding_lifecycle_v33,
+)
 
 
-class MigrationEvidenceVerifier:
+# EvidenceVerifier test double intentionally implements only `attest`.
+class MigrationEvidenceVerifier:  # pylint: disable=too-few-public-methods
     """Accept the stable synthetic evidence reference used by this fixture."""
 
     def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
@@ -117,8 +121,179 @@ class MigrationReviewAuthorizer:
         return authenticated_subject or "migration-operator"
 
 
+PROJECT_USAGE_COLUMNS = {
+    "audit_receipts": frozenset(
+        {
+            "receipt_id", "candidate_id", "decision", "facts_sha256",
+            "artifact_inventory_complete", "reviewer_id", "review_rationale",
+            "canonical_persisted", "canonical_target", "canonical_sha256",
+            "canonical_persisted_at", "purge_status", "created_at", "updated_at",
+        }
+    ),
+    "cleanup_authorizations": frozenset(
+        {
+            "receipt_id", "project_id", "reviewer_id", "manifest_sha256",
+            "approved_at", "canonical_persisted", "canonical_target",
+            "canonical_sha256", "canonical_persisted_at", "dependency_map_sha256",
+        }
+    ),
+    "event_cursors": frozenset(
+        {"project_id", "source_id", "last_sequence", "updated_at"}
+    ),
+    "event_inbox": frozenset(
+        {
+            "project_id", "event_id", "event_type", "payload_sha256",
+            "payload_bytes", "payload_json", "status", "received_at", "processed_at",
+            "last_error", "next_attempt_at", "lease_owner", "lease_expires_at",
+            "disposition", "attempts", "source_id", "source_sequence",
+            "idempotency_sha256",
+        }
+    ),
+    "event_payload_scrub_queue": frozenset(
+        {"scrub_id", "project_id", "event_id", "queued_at", "attempts", "last_error_code"}
+    ),
+    "event_retry_audit": frozenset(
+        {"retry_id", "project_id", "event_id", "actor_id", "created_at"}
+    ),
+    "expiry_purge_receipts": frozenset(
+        {
+            "receipt_id", "project_id", "reviewer_id", "manifest_sha256", "status",
+            "created_at", "updated_at",
+        }
+    ),
+    "expiry_purge_targets": frozenset(
+        {
+            "receipt_id", "path", "sha256", "status", "attempts", "error",
+            "created_at", "last_attempt_at", "next_attempt_at", "device_id",
+            "inode_id", "occurrence_id", "approval_stale",
+        }
+    ),
+    "fact_archive_items": frozenset(
+        {"fact_id", "compaction_id", "project_id", "goal_id", "dedupe_key", "created_at"}
+    ),
+    "fact_archives": frozenset(
+        {
+            "compaction_id", "schema_version", "project_id", "goal_id", "source_sha256",
+            "archive_sha256", "source_bytes", "compressed_bytes", "fact_count",
+            "payload_zlib", "reviewer_id", "approval_reason", "created_at",
+        }
+    ),
+    "facts": frozenset(
+        {
+            "fact_id", "goal_id", "kind", "bullet", "criterion_id", "evidence_json",
+            "verification_attestations_json", "source_event_id", "dedupe_key", "created_at",
+        }
+    ),
+    "goal_criteria_versions": frozenset(
+        {"goal_id", "revision", "criteria_json", "reason", "created_at"}
+    ),
+    "goals": frozenset(
+        {
+            "goal_id", "project_id", "problem", "criteria_json", "owner", "checklist_id",
+            "checklist_version", "checklist_source_text", "parent_goal_id",
+            "depends_on_json", "status", "next_action", "superseded_by_goal_id",
+            "criteria_revision", "lifecycle_revision", "created_at", "updated_at",
+            "initial_status", "source_event_id",
+        }
+    ),
+    "purge_targets": frozenset(
+        {
+            "receipt_id", "path", "sha256", "status", "attempts", "error", "created_at",
+            "last_attempt_at", "next_attempt_at", "retention_hold", "hold_created_at",
+            "hold_created_by", "hold_released_at", "hold_released_by",
+            "hold_release_rationale", "device_id", "inode_id", "occurrence_id",
+            "approval_stale", "reacquisition_action",
+        }
+    ),
+    "sde_candidates": frozenset(
+        {
+            "candidate_id", "goal_id", "materiality", "rationale", "fact_ids_json",
+            "dedupe_key", "status", "created_at", "impact", "retrieval_value",
+        }
+    ),
+    "sde_corrections": frozenset(
+        {"correction_id", "candidate_id", "correction", "rationale", "reviewer_id", "created_at"}
+    ),
+    "sde_quality_feedback": frozenset(
+        {"feedback_id", "candidate_id", "reviewer_id", "label", "rationale", "created_at"}
+    ),
+    "staging_artifact_occurrences": frozenset(
+        {"project_id", "path", "sha256", "device_id", "inode_id", "occurrence_id", "observed_at"}
+    ),
+    "staging_artifact_times": frozenset(
+        {"project_id", "path", "sha256", "staged_at", "device_id", "inode_id", "occurrence_id"}
+    ),
+}
+
+CONTROL_PLANE_USAGE_COLUMNS = {
+    "consumer_bindings": frozenset(
+        {"project_id", "status", "revision", "source_epoch", "updated_by", "updated_at"}
+    ),
+    "consumer_binding_audit": frozenset(
+        {
+            "audit_id", "project_id", "actor_id", "action", "from_status", "to_status",
+            "source_epoch", "revision", "transition_id", "rationale", "created_at",
+        }
+    ),
+    "project_grant_revocations": frozenset(
+        {"grant_id", "revoked_by", "rationale", "revoked_at"}
+    ),
+    "project_grants": frozenset(
+        {"grant_id", "project_id", "subject_id", "action", "granted_by", "rationale", "granted_at"}
+    ),
+    "project_registry": frozenset(
+        {
+            "project_id", "repository_fingerprint", "config_sha256", "backend_api_version",
+            "status", "registered_by", "registered_at", "updated_by", "updated_at", "revision",
+        }
+    ),
+    "project_registry_audit": frozenset(
+        {
+            "audit_id", "project_id", "actor_id", "action", "repository_fingerprint",
+            "config_sha256", "backend_api_version", "rationale", "created_at", "revision",
+            "transition_id",
+        }
+    ),
+    "request_rate_buckets": frozenset(
+        {"subject_id", "project_id", "tokens", "updated_at", "touched_at"}
+    ),
+}
+
+
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
+
+    def test_current_schema_columns_have_explicit_storage_classes(self) -> None:
+        """Require every durable column to enter a storage-class measure."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "accounting.sqlite3"
+            store = CuratorStore(database_path)
+            connection = sqlite3.connect(database_path)
+            try:
+                actual_columns = {
+                    row[0]: frozenset(
+                        column[1]
+                        for column in connection.execute(
+                            f'PRAGMA table_info("{row[0]}")'
+                        )
+                    )
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                    )
+                }
+            finally:
+                connection.close()
+                store.close()
+
+        self.assertTrue(
+            set(PROJECT_USAGE_COLUMNS).isdisjoint(CONTROL_PLANE_USAGE_COLUMNS)
+        )
+        self.assertEqual(
+            actual_columns,
+            PROJECT_USAGE_COLUMNS | CONTROL_PLANE_USAGE_COLUMNS,
+        )
 
     def test_v17_migration_adds_sde_context_and_staging_age_metadata(self) -> None:
         """Keep old proposals readable and add empty staging-age metadata."""
@@ -220,6 +395,161 @@ class SchemaMigrationTests(unittest.TestCase):
                     )
             finally:
                 migrated.close()
+
+    def test_v29_migration_requires_explicit_reacquisition_action(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute(
+                """CREATE TABLE purge_targets (
+                       receipt_id TEXT NOT NULL,
+                       path TEXT NOT NULL,
+                       status TEXT NOT NULL,
+                       next_attempt_at TEXT,
+                       approval_stale INTEGER NOT NULL DEFAULT 0,
+                       PRIMARY KEY(receipt_id, path)
+                   )"""
+            )
+            connection.executemany(
+                "INSERT INTO purge_targets VALUES (?, ?, ?, ?, 0)",
+                (
+                    ("pending", "/stage/pending", "pending", "2026-10-24T00:00:00+00:00"),
+                    ("purged", "/stage/purged", "purged", None),
+                ),
+            )
+            connection.execute("PRAGMA user_version = 29")
+
+            apply_schema_migrations(connection, 29)
+
+            rows = connection.execute(
+                "SELECT receipt_id, reacquisition_action, approval_stale, next_attempt_at "
+                "FROM purge_targets ORDER BY receipt_id"
+            ).fetchall()
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 33)
+            self.assertEqual(
+                tuple(rows[0]), ("pending", "not_recorded", 1, None)
+            )
+            self.assertEqual(
+                tuple(rows[1]), ("purged", "not_recorded", 0, None)
+            )
+        finally:
+            connection.close()
+
+    def test_v33_migration_backfills_active_consumer_binding(self) -> None:
+        """Existing project registrations gain a separate active binding."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.executescript(
+                """CREATE TABLE project_registry (
+                       project_id TEXT PRIMARY KEY,
+                       updated_by TEXT NOT NULL,
+                       updated_at TEXT NOT NULL
+                   );
+                   INSERT INTO project_registry VALUES (
+                       'legacy-project', 'operator', '2026-10-23T00:00:00Z'
+                   );"""
+            )
+            migrate_consumer_binding_lifecycle_v33(connection)
+            binding = connection.execute(
+                "SELECT * FROM consumer_bindings WHERE project_id = 'legacy-project'"
+            ).fetchone()
+            self.assertEqual(
+                tuple(binding),
+                (
+                    "legacy-project", "active", 1, 1, "operator",
+                    "2026-10-23T00:00:00Z",
+                ),
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM consumer_binding_audit"
+                ).fetchone()[0],
+                0,
+            )
+        finally:
+            connection.close()
+
+    def test_v30_migration_backfills_project_registry_revisions(self) -> None:
+        """Preserve current bindings and assign ordered revisions to old audits."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.executescript(
+                """CREATE TABLE project_registry (
+                       project_id TEXT PRIMARY KEY,
+                       repository_fingerprint TEXT NOT NULL,
+                       config_sha256 TEXT NOT NULL,
+                       backend_api_version INTEGER NOT NULL,
+                       status TEXT NOT NULL,
+                       registered_by TEXT NOT NULL,
+                       registered_at TEXT NOT NULL,
+                       updated_by TEXT NOT NULL,
+                       updated_at TEXT NOT NULL
+                   );
+                   CREATE TABLE project_registry_audit (
+                       audit_id TEXT PRIMARY KEY,
+                       project_id TEXT NOT NULL,
+                       actor_id TEXT NOT NULL,
+                       action TEXT NOT NULL,
+                       repository_fingerprint TEXT NOT NULL,
+                       config_sha256 TEXT NOT NULL,
+                       backend_api_version INTEGER NOT NULL,
+                       rationale TEXT NOT NULL,
+                       created_at TEXT NOT NULL
+                   );"""
+            )
+            connection.execute(
+                "INSERT INTO project_registry VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("project-a", "r" * 64, "c" * 64, 1, "active", "owner", "t1", "owner", "t4"),
+            )
+            connection.executemany(
+                "INSERT INTO project_registry_audit VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                tuple(
+                    (
+                        f"audit-{index}",
+                        "project-a",
+                        "owner",
+                        action,
+                        "r" * 64,
+                        "c" * 64,
+                        1,
+                        "fixture",
+                        "same-time",
+                    )
+                    for index, action in enumerate(
+                        ("registered", "updated", "suspended", "reactivated"), 1
+                    )
+                ),
+            )
+            connection.execute("PRAGMA user_version = 30")
+
+            apply_schema_migrations(connection, 30)
+
+            registration = connection.execute(
+                "SELECT revision FROM project_registry WHERE project_id = 'project-a'"
+            ).fetchone()
+            audit_revisions = connection.execute(
+                "SELECT revision FROM project_registry_audit ORDER BY created_at"
+            ).fetchall()
+            transition_ids = connection.execute(
+                "SELECT transition_id FROM project_registry_audit"
+            ).fetchall()
+            transition_index = connection.execute(
+                "PRAGMA index_list(project_registry_audit)"
+            ).fetchall()
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 33)
+            self.assertEqual(registration["revision"], 4)
+            self.assertEqual([row["revision"] for row in audit_revisions], [1, 2, 3, 4])
+            self.assertEqual([row["transition_id"] for row in transition_ids], [None] * 4)
+            self.assertIn(
+                "project_registry_transition_id",
+                {row["name"] for row in transition_index},
+            )
+        finally:
+            connection.close()
 
     def test_v20_migration_adds_cleanup_authorizations_without_inventing_them(self) -> None:
         """Preserve legacy SDE receipts while leaving their new approval absent."""

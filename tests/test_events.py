@@ -40,6 +40,8 @@ from curatormd_v2.store import (
     NotFoundError,
 )
 from curatormd_v2.models import (
+    ArtifactRef,
+    EvidenceAttestation,
     EvidenceOutcome,
     EvidenceRef,
     FactKind,
@@ -199,6 +201,33 @@ class EventInboxTests(unittest.TestCase):
             self.assertEqual(usage.global_event_inbox.receipt_count, 0)
             self.assertFalse(usage.global_event_inbox.can_accept_new_event)
 
+    def test_global_usage_accounts_for_unassigned_payload_scrub_rows(self) -> None:
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT INTO event_payload_scrub_queue
+                   (project_id, event_id, queued_at, attempts, last_error_code)
+                   VALUES (NULL, NULL, ?, ?, ?)""",
+                ("2026-10-23T00:00:00+00:00", 2, "wal_checkpoint_busy"),
+            )
+
+        global_usage = self.store.global_event_inbox_usage()
+        project_usage = self.store.project_storage_usage("project-a")
+        self.assertEqual(global_usage.payload_scrub_queue.record_count, 1)
+        self.assertGreater(global_usage.payload_scrub_queue.logical_bytes, 0)
+        self.assertEqual(
+            global_usage.payload_scrub_queue.unassigned_record_count,
+            1,
+        )
+        self.assertEqual(
+            global_usage.payload_scrub_queue.unassigned_logical_bytes,
+            global_usage.payload_scrub_queue.logical_bytes,
+        )
+        self.assertEqual(
+            project_usage.global_event_inbox.payload_scrub_queue.unassigned_record_count,
+            1,
+        )
+        self.assertEqual(project_usage.event_payload_scrub_count, 0)
+
     def test_event_id_reuse_with_different_content_is_a_conflict(self) -> None:
         """Reject an event ID that is reused for changed content."""
 
@@ -269,7 +298,11 @@ class EventInboxTests(unittest.TestCase):
         class TestVerifier:  # pylint: disable=too-few-public-methods
             """Approve deterministic evidence for the lifecycle fixture."""
 
-            def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
+            def attest(
+                self,
+                evidence: EvidenceRef,
+                context: EvidenceVerificationContext,
+            ) -> EvidenceAttestation:
                 """Return the fixed test attestation for this evidence."""
 
                 return attest_test_evidence(evidence, context)
@@ -522,6 +555,45 @@ class EventInboxTests(unittest.TestCase):
         self.assertEqual(other_usage.event_receipt_count, 0)
         self.assertEqual(other_usage.event_classes, ())
 
+    def test_storage_usage_counts_every_event_inbox_column(self) -> None:
+        """Include every stored event field in project and global logical bytes."""
+
+        event = EventEnvelope(
+            event_id="accounting-event",
+            project_id="project-a",
+            payload=FactRecorded(
+                goal_id="not-yet-recorded",
+                fact_id="accounting-fact",
+                kind=FactKind.CHANGE,
+                bullet="Count this event row exactly",
+            ),
+            source_id="accounting-source",
+            source_sequence=987654,
+        )
+        self.store.ingest_event(event)
+        with self.store.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+                (event.project_id, event.event_id),
+            ).fetchone()
+        assert row is not None
+        expected_bytes = sum(
+            len(value if isinstance(value, bytes) else str(value).encode("utf-8"))
+            for value in row
+            if value is not None
+        )
+
+        project_usage = self.store.project_storage_usage(event.project_id)
+        global_usage = self.store.global_event_inbox_usage()
+
+        self.assertEqual(project_usage.logical_record_bytes, expected_bytes)
+        self.assertEqual(global_usage.retained_record_bytes, expected_bytes)
+        self.assertEqual(project_usage.event_payload_bytes_received, row["payload_bytes"])
+        self.assertEqual(
+            project_usage.event_payload_bytes_retained,
+            len(row["payload_json"].encode("utf-8")),
+        )
+
     def test_project_scoped_service_cannot_mutate_another_project_goal(self) -> None:
         """Do not resolve goal IDs across project ownership boundaries."""
 
@@ -739,6 +811,184 @@ class EventInboxTests(unittest.TestCase):
             [("legacy.unknown", "processed")],
         )
 
+
+class EventSequencePersistenceTests(unittest.TestCase):
+    """Check ordered event persistence and project-scoped cursor storage."""
+
+    def setUp(self) -> None:
+        self.temp_dir = self.enterContext(
+            tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
+        )
+        self.database = Path(self.temp_dir) / "curator.sqlite3"
+        self.stage = Path(self.temp_dir) / "stage"
+        self.stage.mkdir()
+        self.store = CuratorStore(self.database)
+        self.addCleanup(self.store.close)
+
+    def test_storage_usage_counts_project_owned_auxiliary_records(self) -> None:
+        """Count project cursors and staging metadata without exposing IDs."""
+
+        for project_id in ("project-a", "project-b"):
+            service = CuratorService(
+                self.store,
+                ArtifactPurger(self.stage),
+                project_id=project_id,
+            )
+            service.process_event(
+                EventEnvelope(
+                    f"cursor-event-{project_id}",
+                    project_id,
+                    GoalStarted(
+                        f"cursor-goal-{project_id}",
+                        "Persist one ordered source event",
+                        (SuccessCriterion("done", "The event is processed"),),
+                    ),
+                    source_id="bounded-source",
+                    source_sequence=1,
+                )
+            )
+            self.store.record_staging_artifact_time(
+                project_id,
+                ArtifactRef(
+                    f"{project_id}/temporary/import.json",
+                    "d" * 64,
+                    device_id=1,
+                    inode_id=2,
+                    occurrence_id="c" * 32,
+                ),
+            )
+
+        usage_a = self.store.project_storage_usage("project-a")
+        usage_b = self.store.project_storage_usage("project-b")
+        self.assertEqual(usage_a.event_cursor_count, 1)
+        self.assertEqual(usage_b.event_cursor_count, 1)
+        self.assertGreater(usage_a.event_cursor_record_bytes, 0)
+        self.assertGreater(usage_b.event_cursor_record_bytes, 0)
+        self.assertEqual(usage_a.staging_artifact_time_count, 1)
+        self.assertEqual(usage_b.staging_artifact_time_count, 1)
+        self.assertGreater(usage_a.staging_artifact_time_record_bytes, 0)
+        self.assertGreater(usage_b.staging_artifact_time_record_bytes, 0)
+        self.assertEqual(usage_a.staging_artifact_occurrence_count, 1)
+        self.assertEqual(usage_b.staging_artifact_occurrence_count, 1)
+        self.assertGreater(usage_a.staging_artifact_occurrence_record_bytes, 0)
+        self.assertGreater(usage_b.staging_artifact_occurrence_record_bytes, 0)
+        self.assertGreaterEqual(
+            usage_a.logical_record_bytes,
+            usage_a.event_cursor_record_bytes
+            + usage_a.staging_artifact_time_record_bytes
+            + usage_a.staging_artifact_occurrence_record_bytes,
+        )
+        self.assertGreaterEqual(
+            usage_b.logical_record_bytes,
+            usage_b.event_cursor_record_bytes
+            + usage_b.staging_artifact_time_record_bytes
+            + usage_b.staging_artifact_occurrence_record_bytes,
+        )
+
+    def test_terminal_parent_reopen_failure_keeps_one_receipt_and_source_cursor(self) -> None:
+        """Rejected ordered reopen retries retain one receipt and do not advance."""
+
+        class TestVerifier:  # pylint: disable=too-few-public-methods
+            """Approve deterministic evidence for the completed child fixture."""
+
+            def attest(
+                self,
+                evidence: EvidenceRef,
+                context: EvidenceVerificationContext,
+            ) -> EvidenceAttestation:
+                """Return deterministic evidence provenance for this fixture."""
+
+                return attest_test_evidence(evidence, context)
+
+        verified_service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            project_id="project-a",
+        )
+        parent = verified_service.goal_start(
+            "Terminal parent",
+            (SuccessCriterion("parent", "Parent is complete"),),
+        )
+        child = verified_service.goal_start(
+            "Completed child",
+            (SuccessCriterion("child", "Child is complete"),),
+            parent_goal_id=parent.goal_id,
+        )
+        verified_service.goal_fact(
+            child.goal_id,
+            FactKind.VERIFICATION,
+            "Child criterion verified",
+            criterion_id="child",
+            evidence=(
+                EvidenceRef(
+                    "test",
+                    "test-proof:terminal-parent-reopen",
+                    "f" * 64,
+                    EvidenceOutcome.PASSED,
+                ),
+            ),
+        )
+        completed_child = verified_service.goal_finish(child.goal_id, "Child complete")
+        verified_service.goal_cancel(parent.goal_id, "Parent scope withdrawn")
+        before_goal = self.store.get_goal(child.goal_id)
+        before_facts = self.store.list_facts(child.goal_id)
+        event = EventEnvelope(
+            "ordered-reopen-under-terminal-parent",
+            "project-a",
+            GoalReopened(
+                child.goal_id,
+                "Resume after the parent was retired",
+                "Start a correctly linked continuation",
+                completed_child.lifecycle_revision,
+            ),
+            source_id="hermes-curator-test",
+            source_sequence=1,
+        )
+
+        failed = verified_service.process_event(event)
+        self.assertEqual(failed.status.value, "failed")
+        self.assertEqual(failed.last_error_code, ConflictError.__name__)
+        self.assertEqual(failed.attempts, 1)
+        replay = verified_service.process_event(event)
+        self.assertEqual(
+            (replay.project_id, replay.event_id),
+            (failed.project_id, failed.event_id),
+        )
+        self.assertEqual(replay.status, failed.status)
+        self.assertEqual(replay.last_error_code, failed.last_error_code)
+        self.assertEqual(replay.attempts, 1)
+
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE event_inbox SET next_attempt_at = '2000-01-01T00:00:00+00:00' "
+                "WHERE project_id = ? AND event_id = ?",
+                ("project-a", event.event_id),
+            )
+        retried = verified_service.process_event(event)
+        self.assertEqual(
+            (retried.project_id, retried.event_id),
+            (failed.project_id, failed.event_id),
+        )
+        self.assertEqual(retried.status, failed.status)
+        self.assertEqual(retried.last_error_code, failed.last_error_code)
+        self.assertEqual(retried.attempts, 2)
+        with self.store.transaction() as connection:
+            cursor = connection.execute(
+                "SELECT last_sequence FROM event_cursors "
+                "WHERE project_id = ? AND source_id = ?",
+                ("project-a", "hermes-curator-test"),
+            ).fetchone()
+            receipt_count = connection.execute(
+                "SELECT COUNT(*) FROM event_inbox "
+                "WHERE project_id = ? AND event_id = ?",
+                ("project-a", event.event_id),
+            ).fetchone()[0]
+        self.assertIsNone(cursor)
+        self.assertEqual(receipt_count, 1)
+        self.assertEqual(self.store.event_receipt("project-a", event.event_id), retried)
+        self.assertEqual(self.store.get_goal(child.goal_id), before_goal)
+        self.assertEqual(self.store.list_facts(child.goal_id), before_facts)
 
 if __name__ == "__main__":
     unittest.main()

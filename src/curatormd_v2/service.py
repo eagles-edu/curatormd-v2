@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import re
@@ -93,6 +95,13 @@ from .store import (
     EventInboxCapacityError,
     FactCompactionApprovalRequest,
     FactCapacityError,
+    NotFoundError,
+)
+from .store_requests import (
+    GoalCriteriaAmendmentRequest,
+    GoalCriteriaRevisionExpectation,
+    GoalRetirementRequest,
+    GoalTransitionRequest,
 )
 from .validation import is_exact_int
 
@@ -121,6 +130,7 @@ class PurgeTargetStatus:
     hold_released_at: str | None
     hold_released_by: str | None
     hold_release_rationale: str | None
+    approval_stale: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,18 +197,34 @@ def _timestamp_delay_seconds(
     return max(0, int((parsed.astimezone(UTC) - now).total_seconds()))
 
 
-def _purge_recovery_action(receipt: AuditReceipt, status: ArtifactStatus) -> str:
+def _purge_recovery_action(
+    receipt: AuditReceipt, status: ArtifactStatus, approval_stale: bool = False
+) -> str:
     """Suggest only the next configured action that satisfies current gates."""
 
     if status is ArtifactStatus.PURGED:
         return "none"
     if status is ArtifactStatus.HELD:
         return "release_artifact_hold"
+    if approval_stale:
+        return "fresh_inventory_review"
     if not receipt.artifact_inventory_complete:
         return "artifact_inventory_complete"
     if not receipt.canonical_persisted:
         return "goal_persist"
     return "retry_pending_purges"
+
+
+@dataclass(frozen=True, slots=True)
+class SDEAssessmentRequest:
+    """Bounded inputs used to validate and stage one SDE proposal."""
+
+    goal_id: str
+    materiality: Materiality
+    rationale: str
+    fact_ids: tuple[str, ...]
+    impact: str | None
+    retrieval_value: str | None
 
 
 class CuratorService:
@@ -220,6 +246,63 @@ class CuratorService:
         self.evidence_verifier = evidence_verifier or RejectUnverifiedEvidence()
         self.review_authorizer = review_authorizer or RejectUnauthenticatedReview()
         self.project_id = project_id
+        self._effect_revision_capture: Callable[[], int] | None = None
+        self._effect_revision_fence: (
+            Callable[[int], AbstractContextManager[object]] | None
+        ) = None
+
+    def bind_project_effect_boundary(
+        self,
+        capture_revision: Callable[[], int],
+        revision_fence: Callable[[int], AbstractContextManager[object]],
+    ) -> None:
+        """Bind this service's direct mutations to a repository-owned project."""
+
+        if self._effect_revision_capture is not None:
+            raise RuntimeError("project effect boundary is already bound")
+        self._effect_revision_capture = capture_revision
+        self._effect_revision_fence = revision_fence
+
+    def _capture_effect_revision(self) -> int | None:
+        """Capture the bound project's active revision before an effect phase."""
+
+        if self._effect_revision_capture is not None:
+            return self._effect_revision_capture()
+        try:
+            registration = self.store.get_project_registration(self.project_id)
+        except NotFoundError:
+            # Preserve standalone/unregistered service use. Once a project is
+            # registered, its lifecycle becomes authoritative for this service.
+            return None
+        if registration.status != "active":
+            raise ConflictError("project lifecycle changed before the effect")
+        return registration.revision
+
+    def _effect_fence(
+        self, expected_revision: int | None
+    ) -> AbstractContextManager[object]:
+        """Return the captured-revision fence, preserving unbound service use."""
+
+        if expected_revision is None:
+            return nullcontext()
+        if self._effect_revision_fence is not None:
+            return self._effect_revision_fence(expected_revision)
+        return self.store.project_revision_fence(self.project_id, expected_revision)
+
+    @contextmanager
+    def _effect_guard(
+        self,
+        expected_revision: int | None,
+        additional_fence: Callable[[], AbstractContextManager[object]] | None = None,
+    ) -> Generator[None, None, None]:
+        """Apply the bound project fence even when a caller supplies another fence."""
+
+        with self._effect_fence(expected_revision):
+            if additional_fence is None:
+                yield
+            else:
+                with additional_fence():
+                    yield
 
     def _validate_goal_start_relations(
         self,
@@ -292,27 +375,29 @@ class CuratorService:
     ) -> GoalCard:
         """Create a goal with an explicit problem and testable success criteria."""
 
+        expected_effect_revision = self._capture_effect_revision()
         initial_status = self._normalize_goal_start_status(initial_status)
-        with self.store.transaction():
-            self._validate_goal_start_relations(
-                parent_goal_id, depends_on_goal_ids, goal_id
-            )
-            goal = GoalCard(
-                goal_id=goal_id or new_id(),
-                problem=problem,
-                success_criteria=success_criteria,
-                owner=owner,
-                checklist_id=checklist_id,
-                checklist_version=checklist_version,
-                checklist_source_text=checklist_source_text,
-                parent_goal_id=parent_goal_id,
-                depends_on_goal_ids=depends_on_goal_ids,
-                project_id=self.project_id,
-                status=initial_status,
-                next_action=next_action,
-            )
-            self.store.add_goal(goal, source_event_id=source_event_id)
-            return goal
+        with self._effect_fence(expected_effect_revision):
+            with self.store.transaction():
+                self._validate_goal_start_relations(
+                    parent_goal_id, depends_on_goal_ids, goal_id
+                )
+                goal = GoalCard(
+                    goal_id=goal_id or new_id(),
+                    problem=problem,
+                    success_criteria=success_criteria,
+                    owner=owner,
+                    checklist_id=checklist_id,
+                    checklist_version=checklist_version,
+                    checklist_source_text=checklist_source_text,
+                    parent_goal_id=parent_goal_id,
+                    depends_on_goal_ids=depends_on_goal_ids,
+                    project_id=self.project_id,
+                    status=initial_status,
+                    next_action=next_action,
+                )
+                self.store.add_goal(goal, source_event_id=source_event_id)
+                return goal
 
     def goal_activate(
         self,
@@ -322,16 +407,18 @@ class CuratorService:
     ) -> GoalCard:
         """Activate planned work after explicit, revision-checked acceptance."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reason = reason.strip()
         if not reason or len(reason) > 500 or "\n" in reason or "\r" in reason:
             raise ValueError("activation requires a single-line reason of at most 500 characters")
         fact = Fact(goal_id=goal_id, kind=FactKind.INTENT, bullet=f"Activated: {reason}")
-        return self.store.activate_goal(
-            goal_id,
-            fact,
-            expected_lifecycle_revision,
-            self.project_id,
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.activate_goal(
+                goal_id,
+                fact,
+                expected_lifecycle_revision,
+                self.project_id,
+            )
 
     def goal_fact(
         self,
@@ -345,6 +432,7 @@ class CuratorService:
     ) -> tuple[Fact, bool]:
         """Record a compact fact, independently verifying proof-bearing facts."""
 
+        expected_effect_revision = self._capture_effect_revision()
         if kind in {
             FactKind.REOPENED,
             FactKind.CRITERIA_AMENDED,
@@ -386,8 +474,9 @@ class CuratorService:
         # Evidence adapters may be expensive, so verify before taking the SQLite
         # write lock. Re-read lifecycle state under the write transaction before
         # append: another process may have completed the goal during verification.
-        with self.store.transaction():
-            return self._append_preverified_fact(fact, goal)
+        with self._effect_fence(expected_effect_revision):
+            with self.store.transaction():
+                return self._append_preverified_fact(fact, goal)
 
     def _append_preverified_fact(
         self, fact: Fact, verified_goal_snapshot: GoalCard | None = None
@@ -489,6 +578,7 @@ class CuratorService:
         expected_lifecycle_revision: int | None = None,
     ) -> GoalCard:
         """Request completion; missing proof or dependent work leaves the goal open."""
+        expected_effect_revision = self._capture_effect_revision()
         if not completion_claim.strip():
             raise ValueError("completion claim must not be empty")
         if len(completion_claim.strip()) > 980:
@@ -506,25 +596,26 @@ class CuratorService:
         facts_snapshot = self.store.list_facts(goal_id, self.project_id)
         for _attempt in range(3):
             verified = self._verified_criterion_ids(initial_goal, facts_snapshot)
-            with self.store.transaction():
-                current_goal = self.store.get_goal(goal_id, self.project_id)
-                current_facts = self.store.list_facts(goal_id, self.project_id)
-                if (
-                    current_goal.lifecycle_revision != initial_goal.lifecycle_revision
-                    or current_goal.criteria_revision != initial_goal.criteria_revision
-                ):
-                    raise ConflictError(
-                        "goal changed during evidence verification; reload before finishing"
-                    )
-                if tuple(fact.fact_id for fact in current_facts) == tuple(
-                    fact.fact_id for fact in facts_snapshot
-                ):
-                    return self._goal_finish_in_transaction(
-                        goal_id,
-                        completion_claim,
-                        expected_revision,
-                        verified,
-                    )
+            with self._effect_fence(expected_effect_revision):
+                with self.store.transaction():
+                    current_goal = self.store.get_goal(goal_id, self.project_id)
+                    current_facts = self.store.list_facts(goal_id, self.project_id)
+                    if (
+                        current_goal.lifecycle_revision != initial_goal.lifecycle_revision
+                        or current_goal.criteria_revision != initial_goal.criteria_revision
+                    ):
+                        raise ConflictError(
+                            "goal changed during evidence verification; reload before finishing"
+                        )
+                    if tuple(fact.fact_id for fact in current_facts) == tuple(
+                        fact.fact_id for fact in facts_snapshot
+                    ):
+                        return self._goal_finish_in_transaction(
+                            goal_id,
+                            completion_claim,
+                            expected_revision,
+                            verified,
+                        )
             facts_snapshot = current_facts
         raise ConflictError(
             "facts kept changing during evidence verification; retry finish"
@@ -650,12 +741,14 @@ class CuratorService:
                 )
             )
             return self.store.transition_goal(
-                goal_id,
-                GoalStatus.OPEN,
-                next_action,
-                tuple(facts),
-                expected_revision,
-                self.project_id,
+                GoalTransitionRequest(
+                    goal_id=goal_id,
+                    status=GoalStatus.OPEN,
+                    next_action=next_action,
+                    facts=tuple(facts),
+                    expected_lifecycle_revision=expected_revision,
+                    project_id=self.project_id,
+                )
             )
 
         facts.append(
@@ -669,12 +762,14 @@ class CuratorService:
             )
         )
         return self.store.transition_goal(
-            goal_id,
-            GoalStatus.COMPLETE,
-            None,
-            tuple(facts),
-            expected_revision,
-            self.project_id,
+            GoalTransitionRequest(
+                goal_id=goal_id,
+                status=GoalStatus.COMPLETE,
+                next_action=None,
+                facts=tuple(facts),
+                expected_lifecycle_revision=expected_revision,
+                project_id=self.project_id,
+            )
         )
 
     def goal_defer(
@@ -686,6 +781,7 @@ class CuratorService:
     ) -> GoalCard:
         """Defer unfinished work with a concrete reason and resumption action."""
 
+        expected_effect_revision = self._capture_effect_revision()
         if not reason.strip() or not next_action.strip():
             raise ValueError("defer requires both a reason and a concrete next action")
         if len(next_action.strip()) > 1000:
@@ -700,14 +796,17 @@ class CuratorService:
             if expected_lifecycle_revision is None
             else expected_lifecycle_revision
         )
-        return self.store.transition_goal(
-            goal_id,
-            GoalStatus.DEFERRED,
-            next_action.strip(),
-            (fact,),
-            expected_revision,
-            self.project_id,
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.transition_goal(
+                GoalTransitionRequest(
+                    goal_id=goal_id,
+                    status=GoalStatus.DEFERRED,
+                    next_action=next_action.strip(),
+                    facts=(fact,),
+                    expected_lifecycle_revision=expected_revision,
+                    project_id=self.project_id,
+                )
+            )
 
     def goal_block(
         self,
@@ -718,6 +817,7 @@ class CuratorService:
     ) -> GoalCard:
         """Record an external dependency and recovery path for blocked work."""
 
+        expected_effect_revision = self._capture_effect_revision()
         if not dependency.strip() or not recovery.strip():
             raise ValueError("blocked goal requires the dependency and recovery path")
         if len(recovery.strip()) > 1000:
@@ -732,18 +832,22 @@ class CuratorService:
             if expected_lifecycle_revision is None
             else expected_lifecycle_revision
         )
-        return self.store.transition_goal(
-            goal_id,
-            GoalStatus.BLOCKED,
-            recovery.strip(),
-            (fact,),
-            expected_revision,
-            self.project_id,
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.transition_goal(
+                GoalTransitionRequest(
+                    goal_id=goal_id,
+                    status=GoalStatus.BLOCKED,
+                    next_action=recovery.strip(),
+                    facts=(fact,),
+                    expected_lifecycle_revision=expected_revision,
+                    project_id=self.project_id,
+                )
+            )
 
     def goal_cancel(self, goal_id: str, reason: str) -> GoalCard:
         """Cancel unfinished work without treating it as successful."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reason = reason.strip()
         if not reason or len(reason) > 500 or "\n" in reason or "\r" in reason:
             raise ValueError(
@@ -754,15 +858,23 @@ class CuratorService:
             kind=FactKind.CANCELLED,
             bullet=f"Cancelled: {reason}",
         )
-        return self.store.retire_goal(
-            goal_id, GoalStatus.CANCELLED, reason, fact, self.project_id
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.retire_goal(
+                GoalRetirementRequest(
+                    goal_id=goal_id,
+                    status=GoalStatus.CANCELLED,
+                    reason=reason,
+                    fact=fact,
+                    project_id=self.project_id,
+                )
+            )
 
     def goal_supersede(
         self, goal_id: str, replacement_goal_id: str, reason: str
     ) -> GoalCard:
         """Replace unfinished work with an explicit same-project goal."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reason = reason.strip()
         if not reason or len(reason) > 500 or "\n" in reason or "\r" in reason:
             raise ValueError(
@@ -775,14 +887,17 @@ class CuratorService:
             kind=FactKind.SUPERSEDED,
             bullet=f"Superseded by goal '{replacement_goal_id}': {reason}",
         )
-        return self.store.retire_goal(
-            goal_id,
-            GoalStatus.SUPERSEDED,
-            reason,
-            fact,
-            self.project_id,
-            replacement_goal_id,
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.retire_goal(
+                GoalRetirementRequest(
+                    goal_id=goal_id,
+                    status=GoalStatus.SUPERSEDED,
+                    reason=reason,
+                    fact=fact,
+                    project_id=self.project_id,
+                    replacement_goal_id=replacement_goal_id,
+                )
+            )
 
     def goal_reopen(
         self,
@@ -793,6 +908,7 @@ class CuratorService:
     ) -> GoalCard:
         """Reopen a completed goal and require fresh evidence for every criterion."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reason = reason.strip()
         next_action = next_action.strip()
         if not reason or not next_action:
@@ -809,13 +925,14 @@ class CuratorService:
             if expected_lifecycle_revision is None
             else expected_lifecycle_revision
         )
-        return self.store.reopen_goal(
-            goal_id,
-            next_action,
-            fact,
-            expected_revision,
-            self.project_id,
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.reopen_goal(
+                goal_id,
+                next_action,
+                fact,
+                expected_revision,
+                self.project_id,
+            )
 
     def goal_amend_criteria(
         self,
@@ -828,6 +945,7 @@ class CuratorService:
     ) -> GoalCard:
         """Explicitly amend an open goal and require fresh proof afterward."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reason = reason.strip()
         next_action = next_action.strip()
         if not is_exact_int(expected_revision) or expected_revision < 1:
@@ -854,16 +972,21 @@ class CuratorService:
             if expected_lifecycle_revision is None
             else expected_lifecycle_revision
         )
-        return self.store.amend_goal_criteria(
-            goal_id,
-            expected_revision,
-            success_criteria,
-            reason,
-            next_action,
-            fact,
-            self.project_id,
-            expected_state_revision,
-        )
+        with self._effect_fence(expected_effect_revision):
+            return self.store.amend_goal_criteria(
+                GoalCriteriaAmendmentRequest(
+                    goal_id=goal_id,
+                    expected_revisions=GoalCriteriaRevisionExpectation(
+                        criteria_revision=expected_revision,
+                        lifecycle_revision=expected_state_revision,
+                    ),
+                    criteria=success_criteria,
+                    reason=reason,
+                    next_action=next_action,
+                    fact=fact,
+                    project_id=self.project_id,
+                ),
+            )
 
     def goal_status(
         self,
@@ -1082,17 +1205,19 @@ class CuratorService:
     ) -> FactArchiveReceipt:
         """Archive only the exact preview approved by a scoped reviewer."""
 
-        return self.store.approve_fact_compaction(
-            FactCompactionApprovalRequest(
-                compaction_id=compaction_id,
-                goal_id=goal_id,
-                project_id=self.project_id,
-                fact_ids=fact_ids,
-                source_sha256=source_sha256,
-                reviewer_id=reviewer_id,
-                approval_reason=approval_reason,
+        expected_effect_revision = self._capture_effect_revision()
+        with self._effect_fence(expected_effect_revision):
+            return self.store.approve_fact_compaction(
+                FactCompactionApprovalRequest(
+                    compaction_id=compaction_id,
+                    goal_id=goal_id,
+                    project_id=self.project_id,
+                    fact_ids=fact_ids,
+                    source_sha256=source_sha256,
+                    reviewer_id=reviewer_id,
+                    approval_reason=approval_reason,
+                )
             )
-        )
 
     def fact_archive_receipts(
         self, goal_id: str, *, offset: int = 0, limit: int = 50
@@ -1218,25 +1343,54 @@ class CuratorService:
     ) -> SDECandidate | None:
         """Return routine work directly or stage verified significant facts for review."""
 
-        if materiality is Materiality.ROUTINE:
+        expected_effect_revision = self._capture_effect_revision()
+        request = SDEAssessmentRequest(
+            goal_id, materiality, rationale, fact_ids, impact, retrieval_value
+        )
+        return self._sde_assess(
+            request, lambda: self._effect_fence(expected_effect_revision)
+        )
+
+    def sde_assess_with_effect_fence(
+        self,
+        request: SDEAssessmentRequest,
+        effect_fence: Callable[[], AbstractContextManager[object]],
+    ) -> SDECandidate | None:
+        """Verify evidence before fencing the durable proposal write."""
+
+        expected_effect_revision = self._capture_effect_revision()
+        return self._sde_assess(
+            request,
+            lambda: self._effect_guard(expected_effect_revision, effect_fence),
+        )
+
+    def _sde_assess(
+        self,
+        request: SDEAssessmentRequest,
+        effect_fence: Callable[[], AbstractContextManager[object]] | None,
+    ) -> SDECandidate | None:
+        """Validate current supporting evidence, then store one candidate."""
+
+        if request.materiality is Materiality.ROUTINE:
             return None
-        if impact is None or retrieval_value is None:
+        if request.impact is None or request.retrieval_value is None:
             raise EvidenceGateError(
                 "SDE assessment requires impact and retrieval value"
             )
-        if not fact_ids:
+        if not request.fact_ids:
             raise EvidenceGateError("SDE assessment requires selected goal facts")
-        if len(fact_ids) > MAX_SDE_SUPPORTING_FACTS:
+        if len(request.fact_ids) > MAX_SDE_SUPPORTING_FACTS:
             raise EvidenceGateError(
                 "SDE assessment exceeds the supporting fact limit"
             )
-        if len(fact_ids) != len(set(fact_ids)):
+        if len(request.fact_ids) != len(set(request.fact_ids)):
             raise EvidenceGateError("SDE assessment fact IDs must be unique")
-        goal = self.store.get_goal(goal_id, self.project_id)
+        goal = self.store.get_goal(request.goal_id, self.project_id)
         selected = tuple(
-            self.store.get_fact(fact_id, self.project_id) for fact_id in fact_ids
+            self.store.get_fact(fact_id, self.project_id)
+            for fact_id in request.fact_ids
         )
-        if any(fact.goal_id != goal_id for fact in selected):
+        if any(fact.goal_id != request.goal_id for fact in selected):
             raise EvidenceGateError("SDE facts must belong to the assessed goal")
         has_direct_passing_evidence = any(
             self._fact_is_currently_verified(goal, fact)
@@ -1247,16 +1401,18 @@ class CuratorService:
                 "candidate requires a selected verification fact with passing evidence"
             )
         candidate = SDECandidate(
-            goal_id=goal_id,
-            materiality=materiality,
-            rationale=rationale,
-            fact_ids=fact_ids,
-            impact=impact,
-            retrieval_value=retrieval_value,
+            goal_id=request.goal_id,
+            materiality=request.materiality,
+            rationale=request.rationale,
+            fact_ids=request.fact_ids,
+            impact=request.impact,
+            retrieval_value=request.retrieval_value,
         )
-        stored_candidate, _inserted = self.store.add_sde_candidate(
-            candidate, self.project_id
-        )
+        guard = effect_fence if effect_fence is not None else nullcontext
+        with guard():
+            stored_candidate, _inserted = self.store.add_sde_candidate(
+                candidate, self.project_id
+            )
         return stored_candidate
 
     def sde_review_queue(self, limit: int = 100) -> tuple[SDEReviewDetail, ...]:
@@ -1288,6 +1444,7 @@ class CuratorService:
     ) -> SDECorrection:
         """Append an attributable correction without mutating candidate/receipt."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize_correction(
             self.project_id, candidate_id, authenticated_subject
         )
@@ -1302,7 +1459,10 @@ class CuratorService:
             rationale=rationale,
             reviewer_id=reviewer_id,
         )
-        stored, _inserted = self.store.add_sde_correction(record, self.project_id)
+        with self._effect_fence(expected_effect_revision):
+            stored, _inserted = self.store.add_sde_correction(
+                record, self.project_id
+            )
         return stored
 
     def sde_quality_feedback_record(
@@ -1316,6 +1476,7 @@ class CuratorService:
     ) -> SDEQualityFeedback:
         """Append one trusted reviewer's explicit post-decision quality label."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize_feedback(
             self.project_id, candidate_id, authenticated_subject
         )
@@ -1330,9 +1491,10 @@ class CuratorService:
             label=label,
             rationale=rationale,
         )
-        stored, _inserted = self.store.add_sde_quality_feedback(
-            feedback, self.project_id
-        )
+        with self._effect_fence(expected_effect_revision):
+            stored, _inserted = self.store.add_sde_quality_feedback(
+                feedback, self.project_id
+            )
         return stored
 
     def sde_quality_feedback_summary(self) -> SDEQualityFeedbackSummary:
@@ -1352,6 +1514,7 @@ class CuratorService:
     ) -> AuditReceipt:
         """Record the SDE disposition before the plugin binds this action to cleanup."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize(
             self.project_id, candidate_id, decision, authenticated_subject
         )
@@ -1370,18 +1533,21 @@ class CuratorService:
             review_rationale=rationale,
         )
         # This commit is the deletion gate: no artifact is touched before it.
-        durable_receipt = self.store.create_receipt(receipt, self.project_id)
+        with self._effect_fence(expected_effect_revision):
+            durable_receipt = self.store.create_receipt(receipt, self.project_id)
         return durable_receipt
 
     def authorize_artifact_cleanup(
         self,
         receipt_id: str,
         manifest_sha256: str,
+        dependency_map_sha256: str,
         *,
         authenticated_subject: str | None = None,
     ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
         """Record review-authorized cleanup; canonical projection still gates deletion."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize_cleanup(
             self.project_id, receipt_id, manifest_sha256, authenticated_subject
         )
@@ -1389,9 +1555,14 @@ class CuratorService:
             raise PermissionError(
                 "review authorizer returned a different authenticated subject"
             )
-        authorization = self.store.create_cleanup_authorization(
-            receipt_id, self.project_id, reviewer_id, manifest_sha256
-        )
+        with self._effect_fence(expected_effect_revision):
+            authorization = self.store.create_cleanup_authorization(
+                receipt_id,
+                self.project_id,
+                reviewer_id,
+                manifest_sha256,
+                dependency_map_sha256,
+            )
         return authorization, self.store.get_receipt(receipt_id, self.project_id)
 
     def mark_cleanup_authorization_canonical_persisted(
@@ -1399,10 +1570,12 @@ class CuratorService:
     ) -> AuditReceipt:
         """Record the projection containing cleanup approval before deletion."""
 
-        self.store.mark_cleanup_authorization_canonical_persisted(
-            receipt_id, self.project_id, target, sha256
-        )
-        return self._process_purge(receipt_id)
+        expected_effect_revision = self._capture_effect_revision()
+        with self._effect_fence(expected_effect_revision):
+            self.store.mark_cleanup_authorization_canonical_persisted(
+                receipt_id, self.project_id, target, sha256
+            )
+            return self._process_purge(receipt_id)
 
     def artifact_inventory_complete(
         self,
@@ -1413,15 +1586,17 @@ class CuratorService:
     ) -> AuditReceipt:
         """Commit the complete staged-file manifest without authorizing deletion."""
 
-        receipt = self.store.complete_artifact_inventory(
-            receipt_id,
-            artifacts,
-            self.project_id,
-            hold_created_by=authenticated_subject,
-        )
-        if not receipt.artifact_inventory_complete or not receipt.canonical_persisted:
-            return receipt
-        return self._process_purge(receipt_id)
+        expected_effect_revision = self._capture_effect_revision()
+        with self._effect_fence(expected_effect_revision):
+            receipt = self.store.complete_artifact_inventory(
+                receipt_id,
+                artifacts,
+                self.project_id,
+                hold_created_by=authenticated_subject,
+            )
+            if not receipt.artifact_inventory_complete or not receipt.canonical_persisted:
+                return receipt
+            return self._process_purge(receipt_id)
 
     def release_artifact_hold(
         self,
@@ -1433,6 +1608,7 @@ class CuratorService:
     ) -> AuditReceipt:
         """Authorize a hold release; retry only if cleanup was separately approved."""
 
+        expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize_hold_release(
             self.project_id,
             receipt_id,
@@ -1444,76 +1620,89 @@ class CuratorService:
             raise PermissionError(
                 "review authorizer returned a different authenticated subject"
             )
-        receipt = self.store.release_artifact_hold(
-            receipt_id,
-            path,
-            self.project_id,
-            reviewer_id,
-            rationale,
-        )
-        if receipt.artifact_inventory_complete and receipt.canonical_persisted:
-            return self._process_purge(receipt_id)
-        return receipt
+        with self._effect_fence(expected_effect_revision):
+            receipt = self.store.release_artifact_hold(
+                receipt_id,
+                path,
+                self.project_id,
+                reviewer_id,
+                rationale,
+            )
+            if receipt.artifact_inventory_complete and receipt.canonical_persisted:
+                return self._process_purge(receipt_id)
+            return receipt
 
     def mark_canonical_persisted(
         self, receipt_id: str, target: str, sha256: str
     ) -> AuditReceipt:
         """Record the configured Markdown proof without granting cleanup authority."""
 
-        receipt = self.store.mark_receipt_canonical_persisted(
-            receipt_id, target, sha256, self.project_id
-        )
-        if receipt.artifact_inventory_complete:
-            return self._process_purge(receipt_id)
-        return receipt
+        expected_effect_revision = self._capture_effect_revision()
+        with self._effect_fence(expected_effect_revision):
+            receipt = self.store.mark_receipt_canonical_persisted(
+                receipt_id, target, sha256, self.project_id
+            )
+            if receipt.artifact_inventory_complete:
+                return self._process_purge(receipt_id)
+            return receipt
 
     def _process_purge(
         self, receipt_id: str, *, due_only: bool = False
     ) -> AuditReceipt:
-        receipt = self.store.get_receipt(receipt_id, self.project_id)
-        if not receipt.artifact_inventory_complete or not receipt.canonical_persisted:
-            return receipt
-        authorization = self.store.cleanup_authorization(receipt_id, self.project_id)
-        if authorization is None or not authorization.canonical_persisted:
-            return receipt
-        targets = self.store.get_purge_targets(
-            receipt_id,
-            pending_only=True,
-            project_id=self.project_id,
-            due_only=due_only,
-        )
-        for artifact, _, _, _ in targets:
-            self.store.begin_purge_attempt(
-                receipt_id, artifact.path, self.project_id
+        expected_effect_revision = self._capture_effect_revision()
+        with self._effect_fence(expected_effect_revision):
+            receipt = self.store.get_receipt(receipt_id, self.project_id)
+            if not receipt.artifact_inventory_complete or not receipt.canonical_persisted:
+                return receipt
+            authorization = self.store.cleanup_authorization(receipt_id, self.project_id)
+            if authorization is None or not authorization.canonical_persisted:
+                return receipt
+            targets = self.store.get_purge_targets(
+                receipt_id,
+                pending_only=True,
+                project_id=self.project_id,
+                due_only=due_only,
             )
-            try:
-                # The store's transactional selector permits only unheld or
-                # explicitly released targets. Keep the immutable hold class
-                # on the receipt, but pass a purgeable reference to the adapter.
-                self.purger.purge(ArtifactRef(artifact.path, artifact.sha256))
-            except (OSError, PurgeError, ValueError) as exc:
-                if isinstance(exc, PurgeError):
-                    error_code = exc.code.value
-                elif isinstance(exc, OSError):
-                    error_code = PurgeFailureCode.FILESYSTEM_ERROR.value
+            for artifact, _, _, _ in targets:
+                self.store.begin_purge_attempt(
+                    receipt_id, artifact.path, self.project_id
+                )
+                try:
+                    # The store's transactional selector permits only unheld or
+                    # explicitly released targets. Keep the immutable hold class
+                    # on the receipt, but pass a purgeable reference to the adapter.
+                    self.purger.purge(
+                        ArtifactRef(
+                            artifact.path,
+                            artifact.sha256,
+                            device_id=artifact.device_id,
+                            inode_id=artifact.inode_id,
+                            occurrence_id=artifact.occurrence_id,
+                        )
+                    )
+                except (OSError, PurgeError, ValueError) as exc:
+                    if isinstance(exc, PurgeError):
+                        error_code = exc.code.value
+                    elif isinstance(exc, OSError):
+                        error_code = PurgeFailureCode.FILESYSTEM_ERROR.value
+                    else:
+                        error_code = PurgeFailureCode.INVALID_ARTIFACT.value
+                    self.store.record_purge_result(
+                        receipt_id,
+                        artifact.path,
+                        ArtifactStatus.FAILED,
+                        error_code,
+                        self.project_id,
+                    )
                 else:
-                    error_code = PurgeFailureCode.INVALID_ARTIFACT.value
-                self.store.record_purge_result(
-                    receipt_id,
-                    artifact.path,
-                    ArtifactStatus.FAILED,
-                    error_code,
-                    self.project_id,
-                )
-            else:
-                self.store.record_purge_result(
-                    receipt_id,
-                    artifact.path,
-                    ArtifactStatus.PURGED,
-                    None,
-                    self.project_id,
-                )
-        return self.store.get_receipt(receipt_id, self.project_id)
+                    self.store.record_purge_result(
+                        receipt_id,
+                        artifact.path,
+                        ArtifactStatus.PURGED,
+                        None,
+                        self.project_id,
+                    )
+            return self.store.get_receipt(receipt_id, self.project_id)
 
     def artifact_purge_status(
         self, receipt_id: str
@@ -1540,12 +1729,15 @@ class CuratorService:
                     if item.last_attempt_at is not None
                     else None
                 ),
-                safe_recovery_action=_purge_recovery_action(receipt, item.status),
+                safe_recovery_action=_purge_recovery_action(
+                    receipt, item.status, item.approval_stale
+                ),
                 hold_created_at=item.hold_created_at,
                 hold_created_by=item.hold_created_by,
                 hold_released_at=item.hold_released_at,
                 hold_released_by=item.hold_released_by,
                 hold_release_rationale=item.hold_release_rationale,
+                approval_stale=item.approval_stale,
             )
             for item in self.store.get_purge_target_records(
                 receipt_id, project_id=self.project_id
@@ -1870,7 +2062,11 @@ class CuratorService:
             )
 
     def process_event(
-        self, event: EventEnvelope, *, lease_owner: str | None = None
+        self,
+        event: EventEnvelope,
+        *,
+        lease_owner: str | None = None,
+        effect_fence: Callable[[], AbstractContextManager[object]] | None = None,
     ) -> EventInboxReceipt:
         """Apply one event and its inbox receipt atomically within this project.
 
@@ -1881,12 +2077,21 @@ class CuratorService:
 
         if event.project_id != self.project_id:
             raise PermissionError("event project does not match authorized service scope")
+        expected_effect_revision = self._capture_effect_revision()
+
+        def guard() -> AbstractContextManager[object]:
+            return self._effect_guard(expected_effect_revision, effect_fence)
+
         try:
-            accepted = self._claim_event(event, lease_owner)
+            with guard():
+                accepted = self._claim_event(event, lease_owner)
             if accepted is not None:
                 return accepted
-            return self._commit_event(event, self._prepare_event(event), lease_owner)
+            prepared = self._prepare_event(event)
+            with guard():
+                return self._commit_event(event, prepared, lease_owner)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             # Failed mutations roll back with the processing receipt; retry state is
             # saved separately so transport retries remain idempotent.
-            return self._mark_event_failure(event, exc, lease_owner)
+            with guard():
+                return self._mark_event_failure(event, exc, lease_owner)

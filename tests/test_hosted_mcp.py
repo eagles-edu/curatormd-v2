@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -22,15 +24,21 @@ from mcp.types import RequestParamsMeta, TextContent
 from curatormd_v2 import (
     AuthenticatedCaller,
     CuratorStore,
+    EventEnvelope,
+    EventInboxStatus,
+    GoalStarted,
     ProjectAccessManager,
     ProjectAction,
     ProjectAdministrationAction,
     ProjectConfig,
     ProjectRegistrationRequest,
+    ProjectStatusChangeRequest,
     SQLiteTokenBucket,
+    SuccessCriterion,
     hosted_mcp,
 )
 from curatormd_v2.hosted_mcp import build_local_profile_mcp
+from curatormd_v2.service import _PreparedEvent  # pyright: ignore[reportPrivateUsage]
 from curatormd_v2.mcp_server import safe_tool_handler
 
 def _hermes_meta(
@@ -44,7 +52,8 @@ def _hermes_meta(
     }
 
 
-class _TestProjectAdmin:
+# ProjectAdminAuthorizer fixture intentionally implements one protocol method.
+class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
     def authorize_project_administration(
         self,
         caller: AuthenticatedCaller,
@@ -429,9 +438,23 @@ class HostedMcpTests(unittest.TestCase):
                     )
                     manager.set_project_status(
                         AuthenticatedCaller("test-operator"),
-                        "bound-project",
-                        "suspended",
-                        "Suspend the disposable test project",
+                        ProjectStatusChangeRequest(
+                            project_id="bound-project",
+                            status="suspended",
+                            rationale="Suspend the disposable test project",
+                            expected_revision=1,
+                            transition_id="hosted-test-suspend-1",
+                        ),
+                    )
+                    manager.set_project_status(
+                        AuthenticatedCaller("test-operator"),
+                        ProjectStatusChangeRequest(
+                            project_id="bound-project",
+                            status="active",
+                            rationale="Reactivate after the disposable suspension",
+                            expected_revision=2,
+                            transition_id="hosted-test-reactivate-1",
+                        ),
                     )
                 finally:
                     external_store.close()
@@ -442,6 +465,22 @@ class HostedMcpTests(unittest.TestCase):
                 )
             finally:
                 runtime.close()
+
+            refreshed_runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="gptmd-coding",
+            )
+            try:
+                self.assertTrue(
+                    refreshed_runtime.api.authorizer.authorize(
+                        refreshed_runtime.caller,
+                        "bound-project",
+                        ProjectAction.READ,
+                    )
+                )
+            finally:
+                refreshed_runtime.close()
 
             changed = (root / ".curatormd-v2.toml").read_text()
             (root / ".curatormd-v2.toml").write_text(
@@ -454,6 +493,97 @@ class HostedMcpTests(unittest.TestCase):
                     database=database,
                     profile_id="gptmd-coding",
                 )
+
+    def test_inflight_write_finishes_before_project_suspend_cutover(self) -> None:
+        """Serialize an already admitted durable write before a status change."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding", allow_write=True)
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="gptmd-coding",
+                allow_write=True,
+            )
+            entered_effect = Event()
+            release_effect = Event()
+            status_started = Event()
+            plugin = getattr(runtime.api, "_plugins")["bound-project"]
+            original_commit_event = plugin.service._commit_event
+
+            def pause_inside_fenced_event_commit(
+                event: EventEnvelope,
+                prepared: _PreparedEvent,
+                lease_owner: str | None,
+            ):
+                entered_effect.set()
+                if not release_effect.wait(timeout=10):
+                    raise TimeoutError("test did not release the fenced event effect")
+                return original_commit_event(event, prepared, lease_owner)
+
+            event = EventEnvelope(
+                "fenced-event-1",
+                "bound-project",
+                GoalStarted(
+                    "fenced-goal",
+                    "Ensure the event commits before project suspension",
+                    (SuccessCriterion("recorded", "The event is durably recorded"),),
+                ),
+            )
+            transition_store = CuratorStore(database)
+            manager = ProjectAccessManager(transition_store, _TestProjectAdmin())
+            operator = AuthenticatedCaller("test-operator")
+            try:
+                with ThreadPoolExecutor(max_workers=2) as workers:
+                    with patch.object(
+                        plugin.service,
+                        "_commit_event",
+                        side_effect=pause_inside_fenced_event_commit,
+                    ):
+                        write_future = workers.submit(
+                            runtime.api.process_event_json,
+                            runtime.caller,
+                            "bound-project",
+                            event.to_json(),
+                        )
+                        self.assertTrue(entered_effect.wait(timeout=5))
+
+                        def suspend_after_effect_admission():
+                            status_started.set()
+                            registration = transition_store.get_project_registration(
+                                "bound-project"
+                            )
+                            return manager.set_project_status(
+                                operator,
+                                ProjectStatusChangeRequest(
+                                    project_id="bound-project",
+                                    status="suspended",
+                                    rationale=(
+                                        "Suspend after the already admitted event"
+                                    ),
+                                    expected_revision=registration.revision,
+                                    transition_id="suspend-after-event-1",
+                                ),
+                            )
+
+                        status_future = workers.submit(suspend_after_effect_admission)
+                        self.assertTrue(status_started.wait(timeout=5))
+                        self.assertFalse(status_future.done())
+                        release_effect.set()
+                        receipt = write_future.result(timeout=10)
+                        transition = status_future.result(timeout=10)
+                self.assertEqual(receipt.status, EventInboxStatus.PROCESSED)
+                self.assertEqual(transition.receipt.action, "suspended")
+                self.assertEqual(transition.receipt.revision, 2)
+                self.assertEqual(transition.registration.status, "suspended")
+            finally:
+                release_effect.set()
+                runtime.close()
+                transition_store.close()
+
 
     def test_database_path_must_be_absolute_and_profile_id_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import io
@@ -17,6 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
+from project_fixtures import create_consumer_repo
 
 from curatormd_v2.api import AuthenticatedCaller
 from curatormd_v2.access_cli import main as access_main
@@ -27,6 +28,7 @@ from curatormd_v2.models import (
     EvidenceRef,
     FactKind,
     Materiality,
+    ReacquisitionAction,
     ReviewDecision,
     SuccessCriterion,
 )
@@ -77,6 +79,7 @@ class _Artifact:
     path: str
     sha256: str
     retention_hold: None = None
+    reacquisition_action: ReacquisitionAction = ReacquisitionAction.NOT_RECORDED
 
 
 @dataclass(frozen=True)
@@ -91,11 +94,13 @@ class _Inventory:
 class _Packet:
     detail: _Detail
     artifact_inventory: _Inventory
+    dependency_map_sha256: str = "d" * 64
 
 
 class _SDEConfirmOptions(TypedDict):
     artifact_inventory_complete: bool
     rationale: str
+    dependency_map_sha256: str
 
 
 class _InteractiveInput(StringIO):
@@ -141,6 +146,20 @@ class _PreparedCliReview:
     candidate_id: str
     staged_artifact: ArtifactRef
     manifest_hash: str
+    dependency_map_sha256: str
+
+
+@dataclass(frozen=True)
+class _PreparedReviewInventory:
+    staged_artifact: ArtifactRef
+    manifest_hash: str
+    dependency_map_sha256: str
+
+
+@dataclass(frozen=True)
+class _PreparedExpiryReview:
+    artifact: ArtifactRef
+    manifest_hash: str
 
 
 @dataclass(frozen=True)
@@ -165,7 +184,8 @@ def _approve_local_review(
     root: Path, database: Path, prepared: _PreparedCliReview
 ) -> _CliInvocation:
     phrase = (
-        f"APPROVE SDE {prepared.candidate_id} AND PURGE INVENTORY "
+        f"APPROVE SDE {prepared.candidate_id} WITH DEPENDENCY MAP "
+        f"{prepared.dependency_map_sha256} AND PURGE INVENTORY "
         f"{prepared.manifest_hash}"
     )
     stdout = _InteractiveOutput()
@@ -180,7 +200,7 @@ def _approve_local_review(
             prepared.candidate_id,
         ],
         stdin=_InteractiveInput(
-            f"approve\n{phrase}\nVerified in the disposable suite\n"
+            f"approve\nreacquire_from_source\n{phrase}\nVerified in the disposable suite\n"
         ),
         stdout=stdout,
         stderr=stderr,
@@ -194,11 +214,20 @@ class _ReviewAPI:
         self.calls: list[tuple[str, Any]] = []
 
     def sde_review_packet(
-        self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        candidate_id: str,
+        review_artifacts: tuple[_Artifact, ...] | None = None,
     ) -> _Packet:
         """Record and return the configured review packet."""
-        self.calls.append(("packet", (caller.subject_id, project_id, candidate_id)))
-        return self.packet
+        self.calls.append(
+            ("packet", (caller.subject_id, project_id, candidate_id, review_artifacts))
+        )
+        if review_artifacts is None:
+            return self.packet
+        inventory = replace(self.packet.artifact_inventory, artifacts=review_artifacts)
+        return replace(self.packet, artifact_inventory=inventory)
 
     def sde_confirm(
         self,
@@ -221,6 +250,7 @@ class _ReviewAPI:
                     artifacts,
                     options["artifact_inventory_complete"],
                     options["rationale"],
+                    options["dependency_map_sha256"],
                 ),
             )
         )
@@ -268,11 +298,7 @@ class ReviewCliTests(unittest.TestCase):
     """Bind human disposition to the visible inventory and local OS identity."""
 
     def _project(self, root: Path) -> None:
-        (root / ".git").mkdir()
-        (root / "src").mkdir()
-        (root / "docs").mkdir()
-        (root / "persistence").mkdir()
-        (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+        create_consumer_repo(root)
         (root / "docs" / "tasks.md").write_text("- [ ] Review CLI fixture\n")
         (root / "persistence" / "HISTORY.md").write_text("# History\n")
         (root / ".curatormd-v2.toml").write_text(
@@ -343,6 +369,23 @@ class ReviewCliTests(unittest.TestCase):
             evidence_verifier=_TestEvidenceVerifier(),
             review_authorizer=LocalUIDReviewAuthorizer(),
         )
+        try:
+            goal_id, candidate_id = self._prepare_verified_candidate(plugin)
+            inventory = self._prepare_review_inventory(
+                plugin, goal_id, candidate_id
+            )
+            return _PreparedCliReview(
+                goal_id,
+                candidate_id,
+                inventory.staged_artifact,
+                inventory.manifest_hash,
+                inventory.dependency_map_sha256,
+            )
+        finally:
+            store.close()
+
+    @staticmethod
+    def _prepare_verified_candidate(plugin: ProjectPlugin) -> tuple[str, str]:
         goal = plugin.service.goal_start(
             "Review one verified local change",
             (SuccessCriterion("verified", "The disposable proof passes"),),
@@ -373,27 +416,33 @@ class ReviewCliTests(unittest.TestCase):
             retrieval_value="Useful when reviewing this local change",
         )
         if candidate is None:
-            store.close()
-            self.fail("verified implementation was not assessed as an SDE")
+            raise AssertionError("verified implementation was not assessed as an SDE")
+        return goal.goal_id, candidate.candidate_id
+
+    @staticmethod
+    def _prepare_review_inventory(
+        plugin: ProjectPlugin, goal_id: str, candidate_id: str
+    ) -> _PreparedReviewInventory:
         staged_artifact = plugin.stage_artifact(
-            goal.goal_id,
+            goal_id,
             "import",
             "transient-canary",
             io.BytesIO(b"TRANSIENT REVIEW CLI CANARY\n"),
         )
-        inventory = plugin.discover_staging_artifacts(goal.goal_id)
+        inventory = plugin.discover_staging_artifacts(goal_id)
         manifest_hash = inventory.manifest_sha256
         if manifest_hash is None:
-            store.close()
-            self.fail("staging inventory did not produce a manifest hash")
-        prepared = _PreparedCliReview(
-            goal.goal_id,
-            candidate.candidate_id,
+            raise AssertionError("staging inventory did not produce a manifest hash")
+        actioned_artifact = replace(
+            staged_artifact,
+            reacquisition_action=ReacquisitionAction.REACQUIRE_FROM_SOURCE,
+        )
+        packet = plugin.sde_review_packet(candidate_id, (actioned_artifact,))
+        return _PreparedReviewInventory(
             staged_artifact,
             manifest_hash,
+            packet.dependency_map_sha256,
         )
-        store.close()
-        return prepared
 
     def test_review_uses_current_local_uid_and_rejects_a_profile_name(self) -> None:
         authorizer = LocalUIDReviewAuthorizer()
@@ -430,7 +479,6 @@ class ReviewCliTests(unittest.TestCase):
     def test_review_confirms_exact_inventory_then_persists_before_purge_status(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
             CuratorStore(database).close()
@@ -456,10 +504,13 @@ class ReviewCliTests(unittest.TestCase):
             )
             api = _ReviewAPI(packet)
             phrase = (
-                f"APPROVE SDE candidate-a AND PURGE INVENTORY "
+                f"APPROVE SDE candidate-a WITH DEPENDENCY MAP "
+                f"{packet.dependency_map_sha256} AND PURGE INVENTORY "
                 f"{packet.artifact_inventory.manifest_sha256}"
             )
-            stdin = _InteractiveInput(f"approve\n{phrase}\nVerified and approved\n")
+            stdin = _InteractiveInput(
+                f"approve\nnot_required\n{phrase}\nVerified and approved\n"
+            )
             stdout = _InteractiveOutput()
             stderr = _InteractiveErrors()
             with patch("curatormd_v2.review_cli._build_api", return_value=api):
@@ -480,9 +531,18 @@ class ReviewCliTests(unittest.TestCase):
             self.assertEqual(result, 0, stderr.getvalue())
             confirm = next(value for name, value in api.calls if name == "confirm")
             self.assertEqual(confirm[3], ReviewDecision.APPROVED)
-            self.assertEqual(confirm[4], packet.artifact_inventory.artifacts)
+            self.assertEqual(
+                confirm[4],
+                (
+                    replace(
+                        artifact,
+                        reacquisition_action=ReacquisitionAction.NOT_REQUIRED,
+                    ),
+                ),
+            )
             self.assertTrue(confirm[5])
             self.assertEqual(confirm[6], "Verified and approved")
+            self.assertEqual(confirm[7], packet.dependency_map_sha256)
             self.assertLess(
                 next(i for i, (name, _) in enumerate(api.calls) if name == "confirm"),
                 next(i for i, (name, _) in enumerate(api.calls) if name == "persist"),
@@ -498,7 +558,6 @@ class ReviewCliTests(unittest.TestCase):
     def test_review_refuses_noninteractive_input_before_opening_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "missing.sqlite3"
             stdin = _InteractiveInput("", interactive=False)
@@ -524,7 +583,6 @@ class ReviewCliTests(unittest.TestCase):
     def test_review_refuses_hidden_prompts_before_opening_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "missing.sqlite3"
             errors = StringIO()
@@ -549,7 +607,6 @@ class ReviewCliTests(unittest.TestCase):
     def test_review_refuses_piped_output_before_opening_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "missing.sqlite3"
             result = main(
@@ -572,7 +629,6 @@ class ReviewCliTests(unittest.TestCase):
     def test_local_cli_uses_one_exact_review_and_cleanup_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
             self._grant_local_reviewer(
@@ -624,7 +680,6 @@ class ReviewCliTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
             self._grant_local_reviewer(
@@ -632,13 +687,27 @@ class ReviewCliTests(unittest.TestCase):
                 database,
                 "Authorize the disposable expiry fixture",
             )
-
-            store = CuratorStore(database)
-            plugin = ProjectPlugin.bind(
-                ProjectConfig.load(root),
-                store,
-                review_authorizer=LocalUIDReviewAuthorizer(),
+            prepared = self._prepare_expired_artifact(root, database)
+            output, result = self._run_expiry_review(
+                root, database, prepared.manifest_hash
             )
+
+            self.assertEqual(result, 0, output.getvalue())
+            self.assertFalse(Path(prepared.artifact.path).exists())
+            self._assert_expiry_receipt(
+                root, database, prepared, output
+            )
+
+    def _prepare_expired_artifact(
+        self, root: Path, database: Path
+    ) -> _PreparedExpiryReview:
+        store = CuratorStore(database)
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(root),
+            store,
+            review_authorizer=LocalUIDReviewAuthorizer(),
+        )
+        try:
             goal = plugin.service.goal_start(
                 "Expire one old local artifact",
                 (SuccessCriterion("verified", "The artifact is temporary"),),
@@ -657,47 +726,65 @@ class ReviewCliTests(unittest.TestCase):
             snapshot = plugin.discover_expired_staging_artifacts()
             self.assertTrue(snapshot.inventory_complete)
             self.assertEqual(snapshot.eligible_artifacts, (artifact,))
-            self.assertIsNotNone(snapshot.manifest_sha256)
             manifest_hash = snapshot.manifest_sha256
+            if manifest_hash is None:
+                self.fail("expiry inventory did not produce a manifest hash")
+            return _PreparedExpiryReview(artifact, manifest_hash)
+        finally:
             store.close()
 
-            output = _InteractiveOutput()
-            result = main(
-                [
-                    "--project-root",
-                    str(root),
-                    "--database",
-                    str(database),
-                    "expire",
-                ],
-                stdin=_InteractiveInput(
-                    f"PURGE EXPIRED INVENTORY {manifest_hash}\n"
-                ),
-                stdout=output,
-                stderr=_InteractiveErrors(),
-            )
+    @staticmethod
+    def _run_expiry_review(
+        root: Path, database: Path, manifest_hash: str
+    ) -> tuple[_InteractiveOutput, int]:
+        output = _InteractiveOutput()
+        result = main(
+            [
+                "--project-root",
+                str(root),
+                "--database",
+                str(database),
+                "expire",
+            ],
+            stdin=_InteractiveInput(f"PURGE EXPIRED INVENTORY {manifest_hash}\n"),
+            stdout=output,
+            stderr=_InteractiveErrors(),
+        )
+        return output, result
 
-            self.assertEqual(result, 0, output.getvalue())
-            self.assertFalse(Path(artifact.path).exists())
-            emitted = json.loads(output.getvalue().splitlines()[-1])[
-                "expiry_purge_receipt"
-            ]
-            reopened = CuratorStore(database)
+    def _assert_expiry_receipt(
+        self,
+        root: Path,
+        database: Path,
+        prepared: _PreparedExpiryReview,
+        output: _InteractiveOutput,
+    ) -> None:
+        emitted = json.loads(output.getvalue().splitlines()[-1])[
+            "expiry_purge_receipt"
+        ]
+        reopened = CuratorStore(database)
+        try:
             receipt = reopened.expiry_purge_receipt(
                 emitted["receipt_id"], "review-cli-project"
             )
             self.assertEqual(receipt.reviewer_id, f"local-uid:{os.geteuid()}")
-            self.assertEqual(receipt.manifest_sha256, manifest_hash)
+            self.assertEqual(receipt.manifest_sha256, prepared.manifest_hash)
             self.assertEqual(receipt.status.value, "complete")
+            usage = reopened.project_storage_usage("review-cli-project")
+            self.assertEqual(usage.expiry_purge_receipt_count, 1)
+            self.assertGreater(usage.expiry_purge_receipt_record_bytes, 0)
+            self.assertEqual(usage.expiry_purge_target_count, 1)
+            self.assertGreater(usage.expiry_purge_target_record_bytes, 0)
             self.assertEqual(
                 reopened.staging_artifact_times(
-                    "review-cli-project", (artifact,)
+                    "review-cli-project", (prepared.artifact,)
                 ),
                 {},
             )
             self.assertEqual(
                 (root / "persistence" / "HISTORY.md").read_text(), "# History\n"
             )
+        finally:
             reopened.close()
 
     def test_expiry_refuses_hidden_prompts_before_opening_database(self) -> None:
@@ -705,7 +792,6 @@ class ReviewCliTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "missing.sqlite3"
             errors = StringIO()

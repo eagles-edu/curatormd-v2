@@ -15,6 +15,7 @@ from .models import (
     MAX_ARTIFACTS_PER_RECEIPT,
     ArtifactRef,
     StagingArtifactInventory,
+    utc_now,
 )
 from .project_config import ProjectConfig, ProjectConfigError
 from .staging_models import (
@@ -381,6 +382,7 @@ def _build_inventory(state: _ScanState) -> StagingArtifactInventory:
         special_file_count=totals.special_file_count,
         inventory_complete=state.status.complete,
         error_code=state.status.error_code,
+        observed_at=utc_now(),
         classes=tuple(
             StagingClassUsage(artifact_class, class_totals[0], class_totals[1])
             for artifact_class, class_totals in sorted(
@@ -410,7 +412,9 @@ def _incomplete_inventory(
     error_code: str, scope_goal_id: str | None = None
 ) -> StagingArtifactInventory:
     return StagingArtifactInventory(
-        (), StagingUsage(0, 0, 0, 0, 0, 0, False, error_code), None,
+        (), StagingUsage(
+            0, 0, 0, 0, 0, 0, False, error_code, observed_at=utc_now()
+        ), None,
         scope_goal_id,
     )
 
@@ -419,7 +423,7 @@ def _empty_goal_inventory(goal_id: str) -> StagingArtifactInventory:
     """Represent a missing per-goal directory as a complete empty manifest."""
 
     return StagingArtifactInventory(
-        (), StagingUsage(0, 0, 0, 0, 0, 0, True, None),
+        (), StagingUsage(0, 0, 0, 0, 0, 0, True, None, observed_at=utc_now()),
         hashlib.sha256(b"[]").hexdigest(), goal_id,
     )
 

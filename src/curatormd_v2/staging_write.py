@@ -9,7 +9,7 @@ import secrets
 import sqlite3
 from typing import BinaryIO, Callable
 
-from .models import ArtifactRef
+from .models import ArtifactRef, new_id
 from .project_config import ProjectConfig, ProjectConfigError
 from .staging_models import StagingUsage
 from .store import ConflictError
@@ -67,10 +67,20 @@ def write_staged_artifact(
             no_follow,
             directory_flag,
         )
-        digest = _write_temporary_file(
+        digest, device_id, inode_id = _write_temporary_file(
             class_fd, temporary_name, request, limits, no_follow
         )
-        staged = _staged_file(config, request, temporary_name, final_name, digest)
+        occurrence_id = new_id()
+        staged = _staged_file(
+            config,
+            request,
+            temporary_name,
+            final_name,
+            digest,
+            device_id,
+            inode_id,
+            occurrence_id,
+        )
         _publish_staged_file(class_fd, config.project_id, staged, record_staged_time)
         return staged.artifact
     finally:
@@ -115,7 +125,7 @@ def _write_temporary_file(
     request: StagingArtifactWriteRequest,
     limits: StagingWriteLimits,
     no_follow: int,
-) -> str:
+) -> tuple[str, int, int]:
     """Write bounded source chunks and return their stable content digest."""
 
     fd = os.open(
@@ -147,7 +157,8 @@ def _write_temporary_file(
             digest.update(chunk)
         target.flush()
         os.fsync(target.fileno())
-    return digest.hexdigest()
+        metadata = os.fstat(target.fileno())
+    return digest.hexdigest(), metadata.st_dev, metadata.st_ino
 
 
 def _check_chunk_limits(
@@ -176,6 +187,9 @@ def _staged_file(
     temporary_name: str,
     final_name: str,
     digest: str,
+    device_id: int,
+    inode_id: int,
+    occurrence_id: str,
 ) -> _StagedFile:
     artifact = ArtifactRef(
         str(
@@ -185,6 +199,9 @@ def _staged_file(
             / final_name
         ),
         digest,
+        device_id=device_id,
+        inode_id=inode_id,
+        occurrence_id=occurrence_id,
     )
     return _StagedFile(temporary_name, final_name, artifact)
 

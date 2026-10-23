@@ -6,16 +6,18 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from typing import cast
 
 from mcp import Client
-from mcp.client.stdio import StdioServerParameters
 from mcp.types import TextContent
 
-from project_fixtures import create_consumer_repo
+from project_fixtures import (
+    bind_test_project,
+    configure_stdio_consumer,
+    create_consumer_repo,
+)
 from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
@@ -27,8 +29,6 @@ from curatormd_v2 import (
     GoalStatus,
     InMemoryTokenBucket,
     ProjectAction,
-    ProjectConfig,
-    ProjectPlugin,
     SuccessCriterion,
     build_mcp_server,
     codex_hook_to_event,
@@ -146,7 +146,8 @@ class HermesHookAdapterTests(unittest.TestCase):
 
     def test_adapter_routes_a_durable_event_through_the_real_mcp_server(self) -> None:
         """Exercise the adapter, trusted MCP context, translator, and router together."""
-        class OnlyProject:
+        # ProjectAuthorizer fixture intentionally implements only `authorize`.
+        class OnlyProject:  # pylint: disable=too-few-public-methods
             """Authorize only the bound test project for this process fixture."""
 
             def authorize(
@@ -196,7 +197,7 @@ class HermesHookAdapterTests(unittest.TestCase):
             db_path = Path(temporary) / "global.sqlite3"
             store = CuratorStore(db_path)
             try:
-                plugin = ProjectPlugin.bind(ProjectConfig.load(root), store)
+                plugin = bind_test_project(store, root, "host-subject")
                 caller = AuthenticatedCaller("host-subject")
                 api = AuthenticatedCuratorAPI(
                     {"project-a": plugin}, OnlyProject(), InMemoryTokenBucket()
@@ -355,32 +356,7 @@ class HermesHookAdapterTests(unittest.TestCase):
         """Route a Hermes envelope over stdio and reopen the child's receipt."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            create_consumer_repo(root)
-            (root / "docs" / "tasks.md").write_text("- [ ] stdio task\n")
-            (root / "persistence" / "HISTORY.md").write_text("# History\n")
-            (root / ".curatormd-v2.toml").write_text(
-                """\
-                schema_version = 1
-                backend_api_version = 1
-                project_id = "stdio-project"
-
-                [scope]
-                read_paths = ["src", "docs"]
-
-                [checklists]
-                tasks = "docs/tasks.md"
-
-                [evidence]
-                adapters = []
-
-                [staging]
-                root = ".curatormd-v2/staging"
-
-                [persistence]
-                targets = ["persistence/HISTORY.md"]
-                """
-            )
-            (root / ".curatormd-v2.toml").chmod(0o600)
+            parameters = configure_stdio_consumer(root, "stdio-project")
             database = root / ".curatormd-v2" / "stdio.sqlite3"
             foreign_root = Path(temporary) / "foreign-consumer"
             create_consumer_repo(foreign_root)
@@ -392,8 +368,8 @@ class HermesHookAdapterTests(unittest.TestCase):
             (foreign_root / ".curatormd-v2.toml").write_text(foreign_config)
             (foreign_root / ".curatormd-v2.toml").chmod(0o600)
             foreign_store = CuratorStore(database)
-            foreign_plugin = ProjectPlugin.bind(
-                ProjectConfig.load(foreign_root), foreign_store
+            foreign_plugin = bind_test_project(
+                foreign_store, foreign_root, "host-subject"
             )
             foreign_goal = foreign_plugin.service.goal_start(
                 "A goal owned by the other configured project",
@@ -421,13 +397,6 @@ class HermesHookAdapterTests(unittest.TestCase):
                 "attempt_id": attempt_id,
                 "session_id": session_id,
             }
-            parameters = StdioServerParameters(
-                command=sys.executable,
-                args=[str(Path(__file__).with_name("mcp_stdio_fixture.py"))],
-                env={"CURATOR_TEST_PROJECT_ROOT": str(root)},
-                cwd=Path(__file__).parents[1],
-            )
-
             async def exercise() -> None:
                 async with Client(parameters, raise_exceptions=True) as client:
                     loop = asyncio.get_running_loop()

@@ -10,12 +10,16 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     ConflictError,
     CuratorStore,
+    ConsumerBindingTransitionRequest,
     NotFoundError,
     ProjectAccessManager,
     ProjectAction,
     ProjectAdministrationAction,
     ProjectRegistrationRequest,
+    ProjectStatusChangeRequest,
     SQLiteProjectGrantAuthorizer,
+    FingerprintBoundSQLiteProjectGrantAuthorizer,
+    ProjectAuthorizationBinding,
 )
 
 
@@ -64,16 +68,21 @@ class DurableProjectAccessTests(unittest.TestCase):
         rationale: str,
         *,
         project_id: str | None = None,
+        repository_fingerprint: str | None = None,
         config_sha256: str | None = None,
+        expected_revision: int | None = None,
     ) -> ProjectRegistrationRequest:
         """Build a typed host registration request for one test case."""
 
         return ProjectRegistrationRequest(
             project_id=project_id or self.project_id,
-            repository_fingerprint=self.repository_fingerprint,
+            repository_fingerprint=(
+                repository_fingerprint or self.repository_fingerprint
+            ),
             config_sha256=config_sha256 or self.config_sha256,
             backend_api_version=1,
             rationale=rationale,
+            expected_revision=expected_revision,
         )
 
     def _register(self) -> None:
@@ -91,6 +100,24 @@ class DurableProjectAccessTests(unittest.TestCase):
             self.reader.subject_id,
             action,
             "Grant the pilot consumer its explicit read scope",
+        )
+
+    def _change_status(
+        self,
+        status: str,
+        rationale: str,
+        expected_revision: int,
+        transition_id: str,
+    ):
+        return self.manager.set_project_status(
+            self.operator,
+            ProjectStatusChangeRequest(
+                project_id=self.project_id,
+                status=status,
+                rationale=rationale,
+                expected_revision=expected_revision,
+                transition_id=transition_id,
+            ),
         )
 
     def test_registration_denial_is_atomic_and_records_no_project(self) -> None:
@@ -113,6 +140,123 @@ class DurableProjectAccessTests(unittest.TestCase):
                 0,
             )
 
+    def test_control_plane_storage_is_project_scoped_and_requires_view(self) -> None:
+        self._register()
+        grant = self._grant()
+        self._allow_admin(ProjectAdministrationAction.REVOKE)
+        self.manager.revoke(
+            self.operator,
+            self.project_id,
+            self.reader.subject_id,
+            ProjectAction.READ,
+            "Revoke the test grant",
+        )
+        other_project = "project-b"
+        self.admin.allowed.add(
+            (
+                self.operator.subject_id,
+                other_project,
+                ProjectAdministrationAction.REGISTER,
+            )
+        )
+        self.manager.register_project(
+            self.operator,
+            ProjectRegistrationRequest(
+                project_id=other_project,
+                repository_fingerprint=hashlib.sha256(b"repo-b").hexdigest(),
+                config_sha256=hashlib.sha256(b"config-b").hexdigest(),
+                backend_api_version=1,
+                rationale="Register an isolated second project",
+            ),
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT INTO request_rate_buckets
+                   (subject_id, project_id, tokens, updated_at, touched_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (self.reader.subject_id, self.project_id, 3.5, 100.0, 100.0),
+            )
+            connection.execute(
+                """INSERT INTO request_rate_buckets
+                   (subject_id, project_id, tokens, updated_at, touched_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                ("consumer-b", other_project, 8.0, 100.0, 100.0),
+            )
+            connection.execute(
+                """INSERT INTO event_payload_scrub_queue
+                   (scrub_id, project_id, event_id, queued_at, attempts,
+                    last_error_code)
+                   VALUES (?, NULL, NULL, ?, ?, ?)""",
+                (7, "2026-10-23T00:00:00.000Z", 2, "checkpoint_busy"),
+            )
+
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            self.manager.storage_usage(self.reader, self.project_id)
+
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        usage = self.manager.storage_usage(self.operator, self.project_id)
+        counts = {item.class_name: item.record_count for item in usage.classes}
+        logical_bytes = {item.class_name: item.logical_bytes for item in usage.classes}
+        self.assertEqual(
+            counts,
+            {
+                "consumer_bindings": 1,
+                "consumer_binding_audit": 1,
+                "project_registry": 1,
+                "project_registry_audit": 1,
+                "project_grants": 1,
+                "project_grant_revocations": 1,
+                "request_rate_buckets": 1,
+            },
+        )
+        self.assertTrue(all(value > 0 for value in logical_bytes.values()))
+        self.assertEqual(usage.logical_record_bytes, sum(logical_bytes.values()))
+        self.assertEqual(usage.project_id, self.project_id)
+        self.assertNotIn("subject_id", usage.__dataclass_fields__)
+        self.assertNotIn(grant.grant_id, repr(usage))
+        global_classes = {
+            item.class_name: (item.record_count, item.logical_bytes)
+            for item in usage.global_classes
+        }
+        expected_scrub_bytes = sum(
+            len(value.encode("utf-8"))
+            for value in ("7", "2026-10-23T00:00:00.000Z", "2", "checkpoint_busy")
+        )
+        self.assertEqual(
+            global_classes,
+            {"event_payload_scrub_queue_unassigned": (1, expected_scrub_bytes)},
+        )
+        self.assertEqual(usage.global_logical_bytes, expected_scrub_bytes)
+        self.assertNotIn("scrub_id", usage.__dataclass_fields__)
+        self.assertNotIn("event_id", usage.__dataclass_fields__)
+        physical = usage.sqlite_physical
+        self.assertIsNotNone(physical)
+        assert physical is not None
+        if physical.status == "available":
+            pages = physical.pages
+            assert pages.attributed_btree_bytes is not None
+            assert pages.unattributed_database_bytes is not None
+            physical_classes = {item.class_name: item for item in physical.classes}
+            self.assertIn("project_registry", physical_classes)
+            self.assertGreater(physical_classes["project_registry"].page_count, 0)
+            self.assertEqual(
+                sum(item.allocated_bytes for item in physical.classes),
+                pages.attributed_btree_bytes,
+            )
+            self.assertEqual(
+                pages.allocated_bytes,
+                pages.attributed_btree_bytes + pages.unattributed_database_bytes,
+            )
+            self.assertGreaterEqual(
+                pages.unattributed_database_bytes,
+                pages.freelist_page_count * pages.page_size,
+            )
+            self.assertNotIn(grant.grant_id, repr(physical))
+        else:
+            self.assertEqual(physical.classes, ())
+            self.assertIsNone(physical.pages.attributed_btree_bytes)
+            self.assertIsNone(physical.pages.unattributed_database_bytes)
+
     def test_registration_is_unique_and_audits_updates_and_status_changes(self) -> None:
         self._register()
         with self.assertRaisesRegex(ConflictError, "already registered"):
@@ -128,26 +272,108 @@ class DurableProjectAccessTests(unittest.TestCase):
             self._registration_request(
                 "Approve the reviewed plugin configuration update",
                 config_sha256=updated_sha,
+                expected_revision=1,
             ),
+            "config-change-1",
         )
-        self.assertEqual(updated.config_sha256, updated_sha)
+        self.assertEqual(updated.registration.config_sha256, updated_sha)
+        self.assertEqual(updated.registration.revision, 2)
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        audit_before_replay = self.manager.list_registration_audit(
+            self.operator, self.project_id
+        )
+        replayed_update = self.manager.update_project_registration(
+            self.operator,
+            self._registration_request(
+                "Approve the reviewed plugin configuration update",
+                config_sha256=updated_sha,
+                expected_revision=1,
+            ),
+            "config-change-1",
+        )
+        self.assertTrue(replayed_update.replayed)
+        self.assertEqual(replayed_update.receipt, updated.receipt)
+        self.assertEqual(replayed_update.registration.revision, 2)
+        self.assertEqual(
+            self.manager.list_registration_audit(self.operator, self.project_id),
+            audit_before_replay,
+        )
+        with self.assertRaisesRegex(ConflictError, "transition ID"):
+            self.manager.update_project_registration(
+                self.operator,
+                self._registration_request(
+                    "Conflicting reuse of the same transition ID",
+                    config_sha256=hashlib.sha256(b"other-config").hexdigest(),
+                    expected_revision=1,
+                ),
+                "config-change-1",
+            )
+        with self.assertRaisesRegex(ConflictError, "revision is stale"):
+            self.manager.update_project_registration(
+                self.operator,
+                self._registration_request(
+                    "Reject the stale config update",
+                    config_sha256=hashlib.sha256(b"stale-config").hexdigest(),
+                    expected_revision=1,
+                ),
+                "config-stale-1",
+            )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1].revision, 2
+        )
 
         self._allow_admin(ProjectAdministrationAction.SUSPEND)
-        suspended = self.manager.set_project_status(
-            self.operator,
-            self.project_id,
+        suspended = self._change_status(
             "suspended",
             "Disable the pilot binding while reviewing scope",
+            updated.registration.revision,
+            "suspend-1",
         )
-        self.assertEqual(suspended.status, "suspended")
+        self.assertEqual(suspended.registration.status, "suspended")
+        self.assertEqual(suspended.registration.revision, 3)
+        replayed_suspend = self._change_status(
+            "suspended",
+            "Disable the pilot binding while reviewing scope",
+            updated.registration.revision,
+            "suspend-1",
+        )
+        self.assertTrue(replayed_suspend.replayed)
+        self.assertEqual(replayed_suspend.receipt, suspended.receipt)
         self._allow_admin(ProjectAdministrationAction.REACTIVATE)
-        active = self.manager.set_project_status(
-            self.operator,
-            self.project_id,
+        with self.assertRaisesRegex(ConflictError, "revision is stale"):
+            self._change_status(
+                "active",
+                "Reject reactivation reviewed against stale state",
+                updated.registration.revision,
+                "reactivate-stale-1",
+            )
+        current_after_stale = self.store.get_project_registration(self.project_id)
+        self.assertEqual(current_after_stale.status, "suspended")
+        self.assertEqual(current_after_stale.revision, 3)
+        active = self._change_status(
             "active",
             "Re-enable the reviewed pilot binding",
+            suspended.registration.revision,
+            "reactivate-1",
         )
-        self.assertEqual(active.status, "active")
+        self.assertEqual(active.registration.status, "active")
+        self.assertEqual(active.registration.revision, 4)
+        replayed_update_after_later_transitions = self.manager.update_project_registration(
+            self.operator,
+            self._registration_request(
+                "Approve the reviewed plugin configuration update",
+                config_sha256=updated_sha,
+                expected_revision=1,
+            ),
+            "config-change-1",
+        )
+        self.assertTrue(replayed_update_after_later_transitions.replayed)
+        self.assertEqual(
+            replayed_update_after_later_transitions.receipt, updated.receipt
+        )
+        self.assertEqual(
+            replayed_update_after_later_transitions.registration.revision, 4
+        )
 
         self._allow_admin(ProjectAdministrationAction.VIEW)
         audit = self.manager.list_registration_audit(self.operator, self.project_id)
@@ -155,9 +381,78 @@ class DurableProjectAccessTests(unittest.TestCase):
             [entry.action for entry in audit],
             ["registered", "updated", "suspended", "reactivated"],
         )
+        self.assertEqual([entry.revision for entry in audit], [1, 2, 3, 4])
+        self.assertEqual(
+            [entry.transition_id for entry in audit],
+            [None, "config-change-1", "suspend-1", "reactivate-1"],
+        )
         self.assertEqual(
             [entry.actor_id for entry in audit], [self.operator.subject_id] * 4
         )
+
+    def test_boolean_revision_is_rejected_for_registration_transitions(self) -> None:
+        """Bool must not pass the exact-integer revision boundary."""
+
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.UPDATE)
+        self._allow_admin(ProjectAdministrationAction.SUSPEND)
+        audit_before = self.store.project_registry_audit(self.project_id)
+
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            self.manager.update_project_registration(
+                self.operator,
+                self._registration_request(
+                    "Reject boolean revision",
+                    config_sha256=hashlib.sha256(b"config-v2").hexdigest(),
+                    expected_revision=True,
+                ),
+                "boolean-update-1",
+            )
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            self._change_status(
+                "suspended",
+                "Reject boolean revision",
+                True,
+                "boolean-status-1",
+            )
+
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).revision,
+            1,
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id),
+            audit_before,
+        )
+
+    def test_repository_fingerprint_replacement_requires_fresh_enrollment(self) -> None:
+        """A direct config update cannot silently replace a consumer binding."""
+
+        self._register()
+        grant = self._grant(ProjectAction.WRITE)
+        self._allow_admin(ProjectAdministrationAction.UPDATE)
+        registration_before = self.store.get_project_registration(self.project_id)
+        audit_before = self.store.project_registry_audit(self.project_id)
+        grants_before = self.store.project_grants(self.project_id)
+        replacement_fingerprint = hashlib.sha256(b"replacement-repository").hexdigest()
+
+        with self.assertRaisesRegex(ConflictError, "fresh enrollment"):
+            self.manager.update_project_registration(
+                self.operator,
+                self._registration_request(
+                    "Attempt to replace the repository without deregistration",
+                    repository_fingerprint=replacement_fingerprint,
+                    expected_revision=registration_before.revision,
+                ),
+                "repository-replacement-1",
+            )
+
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id), registration_before
+        )
+        self.assertEqual(self.store.project_registry_audit(self.project_id), audit_before)
+        self.assertEqual(self.store.project_grants(self.project_id), grants_before)
+        self.assertIsNone(grant.revoked_at)
 
     def test_repository_fingerprint_cannot_be_registered_under_two_ids(self) -> None:
         self._register()
@@ -221,11 +516,11 @@ class DurableProjectAccessTests(unittest.TestCase):
         self._register()
         self._grant()
         self._allow_admin(ProjectAdministrationAction.SUSPEND)
-        self.manager.set_project_status(
-            self.operator,
-            self.project_id,
+        self._change_status(
             "suspended",
             "Suspend access during the pilot pause",
+            self.store.get_project_registration(self.project_id).revision,
+            "pause-1",
         )
         authorizer = SQLiteProjectGrantAuthorizer(self.store)
         self.assertFalse(authorizer.authorize(self.reader, self.project_id, ProjectAction.READ))
@@ -275,6 +570,112 @@ class DurableProjectAccessTests(unittest.TestCase):
                 "A string is not an authorization enum",
             )
         self.assertEqual(self.store.project_grants(self.project_id), ())
+
+    def test_consumer_binding_deregistration_is_separate_and_fences_old_grants(self) -> None:
+        self._register()
+        grant = self._grant()
+        binding_config = ProjectAuthorizationBinding(
+            project_id=self.project_id,
+            repository_fingerprint=self.repository_fingerprint,
+            config_sha256=self.config_sha256,
+            backend_api_version=1,
+            allowed_actions=frozenset({ProjectAction.READ}),
+        )
+        launcher = FingerprintBoundSQLiteProjectGrantAuthorizer(
+            self.store, binding_config
+        )
+        self.assertTrue(launcher.authorize(self.reader, self.project_id, ProjectAction.READ))
+
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        pending_request = ConsumerBindingTransitionRequest(
+            project_id=self.project_id,
+            status="deregistration_pending",
+            rationale="Disable the detached consumer",
+            expected_revision=1,
+            transition_id="consumer-cutover-1",
+        )
+        pending = self.manager.transition_consumer_binding(
+            self.operator, pending_request
+        )
+        self.assertEqual((pending.binding.status, pending.binding.revision), ("deregistration_pending", 2))
+        self.assertFalse(launcher.authorize(self.reader, self.project_id, ProjectAction.READ))
+        self.assertFalse(
+            SQLiteProjectGrantAuthorizer(self.store).authorize(
+                self.reader, self.project_id, ProjectAction.READ
+            )
+        )
+        self.assertEqual(self.store.get_project_registration(self.project_id).status, "active")
+        self.assertEqual(self.store.get_project_registration(self.project_id).revision, 1)
+        self._allow_admin(ProjectAdministrationAction.UPDATE)
+        with self.assertRaisesRegex(ConflictError, "consumer binding is not active"):
+            self.manager.update_project_registration(
+                self.operator,
+                self._registration_request(
+                    "Reject config changes during consumer deregistration",
+                    config_sha256=hashlib.sha256(b"config-after-cutover").hexdigest(),
+                    expected_revision=1,
+                ),
+                "config-after-cutover-1",
+            )
+        replay = self.manager.transition_consumer_binding(self.operator, pending_request)
+        self.assertTrue(replay.replayed)
+        self.assertEqual(replay.receipt, pending.receipt)
+        with self.assertRaisesRegex(ConflictError, "not active"):
+            self._grant(ProjectAction.WRITE)
+
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER_FINALIZE)
+        final_request = ConsumerBindingTransitionRequest(
+            project_id=self.project_id,
+            status="deregistered",
+            rationale="All inventoried events have durable processed receipts",
+            expected_revision=2,
+            transition_id="consumer-cutover-final-1",
+        )
+        final = self.manager.transition_consumer_binding(self.operator, final_request)
+        self.assertEqual((final.binding.status, final.binding.revision), ("deregistered", 3))
+        self.assertEqual(final.binding.source_epoch, 1)
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        self.assertEqual(len(self.manager.list_consumer_binding_audit(self.operator, self.project_id)), 3)
+        closed_grant = self.store.project_grants(self.project_id)[0]
+        self.assertEqual(closed_grant.grant_id, grant.grant_id)
+        self.assertEqual(closed_grant.revoked_by, self.operator.subject_id)
+        self.assertEqual(closed_grant.revoke_rationale, pending_request.rationale)
+
+    def test_consumer_deregistration_waits_for_unresolved_events(self) -> None:
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        pending = self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                project_id=self.project_id,
+                status="deregistration_pending",
+                rationale="Stop new consumer activity",
+                expected_revision=1,
+                transition_id="consumer-pending-unresolved",
+            ),
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT INTO event_inbox
+                   (project_id, event_id, event_type, payload_sha256, payload_bytes,
+                    status, received_at)
+                   VALUES (?, 'event-pending', 'test.event', ?, 0, 'received', ?)""",
+                (self.project_id, "0" * 64, "2026-10-23T00:00:00.000Z"),
+            )
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER_FINALIZE)
+        final_request = ConsumerBindingTransitionRequest(
+            project_id=self.project_id,
+            status="deregistered",
+            rationale="Attempt finalization with an unresolved event",
+            expected_revision=pending.binding.revision,
+            transition_id="consumer-final-unresolved",
+        )
+        with self.assertRaisesRegex(ConflictError, "unresolved source events"):
+            self.manager.transition_consumer_binding(self.operator, final_request)
+        self.assertEqual(self.store.get_consumer_binding(self.project_id).status, "deregistration_pending")
+        history = self.store.consumer_binding_audit(self.project_id)
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[-1], pending.receipt)
 
 
 if __name__ == "__main__":

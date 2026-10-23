@@ -10,7 +10,7 @@ are persisted before any eligible purge runs.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 import os
 from pathlib import Path
@@ -19,7 +19,8 @@ import sys
 from typing import TextIO
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
-from .models import ReviewDecision
+from .cli_interaction import confirm_exact_phrase
+from .models import ArtifactRef, ReacquisitionAction, ReviewDecision, SDEReviewPacket
 from .project_access import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAuthorizationBinding,
@@ -205,28 +206,18 @@ def _target(config: ProjectConfig, requested: str | None) -> Path:
 
 
 def _confirmation_phrase(
-    decision: ReviewDecision, candidate_id: str, manifest_sha256: str
+    decision: ReviewDecision,
+    candidate_id: str,
+    manifest_sha256: str,
+    dependency_map_sha256: str,
 ) -> str:
-    """Bind one human action to disposition and exact-inventory cleanup."""
+    """Bind one human action to disposition, dependency map, and inventory."""
 
     action = "APPROVE" if decision is ReviewDecision.APPROVED else "REJECT"
-    return f"{action} SDE {candidate_id} AND PURGE INVENTORY {manifest_sha256}"
-
-
-def _confirm(
-    phrase: str, input_stream: TextIO, errors: TextIO
-) -> bool:
-    """Require the exact displayed phrase on an interactive terminal."""
-
-    if not input_stream.isatty():
-        errors.write("Refusing human approval without an interactive TTY.\n")
-        return False
-    errors.write(f"Type exactly: {phrase}\n> ")
-    errors.flush()
-    try:
-        return input_stream.readline(512).rstrip("\r\n") == phrase
-    except (OSError, ValueError):
-        return False
+    return (
+        f"{action} SDE {candidate_id} WITH DEPENDENCY MAP "
+        f"{dependency_map_sha256} AND PURGE INVENTORY {manifest_sha256}"
+    )
 
 
 def _write_json(output: TextIO, value: object) -> None:
@@ -252,6 +243,69 @@ def _queue(
     ]
 
 
+def _select_review_artifacts(
+    packet: SDEReviewPacket,
+    streams: _CliStreams,
+) -> tuple[ArtifactRef, ...] | None:
+    """Collect only retention actions allowed by the displayed dependencies."""
+
+    selected: list[ArtifactRef] = []
+    for artifact in packet.artifact_inventory.artifacts:
+        dependency = next(
+            (
+                item
+                for item in getattr(packet, "artifact_dependencies", ())
+                if item.artifact.path == artifact.path
+            ),
+            None,
+        )
+        if artifact.retention_hold is not None:
+            allowed_actions = {ReacquisitionAction.RETAIN_UNDER_HOLD}
+        elif any(
+            item.criterion_status == "open"
+            for item in (
+                dependency.evidence_dependencies if dependency is not None else ()
+            )
+        ):
+            allowed_actions = {ReacquisitionAction.REACQUIRE_FROM_SOURCE}
+        else:
+            allowed_actions = {
+                ReacquisitionAction.NOT_REQUIRED,
+                ReacquisitionAction.REACQUIRE_FROM_SOURCE,
+            }
+        choices = "/".join(sorted(item.value for item in allowed_actions))
+        streams.errors.write(
+            f"Retention or reacquisition action for {artifact.path} ({choices}): "
+        )
+        streams.errors.flush()
+        try:
+            action = ReacquisitionAction(streams.input.readline(64).strip())
+        except ValueError:
+            streams.errors.write("SDE review cancelled; action was invalid.\n")
+            return None
+        if action not in allowed_actions:
+            streams.errors.write(
+                "SDE review cancelled; action does not match the packet.\n"
+            )
+            return None
+        selected.append(replace(artifact, reacquisition_action=action))
+    return tuple(selected)
+
+
+def _read_review_decision(streams: _CliStreams) -> ReviewDecision | None:
+    """Read the attended SDE decision without consuming action input on error."""
+
+    streams.errors.write("Decision (approve/reject; also purge this exact inventory): ")
+    streams.errors.flush()
+    decision = {
+        "approve": ReviewDecision.APPROVED,
+        "reject": ReviewDecision.REJECTED,
+    }.get(streams.input.readline(16).strip().lower())
+    if decision is None:
+        streams.errors.write("SDE review cancelled; no decision was recorded.\n")
+    return decision
+
+
 def _review(
     arguments: argparse.Namespace,
     api: AuthenticatedCuratorAPI,
@@ -264,8 +318,10 @@ def _review(
     packet = api.sde_review_packet(
         caller, config.project_id, arguments.candidate_id
     )
-    inventory = packet.artifact_inventory
-    if not inventory.usage.inventory_complete or inventory.manifest_sha256 is None:
+    if (
+        not packet.artifact_inventory.usage.inventory_complete
+        or packet.artifact_inventory.manifest_sha256 is None
+    ):
         streams.errors.write("Refusing SDE review because the artifact inventory is incomplete.\n")
         return False
     target = _target(config, arguments.target)
@@ -280,21 +336,41 @@ def _review(
             ),
         },
     )
-    streams.errors.write("Decision (approve/reject; also purge this exact inventory): ")
-    streams.errors.flush()
-    decision = {
-        "approve": ReviewDecision.APPROVED,
-        "reject": ReviewDecision.REJECTED,
-    }.get(streams.input.readline(16).strip().lower())
+    decision = _read_review_decision(streams)
     if decision is None:
-        streams.errors.write("SDE review cancelled; no decision was recorded.\n")
         return False
-    if not _confirm(
+    selected_artifacts = _select_review_artifacts(packet, streams)
+    if selected_artifacts is None:
+        return False
+    selected_packet = api.sde_review_packet(
+        caller,
+        config.project_id,
+        arguments.candidate_id,
+        selected_artifacts,
+    )
+    _write_json(
+        streams.output,
+        {
+            "decision_packet": asdict(selected_packet),
+            "canonical_target": str(target),
+            "confirmation_phrase": _confirmation_phrase(
+                decision,
+                arguments.candidate_id,
+                packet.artifact_inventory.manifest_sha256,
+                selected_packet.dependency_map_sha256,
+            ),
+        },
+    )
+    if not confirm_exact_phrase(
         _confirmation_phrase(
-            decision, arguments.candidate_id, inventory.manifest_sha256
+            decision,
+            arguments.candidate_id,
+            packet.artifact_inventory.manifest_sha256,
+            selected_packet.dependency_map_sha256,
         ),
         streams.input,
         streams.errors,
+        "Refusing human approval without an interactive TTY.\n",
     ):
         streams.errors.write("SDE review cancelled; no decision was recorded.\n")
         return False
@@ -310,8 +386,9 @@ def _review(
         config.project_id,
         arguments.candidate_id,
         decision,
-        inventory.artifacts,
+        selected_artifacts,
         artifact_inventory_complete=True,
+        dependency_map_sha256=selected_packet.dependency_map_sha256,
         rationale=rationale,
     )
     projection = api.persist_goal(
@@ -360,7 +437,12 @@ def _expire(
         streams.errors.write("Expiry inventory exceeds the 500-artifact receipt limit.\n")
         return 2
     phrase = f"PURGE EXPIRED INVENTORY {snapshot.manifest_sha256}"
-    if not _confirm(phrase, streams.input, streams.errors):
+    if not confirm_exact_phrase(
+        phrase,
+        streams.input,
+        streams.errors,
+        "Refusing human approval without an interactive TTY.\n",
+    ):
         streams.errors.write("Expiry cleanup cancelled; no approval receipt was recorded.\n")
         return 2
     receipt = api.approve_project_expiry_inventory(

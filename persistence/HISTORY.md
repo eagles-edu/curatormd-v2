@@ -4098,3 +4098,807 @@
 **Open gate:** This covers the trace converter only. Historical transcript rows, WAL/recovery, remaining backup paths, provider retention, and the broad source-to-sink privacy review remain open; no checklist item was closed.
 
 **Outcome:** The dedicated trace-export sink no longer serializes Curator V2 arguments or results, independent of the generic secret-redaction option.
+
+## 2026-10-23 — Refresh Curator quality and Hermes-context persistence evidence
+
+**Intent:** Recheck the interrupted Curator quality run, keep the whole-tree warning inventory current, and verify V2 ledger visibility through the configured Hermes profile.
+
+**Changed fact:** Wrapped the remaining overlong lines and corrected one test import-order finding. These edits are formatting-only and do not alter source behavior. The full warning-level Pylint inventory now has 177 diagnostic entries, including repeated duplicate-code reports, down from 186 immediately before this cleanup; the score remains 9.90/10 with exit 28. No delivery checklist row changed; the plan snapshot remains 139/178 complete with 39 open.
+
+**Verification:** Strict Pyright reports zero diagnostics; errors-only Pylint, Bandit, `uv lock --check`, and `git diff --check` pass. The full warning-level Pylint command is `uv run --locked --group quality pylint src/curatormd_v2 tests`; its complete report is `/tmp/curator-v2-pylint-2026-10-23.txt`. The read-only Hermes checkout probe exits 0 with host-injected local profile/session context and reads the `vhost-manager-alpha` SQLite ledger: 12/12 event receipts processed, one goal, two facts, no SDE candidates, and paginated goal total 1. Project health remains `unknown` with gates for event routing, purge scheduling, host identity, human review, and producer inventory.
+
+**Open gate:** Repository-wide structural Pylint cleanup remains open. Direct Codex calls still lack Hermes profile context; the profile reports no human authentication. Managed-gateway delivery, live application capture, deployment, production retention ownership, scheduler/alerts, and authoritative-store policy remain unverified.
+
+**Outcome:** The local profile can read persisted V2 state; `unauthenticated` on the direct connector is not evidence of missing SQLite persistence. The V2 checklist remains 139/178, and no production or live-runtime claim is made.
+
+## 2026-10-23 — Simplify project registration authorization predicate
+
+**Intent:** Continue the open whole-tree Pylint cleanup by isolating the registration-fingerprint check without changing project access decisions.
+
+**Changed fact:** Extracted the active-status, captured-revision, repository-fingerprint, config-hash, and backend-version comparisons into a typed helper. The authorizer still fails closed before checking the caller's exact project grant. The checklist count remains 139/178.
+
+**Verification:** All eight `tests/test_project_access.py` cases pass with Python's unittest runner; strict Pyright and errors-only Pylint pass; `git diff --check` passes. The complete pinned warning-level Pylint run reports 176 diagnostic entries, including repeated duplicate-code reports, at 9.90/10 and exit 28, down from 177 before this refactor. The authorizer predicate no longer triggers `too-many-boolean-expressions`; two argument-count findings remain in the project access module.
+
+**Open gate:** Whole-tree structural, fixture, and duplication findings remain. Authenticated Hermes identity, managed-gateway delivery, live consumer capture, deployment, and production retention/scheduler ownership are unchanged and open.
+
+**Outcome:** Project authorization behavior is unchanged with one fewer whole-tree lint diagnostic; no checklist item or release gate was closed.
+
+## 2026-10-23 — Extract project registration retry matching
+
+**Intent:** Reduce the branch complexity in project-registration update replay while preserving exact idempotency and conflict behavior.
+
+**Changed fact:** Extracted the seven-field audit-receipt comparison into a typed predicate. It compares the same action, actor, next revision, repository fingerprint, config hash, backend API version, and rationale before returning the stored replay result.
+
+**Verification:** All eight project-access tests pass; strict Pyright, errors-only Pylint, and `git diff --check` pass. The fresh full-tree warning-level Pylint report contains 175 diagnostic entries at 9.90/10 and exits 28, down from 176 before this extraction. No `too-many-boolean-expressions` findings remain in the full report.
+
+**Open gate:** Other whole-tree complexity, interface-size, fixture-size, and duplicate-code findings remain. No authenticated identity, production, deployment, retention-owner, or live-runtime gate changed.
+
+**Outcome:** Exact transition retries still recover their original receipt, while conflicting transition reuse still fails; one more whole-tree complexity finding is removed and no checklist item is closed.
+
+## 2026-10-23 — Reduce project-registration update locals
+
+**Intent:** Remove excess locals from `update_project_registration` without changing its transaction boundary or persisted audit data.
+
+**Changed fact:** Removed aliases for the registration request's project ID, fingerprints, backend version, and rationale. The validated request remains the source for SQL values and the durable transition receipt; the expected revision and timestamp retain their original validation and ordering.
+
+**Verification:** All eight focused project-access tests pass; strict Pyright, errors-only Pylint, and `git diff --check` pass. The fresh pinned whole-tree warning inventory reports 174 diagnostic entries at 9.90/10 and exits 28, down from 175; the local-count finding for `update_project_registration` is gone.
+
+**Open gate:** Whole-tree Pylint remains open with other store complexity, interface-size, fixture, and duplicate-code findings. No delivery checklist row or external release gate changed.
+
+**Outcome:** Project registration updates preserve exact retry and audit behavior with fewer method locals; no checklist item is closed.
+
+## 2026-10-23 — Preserve exact revision and enum validation while resolving lint findings
+
+**Intent:** Remove exact-type Pylint findings without weakening revision validation or runtime enum checks.
+
+**Changed fact:** Reused the shared `is_exact_int` TypeGuard at the project registration, update, and status revision boundaries. Kept exact enum-type checks with narrow local Pylint reasons because strict Pyright reports `isinstance` as unnecessary for their annotated enum fields. Added a regression that passes `True` to update and suspend requests and verifies both are rejected before registration or audit state changes.
+
+**Verification:** All nine project-access tests and all 27 purge tests pass. Strict Pyright passes; focused Pylint for `models.py`, `read_models.py`, and `store.py` reports no `unidiomatic-typecheck` findings but retains other structural warnings. `git diff --check` passes. The fresh full-tree warning report falls from 174 to 169 diagnostic entries, including duplicate-code reports, and improves from 9.90/10 to 9.91/10 (exit 28). No `unidiomatic-typecheck` findings remain.
+
+**Open gate:** Whole-tree structural, interface-size, test-fixture, and duplicate-code findings remain. This local validation cleanup does not close deployment, identity, retention-policy ownership, scheduler/alert, or live-runtime gates.
+
+**Outcome:** Boolean revisions remain denied and exact enum boundaries remain runtime-validated; five warning entries are removed and no delivery checklist item is closed.
+
+## 2026-10-23 — Type project status transition requests
+
+**Intent:** Reduce the project-status manager and store method interfaces while preserving host authorization, revision checks, and transition replay semantics.
+
+**Changed fact:** Added immutable `ProjectStatusChangeRequest` and passed it through `ProjectAccessManager`, `CuratorStore`, the attended access CLI, and the affected hosted/access tests. The trusted actor still comes from `AuthenticatedCaller`; it is not part of caller-controlled request data. Store validation order and the transaction containing status mutation, audit receipt, and exact retry remain unchanged.
+
+**Verification:** The focused project-access (9), access-CLI (2), and hosted-MCP (14) test modules pass, 25 tests total. Strict Pyright, errors-only Pylint, and `git diff --check` pass. The fresh full-tree warning-level report falls from 169 to 164 diagnostics and remains 9.91/10 (exit 28); project status manager/store argument and local-count warnings are removed.
+
+**Open gate:** Other repository-wide structural, fixture, and duplicate-code findings remain. This local API refactor does not close identity, deployment, retention-owner, scheduler/alert, or live-runtime gates.
+
+**Outcome:** Status changes retain exact host authorization and transactional audit behavior through a typed request; no delivery checklist row is closed.
+
+## 2026-10-23 — Extract cleanup authorization inventory validation
+
+**Intent:** Reduce cleanup authorization method locals while preserving the exact reviewed inventory and the same transaction boundary.
+
+**Changed fact:** Moved receipt/project/inventory completeness checks, per-target retention and reacquisition action validation, and occurrence-bound manifest hashing into a focused helper. It receives the original transaction connection and runs before the existing-authorization replay lookup or insert.
+
+**Verification:** All 27 purge tests pass; strict Pyright, errors-only Pylint, and `git diff --check` pass. The fresh whole-tree warning report falls from 164 to 163 diagnostic entries at 9.91/10 (exit 28), and `create_cleanup_authorization` no longer has an excessive-local finding.
+
+**Open gate:** Whole-tree structural, fixture, and duplicate-code cleanup remains open. Production cleanup scheduling, retention ownership, authenticated reviewer identity, deployment, and live-runtime evidence remain open.
+
+**Outcome:** Cleanup authorization retains its complete-inventory and exact-manifest gate within the original transaction, with fewer method locals and no checklist item closed.
+
+## 2026-10-23 — Group Markdown projection evidence fence
+
+**Intent:** Reduce local state in canonical Markdown projection while keeping evidence verification and the write-time change fence intact.
+
+**Changed fact:** Added immutable `_VerifiedProjectionSnapshot` for the verified criterion progress, source fact IDs, and goal lifecycle/criteria revisions. Evidence is still verified before the write transaction; the transaction still compares current revisions and fact IDs before rendering and replacing the target.
+
+**Verification:** All 19 Markdown persistence tests pass; strict Pyright, errors-only Pylint, and `git diff --check` pass. The fresh whole-tree Pylint report falls from 163 to 162 diagnostic entries at 9.91/10 (exit 28); `persist_goal` no longer reports excessive locals.
+
+**Open gate:** Other Markdown module interface-size and repository-wide quality findings remain. Canonical-store policy, recovery ownership, deployment, and live consumer persistence gates remain unchanged.
+
+**Outcome:** Canonical projection keeps the same transaction and evidence-freshness behavior with one fewer whole-tree diagnostic; no delivery checklist row is closed.
+
+## 2026-10-23 — Bundle Markdown goal-block render inputs
+
+**Intent:** Replace a parallel internal renderer argument list with one typed group of durable projection records.
+
+**Changed fact:** Added immutable `_GoalProjectionRecords` for SDE candidates, pending and completed receipts, corrections, and an optional preverified criterion-progress snapshot. `_render_block` still renders the same goal and fact data; the optional snapshot still avoids repeating evidence verification during persistence.
+
+**Verification:** All 19 Markdown persistence tests pass; strict Pyright, errors-only Pylint, and `git diff --check` pass. The refreshed whole-tree warning report falls from 162 to 160 diagnostic entries at 9.91/10 (exit 28). `_render_block` no longer has argument-count findings.
+
+**Open gate:** Repository-wide structural, fixture, module-size, and duplicate-code findings remain. Deployment, identity, retention ownership, and live-runtime gates are unchanged.
+
+**Outcome:** Markdown rendering keeps the same projected content and evidence-freshness behavior with a smaller internal call contract; no checklist item is closed.
+
+## 2026-10-23 — Split attended review input collection
+
+**Intent:** Reduce review orchestration locals without changing the user's exact SDE and purge authorization workflow.
+
+**Changed fact:** Extracted allowed per-artifact retention/reacquisition input and approve/reject parsing from `_review`. The packet still determines allowed actions; invalid or mismatched input cancels before any review decision is persisted. Exact-phrase confirmation, rationale validation, SDE confirmation, canonical persistence, and purge-status reporting remain in their original order.
+
+**Verification:** All nine `test_review_cli.py` tests pass; strict Pyright, focused review-CLI Pylint, repository errors-only Pylint, and `git diff --check` pass. The fresh full-tree Pylint report falls from 160 to 158 diagnostic entries at 9.91/10 (exit 28); the production `_review` excessive-local finding is gone.
+
+**Open gate:** Test fixture local-count findings and other repository-wide structural/duplicate-code findings remain. Local UID review does not establish Hermes human identity, production retention policy, deployment, or live runtime behavior.
+
+**Outcome:** The attended review path preserves exact user authorization and canonical-write-before-purge ordering with less orchestration complexity; no checklist item is closed.
+
+## 2026-10-23 — Inspect Vhost Manager Curator producer coverage
+
+**Intent:** Identify source-backed Curator V2 producer paths for the Vhost Manager pilot without changing the consumer checkout or inferring out-of-root deletion authority.
+
+**Changed fact:** Read-only review of the dirty `renew_ssl` checkout at HEAD `7d2b10f5433cfe566fc560741bbc9401265176f4` found a configured V2 project (`backend_api_version = 1`) and a Hermes hook that binds explicit goals and forwards bounded Codex turn start/end events. No application producer or Curator staging, inventory, or expiry API call was found in the reviewed Vhost Manager server/UI source. The application does produce site/config files, operation snapshots/archives, manager state, and security counters under configured site, server, backup, or state paths; their lifecycle and disposition remain Vhost-owned and unreviewed. Config SHA-256: `4f3a34e84832b7e8ccfe4e91a68b0664c6aa603409318197f0b44e6454ece44a`; hook SHA-256: `381abaefcc34455472ea3ea9ef69f7ded80c7905255fec7a8d3e1fa34d3c623f0`.
+
+**Verification:** Inspected `.curatormd-v2.toml`, the hook manifest/handler, Vhost Manager server/UI producer call sites, Git HEAD/status, and file hashes. The delivery checklist count remains 139/178 (39 open), excluding reusable templates as defined in the plan. Curator plan and history now record this bounded source finding.
+
+**Open gate:** The consumer checkout is dirty, so this is not a clean revision-bound matrix. There is no owner confirmation, disposable workflow filesystem observation, complete producer/class enumeration, or verified normal/retry/cancel/failure and out-of-root behavior. Absence of a Curator call in the reviewed files is not owner-confirmed absence. No tests were run for this documentation-only update; deployment, authenticated identity, retention ownership, and live-runtime gates remain open.
+
+**Outcome:** Added source-backed evidence while keeping the producer-coverage checklist item open; no consumer source or runtime state was changed.
+
+## 2026-10-23 — Reduce review CLI fixture lint findings
+
+**Intent:** Remove two test-fixture excessive-local findings without changing review or expiry lifecycle assertions.
+
+**Changed fact:** Extracted verified-candidate creation and staged-review inventory preparation into typed fixture helpers. Split expiry fixture creation, CLI invocation, and durable-receipt assertions into separate helpers; store connections now close in `finally` blocks.
+
+**Verification:** Focused Pylint for `tests/test_review_cli.py` rates 10.00/10; strict Pyright reports zero diagnostics; `git diff --check` passes. No tests or fresh whole-tree Pylint inventory were run. The previously recorded whole-tree inventory of 158 diagnostics is only the pre-change baseline.
+
+**Open gate:** The repository-wide Pylint checklist remains open pending a fresh complete inventory and resolution/review of the remaining findings. This test-fixture refactor does not change any delivery checklist count or deployment, identity, retention, or live-runtime gate.
+
+**Outcome:** The two reported fixture-local warnings are removed in focused Pylint; no behavior or checklist item is claimed complete.
+
+## 2026-10-23 — Refresh whole-tree Pylint baseline
+
+**Intent:** Reconcile the repository-wide warning count after the review CLI fixture refactor.
+
+**Changed fact:** A fresh full-tree run confirms the two `tests/test_review_cli.py` excessive-local findings are gone and the inventory has fallen from 158 to 156 diagnostics. The report groups 27 excessive-local, 25 duplicate-code, 23 excessive-argument, 19 excessive-instance-attribute, and 12 positional-argument findings among its largest categories.
+
+**Verification:** Ran `uv run --locked --group quality pylint src/curatormd_v2 tests` at HEAD `860ca84328dda9e3085460f257d1d5429519aa0f` with 48 dirty status entries and Pylint 4.1.3. Exit status is 28 and score is 9.91/10; report saved to `/tmp/curator-v2-pylint-current.txt`. `git diff --check` passes. This was a quality inventory, not a test run.
+
+**Open gate:** Whole-tree Pylint remains open with 156 findings. Production structural/interface findings, duplicate test code, oversized modules, and remaining fixture complexity need separate review. No delivery checklist count or deployment, identity, retention, or runtime gate changed.
+
+**Outcome:** Updated the plan with the verified fresh baseline; no global Pylint thresholds were changed.
+
+## 2026-10-23 — Type the checklist goal intake boundary
+
+**Intent:** Replace the checklist plugin method's parallel source, criteria, ownership, lifecycle, and provenance arguments with one explicit consumer request.
+
+**Changed fact:** Added frozen `ChecklistGoalStartRequest` with nested frozen `GoalStartOptions`, exported from the V2 package. `ProjectPlugin.goal_start_from_checklist` now accepts the typed request; the exact checklist line is still snapshotted from the configured source and the same criteria, parent/dependency links, initial status, owner, next action, and event provenance are passed to the service. All six current call sites were migrated.
+
+**Verification:** Strict Pyright reports zero diagnostics. Fresh `uv run --locked --group quality pylint src/curatormd_v2 tests` with Pylint 4.1.3 reports 155 diagnostics at 9.91/10 and exits 28, down from 156; the method's excessive-argument warning is gone and the new request/options types add no attribute-count warnings. `git diff --check` passes. Tests were not run.
+
+**Open gate:** Whole-tree Pylint cleanup remains open with 155 diagnostics. The consumer call contract is locally typed, but this does not prove application producer wiring, owner-reviewed source coverage, deployment, authenticated human identity, or live runtime behavior.
+
+**Outcome:** Improved the repository plugin's typed intake boundary and removed one warning without changing persistence or checklist completion status.
+
+## 2026-10-23 — Fence scheduled purge retries against project suspension
+
+**Intent:** Prevent the one-shot maintenance runner from deleting artifacts under a stale project binding or after project suspension.
+
+**Changed fact:** Before retrying either the SDE purge queue or expiry queue, the runner now compares the durable registration's repository fingerprint, exact config digest, and backend API version with the loaded project config. It acquires the staging lock before the project's revision fence and holds both across both purge effects, so suspension or binding transitions cannot race through the direct maintenance-plugin path. Authenticated API effect fences use that same lock order; plugin staging locks are reentrant within the same thread and reuse the held root descriptor, preventing inversion against staged-file writers.
+
+**Verification:** Added a regression that creates a due, previously approved purge, registers and suspends its project, then proves maintenance exits with a sanitized failure while the file remains and the receipt stays `purge_pending`. The active registered due-retry flow remains covered. The maintenance CLI (5), purge (28), API (38), concurrency (7), and project-plugin (46) focused suites pass, 124 tests total; strict Pyright reports zero diagnostics, errors-only Pylint passes, and `git diff --check` is clean.
+
+**Open gate:** Production timer ownership/cadence, dead-letter alert delivery, and crash/reconciliation drills remain unverified. This is local scheduler protection only; deployment, authenticated Hermes identity, and live runtime remain open.
+
+**Outcome:** The local scheduler can no longer bypass the project suspension fence for SDE or expiry retries, and both API and scheduler effects follow the staging-lock-before-SQLite-fence order; the production scheduler checklist row remains open.
+
+## 2026-10-23 — Recheck whole-tree Pylint after scheduler fencing
+
+**Intent:** Refresh the repository-wide warning inventory after the maintenance suspension and lock-order changes.
+
+**Changed fact:** The current source and test tree still reports 155 Pylint diagnostics, unchanged from the prior inventory. The largest categories are excessive locals (27), duplicate code (25), excessive arguments (22), excessive instance attributes (19), and positional arguments (12).
+
+**Verification:** Ran `uv run --locked --group quality pylint src/curatormd_v2 tests` on HEAD `860ca84328dda9e3085460f257d1d5429519aa0f` with Pylint 4.1.3. It reports 9.91/10 and exits 28; output is saved at `/tmp/curator-v2-pylint-current.txt`. `git diff --check` passes. This is a whole-tree quality inventory, not a test run.
+
+**Open gate:** Repository-wide Pylint cleanup remains open. The production scheduler timer, dead-letter alerting, crash reconciliation, deployment, authenticated identity, and live-runtime gates remain unverified.
+
+**Outcome:** Updated the plan and persistence history with the fresh inventory; no checklist completion or production behavior is inferred from the quality scan.
+
+## 2026-10-23 — Remove contract-test tuple-unpacking warnings
+
+**Intent:** Make artifact dependency cardinality explicit in the contract-schema test and remove the corresponding static-analysis warnings.
+
+**Changed fact:** The test now asserts that the matching/stale dependency result has two entries and the unattested result has one before indexing them. This preserves the tested binding assertions and fails clearly if the helper returns an incomplete inventory.
+
+**Verification:** Focused Pylint for `tests/test_contract_schemas.py` no longer reports its two `W0632` findings; the file scores 9.93/10 with one separate `R0914` finding. A fresh full-tree `uv run --locked --group quality pylint src/curatormd_v2 tests` run with Pylint 4.1.3 reports 153 diagnostics at 9.92/10 and exits 28, down from 155; output is saved at `/tmp/curator-v2-pylint-current.txt`. `git diff --check` passes. No tests were run.
+
+**Open gate:** Repository-wide Pylint cleanup remains open. The local test edit and warning reduction do not close runtime, deployment, identity, retention, or production scheduler gates.
+
+**Outcome:** Removed two static-analysis findings while retaining explicit cardinality expectations; no delivery checklist row is closed.
+
+## 2026-10-23 — Build the current dirty alpha wheel
+
+**Intent:** Verify the repository's current alpha source, including recently added typed request modules, can still be packaged and imported before consumer installation.
+
+**Changed fact:** `uv build --wheel --out-dir /tmp/curator-v2-alpha-wheel-current` built `curatormd_v2-0.1.0a1-py3-none-any.whl` from the current dirty source. The wheel contains `cli_interaction.py` and `store_requests.py` and imports those modules from the archive itself.
+
+**Verification:** At HEAD `860ca84328dda9e3085460f257d1d5429519aa0f`, the wheel SHA-256 is `0108355d990a1862c0dc7dd08d2ad3e99464d3f0c085e8440859fad8bb336b9e`. The import check resolved `curatormd_v2.__file__` from the wheel archive; `git diff --check` passes. No tests were run.
+
+**Open gate:** This confirms package construction/import only. The wheel was not installed into the Vhost Manager profile; consumer workflow, authenticated identity, deployment, and live runtime remain open.
+
+**Outcome:** Produced a current-source alpha artifact in `/tmp` without changing consumer or Hermes profile installations.
+
+## 2026-10-23 — Make sensitive config traversal iterative
+
+**Intent:** Keep repository-config sensitive-content screening from depending on Python recursion depth, while preserving deterministic first-match reporting and sanitized errors.
+
+**Changed fact:** `_sensitive_config_category` now walks TOML dictionaries and lists iteratively in the same depth-first order as the previous recursive implementation. It retains only the detected safe category in its result; `ProjectConfig.load` continues deleting the parsed root table before raising its sanitized public error.
+
+**Verification:** Strict Pyright reports zero diagnostics. Fresh `uv run --locked --group quality pylint src/curatormd_v2 tests` with Pylint 4.1.3 reports 152 diagnostics at 9.92/10 and exits 28, down from 153; the helper's `R0911` finding is gone. Rebuilt the current dirty-source wheel at `/tmp/curator-v2-alpha-wheel-current/curatormd_v2-0.1.0a1-py3-none-any.whl`, SHA-256 `4b36edf42e49e8444b3a27320c85b3793486e3c1e23f678d3fe7c938fabb2d05`; import resolved from the archive. `git diff --check` passes. No tests were run.
+
+**Open gate:** Existing config-sanitization tests were not rerun, and no deep-nesting regression was added. The warning-level Pylint item, deployment-owned secret policy, authenticated identity, and production security gates remain open.
+
+**Outcome:** Removed recursion-depth dependence in the local config scan and reduced one lint finding; no delivery row or production gate is closed.
+
+## 2026-10-23 — Cover deep config traversal with a focused regression
+
+**Intent:** Verify the iterative sensitive-config scan handles nested values beyond the interpreter's normal recursion limit and still finds sensitive text.
+
+**Changed fact:** Added one regression that wraps safe and credential-like values in lists deeper than `sys.getrecursionlimit()`, then checks safe input returns no category and nested token assignment returns `credential_assignment`.
+
+**Verification:** The focused test passes (1 test); strict Pyright reports zero diagnostics. Focused Pylint on `project_config.py` and `test_project_plugin.py` scores 9.95/10 with existing model/test-structure findings. A fresh full-tree Pylint 4.1.3 run remains at 152 diagnostics, 9.92/10, exit 28; no additional warning was introduced. `git diff --check` passes.
+
+**Open gate:** This covers the helper on nested Python values; it does not prove parser behavior for every deeply nested TOML input or production secret discovery. Whole-tree Pylint, deployed secret policy, and runtime security gates remain open.
+
+**Outcome:** Added direct regression evidence for the depth-independent scan without broadening into redundant suites or marking a delivery row complete.
+
+## 2026-10-23 — Preserve independent dependency health observations
+
+**Intent:** Keep one missing dependency probe from masking healthy sibling probes in the local project-health aggregate.
+
+**Changed fact:** `evaluate_dependencies` now keeps provider-call failure separate from each dependency's missing/invalid/stale observation. Provider failure still makes all dependencies unknown; an individual failed probe marks its own dependency unknown, adds the aggregate failure gate, and leaves later observations independently evaluated.
+
+**Verification:** Extended the existing storage/alert health regression to assert a missing `database_storage_adapter` or `alert_delivery` is unknown while every other fresh probe remains healthy. The focused test passes (1 test); strict Pyright reports zero diagnostics; focused Pylint for `health_evaluation.py` and `test_api.py` scores 9.92/10 with existing test-module structure findings. `git diff --check` passes.
+
+**Open gate:** The project remains `unknown` while any required probe is missing. Deployment-owned storage, scheduler, identity, and alert probes and actual alert delivery remain unverified.
+
+**Outcome:** Local health output now reports independent dependency states accurately without allowing missing required evidence to produce healthy status.
+
+## 2026-10-23 — Label independent health observation scopes
+
+**Intent:** Report when the local SQLite health aggregates, staging inventory, and host dependency probes were observed, without implying they form one atomic cross-source snapshot.
+
+**Changed fact:** `project_health` now carries the timestamp for its consistent SQLite aggregate read and marks that read complete only when it returns. Queue, review/purge, storage, and payload-scrub aggregates are read inside that same snapshot. `StagingUsage` carries the timestamp of each bounded scan, and the API exposes that beside inventory completeness. Missing staging observation time adds an unknown gate. Host dependencies retain their own status and observation timestamp. The API/MCP docs now list all seven required host probes, including storage and alert delivery.
+
+**Verification:** The focused healthy-health snapshot and SQLite snapshot-isolation tests pass, as does the MCP end-to-end test that checks the new response fields (3 tests total). They verify timezone-aware database/staging/dependency times, completeness, consistent SQLite reads, and serialization through MCP. Strict Pyright reports zero diagnostics; `git diff --check` passes. Focused Pylint for health/staging/read-model modules scores 9.91/10 with existing excessive-attribute findings. A dirty-source alpha wheel was rebuilt at `/tmp/curator-v2-alpha-wheel-current/curatormd_v2-0.1.0a1-py3-none-any.whl`, SHA-256 `086904eba4e51648348f5180f8f586fea421d47cf82c0ae1121aadd76bea6656`; health/read-model/staging imports resolve from the wheel archive.
+
+**Open gate:** SQLite read failures still surface as request failures rather than an unknown health snapshot; database failure accounting, production scheduler/probe freshness, alert delivery, authenticated dashboard use, and reconciliation of independently sampled totals remain open.
+
+**Outcome:** Health snapshots expose their local observation scopes and completeness explicitly; this does not close the operational-health delivery row or any deployment gate.
+
+## 2026-10-23 — Report SQLite health-read failures as unknown
+
+**Intent:** Ensure a failed local SQLite aggregate read cannot escape the health contract or appear as zero-valued healthy data.
+
+**Changed fact:** `project_health` now catches SQLite read errors and returns `unknown` with `database_observation_complete=false`, a `database_observation_failed` gate, and null database-derived counts and capacity fields. Independently observed dependency failures can still make the overall state `degraded`. Prometheus emits a zero database-completeness gauge and omits unavailable queue, storage, staging, and feedback samples. The API and delivery plan describe this failure behavior; the operational-health checklist row remains open.
+
+**Verification:** The focused SQLite-failure regression and existing healthy-snapshot regression both pass (2 tests). Strict Pyright, errors-only Pylint, Bandit, the locked dependency audit (50 packages, no known vulnerabilities or adverse statuses), and `git diff --check` pass. A current full-tree warning-level Pylint report exposed an excessive-boolean-expression finding in the Prometheus guard; factoring its event-count validation into a typed helper restores focused `observability.py` Pylint to 10.00/10. The whole-tree warning report was not rerun after that refactor. Bandit reports the existing B603 `nosec` acknowledgements in `git_evidence.py`. No full test suite was run.
+
+**Open gate:** This is local request-time failure reporting, not persistent failure accounting, monitoring, alert delivery, production storage-probe evidence, or deployment validation. The delivery checklist remains 139/178 complete (39 open), excluding reusable templates.
+
+**Outcome:** A failed database snapshot is explicitly unknown and does not publish fabricated zero counts or close a production gate.
+
+## 2026-10-23 — Verify failed health snapshot over MCP
+
+**Intent:** Confirm that the database-read failure result remains explicitly unknown after JSON serialization through the local MCP SDK transport.
+
+**Changed fact:** Added an in-memory MCP client regression that injects a SQLite aggregate-read error and calls both `project_health` and `project_metrics`. The serialized health keeps null database-derived fields and the failure gate; metrics expose database completeness as zero and omit queue counts. The injected SQLite diagnostic is absent from both results.
+
+**Verification:** The focused MCP regression passes; strict Pyright reports zero diagnostics. The current `test_mcp_server.py` focused Pylint report retains its prior test-module structural findings, including an existing excessive-local warning in a different privacy test. `git diff --check` passes.
+
+**Open gate:** This exercises the in-memory SDK client, not a live Hermes transport, authenticated human identity, persistent failure monitoring, alert delivery, or production storage. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Local MCP serialization preserves the fail-closed health contract without turning unavailable data into zero values.
+
+## 2026-10-23 — Decompose the attended access CLI regression
+
+**Intent:** Reduce the access CLI test's setup/locals complexity while preserving coverage of the complete attended registration and project-grant lifecycle.
+
+**Changed fact:** Split the existing end-to-end test into named registration/grant, config-transition replay, suspension/reactivation/revocation, and audit phases. The test still exercises the same single consumer, database, transitions, exact confirmations, replay receipt, and final access audit.
+
+**Verification:** The focused end-to-end access CLI regression passes. Focused Pylint for `tests/test_access_cli.py` rates 10.00/10; strict Pyright reports zero diagnostics. A fresh whole-tree warning-level Pylint run reports 152 diagnostics at 9.92/10 and exits 28; report: `/tmp/curator-v2-pylint-2026-10-23-active-final.txt`. `git diff --check` passes.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this refactor does not close identity, deployment, consumer, or runtime gates. The delivery checklist remains 139/178 complete (39 open), excluding reusable templates.
+
+**Outcome:** One test-structure warning is removed without changing the tested access lifecycle or claiming full-tree lint completion.
+
+## 2026-10-23 — Keep decorator registry access encapsulated
+
+**Intent:** Remove a Pylint false positive without expanding the authenticated facade's public API.
+
+**Changed fact:** The effect-fence decorator closure reads the private project registry on the same `AuthenticatedCuratorAPI` instance. Pylint misclassifies this nested same-class access as client access. Kept the registry private and applied a single-line `protected-access` suppression with the specific same-class closure reason.
+
+**Verification:** The focused in-flight write/suspension cutover regression passes. Strict Pyright reports zero diagnostics. Focused Pylint for `api.py` no longer reports `W0212`; its existing structural/interface findings remain. This focused run rated the module 9.38/10. The full-tree warning inventory was not rerun after this exception; `git diff --check` passes.
+
+**Open gate:** The suppression awaits inclusion in the final warning-level review; repository-wide Pylint, deployment identity, and live-runtime gates remain open. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Preserved the private registry and current facade behavior while documenting the narrow lint exception for final review.
+
+## 2026-10-23 — Simplify lifecycle matrix action helper
+
+**Intent:** Remove excessive early returns from the exhaustive lifecycle test helper without changing its action matrix.
+
+**Changed fact:** Converted the action dispatch in `_apply_matrix_action` to assign one typed result through the same activate, change-fact, finish, block, defer, amend, cancel, supersede, and reopen branches, then return once.
+
+**Verification:** The exhaustive lifecycle status/action matrix regression passes. Focused Pylint for `tests/test_lifecycle.py` no longer reports `R0911`; strict Pyright reports zero diagnostics. `git diff --check` passes. The latest whole-tree warning inventory predates this extraction and the `api.py` exception, so no updated global count is claimed.
+
+**Open gate:** Repository-wide warning-level Pylint and deployment, authenticated identity, retention-owner, and live-runtime gates remain open. The delivery checklist remains 139/178 complete (39 open).
+
+**Outcome:** Preserved full lifecycle matrix behavior while removing one test-helper structural finding.
+
+## 2026-10-23 — Refresh the dirty-source alpha wheel
+
+**Intent:** Verify that the latest local health and structural changes are included in a reviewable Curator V2 alpha package without installing it into a consumer.
+
+**Changed fact:** Built `curatormd_v2-0.1.0a1-py3-none-any.whl` at `/tmp/curator-v2-alpha-wheel-current/curatormd_v2-0.1.0a1-py3-none-any.whl`, SHA-256 `d754ffb6bb4337dd758993aed09cf6edbe477e71ff890bfc81a76702124d1814`. All 48 top-level package modules match the current source bytes exactly; the archive has no missing or extra module, and imports resolve from the wheel itself. This supersedes the earlier wheel written to that same output path.
+
+**Verification:** `uv build --wheel --out-dir /tmp/curator-v2-alpha-wheel-current` succeeds. A direct source/archive comparison reports 48 matching modules; imports for `api`, `observability`, `cli_interaction`, and `store_requests` load from the wheel archive. No consumer installation or live-runtime claim is made.
+
+**Open gate:** This is package-content evidence for the current dirty checkout, not a clean release artifact or consumer integration. The delivery checklist remains 139/178 complete (39 open); identity, production retention, deployment, and live application gates remain open.
+
+**Outcome:** The current V2 source packages and imports successfully as a wheel while installed consumer evidence remains unchanged.
+
+## 2026-10-23 — Accept the exact alpha wheel in a clean environment
+
+**Intent:** Verify the current dirty-source wheel through installed distribution entrypoints and the stdio consumer launcher, beyond direct archive imports.
+
+**Changed fact:** Installed wheel SHA-256 `d754ffb6bb4337dd758993aed09cf6edbe477e71ff890bfc81a76702124d1814` into a disposable CPython 3.12 venv, with the repository source tree absent from `PYTHONPATH`.
+
+**Verification:** Both installed launcher tests pass: project-bound goal write/read and SDE proposal context. All six installed operational CLI `--help` commands succeed. The installed storage CLI creates a verified backup and restores to a new path; SQLite `quick_check` is `ok` and the smoke row is preserved. The environment and SQLite files are under `/tmp/curator-v2-wheel-acceptance-2026-10-23`. No full suite was run.
+
+**Open gate:** This verifies packaging and disposable consumer-bound behavior only. It does not update the isolated Vhost profile, prove Hermes human identity, or establish Vhost application/live production behavior. Checklist progress remains 139/178 complete (39 open).
+
+**Outcome:** The exact current wheel passes clean-environment launcher, operational CLI, and backup/restore acceptance without touching a consumer repository or live profile.
+
+## 2026-10-23 — Refresh the whole-tree warning inventory
+
+**Intent:** Recount repository-wide Pylint findings after the API decorator exception and lifecycle matrix helper cleanup.
+
+**Changed fact:** The fresh complete source/test-tree report contains 150 diagnostic entries at 9.92/10 and exit 24, including 25 duplicate-code findings. This is down from 151 entries in the immediately preceding whole-tree report after removing the lifecycle helper's excessive-return finding. The report is `/tmp/curator-v2-pylint-2026-10-23-current-final.txt`.
+
+**Verification:** Ran `uv run --locked --group quality pylint src/curatormd_v2 tests` with pinned Pylint 4.1.3 on the current dirty source tree. This was an inventory run; tests were not rerun. `git diff --check` passes.
+
+**Open gate:** Whole-tree complexity, module-size, public-interface, fixture-structure, and duplicate-code findings remain. The API suppression is included and reviewable; this does not close repository-wide Pylint or any deployment/runtime gate. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Published a fresh warning baseline without changing thresholds or claiming full lint completion.
+
+## 2026-10-23 — Decompose the Prometheus contract test
+
+**Intent:** Keep the existing content-free metrics regression reviewable while reducing fixture, format, and budget assertions from one oversized test body.
+
+**Changed fact:** Extracted project/event/staging fixture construction and separate helpers for metric content/privacy, Prometheus family shape, and staging-budget checks. The original single test still covers authorization, private-content omission, counters, unique families, and both budget limits.
+
+**Verification:** The focused `test_project_metrics_are_authorized_bounded_and_content_free` regression passes. Strict Pyright reports zero diagnostics. Focused Pylint for `tests/test_api.py` no longer reports that test's excessive-locals finding and rates the file 9.94/10 with other pre-existing findings. `git diff --check` passes. No full suite or fresh whole-tree Pylint run was performed after this test refactor.
+
+**Open gate:** Repository-wide warning-level Pylint and deployment/runtime gates remain open. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Preserved the metrics contract coverage while making its test setup and assertions easier to inspect.
+
+## 2026-10-23 — Decompose the MCP credential privacy regression
+
+**Intent:** Keep the existing reject-only credential-canary regression reviewable while preserving its source-to-sink assertions.
+
+**Changed fact:** Split the MCP exercise and log assertions from scans of SQLite and sidecars, canonical Markdown, and staging files. The test still submits the same synthetic `ghs_` canary, checks the tool error and logs for non-disclosure, and scans the same persistence surfaces.
+
+**Verification:** The focused `test_sensitive_event_is_absent_from_mcp_errors_logs_and_storage` regression passes. Strict Pyright reports zero diagnostics. Focused Pylint for `tests/test_mcp_server.py` still exits 24 on other structural findings in the large module; the refactored test is not among the reported locations. `git diff --check` passes.
+
+**Open gate:** This is an in-memory MCP and local-storage regression, not a live Hermes transport or comprehensive scanner evaluation. Scanner owner review, deployment policy, authenticated identity, and live-runtime evidence remain open. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Preserved privacy-boundary assertions while separating the MCP/log phase from stored-byte inspection; no checklist status changed.
+
+## 2026-10-23 — Reduce locals in the Hermes goal-binding regression
+
+**Intent:** Simplify the test's result bookkeeping while retaining the complete trusted-context and lifecycle binding contract.
+
+**Changed fact:** Removed intermediate locals for straightforward MCP success/failure assertions and narrowed response content in place. The test continues to verify hidden `ctx`, planned-goal denial, active-goal binding, accepted and replayed lifecycle events, forged durability denial, and profile mismatch denial.
+
+**Verification:** The focused `test_hermes_goal_binding_requires_trusted_context_and_active_project_goal` regression passes. Strict Pyright reports zero diagnostics. Focused Pylint for `tests/test_mcp_server.py` no longer reports the excessive-locals finding in this test; other module complexity/size findings remain, and the focused run exits 24. The documented repository quality sequence (strict Pyright, errors-only Pylint, and Bandit) passes; Bandit emits existing `B603` `nosec` notices in `git_evidence.py`. `git diff --check` passes.
+
+**Open gate:** This is synthetic in-memory MCP test evidence; it does not establish authenticated production identity or a live Hermes route. Repository-wide warning-level Pylint and deployment/runtime gates remain open. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Removed one focused test-structure finding without changing the binding behaviors under test.
+
+## 2026-10-23 — Verify local Curator V2 ledger through Hermes context
+
+**Intent:** Check whether the configured Hermes profile can read persisted Curator V2 ledger state after direct tool access returned unauthenticated.
+
+**Changed fact:** The Hermes Core checkout's read-only `mcp test curator_v2 --probe-curator-status` path connected to the `renew-ssl-coding` profile's installed Curator V2 stdio launcher and returned profile-context ledger data. The probe observed 12 processed receipts, one goal, two facts, zero SDE candidates, and no failed or quarantined events; the paginated goal-list total was one.
+
+**Verification:** The CLI reported a successful connection and discovery of 48 tools. Its read-only probe completed successfully using Hermes-injected profile/session metadata. Project health remained `unknown`, with open gates for event-router, purge-scheduler, host-identity, human-review, and artifact-producer-inventory observations. A direct Codex `project_activity_status` call without Hermes metadata returned `unauthenticated` and no ledger data.
+
+**Open gate:** This verifies local persisted ledger reads through the configured profile context only. The profile has no authenticated human subject; health dependencies, live gateway delivery, production identity, deployment, and production persistence remain unverified.
+
+**Outcome:** Distinguished missing Hermes caller context from local ledger-read failure; no state was mutated and no delivery checklist status changed.
+
+## 2026-10-23 — Extract MCP SDE instruction-contract assertions
+
+**Intent:** Reduce test setup noise while keeping the MCP SDE safety-instruction contract explicit.
+
+**Changed fact:** Moved the six SDE guidance substring assertions into a small test helper. The end-to-end scenario still checks every required phrase before exercising assessment, review, canonical persistence, and purge.
+
+**Verification:** The focused `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end` regression passes. Strict Pyright reports zero diagnostics. Focused Pylint for `tests/test_mcp_server.py` no longer reports excessive locals in the outer scenario; the module rates 9.89/10 and still exits 24 for the scenario's excessive statement count and other size/complexity findings. `git diff --check` passes.
+
+**Open gate:** This test-structure cleanup does not close the repository-wide warning-level Pylint item or any authenticated deployment/runtime gate. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Removed one local-structure finding without changing the end-to-end SDE/purge behavior under test.
+
+## 2026-10-23 — Account for retained staging occurrence records
+
+**Intent:** Include the schema-v27 staging filesystem-occurrence registry in project logical-storage accounting without exposing artifact identifiers.
+
+**Changed fact:** Added separate project-scoped occurrence record counts and UTF-8/decimal-text byte totals to `ProjectStorageUsage` and Prometheus. The staging-age byte calculation now includes nullable device, inode, and occurrence-ID fields. The occurrence measurement includes project, relative path, digest, filesystem identity, generation ID, and observation timestamp; returned API/MCP/metrics surfaces expose only aggregates.
+
+**Verification:** Focused project-usage API, project-metrics, two-project auxiliary-usage, and MCP storage-usage regressions pass. Strict Pyright reports zero diagnostics; errors-only Pylint passes on the touched modules; `git diff --check` passes. Tests verify the new values contribute to logical totals, are project-attributed, and do not disclose the occurrence ID.
+
+**Open gate:** Logical record bytes exclude SQLite page/index overhead, shared WAL and backup allocation, and do not define retention or recovery policy. Owner-approved per-class budgets and deployment growth/restore evidence remain open. Delivery progress remains 139/178 complete (39 open).
+
+**Outcome:** Closed the local schema-to-measurement gap for occurrence records; no retention-policy or checklist status was inferred.
+
+## 2026-10-23 — Guard storage-accounting schema coverage
+
+**Intent:** Make future durable schema additions visible to the open permanent-data-budget work instead of allowing them to bypass the accounting inventory silently.
+
+**Changed fact:** Added `tests/test_storage_accounting.py`, which creates the current migration-backed SQLite schema and asserts its complete application-table set equals 19 project-usage tables plus five host-authorized control-plane tables. The two classifications must remain disjoint.
+
+**Verification:** The focused inventory regression passes. The documented quality commands pass: strict Pyright reports zero diagnostics, errors-only Pylint passes, and Bandit passes with the existing `B603` `nosec` notices in `git_evidence.py`. `git diff --check` passes.
+
+**Open gate:** This regression verifies table inventory classification only. It does not prove the byte query for every class, SQLite page/index/WAL/backup allocation, retention horizons, capacity thresholds, recovery sources, or owner policy. Permanent-data-budget delivery remains open; no checklist status changed.
+
+**Outcome:** Added an executable guard against unclassified durable tables without claiming complete storage accounting or changing checklist progress.
+
+## 2026-10-23 — Verify fact-archive contribution to project logical bytes
+
+**Intent:** Prove reviewer-approved fact compaction accounts for archived storage in project totals while reflecting the active facts removed by the same operation.
+
+**Changed fact:** Extended the fact-compaction regression to snapshot project usage before approval and verify the resulting logical-byte delta equals archive logical bytes plus any audit-byte change and the change in active-fact bytes. Archive growth is therefore checked as a transfer from active records, rather than incorrectly expected to be a pure net increase.
+
+**Verification:** The focused compaction scenario passes. Strict Pyright reports zero diagnostics; errors-only Pylint passes for the changed test; `git diff --check` passes.
+
+**Open gate:** This is logical-byte accounting evidence for the fact-archive class only. It does not establish physical database/index/WAL/backup allocation, retention, recovery, or owner-approved class budgets. No checklist status changed.
+
+**Outcome:** Added a regression for net archive accounting without changing storage behavior or claiming completion of the permanent-data-budget item.
+
+## 2026-10-23 — Refresh lint baseline and place schema inventory with migrations
+
+**Intent:** Keep the durable-table inventory assertion alongside the migration tests and remove an overlong storage-usage expression without suppressing lint rules.
+
+**Changed fact:** Moved the schema-to-accounting set regression into `SchemaMigrationTests` in `tests/test_migrations.py`. Wrapped the staging-occurrence byte assignment in `store.py` to remove one concrete line-length finding.
+
+**Verification:** The focused inventory regression passes. Strict Pyright and errors-only Pylint for the migration test pass. A fresh full-tree warning-level Pylint run reports 145 diagnostics at 9.92/10 and exits 24, down from 146 immediately before this change; the 25 `R0801` findings are unchanged. `git diff --check` passes.
+
+**Open gate:** Repository-wide warning-level Pylint still has 145 diagnostics; this change does not close that item or any deployment/runtime gate. Checklist progress remains 139/178 complete (39 open).
+
+**Outcome:** Removed one line-length finding and kept the schema accounting guard, with no checklist status change.
+
+## 2026-10-23 — Simplify concurrent lifecycle test setup
+
+**Intent:** Reduce excess local state in the competing nonterminal-update regression without changing its two-connection race or assertions.
+
+**Changed fact:** Removed intermediate root, service, and store-tuple locals from `test_competing_nonterminal_updates_reject_stale_lifecycle_revision`; each concurrent service still owns a distinct SQLite connection to the same database, shares the same barrier, and competes at lifecycle revision 1.
+
+**Verification:** The focused concurrency regression passes. Strict Pyright reports zero diagnostics; focused Pylint no longer reports `R0914` for this test, though other findings remain in the module. `git diff --check` passes.
+
+**Open gate:** The whole-tree warning-level report remains at its last verified pre-refactor baseline of 145 diagnostics at 9.92/10; it has not been rerun after this change. Repository-wide Pylint and deployment/runtime gates remain open. No checklist status changed.
+
+**Outcome:** Removed one test-structure finding while preserving the concurrency contract and keeping the full lint gate open.
+
+## 2026-10-23 — Extract lease-claim concurrency assertions
+
+**Intent:** Make the exclusive-claim and expiry-recovery test easier to inspect while retaining its concurrent worker and stale-owner checks.
+
+**Changed fact:** Extracted barrier/thread orchestration and the exactly-one-owner assertion into a private helper in `tests/test_concurrency.py`. The main scenario still forces two SQLite connections to race, expires the winning lease, rejects both stale direct transitions and stale router processing, and accepts processing by the new lease owner.
+
+**Verification:** The focused lease-recovery regression passes. Strict Pyright reports zero diagnostics. Focused module Pylint no longer reports `R0914` for this scenario and rates the module 9.80/10; unrelated module findings remain. `git diff --check` passes.
+
+**Open gate:** The last whole-tree warning-level inventory reports 145 diagnostics before both recent concurrency refactors; it has not been refreshed afterward. Repository-wide Pylint and deployment/runtime gates remain open. No checklist status changed.
+
+**Outcome:** Reduced one concurrency test's local complexity while preserving exclusive claim, lease expiry, stale-owner denial, and successful recovery behavior.
+
+## 2026-10-23 — Extract lifecycle race scenarios from concurrency tests
+
+**Intent:** Reduce local complexity in two cross-connection tests while preserving the synchronization boundaries and their lifecycle outcomes.
+
+**Changed fact:** Moved the paused fact-append/goal-finish worker orchestration into a private helper and simplified temporary database/service setup in the concurrent cancel-versus-supersede test. The finish test still proves completion waits while the admitted write holds its transaction, the write is recorded before completion, and a later write is rejected. The terminal race still asserts exactly one of cancel/supersede succeeds and the goal has one terminal outcome.
+
+**Verification:** Both focused concurrency regressions pass. Strict Pyright reports zero diagnostics. Focused Pylint for `tests/test_concurrency.py` no longer reports excess locals in these two scenarios and rates the module 9.86/10; three other `R0914` findings and unrelated diagnostics remain. `git diff --check` passes.
+
+**Open gate:** The last full-tree warning-level inventory remains 145 diagnostics from before the recent concurrency refactors and has not been refreshed. Repository-wide Pylint and deployment/runtime gates remain open. No checklist status changed.
+
+**Outcome:** Preserved the write-fence and terminal-transition race assertions while removing two local complexity findings.
+
+## 2026-10-23 — Clear concurrency test-module lint findings
+
+**Intent:** Reduce redundant local state across concurrency tests and keep the remaining one-method fixture exception tied to its protocol contract.
+
+**Changed fact:** The paused append/finish helper now asserts its worker results internally. Removed one temporary-path local from the fact-count and global-event-cap races. The `TestVerifier` fixture has a code-local `too-few-public-methods` exception because it deliberately implements the single `attest` operation in `EvidenceVerifier`.
+
+**Verification:** Five focused concurrency regressions pass: exclusive lease recovery, append-versus-finish, cancel-versus-supersede, fact-count cap, and global event-receipt cap. Strict Pyright reports zero diagnostics. Warning-level Pylint for `tests/test_concurrency.py` reports 10.00/10. `git diff --check` passes.
+
+**Open gate:** The last full-tree warning-level inventory remains 145 findings and predates these refactors. Repository-wide Pylint and deployment/runtime gates remain open. No checklist status changed.
+
+**Outcome:** Cleared the warning-level findings in the concurrency test module without changing the tested race behavior or claiming full-tree lint closure.
+
+## 2026-10-23 — Refresh full-tree Pylint inventory after concurrency cleanup
+
+**Intent:** Establish a current warning-level baseline after the recent behavior-preserving reductions in concurrency tests.
+
+**Changed fact:** The full-tree warning-level inventory is now 137 diagnostics at 9.93/10, down eight from the prior run: six `R0914` findings, one `R0903` covered by the narrow single-operation verifier exception, and one `C0301` were removed; `R0801` remains 25. The report was generated on branch `main` at `860ca84328dda9e3085460f257d1d5429519aa0f` with 56 dirty status entries. The status fingerprint is `f34a8de3f98eb387c7694797eb5c856eb8f678260602f192fea1de5680f68fcb`; report `/tmp/curator-v2-pylint-active-latest.txt` SHA-256 is `ea6d3e1e7954bb8affe48385aee761e4fc5cb60e80f18ac47edf89caffc3ba7c`.
+
+**Verification:** Ran `uv run --locked --group quality pylint src/curatormd_v2 tests` with Pylint 4.1.3 on Python 3.12.3. It exits 24 because 137 warning-level findings remain. The concurrency test module separately rates 10.00/10; strict Pyright and focused concurrency regressions pass. `git diff --check` passes.
+
+**Open gate:** The whole-tree Pylint item remains open until all findings are resolved or reviewed narrow exceptions are accepted and the final report exits successfully. Local quality does not close deployment, identity, consumer, or runtime gates. No checklist status changed.
+
+**Outcome:** Replaced the stale 145-finding baseline with a reproducible current snapshot; no full-tree lint completion is claimed.
+
+## 2026-10-23 — Fence direct reference-plugin event writes
+
+**Intent:** Prevent callers of the repository plugin from bypassing the active project revision check applied by the authenticated API during event intake.
+
+**Changed fact:** `ProjectPlugin.process_event` now holds the staging lock and active project revision fence through checklist snapshot validation and service event processing. Existing checklist and producer-contract fixtures now register their project explicitly. Added a regression proving a suspended project's direct plugin call raises a lifecycle conflict and creates no event receipt.
+
+**Verification:** Three focused project-plugin tests pass: suspended direct event rejection, checklist snapshot validation/retry, and reusable producer backend contract. Strict Pyright reports zero errors for the changed module and test. `git diff --check` passes. Focused warning-level Pylint reports 9.90/10 with existing module-size, public-method, argument-count, and test-complexity findings; the full-tree 137-diagnostic baseline predates this patch and was not rerun.
+
+**Open gate:** Direct `CuratorService` calls and other direct plugin write methods remain outside this fence. Consumer-binding lifecycle, source acknowledgement, bounded deregistration drains, trusted deployment identity, and owner-approved lifecycle policy remain open. No checklist status changed.
+
+**Outcome:** Closed one local event-intake bypass in the reference plugin without claiming complete lifecycle enforcement or deployment readiness.
+
+## 2026-10-23 — Fence direct project expiry cleanup
+
+**Intent:** Ensure project suspension also blocks direct reference-plugin cleanup, including approval that purges immediately and retries of previously approved work.
+
+**Changed fact:** Expiry inventory approval, exact expiry-receipt retry, and pending-purge retry now hold the staging lock and active project revision fence through their effects. Existing expiry replacement and pending-SDE fixtures now register their project explicitly. Added a suspension regression that tries all three direct cleanup paths and verifies no artifact is unlinked and the durable expiry receipt remains pending.
+
+**Verification:** Three focused expiry tests pass: replacement occurrence protection, suspended-project cleanup denial, and the 72-hour pending-SDE retention cap. Strict Pyright reports zero diagnostics for the changed module and test. Focused warning-level Pylint remains 9.90/10 with the same module-level findings; `git diff --check` passes. The full-tree Pylint baseline remains the earlier 137-diagnostic run and predates these plugin changes.
+
+**Open gate:** Direct service methods and other direct plugin write paths remain outside the lifecycle fence. Consumer-binding transitions, source acknowledgement, bounded deregistration drains, trusted deployment identity, and owner-approved lifecycle policy remain open. Checklist progress did not change.
+
+**Outcome:** Prevented suspended-project expiry cleanup through three direct plugin entry points without claiming end-to-end lifecycle completion.
+
+## 2026-10-23 — Fence direct plugin staging writes
+
+**Intent:** Stop reference-plugin staging writes after project suspension and preserve the staging-lock-before-SQLite-lock order during concurrent writes and inventory scans.
+
+**Changed fact:** `ProjectPlugin.stage_artifact` now holds the staging lock, validates the goal, acquires the active project revision fence, and publishes the artifact before releasing either boundary. The scoped inventory path now acquires the staging lock before its goal lookup, preventing a concurrent scan from waiting on SQLite ahead of the staging lock. The plugin test fixture now registers its project; config-change fixtures advance the registry fingerprint/revision, and the second repository fixture provisions its own binding. The suspension regression now covers event intake and staging writes.
+
+**Verification:** All 49 tests in `tests/test_project_plugin.py`, all 39 tests in `tests/test_api.py`, and all 19 tests in `tests/test_markdown_persistence.py` pass. Strict Pyright over the four changed implementation/test files reports zero diagnostics. Focused warning-level Pylint over those files rates 9.92/10 with existing structural and test-complexity findings. `git diff --check` passes.
+
+**Open gate:** Direct service methods, other plugin writes, source acknowledgements outside the facade, consumer-binding lifecycle, bounded deregistration drains, trusted deployment identity, and owner-approved lifecycle policy remain open. No checklist status changed.
+
+**Outcome:** Closed direct staging writes across the project suspension cutover and preserved atomic staging visibility without claiming full lifecycle delivery.
+
+## 2026-10-23 — Fence direct plugin goal lifecycle writes
+
+**Intent:** Prevent direct reference-plugin goal creation and activation from bypassing project suspension.
+
+**Changed fact:** Request, accepted-subtask, and checklist goal starts, plus activation, reopen, and criteria amendment, now hold the active registered project revision fence through their service write. The existing suspension regression now verifies direct request-start and activation are rejected with no new goal, alongside the existing event and staging denial checks.
+
+**Verification:** The focused suspension regression passes. Strict Pyright reports zero diagnostics for `project_plugin.py` and its test. `git diff --check` passes. Focused warning-level Pylint rates the pair 9.91/10 with existing structural and test-complexity findings; the fresh repository-wide run still reports 137 findings.
+
+**Open gate:** Other direct plugin/service writes, source acknowledgements, consumer-binding lifecycle, bounded deregistration drains, trusted deployment identity, and owner-approved lifecycle policy remain open. No checklist status changed.
+
+**Outcome:** Fenced direct goal creation and core goal lifecycle transitions across project suspension without claiming complete lifecycle enforcement or deployment readiness.
+
+## 2026-10-23 — Fence direct plugin review and cleanup writes
+
+**Intent:** Keep direct reference-plugin review, retention, and retry mutations on the active-project revision boundary.
+
+**Changed fact:** Fact archival, SDE assessment/correction/feedback/disposition, artifact-inventory finalization, cleanup-authorization receipt creation, hold release, and quarantined-event retry now recheck the active registered project revision before their durable write. Filesystem-mutating review operations retain staging-lock-before-SQLite-lock order. The Markdown projection/verifier path remains a separate multi-phase effect requiring a boundary that keeps verification outside SQLite write transactions.
+
+**Verification:** Four focused tests pass: suspended direct-plugin denial, authenticated API review receipt, held-artifact health, and authenticated quarantine retry. Strict Pyright reports zero diagnostics for the changed plugin and test. `git diff --check` passes.
+
+**Open gate:** Markdown projection and its post-verification receipt/purge effects are not yet consistently fenced for direct plugin calls; direct `CuratorService` writes, source acknowledgements, consumer-binding lifecycle, bounded deregistration drains, trusted deployment identity, and owner-approved policies remain open. No checklist status changed.
+
+**Outcome:** Fenced the remaining direct plugin review and cleanup receipt writes covered here without claiming end-to-end lifecycle enforcement.
+
+## 2026-10-23 — Reject direct project repository-binding replacement
+
+**Intent:** Prevent a reviewed config update from silently changing the repository root behind an active project registration.
+
+**Changed fact:** `CuratorStore.update_project_registration` now rejects a changed repository fingerprint and requires deregistration plus fresh enrollment. Config-only updates with the same fingerprint retain their existing revision-CAS and audit-receipt behavior.
+
+**Verification:** The new project-access regression confirms the failed replacement leaves project registration/revision, exact grants, and append-only audit history unchanged. All 10 `tests.test_project_access` tests pass; focused strict Pyright reports zero diagnostics, focused errors-only Pylint passes, and `git diff --check` passes.
+
+**Open gate:** Consumer-binding state/revision, deregistration/drain, re-enrollment and stale-session fencing remain unimplemented. The project lifecycle acceptance gate remains open; this is a fail-closed local guard, not a completed binding lifecycle.
+
+**Outcome:** Removed the direct repository-fingerprint replacement path until the reviewed deregistration/re-enrollment lifecycle is available.
+
+## 2026-10-23 — Refresh local purge acceptance and quality evidence
+
+**Intent:** Recheck the V2 MCP acceptance path that persists canonical facts before transient-artifact cleanup, and refresh the open repository-wide quality result.
+
+**Changed fact:** No runtime or ledger state changed. The existing MCP acceptance test verifies canonical Markdown and receipts are durable before the unheld transient canary is purged; a separately held artifact remains pending, and the canary content is absent from Markdown.
+
+**Verification:** `PYTHONPATH=tests uv run --locked --group test python -m unittest test_mcp_server.McpServerTests.test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end` passes. The pinned full-tree Pylint command reports 122 findings (111 refactor, 11 convention), exits 24, and its report SHA-256 is `0a40b2e0f69f5c9b576c2bd8d705ffff13567c47dab08552a069262ba710f323`. `git diff --check` passes. A read-only Hermes `renew-ssl-coding` probe succeeds with 12 processed receipts, one goal, and two facts; project health is `unknown` with five missing dependency probes. The plan's Delivery checklist remains 139/178 complete, with 39 open.
+
+**Open gate:** A direct Curator V2 read without host-injected Hermes profile context returns `unauthenticated`. Profile-scoped reads work, but health remains unknown and do not demonstrate fresh event delivery, human identity, complete producers, or deployed scheduler readiness. Repository-wide Pylint, consumer workflow, and deployment gates remain open.
+
+**Outcome:** Refreshed local purge-test evidence without changing a checklist status or claiming live persistence.
+
+## 2026-10-23 — Align Hermes and MCP fixtures with project revision fencing
+
+**Intent:** Keep plugin-bound transport regressions representative of the registered-project requirement after service effects began checking the active revision.
+
+**Changed fact:** Shared test setup now provisions a private consumer config, exact active project registration, explicit test grants, and the separate stdio child process. Hermes-hook and MCP tests bind their plugins to that registered test project before exercising direct service writes.
+
+**Verification:** The full `test_hermes_hook.py` module passes 3 tests and `test_mcp_server.py` passes 7 tests. Strict Pyright reports zero diagnostics; errors-only Pylint for the affected test files and `git diff --check` pass. A fresh pinned whole-tree warning-level Pylint inventory reports 122 findings (111 refactor, 11 convention), down from 124 after two duplicate-code findings were removed; it exits 24. Report SHA-256: `8ebe9152ac1455833d11b4ef06d9a3bc65aff611483191d0b63804eb713a7279`.
+
+**Open gate:** These are local transport-fixture and project-fence checks. They do not implement separate consumer-binding lifecycle or establish authenticated Hermes human identity, deployed routing, or live consumer capture. No checklist item changed.
+
+**Outcome:** Restored focused Hermes/MCP transport verification under the active project revision fence without weakening registration requirements or claiming checklist closure.
+
+## 2026-10-23 — Reduce full-tree Pylint findings on flat read models
+
+**Intent:** Make a behavior-preserving reduction against the open repository-wide warning-level Pylint item.
+
+**Changed fact:** Added reasoned class-local `too-many-instance-attributes` exceptions to six flat receipt, activity, health, and storage records whose fields are individually serialized by the API/MCP contract. No runtime behavior or checklist status changed.
+
+**Verification:** The focused `too-many-instance-attributes` scan for `src/curatormd_v2/read_models.py` passes. Strict Pyright reports zero diagnostics and `git diff --check` passes. The pinned whole-tree command `uv run --locked --group quality pylint src/curatormd_v2 tests --output-format=json` reports 124 diagnostics (113 refactor, 11 convention) and exits 24, down from 130 immediately before this edit. Report SHA-256: `33751864fee6f107a283d5470854b51b5a74efcca43b89abfaf5058592c4aa67`. The edit only changes comments and Pylint directives, so behavioral tests were not rerun.
+
+**Open gate:** Repository-wide warning-level Pylint remains open with 124 findings. No checklist item or release gate changed.
+
+**Outcome:** Removed six reported instance-attribute findings through narrow, reviewable contract exceptions without changing behavior or claiming full-tree lint completion.
+
+## 2026-10-23 — Remove a physical-storage model lint finding
+
+**Intent:** Keep the new host-only physical-storage view maintainable without weakening its data contract.
+
+**Changed fact:** Split SQLite physical measurements into nested page-allocation and file-size read records. The view still reports per-table/index pages, database-page remainder, and database/WAL file sizes, with the same `available`/`unsupported` status.
+
+**Verification:** Focused project-access and attended CLI serialization regressions pass. Strict Pyright and errors-only Pylint on touched files pass; `git diff --check` passes. The pinned full-tree Pylint report fell from 131 to 130 diagnostics (119 refactor, 11 convention), exit 24. Report SHA-256: `f23461b733bff84c270d8fb62de9d8fe71cbb86fffdeeae2f171bc64426d5447`; input fingerprint: `1e008e1f5b6a17f54f5b9402ad35a4c2c79246a980e934d403d51f8be1952fae`.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; the refactor does not close its checklist item.
+
+**Outcome:** Removed the newly introduced excessive-attributes finding while preserving the host-view measurements.
+
+## 2026-10-23 — Measure SQLite pages by durable table class
+
+**Intent:** Add local physical-allocation evidence for durable data classes through the existing trusted-host attended storage view.
+
+**Changed fact:** Added `SQLitePhysicalStorageUsage` to the `ProjectControlPlaneStorageUsage` view. When SQLite `dbstat` is available, the result groups page count and allocated/payload/unused bytes by application table, attributing each table's indexes through `sqlite_master`. It also reports database page size/count, free-list pages, page-allocated and file bytes, WAL bytes, and the residual shared/unattributed database-page bytes. SQLite builds without `dbstat` return an explicit `unsupported` status and leave per-class attribution unknown. Ordinary project storage reads do not return this global physical breakdown.
+
+**Verification:** The host-`VIEW` regression checks application-table allocation, page totals, shared/free-list accounting, and continued authorization. The attended access-CLI regression verifies the physical summary is serialized in the operator view. Strict Pyright reports zero diagnostics; errors-only Pylint passes on changed source/tests; `git diff --check` passes. The development environment reports SQLite 3.45.1 with `dbstat` available.
+
+**Open gate:** This measures the current database only. It does not allocate shared pages to projects, measure backup files, establish owner-approved capacity/retention/recovery thresholds, or prove production growth and restore behavior.
+
+**Outcome:** Added content-free global SQLite page measurements behind the trusted-host access view and retained explicit unsupported/shared-overhead states.
+
+## 2026-10-23 — Measure global SQLite page allocation by table
+
+**Intent:** Add local physical-storage evidence for durable data classes without exposing global database composition through ordinary project reads.
+
+**Changed fact:** The host-authorized attended storage view now reports SQLite `dbstat` page count, allocated bytes, payload bytes, and unused bytes per application table, including indexes attributed through `sqlite_master`. It separately reports page size/count, free-list pages, total allocated/file bytes, WAL bytes, and database pages not attributed to application tables. SQLite builds without `dbstat` return an explicit `unsupported` status and unknown class allocation. This is host-wide because shared SQLite pages cannot be apportioned reliably to one project.
+
+**Verification:** The host `VIEW` test checks page accounting totals and confirms project authorization remains required. The attended CLI test verifies the physical summary survives JSON serialization. Strict Pyright reports zero diagnostics; errors-only Pylint passes on touched source/tests; `git diff --check` passes. The current environment uses SQLite 3.45.1 with `dbstat` available.
+
+**Open gate:** This probe does not measure backup files, establish approved per-class capacity thresholds or retention/recovery rules, or provide deployment growth/restore evidence. The permanent-data-budget checklist item remains open.
+
+**Outcome:** Added an aggregate-only local measure for SQLite table/index allocation while preserving explicit shared/unattributed and unsupported states.
+
+## 2026-10-23 — Account for every current durable schema column
+
+**Intent:** Close the local gap between migrated SQLite columns and project/control-plane logical-byte measurements while keeping physical allocation and owner policy explicit.
+
+**Changed fact:** Auditing the 24 application tables found omitted fields in the goal, criteria-history, fact, archive, review receipt, purge target, expiry target, cleanup authorization, and event-inbox byte formulas. Added those fields; event-row metadata now uses one shared expression for project and global totals, and archive BLOB size comes from its stored payload length. Replaced the table-only schema guard with exact per-column inventories for the 19 project usage tables and five host-authorized control-plane tables. Added an exact raw-row regression proving project and global event totals match every stored event-inbox field, including nullable values.
+
+**Verification:** The focused schema-column and event-byte regressions pass. Focused fact-archive approval, hold inventory, cleanup authorization, and expiry-review regressions pass. Strict Pyright reports zero diagnostics; errors-only Pylint passes on `store.py`, `test_events.py`, and `test_migrations.py`; `git diff --check` passes. No full suite was run.
+
+**Open gate:** This establishes local logical-byte column coverage only. Data owners, approved per-class retention/recovery horizons and thresholds, physical SQLite page/index/WAL/backup allocation, and deployment growth/restore evidence remain open. The permanent-data-budget checklist item remains open.
+
+**Outcome:** Removed the identified local schema-measurement omissions and added a guard against future unclassified columns without claiming a complete storage budget.
+
+## 2026-10-23 — Reduce repository-wide Pylint findings by eleven
+
+**Intent:** Make a bounded cleanup against the current open warning-level Pylint checklist item, without repeating behavioral tests.
+
+**Changed fact:** Replaced the assigned `CuratorService.process_event` guard lambda with a typed local function. Added ten class-local `too-few-public-methods` exceptions to test doubles that intentionally implement a one-method verifier, resolver, or authorizer protocol, plus the minimal bounded stream `read` interface; each exception has an adjacent rationale.
+
+**Verification:** The pinned full-tree command `uv run --locked --group quality pylint src/curatormd_v2 tests --output-format=json` reports 130 findings (119 refactor, 11 convention) and exits 24. The focused `too-few-public-methods` diagnostic check exits 0 at 10.00/10, and `git diff --check` passes. The report SHA-256 is `8492f75cd16bcdaad0f9f27d1e0fc012d892e658670b8314172468950bfb0343`; the Pylint input fingerprint for `pyproject.toml`, `uv.lock`, `src/curatormd_v2`, and `tests` is `02570862a1f6c80155e928f208f34f689fe76752ff8b29f3a3a9528f0d3ddd74` on Python 3.12.3 at `860ca84328dda9e3085460f257d1d5429519aa0f`.
+
+**Open gate:** Repository-wide Pylint still exits 24 with 130 findings. No checklist checkbox changed, and behavioral tests were not rerun for these lint-only edits.
+
+**Outcome:** Removed eleven findings without broad suppressions or behavior changes; repository-wide cleanup remains in progress.
+
+## 2026-10-23 — Remove one repository-wide Pylint finding
+
+**Intent:** Make a behavior-preserving cleanup against the current open warning-level Pylint checklist item.
+
+**Changed fact:** Replaced the assigned `CuratorService.process_event` guard lambda with a typed local function. Guard calls still capture and apply the same expected project revision and optional effect fence.
+
+**Verification:** The pinned full-tree command `uv run --locked --group quality pylint src/curatormd_v2 tests --output-format=json` reports 140 findings (129 refactor, 11 convention), down from 141 immediately before the edit, and exits 24. Report SHA-256 is `60287476dcb69d1a8d4f489d1cf92c5a6224630945b381d62f33f9d03c5d1ed2`; worktree content fingerprint is `a5c6fc24b1463ce96eaa8736cce37cc794c5d4a0fdb22d4da14591427727b15b`. Focused Pylint for `service.py` reports 12 remaining structural findings, and `git diff --check` passes. No tests were run for this behavior-preserving refactor.
+
+**Open gate:** Repository-wide Pylint remains open, with the changed tree still reporting 140 findings. No checklist checkbox changed.
+
+**Outcome:** Removed one unnecessary-lambda diagnostic without suppressions or a behavior change; the broad cleanup item remains in progress.
+
+## 2026-10-23 — Account for unassigned event payload scrub rows
+
+**Intent:** Include the global/unassigned WAL-scrub receipt class in logical storage accounting without attributing it to a consumer project.
+
+**Changed fact:** The host-authorized control-plane storage view now reports `event_payload_scrub_queue_unassigned` in separate `global_classes` totals. It uses the existing bounded aggregate of record count and logical UTF-8 bytes, and does not add those global bytes to any project's logical total or expose scrub/event IDs.
+
+**Verification:** The storage `VIEW` regression creates an unassigned scrub row and verifies exact count/byte accounting, project-local class totals, and identifier-free output; unauthorized consumer access remains denied. Strict Pyright reports zero diagnostics for the changed store/read-model/test files, errors-only Pylint passes, and `git diff --check` passes.
+
+**Open gate:** This accounts for one omitted logical storage class only. Ownership, approved retention/recovery horizon, physical overhead, capacity thresholds, and live backup/restore evidence remain open.
+
+**Outcome:** Added authorized, content-free logical measurement for unassigned scrub receipts without misattributing them to a project or claiming a complete storage policy.
+
+## 2026-10-23 — Fence event effects after external evidence verification
+
+**Intent:** Keep remote evidence verification outside SQLite write transactions while preventing event effects from crossing project suspension.
+
+**Changed fact:** `ProjectPlugin.process_event` captures the active project revision before checklist validation and passes a revision-bound effect fence to `CuratorService.process_event`. The service fences the durable inbox claim, final event commit, and failure receipt independently, with evidence preparation between those transactions. The API event route no longer holds a broad write fence across verification.
+
+**Verification:** A two-connection regression pauses event evidence verification, confirms no SQLite transaction is active, suspends the project, then verifies the stale event cannot append its fact and its inbox receipt remains visible as `received`. All 50 project-plugin tests, 39 API tests, and 22 event tests pass. Strict Pyright reports zero diagnostics for the changed source/test files; `git diff --check` passes.
+
+**Open gate:** Direct `CuratorService` calls without a supplied fence, consumer-binding revision checks, source acknowledgements, resident production routing/scheduling, trusted deployment identity, and live runtime evidence remain open. The broad routing/operations checklist item remains open.
+
+**Outcome:** Closed the event-verification transaction boundary across project suspension for the reference plugin and API paths, without claiming production routing or complete lifecycle enforcement.
+
+## 2026-10-23 — Recheck the Hermes profile ledger view
+
+**Intent:** Revalidate the configured Hermes profile's read-only Curator V2 connection and project scope.
+
+**Changed fact:** No Curator ledger state changed. The Hermes checkout's `renew-ssl-coding` profile connected to the local stdio server with host-injected profile/session context, discovered 48 tools, and read only `vhost-manager-alpha` counts: 12 processed receipts, one goal, two facts, zero pending SDEs, and a paginated goal total of one. The last event remains timestamped 2026-10-21.
+
+**Verification:** `./hermes -p renew-ssl-coding mcp test curator_v2 --probe-curator-status` exited successfully on 2026-10-23. The probe reports health `unknown` with gates for event routing, purge scheduling, host identity, human review, and artifact-producer inventory.
+
+**Open gate:** This confirms profile-context reads only. It does not authenticate a human, deliver a new app-server lifecycle event, or establish production health. Hermes Core Slice G and the Vhost pilot remain open.
+
+**Outcome:** Refreshed local Hermes profile/read-path evidence without changing ledger state or claiming runtime acceptance.
+
+## 2026-10-23 — Fence direct mutations on plugin-bound CuratorService
+
+**Intent:** Prevent callers of the plugin's exposed service object from bypassing the registered project's lifecycle revision.
+
+**Changed fact:** `ProjectPlugin.bind` now binds a config-validating revision capture/fence pair to its `CuratorService`. Direct service goal creation and lifecycle transitions fence their final writes; verification-backed fact append, goal completion, and SDE assessment capture the revision before external verification and fence the commit. Review, inventory, hold, cleanup-receipt, event, and purge paths use the same service-bound effect boundary. Explicit plugin-supplied fences compose with the bound service fence and cannot replace it. Standalone services capture/fence the registry revision when their project is registered; unregistered service instances retain the compatibility path.
+
+**Verification:** The suspended-project regression now verifies `plugin.service.goal_start` is denied. The event evidence race uses a separately constructed `CuratorService` for the registered project, confirms the verifier runs outside the SQLite transaction, and confirms suspension prevents the fact append. The standalone race and full 50-test project-plugin and 39-test API suites pass. Strict Pyright reports zero diagnostics; errors-only Pylint on the changed service/plugin/test files and `git diff --check` pass.
+
+**Open gate:** The registry-only standalone fence does not validate consumer repository/config fingerprints; unregistered standalone service use remains an unfenced compatibility path. Consumer-binding revisions, source acknowledgements beyond the event transaction, and production lifecycle supervision remain open. The full routing/operations checklist is not closed.
+
+**Outcome:** Bound plugin-created and registered standalone service mutations to project suspension/revision cutover while retaining the unregistered compatibility path and keeping production lifecycle enforcement open.
+
+## 2026-10-23 — Fence Markdown persistence after external evidence verification
+
+**Intent:** Prevent canonical Markdown writes and purge-release receipts from landing after project suspension, without running external evidence verification inside a SQLite write transaction.
+
+**Changed fact:** `MarkdownPersistenceAdapter.persist_goal` now accepts a write-effect fence entered only after its evidence snapshot has been verified. `ProjectPlugin.persist_goal` captures the registered revision before verification, holds the staging lock, and applies that same revision fence to atomic Markdown replacement and each canonical receipt/purge transition. Evidence verification and projection recheck remain outside the fence. The API persistence route no longer wraps the entire verifier phase in its broad transaction fence. SDE assessment now similarly verifies evidence before a captured-revision fence around candidate insertion; review inventory/dependency checks run before their fenced writes.
+
+**Verification:** A two-connection regression suspends the project while evidence verification is paused, then confirms the stale projection is rejected and the Markdown target is unchanged. The evidence verifier asserts it never runs inside a SQLite write transaction. All 20 Markdown-persistence tests, 39 API tests, and 49 project-plugin tests pass. Strict Pyright reports zero diagnostics across the changed source and test modules; `git diff --check` passes.
+
+**Open gate:** This fences effects routed through the reference plugin and API. Direct `CuratorService` mutation calls, source acknowledgements outside the facade, consumer-binding lifecycle, bounded deregistration drains, trusted deployment identity, and production runtime/deployment evidence remain open. Checklist status did not change.
+
+**Outcome:** Fenced project-plugin Markdown projection and receipt/purge release at the captured revision while preserving the external-verifier transaction boundary.
+
+## 2026-10-23 — Fence direct plugin review and cleanup writes
+
+**Intent:** Keep direct reference-plugin review, retention, and retry mutations on the same active-project revision boundary as API-routed effects.
+
+**Changed fact:** Fact archival, SDE assessment, correction and feedback, SDE disposition, inventory finalization, cleanup-authorization receipt creation, hold release, and quarantined-event retry now recheck the active registered project revision before their durable write. Filesystem-mutating review operations retain staging-lock-before-SQLite-lock order. The multi-phase Markdown projection/verifier path remains outside this fence pending a boundary that keeps evidence verification out of SQLite transactions.
+
+**Verification:** Four focused tests pass: the suspended direct-plugin regression, authenticated API review receipt, held-artifact health, and authenticated quarantine retry. Strict Pyright reports zero diagnostics for the changed plugin and test. `git diff --check` passes.
+
+**Open gate:** Direct Markdown persistence and its purge effects still need a safe revision-fencing boundary; direct `CuratorService` writes, source acknowledgements, consumer-binding lifecycle, bounded deregistration drains, trusted deployment identity, and owner-approved policies remain open. No checklist status changed.
+
+**Outcome:** Fenced the remaining direct plugin review and cleanup receipt writes covered here without claiming end-to-end lifecycle enforcement.
+
+## 2026-10-23 — Verify current V2 wheel through Vhost and Hermes composition
+
+**Intent:** Verify that the current dirty V2 source packages and still works through the Vhost consumer plugin and Hermes managed-MCP integration.
+
+**Changed fact:** Built wheel `curatormd_v2-0.1.0a1-py3-none-any.whl` with SHA-256 `cdc16e2c36dfee6963d14b588650beb2637f03e6af0938ccb3c7022a74d77c4b` and installed it in a new temporary Python 3.12 environment. Updated two Vhost consumer contract fixtures to register their exact project before invoking revision-fenced plugin/router paths; no Vhost application code or active profile was changed.
+
+**Verification:** All seven Vhost consumer contracts pass against the temporary wheel. The Vhost-owned managed-MCP harness passes against the Hermes Core checkout: three bounded events process, exact retries are acknowledged, a denied delivery is retried after access restoration, the disposable projection reconciles, the out-of-scope target is unchanged, private model/cwd markers are absent, and reviewer-gated persistence remains denied. Curator strict Pyright, errors-only Pylint, focused project-access tests (10), and `git diff --check` pass.
+
+**Open gate:** This is disposable package and protocol composition only. The live Vhost application workflow, current installed profile wheel, cryptographic human identity, production router/scheduler, and production retention/recovery gates remain open.
+
+**Outcome:** Revalidated the current package across the local Vhost plugin and Hermes managed-MCP contract without changing consumer application data or claiming live deployment.
+
+## 2026-10-23 — Add separate consumer binding deregistration lifecycle
+
+**Intent:** Implement the locally supportable consumer-binding lifecycle slice independently of project suspension and preserve the larger authenticated deployment acceptance as open.
+
+**Changed fact:** Schema v33 adds `consumer_bindings` with status, revision, and source epoch plus append-only transition receipts. Project registration creates both project and active binding state atomically; migration backfills existing registrations as active epoch/revision 1 without fabricating historic enrollment receipts. Authorization and the project effect fence require active binding state. Deregistration transitions active -> pending -> deregistered with optimistic revision checks and stable retry IDs. The pending cutover revokes every active grant in the same transaction; finalization refuses while any event inbox row is not processed. Project status and project revision remain unchanged. Repository/config updates and new grants are denied once the binding is no longer active.
+
+**Verification:** `tests.test_project_access` passes 12 tests, including stale launcher denial, grant revocation, project/binding separation, idempotent transition retry, config-update fencing, and unresolved event blocking. `tests.test_access_cli` passes 3 tests, including attended pending/final deregistration and content-free binding history. `tests.test_migrations` passes 34 tests, including v33 active-binding backfill and storage classification. Strict Pyright reports 0 diagnostics for the package and focused test files; errors-only Pylint passes for the changed source/test files; `git diff --check` passes. The full test suite was not run.
+
+**Open gate:** This local slice does not implement a bounded exact-event drain, source acknowledgement fencing, source backlog reconciliation/disposition, re-enrollment and source-epoch rotation, retirement tombstones, or authenticated content-free lifecycle status. Hermes deployment identity and live/runtime lifecycle evidence remain unverified. The full lifecycle checklist item remains open.
+
+**Outcome:** Established distinct, durable consumer deregistration state and fail-closed local authorization while retaining the full consumer lifecycle acceptance as open.

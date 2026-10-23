@@ -290,30 +290,26 @@ def _parse_project_config(encoded: bytes) -> dict[str, object]:
 
 
 def _sensitive_config_category(value: object) -> str | None:
-    """Find one sensitive value without retaining it in a raised exception."""
+    """Find sensitive config text without using recursion or exposing values."""
 
-    if isinstance(value, str):
-        try:
-            validate_safe_text(value, "project config value")
-        except SensitiveContentError as exc:
-            return exc.category
-        return None
-    if isinstance(value, dict):
-        for key, item in cast(dict[object, object], value).items():
-            if isinstance(key, str):
-                key_category = _sensitive_config_category(key)
-                if key_category is not None:
-                    return key_category
-            item_category = _sensitive_config_category(item)
-            if item_category is not None:
-                return item_category
-        return None
-    if isinstance(value, list):
-        for item in cast(list[object], value):
-            category = _sensitive_config_category(item)
-            if category is not None:
-                return category
-    return None
+    pending: list[object] = [value]
+    category: str | None = None
+    while pending and category is None:
+        current = pending.pop()
+        if isinstance(current, str):
+            try:
+                validate_safe_text(current, "project config value")
+            except SensitiveContentError as exc:
+                category = exc.category
+        elif isinstance(current, dict):
+            entries = tuple(cast(dict[object, object], current).items())
+            for key, item in reversed(entries):
+                pending.append(item)
+                if isinstance(key, str):
+                    pending.append(key)
+        elif isinstance(current, list):
+            pending.extend(reversed(cast(list[object], current)))
+    return category
 
 
 def _load_checklists(

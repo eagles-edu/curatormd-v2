@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 from .events import EventInboxStatus, EventKind
 from .models import (
@@ -64,6 +64,13 @@ def _add_health_metrics(
     project: ProjectLabels,
 ) -> None:
     """Add the one-hot health state and current open gates."""
+    _metric(
+        families,
+        "curatormd_database_observation_complete",
+        "Whether the project database health snapshot completed.",
+        project,
+        int(health.database_observation_complete),
+    )
     for state in OperationalHealth:
         _metric(
             families,
@@ -89,14 +96,20 @@ def _add_queue_metrics(
     project: ProjectLabels,
 ) -> None:
     """Add bounded event, review, purge, and expiry queue counts."""
+    counts = health.operational_counts
+    if not health.database_observation_complete or counts is None:
+        return
+    event_counts = _event_queue_counts(health)
+    if event_counts is None:
+        return
     metrics = (
-        ("event_queue_received", health.event_received_count, "Received events."),
-        ("event_queue_failed", health.event_failed_count, "Failed events."),
-        ("event_queue_quarantined", health.event_quarantined_count, "Quarantined events."),
-        ("event_queue_claimed", health.event_claimed_count, "Live claimed events."),
+        ("event_queue_received", event_counts[0], "Received events."),
+        ("event_queue_failed", event_counts[1], "Failed events."),
+        ("event_queue_quarantined", event_counts[2], "Quarantined events."),
+        ("event_queue_claimed", event_counts[3], "Live claimed events."),
         (
             "event_queue_expired_claims",
-            health.event_expired_claim_count,
+            event_counts[4],
             "Expired event claims.",
         ),
         (
@@ -108,32 +121,48 @@ def _add_queue_metrics(
         ),
         (
             "review_queue_pending",
-            health.operational_counts.pending_review_count,
+            counts.pending_review_count,
             "Pending SDE human reviews.",
         ),
         (
             "purge_receipts_pending",
-            health.operational_counts.pending_purge_receipt_count,
+            counts.pending_purge_receipt_count,
             "Pending purge receipts.",
         ),
         (
             "purge_artifacts_pending",
-            health.operational_counts.pending_purge_artifact_count,
+            counts.pending_purge_artifact_count,
             "Pending purge artifact targets.",
         ),
         (
             "expiry_purge_receipts_pending",
-            health.operational_counts.pending_expiry_purge_receipt_count,
+            counts.pending_expiry_purge_receipt_count,
             "Pending attended expiry purge receipts.",
         ),
         (
             "expiry_purge_artifacts_pending",
-            health.operational_counts.pending_expiry_purge_artifact_count,
+            counts.pending_expiry_purge_artifact_count,
             "Pending attended expiry purge artifact targets.",
         ),
     )
     for suffix, value, help_text in metrics:
         _metric(families, f"curatormd_{suffix}", help_text, project, value)
+
+
+def _event_queue_counts(
+    health: ProjectHealthSnapshot,
+) -> tuple[int, int, int, int, int] | None:
+    """Return event counters only when every SQLite observation is present."""
+    values = (
+        health.event_received_count,
+        health.event_failed_count,
+        health.event_quarantined_count,
+        health.event_claimed_count,
+        health.event_expired_claim_count,
+    )
+    if any(value is None for value in values):
+        return None
+    return cast(tuple[int, int, int, int, int], values)
 
 
 def _add_dependency_metrics(
@@ -220,6 +249,86 @@ def _add_storage_metrics(
             "event_payload_bytes_retained",
             usage.event_payload_bytes_retained,
             "Event payload bytes currently retained for this project.",
+        ),
+        (
+            "event_cursors",
+            usage.event_cursor_count,
+            "Retained producer source-sequence cursors in this project.",
+        ),
+        (
+            "event_cursor_bytes",
+            usage.event_cursor_record_bytes,
+            "Logical UTF-8 bytes in project producer source-sequence cursors.",
+        ),
+        (
+            "event_retry_audit_records",
+            usage.event_retry_audit_count,
+            "Retained operator retry audit records in this project.",
+        ),
+        (
+            "event_retry_audit_bytes",
+            usage.event_retry_audit_record_bytes,
+            "Logical UTF-8 bytes in project operator retry audit records.",
+        ),
+        (
+            "staging_artifact_time_records",
+            usage.staging_artifact_time_count,
+            "Retained staging artifact age-metadata records in this project.",
+        ),
+        (
+            "staging_artifact_time_bytes",
+            usage.staging_artifact_time_record_bytes,
+            "Logical UTF-8 bytes in project staging artifact age metadata.",
+        ),
+        (
+            "staging_artifact_occurrence_records",
+            usage.staging_artifact_occurrence_count,
+            "Retained staging filesystem-occurrence identities in this project.",
+        ),
+        (
+            "staging_artifact_occurrence_bytes",
+            usage.staging_artifact_occurrence_record_bytes,
+            "Logical UTF-8 bytes in project staging filesystem-occurrence records.",
+        ),
+        (
+            "expiry_purge_receipt_records",
+            usage.expiry_purge_receipt_count,
+            "Retained project attended-expiry receipts.",
+        ),
+        (
+            "expiry_purge_receipt_bytes",
+            usage.expiry_purge_receipt_record_bytes,
+            "Logical UTF-8 bytes in project attended-expiry receipts.",
+        ),
+        (
+            "expiry_purge_target_records",
+            usage.expiry_purge_target_count,
+            "Retained project attended-expiry target records.",
+        ),
+        (
+            "expiry_purge_target_bytes",
+            usage.expiry_purge_target_record_bytes,
+            "Logical UTF-8 bytes in project attended-expiry targets.",
+        ),
+        (
+            "cleanup_authorization_records",
+            usage.cleanup_authorization_count,
+            "Retained project exact-inventory cleanup authorizations.",
+        ),
+        (
+            "cleanup_authorization_bytes",
+            usage.cleanup_authorization_record_bytes,
+            "Logical UTF-8 bytes in project cleanup authorizations.",
+        ),
+        (
+            "event_payload_scrub_records",
+            usage.event_payload_scrub_count,
+            "Pending project event-payload scrub records.",
+        ),
+        (
+            "event_payload_scrub_bytes",
+            usage.event_payload_scrub_record_bytes,
+            "Logical UTF-8 bytes in pending project payload-scrub records.",
         ),
         (
             "fact_capacity_reached",
@@ -359,11 +468,11 @@ def _render_families(families: MetricFamilies) -> str:
 
 def render_project_metrics(
     health: ProjectHealthSnapshot,
-    usage: ProjectStorageUsage,
+    usage: ProjectStorageUsage | None,
     feedback: SDEQualityFeedbackSummary | None = None,
 ) -> str:
     """Render authorized project metrics; never include text or artifact paths."""
-    if health.project_id != usage.project_id:
+    if usage is not None and health.project_id != usage.project_id:
         raise ValueError("health and usage snapshots must belong to the same project")
     if feedback is not None and feedback.project_id != health.project_id:
         raise ValueError("feedback summary must belong to the health project")
@@ -372,9 +481,10 @@ def render_project_metrics(
     _add_health_metrics(families, health, project)
     _add_queue_metrics(families, health, project)
     _add_dependency_metrics(families, health, project)
-    _add_goal_metrics(families, usage, project)
-    _add_storage_metrics(families, usage, project)
-    _add_feedback_metrics(families, feedback, project)
-    _add_staging_metrics(families, usage, project)
-    _add_event_metrics(families, usage, project)
+    if usage is not None:
+        _add_goal_metrics(families, usage, project)
+        _add_storage_metrics(families, usage, project)
+        _add_feedback_metrics(families, feedback, project)
+        _add_staging_metrics(families, usage, project)
+        _add_event_metrics(families, usage, project)
     return _render_families(families)

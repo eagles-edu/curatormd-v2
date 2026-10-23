@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 import tomllib
@@ -10,9 +11,12 @@ from typing import Any, cast
 import unittest
 
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
+from evidence_fixtures import attest_test_evidence
 
 from curatormd_v2 import (
     APIErrorCode,
+    ArtifactEvidenceBinding,
+    ArtifactReviewDependency,
     ArtifactRef,
     ArtifactStatus,
     AuditReceipt,
@@ -48,6 +52,7 @@ from curatormd_v2 import (
     SDEQualityFeedbackSummary,
     SDEReviewDetail,
     SDEReviewPacket,
+    artifact_dependency_map_sha256,
     StagingArtifactInventory,
     StagingArtifactClass,
     StagingClassUsage,
@@ -56,6 +61,8 @@ from curatormd_v2 import (
     to_api_error,
 )
 from curatormd_v2.service import PurgeTargetStatus
+from curatormd_v2.read_models import build_artifact_review_dependencies
+from curatormd_v2.evidence import EvidenceVerificationContext
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -126,7 +133,11 @@ class ContractSchemaTests(unittest.TestCase):
 
     def test_all_lifecycle_event_payloads_validate_against_v1_schema(self) -> None:
         evidence = EvidenceRef(
-            "test", "unittest://lifecycle-event", "f" * 64, EvidenceOutcome.PASSED
+            "test",
+            "unittest://lifecycle-event",
+            "f" * 64,
+            EvidenceOutcome.PASSED,
+            "9" * 32,
         )
         criterion = SuccessCriterion("criteria-1", "The lifecycle event validates")
         payloads = (
@@ -177,6 +188,60 @@ class ContractSchemaTests(unittest.TestCase):
             )
             with self.subTest(event_type=event.event_kind.value):
                 self.validate_contract("eventEnvelope", event.to_dict())
+
+    def test_artifact_dependency_map_binds_matching_occurrence_and_flags_stale_id(self) -> None:
+        occurrence_id = "a" * 32
+        path = "/staging/proof.txt"
+        digest = "b" * 64
+        evidence = EvidenceRef(
+            "repository_test",
+            path,
+            digest,
+            EvidenceOutcome.PASSED,
+            occurrence_id,
+        )
+        attestation = attest_test_evidence(
+            evidence,
+            EvidenceVerificationContext(
+                "project-occurrence",
+                "goal-occurrence",
+                "criterion-occurrence",
+                datetime.now(UTC),
+            ),
+        )
+        fact = Fact(
+            goal_id="goal-occurrence",
+            kind=FactKind.VERIFICATION,
+            bullet="The staged proof is tied to its file occurrence.",
+            criterion_id="criterion-occurrence",
+            evidence=(evidence,),
+            verification_attestations=(attestation,),
+        )
+        matching_artifact = ArtifactRef(path, digest, occurrence_id=occurrence_id)
+        stale_artifact = ArtifactRef(path, digest, occurrence_id="c" * 32)
+
+        dependencies = build_artifact_review_dependencies(
+            (fact,), (), (matching_artifact, stale_artifact)
+        )
+        self.assertEqual(len(dependencies), 2)
+        matching, stale = dependencies[0], dependencies[1]
+
+        self.assertIs(matching.binding, ArtifactEvidenceBinding.OCCURRENCE_MATCH)
+        self.assertIs(stale.binding, ArtifactEvidenceBinding.OCCURRENCE_MISMATCH)
+        self.assertEqual(
+            stale.evidence_dependencies[0].evidence.occurrence_id,
+            occurrence_id,
+        )
+        unverified_fact = replace(fact, verification_attestations=())
+        unattested_dependencies = build_artifact_review_dependencies(
+            (unverified_fact,), (), (matching_artifact,)
+        )
+        self.assertEqual(len(unattested_dependencies), 1)
+        unattested = unattested_dependencies[0]
+        self.assertIs(
+            unattested.binding,
+            ArtifactEvidenceBinding.OCCURRENCE_UNATTESTED,
+        )
 
     def test_processed_event_receipts_validate_with_both_dispositions(self) -> None:
         for disposition in (
@@ -373,6 +438,10 @@ class ContractSchemaTests(unittest.TestCase):
             ),
             total=1,
         )
+        dependencies = tuple(
+            ArtifactReviewDependency(item, ArtifactEvidenceBinding.UNMAPPED)
+            for item in receipt.artifacts
+        )
         review_packet = SDEReviewPacket(
             detail=SDEReviewDetail(
                 candidate=candidate,
@@ -400,6 +469,9 @@ class ContractSchemaTests(unittest.TestCase):
                 manifest_sha256="f" * 64,
                 scope_goal_id=goal.goal_id,
             ),
+            review_artifacts=receipt.artifacts,
+            artifact_dependencies=dependencies,
+            dependency_map_sha256=artifact_dependency_map_sha256(dependencies),
         )
 
         for name, record in (
@@ -416,6 +488,11 @@ class ContractSchemaTests(unittest.TestCase):
         ):
             with self.subTest(contract=name):
                 self.validate_contract(name, _json_record(record))
+
+        with self.assertRaisesRegex(ValueError, "dependency map digest"):
+            replace(review_packet, dependency_map_sha256="0" * 64)
+        with self.assertRaisesRegex(ValueError, "exact ordered inventory"):
+            replace(review_packet, artifact_dependencies=())
 
         failed_target = replace(
             purge_target,

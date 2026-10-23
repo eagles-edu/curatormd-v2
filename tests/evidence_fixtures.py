@@ -26,4 +26,5 @@ def attest_test_evidence(
         verified_at=now.isoformat(timespec="microseconds"),
         valid_until=(now + timedelta(days=1)).isoformat(timespec="microseconds"),
         revocation_checked_at=now.isoformat(timespec="microseconds"),
+        occurrence_id=evidence.occurrence_id,
     )

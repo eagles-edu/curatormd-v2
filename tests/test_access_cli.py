@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 
+from project_fixtures import create_consumer_repo
+
 from curatormd_v2 import ProjectAction
 from curatormd_v2.access_cli import main
 from curatormd_v2.hosted_mcp import build_local_profile_mcp
+from curatormd_v2.project_config import ProjectConfig
 
 
 class _InteractiveInput(StringIO):
@@ -26,11 +30,7 @@ class AccessCliTests(unittest.TestCase):
     """Require an attended exact confirmation before access-ledger writes."""
 
     def _project(self, root: Path) -> None:
-        (root / ".git").mkdir()
-        (root / "src").mkdir()
-        (root / "docs").mkdir()
-        (root / "persistence").mkdir()
-        (root / ".curatormd-v2" / "staging").mkdir(parents=True)
+        create_consumer_repo(root)
         (root / "docs" / "tasks.md").write_text("- [ ] Access CLI test\n")
         (root / "persistence" / "HISTORY.md").write_text("# History\n")
         (root / ".curatormd-v2.toml").write_text(
@@ -87,126 +87,233 @@ class AccessCliTests(unittest.TestCase):
     def test_attended_registration_and_exact_grants_activate_the_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
+            self._register_grants_and_verify_launcher(root, database)
+            self._update_config_and_verify_replay(root, database)
+            self._suspend_reactivate_and_revoke(root, database)
+            self._assert_access_audit(root, database)
 
-            registered, registration_output, errors = self._run(
-                "register",
+    def _register_grants_and_verify_launcher(self, root: Path, database: Path) -> None:
+        """Register one isolated project, grant exact access, and verify launch."""
+        registered, registration_output, errors = self._run(
+            "register",
+            root,
+            database,
+            "REGISTER cli-project",
+            "--rationale",
+            "Approve the local CLI integration fixture",
+        )
+        self.assertEqual(registered, 0, errors)
+        self.assertIn("Type exactly: REGISTER cli-project", errors)
+        self.assertEqual(
+            json.loads(registration_output)["registration"]["status"], "active"
+        )
+        for action in ("read", "write"):
+            phrase = f"GRANT {action} cli-project gptmd-coding"
+            granted, _, errors = self._run(
+                "grant",
                 root,
                 database,
-                "REGISTER cli-project",
+                phrase,
+                "--subject-id",
+                "gptmd-coding",
+                "--action",
+                action,
                 "--rationale",
-                "Approve the local CLI integration fixture",
+                f"Grant exact {action} access for the test profile",
             )
-            self.assertEqual(registered, 0, errors)
-            self.assertIn("Type exactly: REGISTER cli-project", errors)
-            self.assertEqual(
-                json.loads(registration_output)["registration"]["status"], "active"
-            )
-
-            for action in ("read", "write"):
-                phrase = f"GRANT {action} cli-project gptmd-coding"
-                granted, _, errors = self._run(
-                    "grant",
-                    root,
-                    database,
-                    phrase,
-                    "--subject-id",
-                    "gptmd-coding",
-                    "--action",
-                    action,
-                    "--rationale",
-                    f"Grant exact {action} access for the test profile",
+            self.assertEqual(granted, 0, errors)
+        runtime = build_local_profile_mcp(
+            project_root=root,
+            database=database,
+            profile_id="gptmd-coding",
+            allow_write=True,
+        )
+        try:
+            self.assertTrue(
+                runtime.api.authorizer.authorize(
+                    runtime.caller, "cli-project", ProjectAction.WRITE
                 )
-                self.assertEqual(granted, 0, errors)
+            )
+        finally:
+            runtime.close()
 
-            runtime = build_local_profile_mcp(
+    def _update_config_and_verify_replay(self, root: Path, database: Path) -> None:
+        """Approve one reviewed config transition and prove its retry is stable."""
+        config_path = root / ".curatormd-v2.toml"
+        config_path.write_text(config_path.read_text() + "\n")
+        reviewed_config = ProjectConfig.load(root)
+        update_phrase = (
+            "UPDATE cli-project TRANSITION cli-config-update-1 AT REVISION 1 "
+            "TO REPOSITORY "
+            f"{reviewed_config.repository_fingerprint} CONFIG "
+            f"{reviewed_config.config_sha256} API "
+            f"{reviewed_config.backend_api_version}"
+        )
+        updated, updated_output, errors = self._run(
+            "update",
+            root,
+            database,
+            update_phrase,
+            "--rationale",
+            "Approve the reviewed config fingerprint change",
+            "--expected-revision",
+            "1",
+            "--transition-id",
+            "cli-config-update-1",
+        )
+        self.assertEqual(updated, 0, errors)
+        updated_payload = json.loads(updated_output)
+        self.assertEqual(updated_payload["transition_receipt"]["revision"], 2)
+        self.assertFalse(updated_payload["replayed"])
+        retried, retry_output, errors = self._run(
+            "update",
+            root,
+            database,
+            update_phrase,
+            "--rationale",
+            "Approve the reviewed config fingerprint change",
+            "--expected-revision",
+            "1",
+            "--transition-id",
+            "cli-config-update-1",
+        )
+        self.assertEqual(retried, 0, errors)
+        retry_payload = json.loads(retry_output)
+        self.assertTrue(retry_payload["replayed"])
+        self.assertEqual(
+            retry_payload["transition_receipt"],
+            updated_payload["transition_receipt"],
+        )
+
+    def _suspend_reactivate_and_revoke(self, root: Path, database: Path) -> None:
+        """Verify suspension fencing, explicit reactivation, and exact revoke."""
+        suspended, _, errors = self._run(
+            "suspend",
+            root,
+            database,
+            "SUSPEND cli-project AT REVISION 2 TRANSITION cli-suspend-1",
+            "--rationale",
+            "Suspend access during the lifecycle regression",
+            "--expected-revision",
+            "2",
+            "--transition-id",
+            "cli-suspend-1",
+        )
+        self.assertEqual(suspended, 0, errors)
+        with self.assertRaisesRegex(ValueError, "registration fingerprint"):
+            build_local_profile_mcp(
                 project_root=root,
                 database=database,
                 profile_id="gptmd-coding",
                 allow_write=True,
             )
-            try:
-                self.assertTrue(
-                    runtime.api.authorizer.authorize(
-                        runtime.caller, "cli-project", ProjectAction.WRITE
-                    )
-                )
-            finally:
-                runtime.close()
+        reactivated, _, errors = self._run(
+            "reactivate",
+            root,
+            database,
+            "REACTIVATE cli-project AT REVISION 3 TRANSITION cli-reactivate-1",
+            "--rationale",
+            "Restore access after the suspension regression",
+            "--expected-revision",
+            "3",
+            "--transition-id",
+            "cli-reactivate-1",
+        )
+        self.assertEqual(reactivated, 0, errors)
+        revoked, _, errors = self._run(
+            "revoke",
+            root,
+            database,
+            "REVOKE write cli-project gptmd-coding",
+            "--subject-id",
+            "gptmd-coding",
+            "--action",
+            "write",
+            "--rationale",
+            "Remove write access after the positive launcher check",
+        )
+        self.assertEqual(revoked, 0, errors)
 
-            config_path = root / ".curatormd-v2.toml"
-            config_path.write_text(config_path.read_text() + "\n")
-            updated, _, errors = self._run(
-                "update",
-                root,
-                database,
-                "UPDATE cli-project",
-                "--rationale",
-                "Approve the reviewed config fingerprint change",
+    def _assert_access_audit(self, root: Path, database: Path) -> None:
+        """Check the durable exact grant, revocation, and registration audit."""
+        viewed, view_output, errors = self._run(
+            "view", root, database, "VIEW cli-project ACCESS"
+        )
+        self.assertEqual(viewed, 0, errors)
+        audit = json.loads(view_output)
+        self.assertEqual(len(audit["grants"]), 2)
+        self.assertEqual(len(audit["audit"]), 4)
+        self.assertEqual(audit["registration"]["status"], "active")
+        storage_classes = {
+            item["class_name"]: item["record_count"]
+            for item in audit["control_plane_storage_usage"]["classes"]
+        }
+        self.assertEqual(storage_classes["project_registry"], 1)
+        self.assertEqual(storage_classes["project_registry_audit"], 4)
+        self.assertEqual(storage_classes["project_grants"], 2)
+        self.assertEqual(storage_classes["project_grant_revocations"], 1)
+        physical = audit["control_plane_storage_usage"]["sqlite_physical"]
+        self.assertIn(physical["status"], {"available", "unsupported"})
+        if physical["status"] == "available":
+            physical_classes = {
+                item["class_name"]: item for item in physical["classes"]
+            }
+            self.assertIn("project_registry", physical_classes)
+            self.assertGreater(
+                physical_classes["project_registry"]["allocated_bytes"], 0
             )
-            self.assertEqual(updated, 0, errors)
+        write_grant = next(
+            grant for grant in audit["grants"] if grant["action"] == "write"
+        )
+        self.assertIsNotNone(write_grant["revoked_at"])
 
-            suspended, _, errors = self._run(
-                "suspend",
-                root,
-                database,
-                "SUSPEND cli-project",
-                "--rationale",
-                "Suspend access during the lifecycle regression",
+    def test_attended_binding_deregistration_is_exposed_as_separate_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "curator.sqlite3"
+            registered, _, errors = self._run(
+                "register", root, database, "REGISTER cli-project",
+                "--rationale", "Enroll the consumer fixture",
             )
-            self.assertEqual(suspended, 0, errors)
-            with self.assertRaisesRegex(ValueError, "registration fingerprint"):
-                build_local_profile_mcp(
-                    project_root=root,
-                    database=database,
-                    profile_id="gptmd-coding",
-                    allow_write=True,
-                )
-
-            reactivated, _, errors = self._run(
-                "reactivate",
-                root,
-                database,
-                "REACTIVATE cli-project",
-                "--rationale",
-                "Restore access after the suspension regression",
+            self.assertEqual(registered, 0, errors)
+            granted, _, errors = self._run(
+                "grant", root, database, "GRANT read cli-project cli-reader",
+                "--subject-id", "cli-reader", "--action", "read",
+                "--rationale", "Grant one read scope",
             )
-            self.assertEqual(reactivated, 0, errors)
-            revoked, _, errors = self._run(
-                "revoke",
-                root,
-                database,
-                "REVOKE write cli-project gptmd-coding",
-                "--subject-id",
-                "gptmd-coding",
-                "--action",
-                "write",
-                "--rationale",
-                "Remove write access after the positive launcher check",
+            self.assertEqual(granted, 0, errors)
+            pending, pending_output, errors = self._run(
+                "deregister", root, database,
+                "DEREGISTER cli-project AT BINDING REVISION 1 TRANSITION cli-deregister-1",
+                "--rationale", "Stop consumer access",
+                "--expected-revision", "1", "--transition-id", "cli-deregister-1",
             )
-            self.assertEqual(revoked, 0, errors)
-
+            self.assertEqual(pending, 0, errors)
+            self.assertEqual(json.loads(pending_output)["binding"]["status"], "deregistration_pending")
+            finalized, final_output, errors = self._run(
+                "deregister_finalize", root, database,
+                "DEREGISTER_FINALIZE cli-project AT BINDING REVISION 2 TRANSITION cli-deregister-final-1",
+                "--rationale", "Finalize after local event reconciliation",
+                "--expected-revision", "2", "--transition-id", "cli-deregister-final-1",
+            )
+            self.assertEqual(finalized, 0, errors)
+            self.assertEqual(json.loads(final_output)["binding"]["status"], "deregistered")
             viewed, view_output, errors = self._run(
                 "view", root, database, "VIEW cli-project ACCESS"
             )
             self.assertEqual(viewed, 0, errors)
-            audit = json.loads(view_output)
-            self.assertEqual(len(audit["grants"]), 2)
-            self.assertEqual(len(audit["audit"]), 4)
-            self.assertEqual(audit["registration"]["status"], "active")
-            self.assertTrue(
-                next(
-                    grant for grant in audit["grants"] if grant["action"] == "write"
-                )["revoked_at"]
-                is not None
-            )
+            state = json.loads(view_output)
+            self.assertEqual(state["registration"]["status"], "active")
+            self.assertEqual(state["consumer_binding"]["status"], "deregistered")
+            self.assertEqual(len(state["consumer_binding_audit"]), 3)
+            self.assertEqual(state["grants"][0]["revoked_by"], f"local-uid:{os.geteuid()}")
 
     def test_noninteractive_or_wrong_confirmation_cannot_modify_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            root.mkdir()
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
             code, output, _ = self._run(

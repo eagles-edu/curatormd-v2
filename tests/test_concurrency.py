@@ -38,6 +38,8 @@ from curatormd_v2.events import (
 class TestVerifier:
     """Accept only the stable fixture evidence locator."""
 
+    # pylint: disable=too-few-public-methods  # Mirrors the one-method verifier protocol.
+
     def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
         """Attest only the passing fixture locator used by concurrency tests."""
 
@@ -88,6 +90,102 @@ class SnapshotInjectingStore(CuratorStore):
 class GoalConcurrencyTests(unittest.TestCase):
     """Prove fact append and completion serialize across SQLite connections."""
 
+    def _run_fact_append_finish_race(
+        self,
+        goal_id: str,
+        writer_store: PausingStore,
+        writer_service: CuratorService,
+        finisher_service: CuratorService,
+    ) -> None:
+        """Hold an admitted fact append while another connection finishes."""
+
+        write_result: list[object] = []
+        finish_result: list[object] = []
+        failures: list[BaseException] = []
+        finish_done = Event()
+
+        def record_fact() -> None:
+            try:
+                write_result.append(
+                    writer_service.goal_fact(
+                        goal_id,
+                        FactKind.CHANGE,
+                        "Recorded the implementation change",
+                    )
+                )
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                # Capture worker failures so the parent test can assert them.
+                failures.append(exc)
+
+        def finish_goal() -> None:
+            try:
+                finish_result.append(
+                    finisher_service.goal_finish(
+                        goal_id, "All criteria have passing evidence"
+                    )
+                )
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                # Capture worker failures so the parent test can assert them.
+                failures.append(exc)
+            finally:
+                finish_done.set()
+
+        writer = Thread(target=record_fact)
+        finisher = Thread(target=finish_goal)
+        writer.start()
+        self.assertTrue(writer_store.append_entered.wait(timeout=3))
+        finisher.start()
+        try:
+            self.assertFalse(
+                finish_done.wait(timeout=0.2),
+                "completion must wait while the fact transaction owns the write lock",
+            )
+        finally:
+            writer_store.continue_append.set()
+        writer.join(timeout=5)
+        finisher.join(timeout=5)
+
+        self.assertFalse(writer.is_alive())
+        self.assertFalse(finisher.is_alive())
+        self.assertEqual(failures, [])
+        self.assertEqual(len(write_result), 1)
+        self.assertEqual(len(finish_result), 1)
+
+    @staticmethod
+    def _claim_pending_events_concurrently(
+        stores: tuple[CuratorStore, CuratorStore],
+        event: EventEnvelope,
+        assertion: unittest.TestCase,
+    ) -> tuple[str, str]:
+        """Assert exclusive event ownership and return old and other worker IDs."""
+
+        barrier = Barrier(3)
+        claims: list[tuple[str, tuple[EventEnvelope, ...]]] = []
+
+        def claim(index: int, owner: str) -> None:
+            barrier.wait(timeout=3)
+            result = stores[index].claim_pending_events(owner, lease_seconds=30)
+            claims.append((owner, result))
+
+        threads = (
+            Thread(target=claim, args=(0, "worker-a")),
+            Thread(target=claim, args=(1, "worker-b")),
+        )
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=3)
+        for thread in threads:
+            thread.join(timeout=5)
+        assertion.assertTrue(all(not thread.is_alive() for thread in threads))
+        owners_with_event = [
+            (owner, events[0]) for owner, events in claims if events
+        ]
+        assertion.assertEqual(len(owners_with_event), 1)
+        old_owner, claimed_event = owners_with_event[0]
+        assertion.assertEqual(claimed_event.event_id, event.event_id)
+        new_owner = "worker-b" if old_owner == "worker-a" else "worker-a"
+        return old_owner, new_owner
+
     def test_operational_health_inputs_share_one_sqlite_read_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "health.sqlite3"
@@ -103,33 +201,37 @@ class GoalConcurrencyTests(unittest.TestCase):
             ))
             self.addCleanup(reader.close)
             self.addCleanup(writer.close)
-            queue, _counts, usage = reader.project_health_inputs("project-a")
+            queue, _counts, usage, scrub_count, database_observed_at = (
+                reader.project_health_inputs("project-a")
+            )
 
             self.assertTrue(reader.injected)
             self.assertEqual(queue.received_count, 0)
             self.assertEqual(usage.event_receipt_count, 0)
+            self.assertIsInstance(scrub_count, int)
+            self.assertTrue(database_observed_at)
             self.assertEqual(
                 reader.event_queue_status("project-a").received_count, 1
             )
 
     def test_competing_nonterminal_updates_reject_stale_lifecycle_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            database = root / "curator.sqlite3"
-            staging = root / "staging"
+            database = Path(temporary) / "curator.sqlite3"
+            staging = Path(temporary) / "staging"
             staging.mkdir()
             setup_store = CuratorStore(database)
-            setup_service = CuratorService(setup_store, ArtifactPurger(staging))
-            goal = setup_service.goal_start(
+            goal = CuratorService(setup_store, ArtifactPurger(staging)).goal_start(
                 "Guard nonterminal status updates",
                 (SuccessCriterion("done", "The task is resolved"),),
             )
             setup_store.close()
 
-            stores = (CuratorStore(database), CuratorStore(database))
-            self.addCleanup(stores[0].close)
-            self.addCleanup(stores[1].close)
-            services = tuple(CuratorService(store, ArtifactPurger(staging)) for store in stores)
+            services = (
+                CuratorService(CuratorStore(database), ArtifactPurger(staging)),
+                CuratorService(CuratorStore(database), ArtifactPurger(staging)),
+            )
+            self.addCleanup(services[0].store.close)
+            self.addCleanup(services[1].store.close)
             barrier = Barrier(3)
             outcomes: list[str] = []
 
@@ -177,11 +279,9 @@ class GoalConcurrencyTests(unittest.TestCase):
         """Lease one event once, then recover it after the owner disappears."""
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            database = root / "curator.sqlite3"
-            staging = root / "staging"
+            database = Path(temporary) / "curator.sqlite3"
+            staging = Path(temporary) / "staging"
             staging.mkdir()
-            setup_store = CuratorStore(database)
             event = EventEnvelope(
                 "lease-event",
                 "project-a",
@@ -191,8 +291,8 @@ class GoalConcurrencyTests(unittest.TestCase):
                     (SuccessCriterion("done", "Only the active lease owner processes it"),),
                 ),
             )
-            setup_store.ingest_event(event)
-            setup_store.close()
+            with CuratorStore(database) as setup_store:
+                setup_store.ingest_event(event)
 
             stores = (CuratorStore(database), CuratorStore(database))
             self.addCleanup(stores[0].close)
@@ -201,32 +301,9 @@ class GoalConcurrencyTests(unittest.TestCase):
                 CuratorService(store, ArtifactPurger(staging), project_id="project-a")
                 for store in stores
             )
-            barrier = Barrier(3)
-            claims: list[tuple[str, tuple[EventEnvelope, ...]]] = []
-
-            def claim(index: int, owner: str) -> None:
-                barrier.wait(timeout=3)
-                result = stores[index].claim_pending_events(owner, lease_seconds=30)
-                claims.append((owner, result))
-
-            threads = (
-                Thread(target=claim, args=(0, "worker-a")),
-                Thread(target=claim, args=(1, "worker-b")),
+            old_owner, new_owner = self._claim_pending_events_concurrently(
+                stores, event, self
             )
-            for thread in threads:
-                thread.start()
-            barrier.wait(timeout=3)
-            for thread in threads:
-                thread.join(timeout=5)
-
-            self.assertTrue(all(not thread.is_alive() for thread in threads))
-            owners_with_event = [
-                (owner, events[0]) for owner, events in claims if events
-            ]
-            self.assertEqual(len(owners_with_event), 1)
-            old_owner, claimed_event = owners_with_event[0]
-            self.assertEqual(claimed_event.event_id, event.event_id)
-            new_owner = "worker-b" if old_owner == "worker-a" else "worker-a"
             queue = stores[0].event_queue_status("project-a")
             self.assertEqual(queue.claimed_count, 1)
 
@@ -265,34 +342,32 @@ class GoalConcurrencyTests(unittest.TestCase):
 
     def test_fact_validated_active_cannot_append_after_concurrent_completion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            database = root / "curator.sqlite3"
-            staging = root / "staging"
+            database = Path(temporary) / "curator.sqlite3"
+            staging = Path(temporary) / "staging"
             staging.mkdir()
-            setup_store = CuratorStore(database)
-            setup_service = CuratorService(
-                setup_store, ArtifactPurger(staging), TestVerifier()
-            )
-            goal = setup_service.goal_start(
-                "Record a change without racing completion",
-                (SuccessCriterion("ready", "The readiness check passes"),),
-                goal_id="goal-race",
-            )
-            setup_service.goal_fact(
-                goal.goal_id,
-                FactKind.VERIFICATION,
-                "The readiness check passed",
-                criterion_id="ready",
-                evidence=(
-                    EvidenceRef(
-                        "unit-test",
-                        "test-proof:ready",
-                        "a" * 64,
-                        EvidenceOutcome.PASSED,
+            with CuratorStore(database) as setup_store:
+                setup_service = CuratorService(
+                    setup_store, ArtifactPurger(staging), TestVerifier()
+                )
+                goal = setup_service.goal_start(
+                    "Record a change without racing completion",
+                    (SuccessCriterion("ready", "The readiness check passes"),),
+                    goal_id="goal-race",
+                )
+                setup_service.goal_fact(
+                    goal.goal_id,
+                    FactKind.VERIFICATION,
+                    "The readiness check passed",
+                    criterion_id="ready",
+                    evidence=(
+                        EvidenceRef(
+                            "unit-test",
+                            "test-proof:ready",
+                            "a" * 64,
+                            EvidenceOutcome.PASSED,
+                        ),
                     ),
-                ),
-            )
-            setup_store.close()
+                )
 
             writer_store = PausingStore(database)
             finisher_store = CuratorStore(database)
@@ -306,57 +381,12 @@ class GoalConcurrencyTests(unittest.TestCase):
             self.addCleanup(finisher_store.close)
             writer_store.pause_append = True
 
-            write_result: list[object] = []
-            finish_result: list[object] = []
-            failures: list[BaseException] = []
-            finish_done = Event()
-
-            def record_fact() -> None:
-                try:
-                    write_result.append(
-                        writer_service.goal_fact(
-                            goal.goal_id,
-                            FactKind.CHANGE,
-                            "Recorded the implementation change",
-                        )
-                    )
-                except Exception as exc:  # pylint: disable=broad-exception-caught
-                    # Capture worker failures so the parent test can assert them.
-                    failures.append(exc)
-
-            def finish_goal() -> None:
-                try:
-                    finish_result.append(
-                        finisher_service.goal_finish(
-                            goal.goal_id, "All criteria have passing evidence"
-                        )
-                    )
-                except Exception as exc:  # pylint: disable=broad-exception-caught
-                    # Capture worker failures so the parent test can assert them.
-                    failures.append(exc)
-                finally:
-                    finish_done.set()
-
-            writer = Thread(target=record_fact)
-            finisher = Thread(target=finish_goal)
-            writer.start()
-            self.assertTrue(writer_store.append_entered.wait(timeout=3))
-            finisher.start()
-            try:
-                self.assertFalse(
-                    finish_done.wait(timeout=0.2),
-                    "completion must wait while the fact transaction owns the write lock",
-                )
-            finally:
-                writer_store.continue_append.set()
-            writer.join(timeout=5)
-            finisher.join(timeout=5)
-
-            self.assertFalse(writer.is_alive())
-            self.assertFalse(finisher.is_alive())
-            self.assertEqual(failures, [])
-            self.assertEqual(len(write_result), 1)
-            self.assertEqual(len(finish_result), 1)
+            self._run_fact_append_finish_race(
+                goal.goal_id,
+                writer_store,
+                writer_service,
+                finisher_service,
+            )
             completed = finisher_store.get_goal(goal.goal_id)
             self.assertEqual(completed.status, GoalStatus.COMPLETE)
             change_fact = next(
@@ -373,25 +403,28 @@ class GoalConcurrencyTests(unittest.TestCase):
 
     def test_concurrent_cancel_and_supersede_have_one_terminal_winner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            database = root / "curator.sqlite3"
-            staging = root / "staging"
+            database = Path(temporary) / "curator.sqlite3"
+            staging = Path(temporary) / "staging"
             staging.mkdir()
-            initial_store = CuratorStore(database)
-            initial_service = CuratorService(initial_store, ArtifactPurger(staging))
-            old = initial_service.goal_start(
-                "Old scope", (SuccessCriterion("done", "Old scope is done"),)
-            )
-            replacement = initial_service.goal_start(
-                "Replacement scope",
-                (SuccessCriterion("done", "Replacement scope is done"),),
-            )
-            initial_store.close()
+            with CuratorStore(database) as initial_store:
+                old = CuratorService(
+                    initial_store, ArtifactPurger(staging)
+                ).goal_start(
+                    "Old scope", (SuccessCriterion("done", "Old scope is done"),)
+                )
+                replacement = CuratorService(
+                    initial_store, ArtifactPurger(staging)
+                ).goal_start(
+                    "Replacement scope",
+                    (SuccessCriterion("done", "Replacement scope is done"),),
+                )
 
-            stores = (CuratorStore(database), CuratorStore(database))
-            self.addCleanup(stores[0].close)
-            self.addCleanup(stores[1].close)
-            services = tuple(CuratorService(store, ArtifactPurger(staging)) for store in stores)
+            services = (
+                CuratorService(CuratorStore(database), ArtifactPurger(staging)),
+                CuratorService(CuratorStore(database), ArtifactPurger(staging)),
+            )
+            self.addCleanup(services[0].store.close)
+            self.addCleanup(services[1].store.close)
             events = (
                 EventEnvelope(
                     "race-cancel",
@@ -427,9 +460,8 @@ class GoalConcurrencyTests(unittest.TestCase):
 
     def test_concurrent_connections_cannot_exceed_fact_count_ceiling(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            database = root / "curator.sqlite3"
-            staging = root / "staging"
+            database = Path(temporary) / "curator.sqlite3"
+            staging = Path(temporary) / "staging"
             staging.mkdir()
             with patch("curatormd_v2.store.MAX_FACTS_PER_GOAL", 2):
                 initial_store = CuratorStore(database)
@@ -481,9 +513,8 @@ class GoalConcurrencyTests(unittest.TestCase):
 
     def test_concurrent_projects_cannot_exceed_global_event_receipt_ceiling(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            database = root / "curator.sqlite3"
-            staging = root / "staging"
+            database = Path(temporary) / "curator.sqlite3"
+            staging = Path(temporary) / "staging"
             staging.mkdir()
             first_store = CuratorStore(database)
             second_store = CuratorStore(database)

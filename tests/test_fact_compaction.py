@@ -31,7 +31,8 @@ from curatormd_v2 import (
 )
 
 
-class AcceptTestEvidence:
+# EvidenceVerifier test double intentionally implements only `attest`.
+class AcceptTestEvidence:  # pylint: disable=too-few-public-methods
     """Accept only the test's stable synthetic proof references."""
 
     def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
@@ -92,6 +93,7 @@ class FactCompactionTests(unittest.TestCase):
             "test-proof:archive-fixture",
             hashlib.sha256(b"archive-fixture").hexdigest(),
             EvidenceOutcome.PASSED,
+            "a" * 32,
         )
 
     def archive_routine_fact(self) -> tuple[Fact, str]:
@@ -160,6 +162,7 @@ class FactCompactionTests(unittest.TestCase):
         )
         self.assertEqual(len(self.store.list_facts(self.goal.goal_id)), 4)
 
+        usage_before_approval = self.store.project_storage_usage("archive-project")
         receipt = self.service.fact_compaction_approve(
             proposal.compaction_id,
             self.goal.goal_id,
@@ -196,6 +199,26 @@ class FactCompactionTests(unittest.TestCase):
         self.assertEqual(usage.fact_archive_compressed_bytes, receipt.compressed_bytes)
         self.assertGreaterEqual(
             usage.fact_archive_logical_bytes, usage.fact_archive_compressed_bytes
+        )
+        expected_logical_delta = (
+            usage.fact_archive_logical_bytes
+            + usage.audit_record_bytes
+            - usage_before_approval.audit_record_bytes
+            + usage.fact_record_bytes
+            - usage_before_approval.fact_record_bytes
+        )
+        self.assertEqual(
+            usage.logical_record_bytes - usage_before_approval.logical_record_bytes,
+            expected_logical_delta,
+            (
+                usage.logical_record_bytes,
+                usage_before_approval.logical_record_bytes,
+                usage.fact_archive_logical_bytes,
+                usage.audit_record_bytes,
+                usage_before_approval.audit_record_bytes,
+                usage.fact_record_bytes,
+                usage_before_approval.fact_record_bytes,
+            ),
         )
         self.assertEqual(
             usage.fact_archive_bytes_remaining,

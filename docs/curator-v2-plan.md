@@ -129,9 +129,15 @@ flowchart TB
     passed.
 - Reopening a completed goal starts a new evidence epoch: prior facts remain
   immutable and visible, but pre-reopen verification does not satisfy current
-  success criteria. Reopen requires a reason and concrete next action; completed
-  parent/dependent goals must be reopened in dependency order. Criteria changes,
-  cancellation, and supersession require separate explicit lifecycle events.
+  success criteria. Reopen requires a reason and concrete next action. Reopen a
+  completed parent before its completed child, and reopen every completed
+  dependent before reopening the dependency it references. A completed goal
+  whose parent is cancelled or superseded, or whose dependency is cancelled or
+  superseded, cannot be reopened; resume with a new goal under a nonterminal
+  parent and valid dependencies, using an active same-project replacement for
+  any cancelled or superseded dependency. Preserve the old links and terminal
+  history. Criteria changes, cancellation, and supersession require separate
+  explicit lifecycle events.
 - A significance gate derives an SDE only when evidence supports a durable implementation, decision, recovery, or lesson. Routine progress remains a goal update.
 - Every durable record is short bullets, separating observed facts from planned or unverified claims.
 - One explicit SDE approve/reject action also authorizes purge of the complete
@@ -188,9 +194,12 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-22): 138 of 175 delivery rows are complete; 37 are open. One row was
-added for the owner's separately requested V2-owned VS Code status-bar
-integration; the prior 174-row scope remains intact. The count
+(2026-10-23): 139 of 178 delivery rows are complete; 39 are open. The 177-row
+baseline includes the owner's separately requested V2-owned VS Code status-bar
+integration, the open real-consumer producer/source-coverage row, and the
+lifecycle row in the Definition of done. One added regression row covers
+terminal parent/dependency reopen relationships in Section 1 and is now complete.
+The count
 includes implementation rows in sections 0–10, 12, and Definition of done. It
 excludes section 11's reusable execution templates; their per-task checkboxes
 are not delivery progress. Historical narrative counts below are not current.
@@ -253,8 +262,9 @@ consumer plugin, Hermes integration, or production deployment.
       reject a fact if the goal is complete at the transaction's write boundary;
       cover with a deterministic two-connection regression test.
 - [x] Reopen a completed goal with a reason and next action, preserve its prior
-      facts, require completed parent/dependent goals to reopen in dependency
-      order, and prevent pre-reopen evidence from satisfying the new work epoch.
+      facts, require a completed parent to reopen before its child and completed
+      dependents to reopen before their dependency, and prevent pre-reopen
+      evidence from satisfying the new work epoch.
 - [x] Amend a non-complete goal's criteria only through an explicit
       revision-checked event; preserve append-only criteria history and require
       fresh evidence after amendment. Completed goals must be reopened first;
@@ -288,8 +298,23 @@ consumer plugin, Hermes integration, or production deployment.
       retirement is rejected while work remains unfinished, and rejected actions
       leave every linked goal and fact list unchanged.
 - [x] Exhaust all reopen orders for a nested parent/child tree with a completed
-      prerequisite; enforce parent-first and dependent-before-dependency reopen
-      order while preserving prior facts and requiring fresh criterion evidence.
+      prerequisite; enforce completed-parent-before-child and
+      completed-dependent-before-dependency reopen order while preserving prior
+      facts and requiring fresh criterion evidence.
+- [x] Add regressions for reopen attempts whose parent or dependency is
+      cancelled or superseded, matching the relationship rules in
+      [`event-contract-v1.md`](event-contract-v1.md). Confirm the completed goal
+      and its links remain unchanged; resuming work requires a new goal with a
+      nonterminal parent and valid dependencies, including an active
+      same-project replacement for any cancelled or superseded dependency.
+      Direct rejection must leave status, revisions, relationships, and facts
+      unchanged. For rejected event delivery, retain one durable failure receipt
+      without advancing the source cursor; exact replay keeps the same
+      project/event receipt identity and failure state, with retry attempts
+      updated under the normal retry policy, but creates no second receipt or
+      goal/relationship mutation. Covered by
+      `test_reopen_rejects_terminal_parents_and_dependencies_atomically` and
+      `test_terminal_parent_reopen_failure_keeps_one_receipt_and_source_cursor`.
 - [x] Implement reference-plugin adapters for explicit user requests, bound
       checklist rows, and accepted child subtasks; every route requires caller-
       supplied success criteria, checklist intake preserves an exact source
@@ -402,7 +427,27 @@ consumer plugin, Hermes integration, or production deployment.
       the profile wheel; an import check with that target first on `PYTHONPATH`
       loaded the package from the extracted wheel and resolved the registrar and
       parser exports. This is package-content evidence only; no consumer profile
-      or Vhost application was changed or exercised.
+      or Vhost application was changed or exercised. Proposed closure: for the
+      integration portion, use the consumer's supported user-facing entrypoint
+      and the separately authorized single real request in Slice I; do not
+      substitute a manually constructed Hermes context, direct MCP write, or
+      database edit. Capture the source checklist item and original criteria,
+      then follow that request through its allowed lifecycle events to the
+      consumer's user-facing status view. Reload the view and reopen the backing
+      report to prove that the displayed state, current criterion evidence, and
+      next action match the durable goal revision; a finish request without
+      passing evidence must remain open. For status-display coverage beyond
+      that authorized request, use disposable non-production goals through the
+      same supported consumer surface to exercise planned, active, completed,
+      open, blocked, deferred, cancelled, and superseded states, including
+      rejected transition attempts and any permitted reopen. Verify every state
+      persists after a fresh read/restart, prior terminal history remains
+      distinguishable from current status, and unsupported claims never appear
+      complete. Keep the real-consumer item open until the actual user-facing
+      route, real-request trace, and status/reload evidence are reviewed; local
+      state-machine tests or a disposable profile do not prove application
+      capture, and the one-run authorization does not extend to additional real
+      requests.
 
 ### 2. Evidence and fact ledger
 
@@ -425,7 +470,27 @@ consumer plugin, Hermes integration, or production deployment.
 - [ ] Integrate repository runners, service probes, browser sessions, and
       authenticated human-confirmation sources with deployment-owned credentials,
       trust roots, revocation checks, and end-to-end probes; a generic resolver
-      protocol plus synthetic tests does not close this gate.
+      protocol plus synthetic tests does not close this gate. Proposed
+      owner-gated provisioning: list every enabled source connector and its
+      source/security owner; issue a dedicated least-privilege credential or
+      authenticated-subject mapping scoped to the approved source, project, and
+      action; and configure its trust root, version, expiry, rotation, revocation,
+      and outage behavior in host/deployment-owned configuration. Do not place
+      secrets or authority to select a verifier in consumer repository config,
+      event payloads, or caller-controlled MCP fields. An absent, malformed,
+      expired, revoked, wrong-scope, or untrusted credential must leave evidence
+      unverified and create no verification fact. Probe credential rotation and
+      revocation through the actual repository-runner, service, browser, and
+      human-confirmation paths; demonstrate the prior credential is rejected,
+      the replacement remains scoped, and verifier or revocation-service outage
+      fails closed with an explicit open/unknown result. Record only connector,
+      trust-root/version, opaque subject/project, probe, and decision-reference
+      identifiers; never retain secret values or source content in the evidence
+      packet. Apply the per-source receipt and freshness checks in the following
+      criterion to every enabled integration. Keep this gate open until each
+      deployed connector has owner-approved provisioning and a reviewed positive,
+      rotation, revocation, and outage probe; local host assertions and
+      synthetic authorizers do not satisfy it.
 - [ ] Complete the source-specific integrations for repository diffs/tests,
       service probes, browser proof, and authenticated human observations, each
       bound to deployment trust roots and end-to-end source evidence. Local
@@ -479,6 +544,79 @@ consumer plugin, Hermes integration, or production deployment.
       live service evidence remain open. A focused launcher test confirms
       `main()` forwards the host config to its builder and closes the server
       runtime after exit.
+      Proposed source-by-source closure: before enabling any resolver, its
+      source owner and deployment security owner identify the authoritative
+      issuer, project and subject mapping, credential custodian, trust roots,
+      expiry/freshness rule, revocation check, permitted evidence scope, and
+      behavior when the source or revocation service is unavailable. Keep these
+      host-owned settings outside consumer repository configuration. For each
+      enabled source class (repository diff, repository test run, service probe,
+      browser observation, and human confirmation), exercise an accepted result
+      bound to the exact project, requested criterion, source identity/revision,
+      and run or observation. Then reject expired, future-dated, revoked,
+      wrong-project, wrong-subject, wrong-source, mismatched-run, and malformed
+      receipts without creating a verification fact; exact retries must remain
+      idempotent, while changed content under the same receipt identity must
+      conflict. Change the source revision or revoke its grant and prove the
+      next criterion check invalidates the prior attestation. Source, trust, or
+      revocation outages must leave the criterion open or unknown rather than
+      treating absence as success. Add a deterministic completion race: pause
+      after a verifier returns passing evidence, then expire or revoke that
+      evidence before the completion transaction commits. Completion must not
+      rely on a pre-transaction verified set unless an owner-approved freshness
+      or revocation version proves it remains current at the commit boundary.
+      Keep remote verifier calls outside the SQLite write transaction; define
+      the version, lease, or bounded propagation contract that closes this race,
+      and leave the criterion open or unknown when currentness cannot be
+      established. Verify stale evidence yields an open result without a
+      completion fact and preserves the prior verification facts; retry after
+      restored trust must use current passing evidence. A repository run must
+      identify its immutable commit and approved runner; a service probe must
+      identify its configured opaque ID and bounded result. A browser observation
+      must identify the authenticated session and intended origin without
+      retaining page content; a human confirmation must bind an authenticated
+      subject to the explicit confirmation action. Store only the minimum
+      content-free provenance needed to revalidate the attestation: issuer,
+      subject, scope, version, time, digest, and revocation-check reference.
+      For every source whose evidence locator can name a purgeable artifact,
+      persist its authenticated verifier receipt before deletion and prove an
+      independent reviewer can validate that receipt after deletion without
+      source content. If fresh verification requires a source that is no longer
+      available, apply the approved stale-evidence policy and leave current proof
+      stale/unknown; a retained digest alone never counts as a fresh recheck.
+      Include this purge-and-recheck path in each source-class acceptance rather
+      than closing the integration from pre-purge tests alone.
+      Also test expiry or revocation after
+      the last passing verification and after the goal has been reported
+      complete. Product owners must approve whether completion remains a
+      historical outcome with a visible stale-evidence gate or requires an
+      explicit reopen and fresh evidence epoch. Record the choice as a versioned,
+      owner-approved policy scoped to source class and expiry, revocation, or
+      outage consequence, including its effective time and whether it applies to
+      already completed goals. If that policy is absent, stale, or conflicting,
+      preserve the historical completion fact but report current proof as
+      stale/unknown with a visible open gate; do not imply current satisfaction
+      or silently reopen the goal. Test those policy failures across status,
+      report, and projection paths. In either approved outcome, reports and
+      projections must not present the revoked or expired attestation as current
+      proof; preserve the original verification fact and attestation as immutable
+      history. If policy requires reopening, use the revision-checked lifecycle
+      event with its reason and next action. Reopen a completed parent before
+      its child and completed dependents before their dependency. If a parent or
+      dependency is cancelled or superseded, reject reopening and start a new
+      goal with a nonterminal parent and valid dependencies, replacing any
+      cancelled or superseded dependency with an active same-project goal;
+      preserve the prior relationship unchanged.
+      Replay any event or owner-approved reconciliation action used to record
+      this consequence; prove idempotency and reject
+      conflicting reuse without rewriting history. Keep this behavior open until
+      owners approve the semantics and all status, report, and projection paths
+      show the same result. Record separate acceptance evidence and unresolved
+      limitations for each source class; passing a local resolver
+      test or one source's deployment probe does not close the other source rows.
+      Keep both evidence integration items open until every enabled source has
+      owner-approved trust/revocation configuration and a successful deployed
+      probe plus its negative cases.
 - [x] Bound immutable fact history to 512 facts/512 KiB per goal and 10,000
       facts/16 MiB per project; reject over-limit appends atomically without
       pruning, expose capacity gates in goal/project status, and test count/byte
@@ -510,7 +648,230 @@ consumer plugin, Hermes integration, or production deployment.
       never auto-prune, and expose aggregate-only capacity/gate status.
 - [ ] Define an approved retention/compaction and recovery workflow for a full
       event inbox, plus budgets for every other permanent data class; prove safe
-      recovery before enabling broad automatic capture.
+      recovery before enabling broad automatic capture. Proposed owner-gated
+      closure: inventory every durable data class in the current schema and
+      migrations, including event receipts/tombstones and retained retry payloads,
+      facts and their approved archives, SDE/review/cleanup/recovery receipts,
+      project registrations/audit records, indexes, WAL, and backups. For each,
+      name the data owner, logical count/byte measure, physical-storage overhead,
+      retention/replay horizon, capacity threshold, and recovery source; classify
+      omissions and shared overhead explicitly. Source accounting check
+      (2026-10-23; [storage queries](../src/curatormd_v2/store.py),
+      [schema migrations](../src/curatormd_v2/schema_migrations.py),
+      [usage read model](../src/curatormd_v2/read_models.py), and
+      [rate limiter](../src/curatormd_v2/rate_limiter.py)):
+      `ProjectStorageUsage` reports logical bytes for project
+      domain records and separate global database/WAL file sizes, but it does
+      not include global/unassigned `event_payload_scrub_queue` rows. Durable
+      `project_registry`, `project_registry_audit`, `project_grants`,
+      `project_grant_revocations`, and `request_rate_buckets` now have separate
+      project-scoped logical count/byte aggregates exposed only through the
+      existing host-authorized attended access `view`; they are not included in
+      ordinary project reads. Focused tests verify `VIEW` authorization, class
+      attribution, and that identifiers are not returned. The global inbox byte
+      total includes `event_retry_audit` bytes, while its receipt count counts
+      only `event_inbox` rows. For each class, the owner, retention horizon,
+      recovery source, and capacity threshold still need approval. Do not treat
+      current logical totals or receipt counts as complete database accounting.
+      Existing local controls include a 10,000-row maximum for request-rate
+      buckets with idle-only pruning and deletion of WAL-scrub queue rows after
+      a successful checkpoint. These controls do not establish a complete
+      class-level storage budget or approved retention policy.
+      Further accounting progress (2026-10-23): the host-authorized access
+      storage view now reports unassigned `event_payload_scrub_queue` rows as
+      a separate global class with record count and logical bytes. It does not
+      add the same global rows to a project's logical total or expose scrub or
+      event IDs. A VIEW authorization regression verifies exact attribution and
+      the content-free result. This closes the previously identified class
+      measurement omission only; data ownership, retention/recovery horizons,
+      physical overhead, thresholds, and approval remain open.
+      Progress (2026-10-23): project-authorized `ProjectStorageUsage` now reports
+      project-scoped event cursor count and logical UTF-8 bytes, includes those
+      bytes in `logical_record_bytes`, and exports aggregate-only cursor metrics.
+      API, MCP, and two-project regressions verify the read boundary and
+      attribution without exposing source IDs. It also reports project-scoped
+      event retry-audit counts and bytes, includes them in the logical total, and
+      exports aggregate-only metrics; retry and cross-project regressions cover
+      attribution. Project staging artifact-age metadata is also included as a
+      separate project-scoped count and logical-byte class. Attended expiry-purge
+      receipts and target rows now have separate project-scoped counts and
+      logical bytes, including
+      retained targets after purge; API/MCP exposure and the authorized purge
+      lifecycle are covered by focused tests and aggregate metrics.
+      Exact cleanup authorizations now also have project-scoped counts and
+      logical bytes, tested after canonical persistence and purge without
+      exposing reviewer or target fields.
+      Project-attributed payload-scrub queue rows have counts and logical bytes;
+      rows with a null project are reported separately in aggregate global
+      usage. Neither measure implies a retention policy or physical per-class
+      allocation.
+      Further progress (2026-10-23): the attended admin `view` now reports
+      project registry, registry audit, grant, revocation, and token-bucket row
+      counts plus logical bytes by class. Revocations are attributed through
+      their grant's project; numeric values are measured as decimal text. The
+      aggregate requires the existing host-level `VIEW` action and returns no
+      row identifiers or contents. Ten focused access-manager/CLI tests pass.
+      Owner-approved retention horizons, recovery sources, per-class capacity
+      thresholds, and physical index/WAL/
+      backup allocation remain open.
+      Further progress (2026-10-23): aggregate global event-inbox usage now
+      separately counts all payload-scrub queue records and logical bytes, plus
+      the unassigned subset. The value is available through the existing
+      aggregate-only global capacity read and is not folded into event-inbox
+      capacity totals. A regression verifies null-project rows are included
+      globally and excluded from project attribution.
+      Source-column accounting progress (2026-10-23): the schema audit found
+      durable fields omitted from logical-byte formulas, including project and
+      goal foreign keys, event disposition/retry metadata, SDE inventory and
+      canonical-persistence flags, purge hold/reacquisition state, expiry
+      filesystem identity, and cleanup dependency-map digests. The queries now
+      count those stored fields; event-row metadata uses one shared expression
+      for project totals and global inbox capacity, while retained event and
+      archive BLOBs are counted by their actual byte lengths. A migration-backed
+      guard now compares every column in all 24 application tables against the
+      project or control-plane accounting inventory (19 and five tables). An
+      exact event-row regression compares raw SQLite field bytes with both
+      project logical bytes and global inbox bytes. Focused schema, event,
+      archive, hold/cleanup, and expiry regressions pass; strict Pyright,
+      errors-only Pylint on changed files, and `git diff --check` pass. This
+      closes the local schema-column measurement gap only. The permanent-data
+      budget item remains open for data owners, approved retention/recovery
+      horizons, per-class thresholds, physical page/index/WAL/backup overhead,
+      and deployment growth/restore evidence. The earlier
+      `test_storage_accounting.py` check is currently maintained as
+      `test_current_schema_columns_have_explicit_storage_classes` in
+      `tests/test_migrations.py`.
+      Physical page-accounting progress (2026-10-23): the host-authorized
+      attended `VIEW` result now includes SQLite `dbstat` page counts and
+      allocated/payload/unused bytes per application table, with its indexes
+      attributed through `sqlite_master`. It also reports database page size,
+      page count, free-list pages, allocated and file bytes, WAL file bytes, and
+      the unattributed database-page remainder for SQLite schema/shared pages.
+      If `dbstat` is unavailable, the result explicitly reports
+      `status="unsupported"` and leaves per-class page attribution unknown.
+      The aggregate is deliberately host-wide because SQLite pages cannot be
+      allocated to one project without reading/rewriting the database; the
+      project-authorized usage read remains project logical bytes plus global
+      database/WAL sizes. Focused access-control and CLI serialization tests,
+      strict Pyright, errors-only Pylint, and `git diff --check` pass on SQLite
+      3.45.1. Backup files and retention/recovery policy are not measured or
+      approved by this probe; per-class thresholds and production growth/restore
+      evidence remain open.
+      `event_cursors` is keyed by `(project_id, source_id)` and updated in place;
+      it has no cursor expiry or deletion path. The proposed source-epoch
+      dimension adds retained rows. Owners must set source/epoch
+      cardinality limits and a retirement horizon, preserve old fences until
+      that horizon expires (indefinitely when it is unknown), and reject new
+      enrollment before the approved cursor/tombstone storage reserve is
+      exceeded. Track
+      the exhaustive schema-to-budget case as
+      `PERMANENT-DATA-BUDGET`, separately from event-inbox and staging budgets.
+      For inbox records, the product
+      and deployment owners must define state-specific retention for processed
+      or duplicate digest receipts versus unresolved received, failed, and
+      quarantined events, including the maximum source outbox/offline retry
+      horizon. Any archive or compaction must preserve the event-ID/hash lookup
+      and source-order fences needed to acknowledge exact replays and reject
+      conflicting reuse; unresolved payloads cannot be discarded as if
+      processed. Make fence retirement explicit per producer and project:
+      specify the durable source acknowledgment/checkpoint, maximum offline
+      outbox age, last-seen/retirement condition, and operator who may retire a
+      source epoch. A receipt or sequence fence must not expire while a source
+      can still replay it under the approved retry window. If source status or
+      retry age is unknown or unbounded, retain the content-free deduplication
+      tombstone/fence or keep the source retired from routing until an owner
+      approves a new epoch; never infer retirement from inactivity alone. Test
+      a producer reconnecting just before and after the proposed horizon, exact
+      replay, conflicting ID reuse, stale sequence delivery, and sequence reset
+      after re-enrollment. Prove that an old epoch cannot create a second
+      lifecycle mutation or advance the current cursor, and that pending events
+      remain visible until their durable disposition. Keep the current hard-cap
+      behavior fail-closed: do not silently prune. For non-retired projects,
+      acknowledge an event only after a durable `processed` receipt (including
+      `suppressed_nonactive_goal` with its source cursor advanced in the same
+      transaction) or exact `duplicate` receipt exists. The proposed retirement
+      path must first extend the versioned event contract
+      with a source epoch bound to the authenticated producer and a typed,
+      content-free `terminal_rejection` disposition. Proposed v2 boundary (not
+      implemented or owner-approved): the registry issues an opaque,
+      non-reusable `source_epoch` bound to the authenticated producer, project,
+      and registered `source_id`; an envelope value alone is never identity
+      proof. Sequence cursors become scoped by `(project_id, source_id,
+      source_epoch)`, and resetting a sequence requires explicit enrollment of
+      a new epoch. Keep `(project_id, event_id)` deduplication project-wide so a
+      new epoch cannot reuse an old event ID while its replay horizon remains
+      open. Preserve v1 cursors as legacy state during migration; do not
+      silently relabel their producer identity or infer that they are retired.
+      The owner must decide whether and how legacy sources can enroll in v2.
+      Follow the proposed terminal-rejection receipt, approval-scope,
+      trust/revocation, separate-cursor, contiguous-sequence, and exact-retry
+      rules in Section 6's open `LC-RETIRE-FENCE` case; do not define a second
+      receipt or cursor policy here. A terminal acknowledgment does not
+      authorize payload deletion; removal still requires a separately approved
+      retention rule and durable content-free scrub receipt. For a
+      registry-confirmed retired project, acknowledge only after the separate
+      owner-approved disposition and durable receipt; otherwise retain the event
+      as pending and retryable.
+      Preserve deduplication and source-order fences under the approved replay
+      horizon.
+      Before capacity exhaustion, owners must set a warning threshold and
+      alert/stop-capture action; at the cap, retain source
+      retries and expose the capacity gate until a separately approved remedy
+      succeeds. Because the enforced inbox limits are global across projects,
+      owners must explicitly choose a shared pool or per-project quotas or
+      reservations, including any borrowing/reclamation rule and the reserve
+      needed for failure metadata and retries. Do not imply per-project capacity
+      isolation unless it is enforced. Track the noisy-neighbor case as
+      `EVENT-CAP-ALLOCATION`: fill one project's approved allocation or the
+      shared pool while a second project has new and retrying events; verify
+      the approved accept/reject behavior, source acknowledgment, pending
+      outbox state, read availability, aggregate health/alerts, and recovery
+      after the approved remedy. Track archive/compaction, replay-fence, and
+      restore acceptance separately as `EVENT-RETENTION-RECOVERY`; passing a
+      capacity-threshold case does not prove the retention horizon or recovery
+      policy. Measure representative normal, peak,
+      retry-backlog, and full
+      retention workloads; approve per-class and global budgets from those
+      measurements, including the shared database/WAL/backup footprint. Drill
+      archival/compaction and restore to a new isolated path with mixed receipt
+      states, sequence gaps, exact replays, conflicting event-ID reuse, blocked
+      payload scrubs, and injected interruption; prove no duplicate lifecycle
+      facts, lost ordering, hidden pending work, or unauthorized deletion. Keep
+      broad automatic capture disabled until the owners approve the retention,
+      capacity, alert, and recovery policy and deployment evidence demonstrates
+      safe operation at and after the threshold. This is a proposed policy, not
+      authorization to prune receipts or enable broad capture; see
+      [`event-contract-v1.md`](event-contract-v1.md) for the current local
+      retry, acknowledgment, and capacity boundary.
+      Additional local progress (2026-10-23): project storage usage now counts
+      and measures the schema-v27 staging filesystem-occurrence registry as a
+      separate project-owned class. Staging-age logical bytes also include its
+      nullable device, inode, and occurrence-ID fields. API and MCP reads return
+      aggregate values only; Prometheus exports fixed project labels and numeric
+      counts/bytes. Focused API, two-project isolation, metrics, and MCP tests,
+      strict Pyright, errors-only Pylint on touched files, and `git diff --check`
+      pass. Owner retention horizons, physical index/WAL/backup allocation,
+      source-epoch cardinality, and recovery budgets remain open; no checklist
+      status changed.
+      Schema coverage progress (2026-10-23): the migration test
+      `test_current_schema_columns_have_explicit_storage_classes` in
+      `tests/test_migrations.py`
+      compares the migration-created SQLite application-table set with the
+      explicit logical-usage classifications: 19 project-usage tables and five
+      host-authorized control-plane tables. A newly added or removed durable
+      table now requires an explicit accounting-classification update. This
+      guards inventory coverage only; it does not verify every byte query,
+      physical page/index/WAL/backup allocation, or policy. The focused
+      regression, strict Pyright, errors-only Pylint, and Bandit pass; no
+      checklist status changed.
+      Archival accounting progress (2026-10-23): the fact-compaction regression
+      now verifies the exact logical-byte delta across reviewer-approved
+      compaction: archive bytes and audit-byte changes are balanced against
+      active-fact bytes removed. This protects against omitting archives from
+      the project total without treating the archive's logical payload as a
+      net increase when active facts are moved. The focused scenario, strict
+      Pyright, errors-only Pylint for the changed test, and `git diff --check`
+      pass. Physical allocation and owner-approved budgets remain open.
 - [x] Enforce explicit domain ceilings for criteria, dependencies, evidence
       references, SDE supporting facts, and per-receipt artifact paths, including
       direct callers that bypass serialized-event limits; cover limit and
@@ -549,6 +910,33 @@ consumer plugin, Hermes integration, or production deployment.
       Pyright, errors-only Pylint, and `git diff --check` pass. Other provider
       formats, false positives, custom formats, jurisdictional rules, and
       deployment policy remain open; this is not a privacy certification.
+      Further local progress (2026-10-23): decomposed the existing MCP
+      credential-canary regression into explicit ingress/log and storage-scan
+      phases without changing its assertions. The focused test passes, strict
+      Pyright reports zero diagnostics, and `git diff --check` passes. Focused
+      Pylint still exits on other structural findings in the large test module;
+      the scanner evaluation, owner review, and deployment gates remain open.
+      No delivery checklist status changed.
+      Proposed owner-gated evaluation: product/privacy and deployment owners
+      inventory sensitive-data categories, jurisdictions, supported source
+      formats, and every scanner boundary; explicitly record unsupported and
+      unobservable categories rather than calling them covered. Build a versioned,
+      labeled synthetic corpus for supported and missed formats, including
+      unlabeled, encoded, split-field, and jurisdiction-specific examples plus
+      legitimate lookalikes to measure false positives. Do not use raw user or
+      production secrets as test fixtures. Owners set per-category acceptance
+      criteria and review the measured false-negative/false-positive results
+      before expanding coverage. For each accepted pattern change, verify
+      reject-only behavior at direct-domain, JSON/API, and MCP ingress: the value
+      must not enter the inbox, goal/fact records, SQLite sidecars, backup, or
+      canonical projection, and must not appear in errors or observable output.
+      A rejection must direct the caller to provide an approved non-sensitive
+      reference without altering evidence text. Record corpus and detector
+      versions, category-level results, known gaps, owner decisions, and review
+      date; require renewed review when formats, jurisdictions, or upstream
+      sources change. Keep this row open while any in-scope category lacks
+      approved coverage/evaluation or privacy/legal review; do not infer
+      comprehensive detection or regulatory compliance from passing tests.
 - [x] Write a preliminary threat register for the local implementation boundary,
       explicitly separating implemented controls from deployment assumptions and
       residual risks; see [`threat-model-v1.md`](threat-model-v1.md). Owner review,
@@ -824,11 +1212,99 @@ consumer plugin, Hermes integration, or production deployment.
       SQLite store through the CLI, and proves the exact previously reviewed
       artifact is removed only after its retry deadline. The full 282-test
       suite, Pyright, errors-only Pylint, Bandit, and `git diff --check` pass.
+      Progress (2026-10-23): the runner now requires the durable registration's
+      repository fingerprint, exact config digest, and backend version to match
+      the loaded project config, then holds `project_revision_fence` through
+      both authorized SDE and expiry retry queues. The runner acquires the
+      staging lock before that SQLite fence; authenticated API effect fences use
+      the same order, with nested plugin locks reusing the thread-held root FD.
+      A regression suspends a
+      registered project after an approved purge becomes due and confirms the
+      runner fails closed while the artifact and `purge_pending` receipt remain
+      intact. The maintenance (5) and purge (28) focused suites pass, as do
+      the API (38), concurrency (7), and plugin (46) focused suites; together
+      these 124 tests cover the effect-fence, nested-lock, scheduler, and
+      suspension paths. Strict Pyright, errors-only Pylint, and
+      `git diff --check` pass. This closes the local maintenance suspension
+      bypass and lock-order defect only; production scheduling, dead-letter
+      delivery, and crash/reconciliation drills remain open.
       This remains a local scheduler job unit, not an installed production timer,
       dead-letter delivery, or crash/reconciliation drill; those gates remain
       open. Operator usage and
       trust constraints are in
       [`consumer-operations-v1.md`](consumer-operations-v1.md#run-one-due-purge-retry-pass).
+      Proposed owner-gated deployment sequence: approve the scheduler owner and
+      service identity, database/config/staging bindings, cadence and timezone,
+      overlap/lease policy, execution timeout and batch ceiling, retry/backoff
+      limits, dead-letter threshold, alert route/recipient, and reconciliation
+      runbook. Install the worker only against a disposable deployment-shaped
+      project first. Exercise simultaneous invocations and failures before and
+      after every durable receipt, canonical-projection, unlink, and final-status
+      boundary, including process termination, database lock/unavailability,
+      staging-lock loss, and host restart. On restart, prove the exact approved
+      manifest resumes idempotently: absent files are not treated as new work,
+      held or changed targets are not deleted, no target outside the receipt is
+      touched, and incomplete or failed cleanup remains `purge_pending`. Verify
+      new legal/operational hold requests racing with target selection, durable
+      attempt claim, and unlink, including interruption after unlink but before
+      result persistence. The hold registry and purge worker must share an
+      owner-approved linearization/fencing rule: a hold accepted before unlink
+      prevents deletion even when the worker already selected the target, and a
+      hold request cannot be acknowledged as protecting the target until any
+      in-flight attempt is fenced or its outcome is known. If unlink already
+      occurred, report that outcome explicitly and escalate; never claim the
+      target was preserved by the later hold. If hold state or coordination is
+      unavailable or ambiguous, stop retrying and retain visible
+      `purge_pending`/unknown state until reconciled. After authorized hold
+      release, recheck the exact occurrence and require the separate release
+      audit before another attempt. Exercise each race across worker restart and
+      stale-claim recovery.
+      Also verify approval binding for a replacement occurrence at the same
+      path: after review, replace a target with a newly published file whose
+      bytes and SHA-256 are identical to the approved file. The old receipt must
+      not authorize unlink of this new occurrence; mark its binding stale,
+      preserve it, and require a fresh complete inventory and explicit review.
+      Bind cleanup authorization to a durable content-free occurrence/generation
+      ID as well as path, class, hash, and hold state; device/inode checks during
+      hashing are not a substitute for identity that survives restart, copy, or
+      restore. Exercise replacement before the first unlink and after a partial
+      purge followed by restart, while exact replay of the original occurrence
+      remains idempotent and does not reset its retention age. For legacy purge
+      receipts that lack occurrence IDs, never synthesize identity from path,
+      hash, timestamps, or inode data. Preserve receipt history and completed
+      target outcomes, but mark unpurged approvals stale and non-retriable until
+      a fresh complete inventory receives explicit review; retain active holds
+      and do not recreate or reclassify already purged files. Exercise migration
+      from partial, failed, held, and completed receipts, plus interruption and
+      rollback, and reconcile target state and approval references afterward.
+      Local progress (2026-10-23): schema v23 persists inventoried device/inode
+      on SDE purge targets, and the purger rejects a same-content replacement
+      after review. Schema v24 carries the identity through expiry targets and
+      retries. Schema v25 binds staging-age metadata to that identity and does
+      not transfer old expiry age to a same-content replacement. Schema v26
+      persists generation IDs on new age and purge records; schema v27 adds a
+      content-free occurrence registry for directly written staging files.
+      Local regressions cover stable IDs across scans and database reopen,
+      changed IDs for same-byte replacement, and the rule that direct files
+      without producer age metadata remain ineligible for expiry. This still
+      passes in the 406-test full suite; strict Pyright reports 0 diagnostics,
+      errors-only Pylint passes, and `git diff --check` is clean. This does not
+      satisfy copy/restore reconciliation, legacy-target review, hold-race, or
+      owner-approval requirements of this open gate, so no checklist count
+      changes in this slice.
+      Then verify bounded backoff and the approved dead-letter transition
+      preserve the receipt and exact targets for operator review. Dead-lettering
+      neither discards work nor grants retry, hold-release, or deletion approval.
+      Alerts and reconciliation records must identify only project/receipt and a
+      fixed failure code, never payload, secrets, or raw paths. Health must remain
+      degraded for known overdue/pending work and unknown for missing/stale
+      scheduler heartbeats, failed database observations, or incomplete staging
+      inventories. Capture the configured identity, binding fingerprints,
+      schedule/alert version, scenario IDs, receipt transitions, delivery result,
+      and recovery outcome in content-free evidence. Keep production scheduling
+      disabled until deployment owners review the failure/restart drills, alert
+      delivery, runbook, and rollback procedure; the local one-shot command is
+      not deployment proof.
 - [x] Expose project-scoped per-receipt and per-artifact status, creation age,
       attempt count/timestamp/age, last error, and read-only safe recovery action
       through the service/API/MCP status path; persist each attempt before file
@@ -1102,6 +1578,64 @@ consumer plugin, Hermes integration, or production deployment.
       processed receipts, one goal, two facts, and no failed/quarantined events.
       This verifies the local profile-to-ledger read route without establishing
       a human subject or live gateway event delivery.
+      Additional verification (2026-10-23): ran the Hermes Core checkout's
+      `hermes mcp test curator_v2 --probe-curator-status` path for
+      `renew-ssl-coding`. It connected to the profile's installed Curator V2
+      stdio launcher, discovered 48 tools, and read 12 processed receipts,
+      one goal, two facts, and zero SDE candidates; failed and quarantined
+      event counts were zero. The paginated goal-list total was one. Project
+      health correctly remained `unknown` for missing event-router,
+      purge-scheduler, host-identity, human-review, and artifact-producer-
+      inventory observations. A direct Codex MCP status call without Hermes
+      metadata still returns `unauthenticated`; this is the expected boundary,
+      not evidence of a failed ledger read. The profile has no authenticated
+      human subject, and deployment/runtime gates remain open.
+      Proposed owner-gated closure sequence: Hermes Core and product/deployment
+      owners first specify the trusted authentication source, verified subject
+      format, profile-to-project mapping, project roles/actions, administrator
+      authority, token expiry/revocation behavior, trust-root ownership, and
+      audit fields. Make identity provenance explicit at the Hermes transport
+      boundary; host-derived profile/session coordinates and unqualified source
+      `user_id` values remain context only unless a documented verifier binds
+      them to an authenticated principal. Then pass that verified principal and
+      scoped permissions into the Curator factory without caller-controlled
+      identity fields. In a deployment-like stack, use the actual Hermes
+      transport and authenticated test accounts to exercise read, write,
+      review, retry, and administration routes; prove missing, forged, expired,
+      revoked, wrong-role, wrong-profile, and cross-project credentials fail
+      before data disclosure or mutation, while each allowed operation records
+      the verified subject and exact project/action. Rotate and revoke a test
+      credential and prove old credentials stop working. Also disable a test
+      account, remove its project/action membership, and change its subject
+      mapping while a profile or session remains cached; after the approved
+      revocation-propagation bound, prove those cached contexts cannot read,
+      decide, or mutate. Keep prior approval receipts bound to the issuer and
+      opaque subject that actually made each decision; account deprovisioning or
+      subject remapping must not transfer authority or rewrite historical
+      attribution. If the provider cannot establish current account status or
+      stable subject binding, protected actions fail closed. Separately configure
+      the shared production limiter across worker processes: owners set the
+      per-subject/project policy, then concurrency and restart tests prove the
+      aggregate limit cannot be bypassed by switching workers, sessions, or
+      caller-supplied project IDs; limiter unavailability fails closed and
+      exposes a bounded health gate. Exercise independent verified subjects and
+      projects concurrently: exhausting one subject/project quota must not
+      consume another project's allowance, while an over-limit request must be
+      denied before sensitive reads or writes. Compare ledger, inbox, review,
+      projection, and staging state before and after denied requests; after the
+      approved window resets, replay the exact request and confirm one durable
+      result. Inject limiter-store capacity exhaustion, restart, clock movement,
+      stale worker state, and service outage; prove no early quota reset, worker-
+      local bypass, or false healthy status. Keep metric labels bounded to
+      approved fixed categories and do not expose subjects, sessions, event IDs,
+      or caller-provided project values. Record the quota-policy version,
+      deployment binding, scenario IDs, denial outcomes, and state hashes without
+      request content. Preserve content-free decision evidence,
+      and keep identity, administrator provisioning, and production quota gates
+      open until the verified transport path, revocation, audited permissions,
+      and shared limiter are independently reviewed. `Auth: none`, tool
+      discovery, profile metadata, and synthetic authorizers do not satisfy
+      this criterion.
 - [x] Implement a local bounded durable router pass with a fixed trusted
       project/service map, transactional idempotent processing, attempt-counted
       retries, capped persisted exponential retry due times, source-sequence
@@ -1127,6 +1661,58 @@ consumer plugin, Hermes integration, or production deployment.
       received in disposable SQLite. The command is installed in the isolated
       Vhost alpha environment. It is not a worker, production scheduler, alert
       path, or health observation; those gates remain open.
+      Proposed owner-gated production sequence: approve the scheduler/service
+      identity, fixed project-to-consumer map, event-type allowlist, source
+      sequence policy, worker concurrency/lease, batch and timeout bounds,
+      retry/quarantine thresholds, maximum queue lag, and alert recipients. Also
+      specify trigger cadence/timezone, jitter, maximum overlapping invocations,
+      graceful-stop deadline, and the relationship between invocation timeout
+      and event-claim lease. During deployment-like acceptance, exercise missed
+      and delayed triggers, clock adjustment, overlapping scheduler instances,
+      and termination before claim, during processing, and after the durable
+      state/receipt transaction. A stop must cease new claims; in-flight work
+      must either commit its durable receipt or remain unacknowledged and
+      reclaimable under the approved lease/retry policy. Record the last
+      completed pass and its bounded outcome as the scheduler observation;
+      process existence alone must not make the router healthy, and missing or
+      stale pass observations remain unknown. Owners must also define whether
+      projects receive equal, weighted, or explicitly prioritized scheduling
+      under the shared batch/time budget, with a maximum event-lag objective per
+      project. Exercise a saturated high-volume project's queue alongside
+      low-volume projects over repeated bounded passes and a worker restart;
+      verify the approved policy meets each lag objective without starving a
+      project, violating per-source sequence order, or exposing another
+      project's events. If a project is intentionally paused or deprioritized,
+      preserve its backlog and surface the lag/gate only through the authorized
+      project view and operator view, rather than silently dropping or relabeling
+      work.
+      Bind the deployed runner to the exact package, project/config fingerprints,
+      and authenticated source/consumer identities; reject an absent or
+      cross-project binding before mutation. In an isolated deployment-shaped
+      environment, drive real producer envelopes through the configured source
+      outbox and router. Inject a missing predecessor, duplicate and conflicting
+      event IDs, concurrent workers, expired/stale lease owners, process/host
+      restart, database outage, and failure around the atomic state/receipt
+      boundary. The source may acknowledge only a durable `processed` receipt
+      (including `suppressed_nonactive_goal` with its cursor advance committed
+      atomically) or exact `duplicate` receipt. After the approved versioned
+      contract adds retirement handling, a registry-confirmed retired-project
+      event may also be acknowledged only when the separate owner-approved
+      disposition covers its source epoch, event class, and sequence/cutoff and
+      its typed, content-free `terminal_rejection` receipt commits. Otherwise
+      retain and retry the exact envelope with the same ID and sequence. Verify
+      ordered application, no duplicate facts, no dropped sequence, bounded
+      quarantine and an authorized retry, and no payload leakage into metrics,
+      logs, or alerts. Measure received-to-processed lag and queue-age
+      distributions under representative peak and sustained load. Compare them
+      to the owner-approved limit; verify alert firing, deduplication, escalation,
+      delivery failure, and recovery without hiding backlog. Reconcile router
+      receipts, source acknowledgements,
+      project health, and alert outcomes using content-free IDs and digests.
+      Keep the worker disabled until deployment owners review the complete
+      restart/load/failure matrix, observed lag and alert results, recovery
+      procedure, and rollback evidence; the packaged one-shot pass and local
+      lease tests do not close this gate.
 - [x] Implement an explicitly invoked, project-scoped Markdown projection with
       target revalidation, per-goal idempotent blocks, atomic replacement, bounded
       UTF-8 reads/writes, and preservation of unrelated document content.
@@ -1160,11 +1746,56 @@ consumer plugin, Hermes integration, or production deployment.
       policy remain open.
 - [ ] Define the system of record and recovery behavior when SQLite, canonical
       Markdown, and a consuming repository disagree.
+      Proposed policy (2026-10-22): SQLite owns structured lifecycle/evidence
+      records; consumer repositories own unmarked Markdown, while managed goal
+      blocks are projections. Missing blocks may use the existing authorized
+      projection path; divergent or malformed blocks freeze writes and purge
+      until the repository owner reviews a bounded comparison. No timestamp
+      winner or automatic overwrite is proposed. See
+      [`storage-recovery-v1.md`](storage-recovery-v1.md). This policy is a
+      design draft only; product/owner approval and conflict-resolution receipts
+      remain open. Its proposed owner checklist covers authority by data class,
+      edited/orphaned block handling, activation evidence, approval roles, and
+      receipt access/retention. It now compares three unselected authority
+      models and names the importer/receipt/test work each would require. The
+      recovery note also includes a scenario
+      decision table for synced, missing, divergent/malformed, incomplete, and
+      corrupt/unsupported states; each action and stop condition is proposed and
+      still needs owner review and disposable-data drills. A bounded
+      recovery-record template now lists before/after integrity and projection
+      evidence, approval references, rollback point, open gates, and handoff;
+      owner approval of its fields, access, and retention remains open. Next
+      action (owner-gated): product and repository owners accept or revise the
+      authority policy and record fields; define the trusted approver and durable
+      conflict receipt bound to the recovery ID and before/after hashes; exercise
+      every decision-table row with disposable stores; then run an approved
+      deployment-like backup/restore/rollback drill. Keep Slice C open until
+      each result and recovery receipt is independently reviewable. Proposed
+      conflict-decision acceptance: assign one opaque recovery ID to the
+      incident and preserve the database snapshot, Markdown target, and their
+      pre-decision hashes before showing a bounded comparison to the authorized
+      repository owner. The decision must identify the exact project, goal,
+      ledger revision, target revision, reconciliation state, selected action,
+      approver subject, and approval reference; it must not contain copied
+      Markdown bodies, evidence locators, event payloads, or raw exception text.
+      Bind any repair to a new review-copy digest and the exact pre-decision
+      state, then require read-only reconciliation before an authorized
+      projection can be installed. Replaying the same recovery ID and identical
+      decision is idempotent; a changed decision, changed before-hash, incomplete
+      marker scan, or target mutation conflicts and requires a new comparison
+      and approval. A defer or unresolved decision leaves writes and purge
+      frozen for the affected target and preserves all source copies. Verify
+      after-state hashes and reconciliation status against the receipt, retain a
+      named rollback point, and show that recovery does not create verification
+      facts or import human edits as canonical evidence. Keep this protocol
+      proposed until product and repository owners approve the receipt schema,
+      trusted approver mapping, and retention/access policy, and each branch is
+      exercised with disposable data.
 - [ ] Add backups, restore drills, schema migrations, integrity checks, and
       supported upgrade/rollback procedures. Local non-overwriting SQLite
       backup/restore helpers and integrity tests now exist; production drills,
       migration/rollback drills for deployment data, and supported upgrade/
-      rollback policy remain open. Local migration paths through v17 are
+      rollback policy remain open. Local migration paths through v30 are
       covered; the v0-to-v1 step has an injected-rollback fixture, v1-to-v2
       preserves existing inbox receipts,
       v2-to-v3 backfills purge-target age, and v3-to-v4 adds persisted retry
@@ -1210,6 +1841,73 @@ consumer plugin, Hermes integration, or production deployment.
       `user_version`; the valid legacy-receipt upgrade still invents no cleanup
       authorization. Four focused migration tests pass. Production upgrade,
       corruption, backup/restore, and rollback drills remain open.
+      Further progress (2026-10-22): schema v22 adds a content-free queue for
+      WAL truncation after transient event payload deletion. Its migration
+      schedules one database-wide scrub receipt for a nonempty legacy inbox
+      without copying or deleting legacy `payload_json`; runtime retry retains
+      pending receipts when a reader holds the WAL and retries them on store
+      startup. The migration and local scrub regressions exist, but were not
+      rerun for this documentation update. Production privacy-erasure,
+      migration, restore, and rollback drills remain open.
+      Recovery documentation follow-up (2026-10-22): `storage-recovery-v1.md`
+      now maps existing source fixtures for online snapshot/restore, corrupt
+      inputs and destination races, transactional migration rollback, future
+      schema refusal, Markdown drift/retry, post-delete purge recovery, and
+      blocked WAL scrubs. It explicitly separates source-level fixture presence
+      from a fresh test run and from deployment evidence. Process/power-loss,
+      live identity/storage, and cross-store owner decisions remain open.
+      Rollback boundary (2026-10-22): the migration policy now states that
+      schema upgrades through v25 are transactional but have no reverse SQL
+      steps; older application versions reject newer schemas. Restoring a
+      verified pre-upgrade snapshot is a review-copy procedure, not production
+      rollback approval. A deployment switch still requires an owner-approved
+      drill and rollback point. Proposed owner-gated deployment sequence:
+      approve the supported application/schema version matrix, upgrade window,
+      producer pause/buffering behavior, backup cadence and maximum age,
+      integrity-manifest format, encryption/key custody, off-host access and
+      retention, restore identity, switch approver, rollback owner, and required
+      recovery receipts. Against disposable deployment-shaped storage, create a
+      verified backup while the configured writers are paused or using the
+      approved online-snapshot method; restore only to a distinct new path and
+      verify both SQLite integrity and expected project/goal/event/archive
+      records, then reconcile canonical projections read-only. Run each
+      supported migration path on a restore copy, inject interruption and
+      storage failure at migration/commit/checkpoint boundaries, and prove either
+      transactional rollback to the prior schema or an isolated recoverable
+      snapshot with no source overwrite. For the proposed lifecycle migration
+      from v22, preserve each project's active/suspended state, exact repository
+      and config fingerprints, grants/revocations, and append-only audit rows;
+      map the existing single registration to one binding generation without
+      widening or reissuing grants. If a binding or grant mapping is incomplete,
+      keep it unusable pending owner review. Start fresh revision epochs as an
+      explicit migration boundary; do not invent historical revision counts,
+      source epochs, or sequence baselines from timestamps or inactivity. Where
+      legacy event metadata lacks an authenticated epoch or sequence, mark the
+      baseline unknown and block automated source-event intake and terminal
+      acknowledgements
+      until owner reconciliation. Invalidate pre-migration sessions and leases.
+      Inject migration failure and prove no partial registry, grant, audit, or
+      cursor changes and no schema-version advance. Before switching services,
+      verify the exact binary/config/schema fingerprints, smoke-test read/write behavior
+      under the approved identity, inspect event cursors and buffered source
+      outboxes, and preserve a named pre-switch rollback point. Establish and
+      verify a single-writer barrier for routers, purge schedulers, consumers,
+      and other database writers: drain or durably preserve in-flight work,
+      fence old processes and leases, and prevent the new writer from starting
+      until migration, integrity checks, and read-only projection reconciliation
+      succeed. Inject a delayed old process and stale lease after the switch;
+      both must be unable to mutate the active store. If any writer, lease, or
+      in-flight operation cannot be accounted for, abort the switch and keep
+      writes and purge stopped pending owner reconciliation. Apply the same
+      barrier when rolling back, fencing the current writer before restoring
+      and starting a compatible version. Rollback means
+      restoring a compatible verified snapshot to a new path and making a
+      separately approved service switch; it does not mean running reverse SQL
+      or opening a newer database with an older binary. Record all before/after
+      digests, migration outcomes, reconciliation, approvals, switch/rollback
+      receipts, and unresolved gates in the bounded recovery record. Keep the
+      item open until deployment owners review a complete upgrade, restore, and
+      rollback drill on the intended storage and identity boundaries.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.
@@ -1224,7 +1922,37 @@ consumer plugin, Hermes integration, or production deployment.
       resolver exception and prove neither failure accepts verification facts.
       This is a snapshot function, not deployed scrape infrastructure or
       alerting. Host scrape endpoint, dashboards, alert rules/delivery, and
-      operator budgets remain open.
+      operator budgets remain open. Proposed owner-gated deployment sequence:
+      choose an authenticated scrape path and service identity, define its
+      network/storage boundary and retention, and publish only fixed bounded
+      metric names, labels, and enum values. Enforce a documented cardinality
+      ceiling; never label by goal, event, session, reviewer, evidence locator,
+      artifact path, exception text, or other unbounded user content. Keep
+      project-authorized views separate from a host/service-level storage view;
+      do not expose global database/WAL sizes through a project scrape. Define
+      the scope of `event_capacity_available` explicitly: the local renderer
+      emits it with a project label, but its value is the shared global inbox
+      gate, not that project's quota. Deployment owners must approve whether
+      this global boolean remains visible in each authorized project scrape or
+      moves to a service-only view. If exposed per project, dashboards must
+      deduplicate it as one shared state and never sum it into per-project
+      capacity or interpret it as independent reserved space. Do not expose
+      global inbox receipt counts or another project's event details through
+      the project scrape. Define
+      dashboards for event rate/lag and queue states, goal lifecycle, evidence
+      rejection versus adapter failure, review backlog, inventory completeness,
+      purge retries/dead-letter state, storage growth, and dependency freshness.
+      Each alert rule must name its measured source, threshold/window, owner,
+      runbook, delivery route, escalation, deduplication key, and recovery
+      condition; preserve `unknown`/incomplete input rather than graphing it as
+      zero. In a deployment-like test, trigger and clear every alert class,
+      exercise duplicate and dropped notifications and receiver outage, then
+      reconcile scrape samples and alert receipts with the underlying bounded
+      observations and confirm no private content appears in metrics, dashboard
+      labels, or notifications. Keep the item open until the deployed scrape,
+      dashboards, alert routes, cardinality budget, retention policy, and owner
+      runbooks are exercised together; the local exposition snapshot is not
+      scrape or delivery evidence.
 - [x] Define local truthful health semantics: green requires every required
       host dependency explicitly healthy, a complete empty staging inventory,
       available event/fact capacity, and zero event/review/purge backlog or
@@ -1276,6 +2004,13 @@ consumer plugin, Hermes integration, or production deployment.
       authorized storage read, and never delete artifacts. The bounded scan is
       an observation, not a retention policy or delete authorization. Backend-
       wide budgets, retention thresholds, age policy, and alerts remain open.
+      The staging decision must separately approve project and backend byte/file
+      ceilings, threshold and alert windows, incomplete-scan behavior, artifact
+      age classes, and the human approval and receipt required before deletion;
+      reaching a budget can stop new writes but cannot authorize retention
+      cleanup. Record an owner-selected policy and prove it under
+      `PROJECT-STAGING-BUDGET`; do not infer approval from the existing opt-in
+      project write limits or local metrics.
       Provider/model token usage is not collected by Curator. It belongs to
       Hermes Core's local project-usage accounting; Host Steward remains a
       separate root-account host-disk concern and must not own project token
@@ -1371,6 +2106,16 @@ consumer plugin, Hermes integration, or production deployment.
       12 Core checks green. This is local source/test evidence only; it does not
       prove a live provider response, production profile health, complete usage,
       budget policy, retention policy, or alert delivery.
+      Define token budgets only after the usage owner approves provider sources,
+      normalized token buckets, project attribution, accounting window,
+      threshold behavior, and relationship to billing. Keep unknown or
+      incomplete coverage distinct from zero; budgets and alerts must not treat
+      excluded auxiliary attempts, missing responses, or unbound sessions as
+      complete usage. Retain the read-only Hermes project-usage boundary and do
+      not copy token counts or private turn/session identifiers into Curator
+      events or facts. Prove the approved policy with `PROJECT-USAGE-BUDGET`;
+      live capture, project-wide coverage, and billing reconciliation remain
+      separate evidence requirements.
 - [ ] Verify restart recovery, duplicate delivery, delayed ordering, load,
       database locking, backup restore, and multi-project isolation. Local unit
       coverage now explicitly closes/reopens SQLite with a sequence-gap event
@@ -1404,6 +2149,31 @@ consumer plugin, Hermes integration, or production deployment.
       The four focused scrub tests pass; strict Pyright and errors-only Pylint
       pass. This is local SQLite recovery evidence only; deployment-like load,
       power-loss, and production locking remain open.
+      Proposed owner-gated closure sequence: define two separate measurement
+      contracts. For staging and temporary artifacts, specify byte/count/age
+      units, artifact classes, lifecycle states, scan-completeness rules, and
+      the treatment of shared SQLite, WAL, backup, and restore-copy bytes; report
+      shared storage globally unless owners approve and document an allocation
+      method. For model usage, name each authoritative source, provider/model
+      dimensions, reporting period, normalized token buckets, and treatment of
+      auxiliary calls, failed attempts, missing responses, and unbound sessions.
+      Preserve `unknown` or incomplete coverage rather than treating absent
+      records as zero; label source-reported tokens separately from reconciled
+      billable usage. Product and deployment owners then use representative
+      normal, peak, and retention-window measurements to approve per-project
+      warning and maximum budgets, safety margins, retention and expiry
+      thresholds, alert recipients, delivery-failure behavior, and explicit
+      stop conditions.
+      Acceptance must include multiple isolated projects, a shared-storage
+      case, incomplete staging scans, unknown and partially covered usage,
+      threshold crossings, alert delivery failure, and unauthorized reads;
+      prove attribution and aggregates without exposing session IDs, event IDs,
+      payloads, or provider output. Budget crossing may fail closed or alert only
+      as the approved policy specifies; it does not grant cleanup authority.
+      Retention, holds, and deletion remain separately approved gates, and
+      Host Steward remains limited to host-disk ownership. Keep this item open
+      until source completeness, allocation rules, measured budgets, alert
+      behavior, and owner decisions are reviewable in the intended deployment.
 
 ### 6. Per-project plugin and repository boundary
 
@@ -1497,6 +2267,31 @@ consumer plugin, Hermes integration, or production deployment.
       SQLite; no Vhost app or project data was changed. This is local adapter
       integration evidence, not a real application-originated request or
       production identity/runtime proof.
+      Current dirty-source package check (2026-10-23): `uv build --wheel`
+      produced `/tmp/curator-v2-alpha-wheel-current/curatormd_v2-0.1.0a1-py3-none-any.whl`
+      from HEAD `860ca84328dda9e3085460f257d1d5429519aa0f`; SHA-256 is
+      `0108355d990a1862c0dc7dd08d2ad3e99464d3f0c085e8440859fad8bb336b9e`.
+      The wheel contains the new `cli_interaction` and `store_requests` modules,
+      and imports resolved directly from the wheel archive. This validates
+      packaging of the current dirty source only; it was not installed into
+      the Vhost profile and does not update the earlier installed-package
+      evidence or close live-consumer gates.
+      Package refresh (2026-10-23): rebuilt after the local health-failure and
+      test-structure changes. The same output path now contains a wheel with
+      SHA-256 `d754ffb6bb4337dd758993aed09cf6edbe477e71ff890bfc81a76702124d1814`.
+      All 48 top-level Python modules match the current source byte for byte,
+      with no missing or extra modules; package, health, observability, and new
+      helper imports resolve directly from the archive. This supersedes the
+      earlier `0108355d...` artifact at that output path. It remains a dirty-
+      source packaging check only and was not installed into a consumer.
+      Clean-environment acceptance (2026-10-23): installed this exact
+      `d754ffb6...` wheel in a disposable CPython 3.12 venv without the source
+      tree on `PYTHONPATH`. Both installed stdio-launcher lifecycle tests pass;
+      all six installed operational CLI `--help` entrypoints run; the installed
+      storage CLI backs up and restores a disposable SQLite database to a new
+      path, where `quick_check` and the stored row verify. This is exact-wheel
+      local packaging acceptance only; no consumer repository or live profile
+      was changed.
 - [x] Ship and install a Curator V2-owned VS Code status-bar extension labeled
       `CuratorMD V2`; its tooltip and click action state that health, capture,
       persistence, and identity are not checked. `node --check` passes, VS Code
@@ -1544,6 +2339,192 @@ consumer plugin, Hermes integration, or production deployment.
       This closes local project registration/grant and plugin-isolation
       behavior only. Verified Hermes human identity, authenticated registry
       administration, and deployment-level denial tests remain open.
+      Proposed owner-gated project lifecycle acceptance: define temporary
+      suspension, consumer deregistration, and permanent project retirement as
+      distinct transitions with an authenticated administrator, reason,
+      effective time, and immutable receipt. Consumer deregistration removes one
+      repository/plugin binding through `deregistration_pending` to
+      `deregistered`: stop new capture and fresh claims, and fence stale
+      sessions/configs. During an owner-approved bounded drain, permit only exact
+      retries of inventoried pre-cutover envelopes under the same config and
+      source epoch through a transition-scoped drain capability; reject new
+      event IDs. Drain or cancel admitted operations
+      before revoking the binding's exact grants and routing identity. If the
+      drain expires or an owner revokes early, fence the old binding and keep
+      unresolved events pending; activation of a new source epoch remains
+      blocked until they are reconciled. Preserve the backend project, facts,
+      audit receipts, source backlog/cursors, and cleanup obligations;
+      deregistration neither retires the project nor authorizes data deletion.
+      Record the old source's final checkpoint and a content-free inventory of
+      its unacknowledged events.
+      Re-enrollment requires resolving each old event against a durable receipt
+      or separately approved terminal disposition; missing receipts and
+      ambiguous acknowledgments remain pending and block activation of the new
+      source epoch. Never copy or resequence old envelopes into the new epoch.
+      After reconciliation, activate only with a fresh authorized
+      repository/config binding, exact grants, and a new source epoch; do not
+      resume event replay or purge automatically.
+      A direct registration update must not bypass this boundary. A config-only
+      update with the same repository fingerprint requires an authenticated,
+      reviewed compare-and-set against the prior config digest and binding
+      revision; it preserves project status and cannot broaden or silently copy
+      grants. Any grant change is a separate audited decision. A repository
+      fingerprint change is a binding replacement: revoke the old binding's
+      grants and source epoch, then require deregistration and fresh enrollment.
+      Reject stale update requests and updates against deregistered or retired
+      bindings without changing grants, status, or project data. Test that a
+      direct repository-fingerprint update cannot bypass deregistration, and
+      race an old config update against re-enrollment; it must not revert the
+      new binding or restore prior grants.
+      Local progress (2026-10-23): the current project-registration update API
+      now rejects a repository-fingerprint change with a conflict requiring
+      deregistration and fresh enrollment. A focused regression confirms the
+      registration revision/status, grants, and audit history remain unchanged.
+      Further local progress (2026-10-23): schema v33 now stores consumer
+      binding status, revision, and source epoch separately from project
+      lifecycle, with append-only transition receipts. Fresh registration
+      creates project and binding state atomically; existing registrations are
+      backfilled active at epoch/revision 1 without invented historical audit.
+      Auth checks and project effect fences require an active binding. The
+      active -> deregistration_pending transition increments its own revision,
+      closes existing grants with revocation receipts, and fences cached
+      launchers while leaving project status/revision unchanged. Finalization is
+      an exact-retryable CAS to deregistered and fails while any event lacks a
+      processed receipt. Focused access and migration tests cover the state
+      transitions, grants, independent project state, stale launcher denial,
+      unresolved backlog, and migration backfill. This is local reference-store
+      behavior and an attended local CLI surface only. Exact pre-cutover drain,
+      source acknowledgement fencing,
+      event disposition/reconciliation, fresh enrollment and epoch rotation,
+      retirement, authenticated operator status, deployment identity, and
+      production lifecycle evidence remain open.
+      Represent binding state separately from project lifecycle state and expose
+      `active`, `deregistration_pending`, or `deregistered` in content-free
+      operator status; deregistration must never appear as project retirement.
+      Bind each command to a stable transition ID and the
+      observed status and revision for its project or consumer binding;
+      atomically compare-and-set only that scope and append an immutable receipt.
+      Advance a monotonic project revision on every lifecycle transition,
+      including pending/effective suspension, reactivation, and retirement;
+      advance a separate binding revision for each
+      consumer-binding change. Old operation tokens remain invalid after the
+      project returns to `active`. Exact retries with the same transition ID are
+      idempotent; a stale revision or changed-input reuse conflicts without
+      changing project state, binding state, or grants. Inject deregistration
+      against cached launchers and in-flight work; during drain, accept only an
+      exact old ID/digest retry and reject new event IDs. Reconcile each admitted
+      write at the cutover and prove no later mutation, replay, or purge occurs.
+      Expire the drain with an unresolved event and prove it remains pending and
+      blocks new-epoch activation. Inject a lost source acknowledgement and
+      missing old-epoch receipt before finalization; keep deregistration pending
+      and deny new-epoch activation until reconciliation resolves each event.
+      After final deregistration, reject every old grant and session. Re-enroll
+      with changed config and credentials; stale sessions, grants, and source
+      epochs must remain fenced,
+      while preserved records and backlogs remain visible to authorized
+      operators. Inject
+      concurrent suspend/reactivate decisions and a lost response; only one
+      transition may win, and the retry must recover that same receipt. Specify
+      which reads, writes, event claims, retries, reviews, and scheduled cleanup
+      are denied or frozen in each pending and terminal state.
+      Suspension does not authorize data deletion or keep a prior cleanup
+      approval executable. Define project suspension, consumer deregistration,
+      and project retirement cutovers as atomic transitions on their respective
+      revisions; each blocks new claims and write-side actions and invalidates
+      prior operation/lease tokens. The sole deregistration-drain exception is an
+      exact retry with a transition-scoped drain capability, bound to its ID,
+      digest, source epoch, unchanged config, and expiry. Ordinary work requires
+      both project and binding state to be `active`; during deregistration, only
+      the exact retry is allowed while the project remains active and the
+      binding is `deregistration_pending`. Recheck both project status/revision
+      and consumer-binding state/revision at each claim and final effect boundary,
+      including persistence, source acknowledgement, and unlink. Reject any
+      stale token or non-exempt action without effects or acknowledgement. Where
+      a sink cannot enforce the revision fence atomically, expose the applicable
+      pending state until each admitted operation durably completes or is
+      canceled and quiescence is verified. Commit `suspended` or `deregistered`
+      status, or the final retirement tombstone, only after that barrier; never
+      report a pending state as healthy. Include in-flight work in bounded
+      operator counts. Leave
+      unacknowledged source events and sequence cursors intact, visible, and
+      retryable; never drop or acknowledge backlog merely because the project is
+      suspended.
+      Provide an authenticated, content-free operator status separate from
+      ordinary project access; it must show `suspension_pending`, `suspended`,
+      `retirement_pending`, or `retired`
+      with bounded counts of pending/failed events, in-flight operations,
+      reviews, incomplete inventories, and purge work, plus an observation time
+      and completeness for each. Missing, stale, or incomplete counts remain
+      unknown, never zero; neither suspended nor retired projects are reported
+      healthy. Do not expose event IDs or payloads. Reactivation requires an
+      explicit authorized transition after repository/config fingerprints,
+      grants and credentials, backlog/cursors, and pending purge inventories are
+      revalidated. Persist an immutable review receipt bound to the suspended
+      transition, observed registry revision, exact fingerprints and grant or
+      credential versions, source cursor/backlog snapshot, and complete purge
+      inventory digests and counts. The activation compare-and-set must consume
+      that receipt and reject any changed revision, binding, cursor, count, or
+      inventory, and any stale or incomplete observation, without changing
+      status; require a fresh review. Record explicit dispositions for held work.
+      Do not automatically replay events or resume purge from project status;
+      cleanup still requires its independent current approval. Permanent
+      retirement must be an irreversible compare-and-set that leaves a durable
+      tombstone tied to the final project revision and retired source epoch. Never
+      reuse the project ID or retired epoch; retain the tombstone and source
+      deduplication/order fences through the approved replay horizon, indefinitely
+      if that horizon is unknown or unbounded. Reject delayed envelopes, stale
+      grants/configs, and pre-retirement tokens before effects. Retirement alone
+      does not authorize discarding existing backlog or later events: require a
+      separate authenticated human approval from the authorized data/policy
+      owner, bound to the complete backlog inventory digest or to a named source
+      epoch, event class, and sequence/cutoff policy. Persist the verified
+      approver subject/role, exact decision, bounded rationale, time, scope,
+      expiry, and trust/revocation version in the approval reference. Recheck the
+      current approver grant, revocation, expiry, project revision, and bindings
+      before committing each terminal receipt. Missing, stale, or revoked
+      approval leaves the event pending; project retirement never implies
+      approval. Bind each content-free terminal-rejection receipt to the final
+      project revision, authenticated source ID/epoch, event ID and payload
+      digest, sequence, and approval reference; retain no event payload and do
+      not advance the retired project's active cursor. Snapshot each producer's
+      exact last committed active sequence at retirement and initialize a
+      separate terminal-disposition cursor from it. Require an authenticated
+      source epoch and known sequence baseline. If either is absent or ambiguous,
+      mark the baseline unknown and keep events pending; do not auto-reject or
+      acknowledge them. Reconcile only under owner approval by fencing the old
+      epoch and enrolling a new epoch with an explicit starting sequence; never
+      reset a sequence in the same epoch or infer a baseline from inactivity.
+      Require a source sequence for automated terminal rejection; atomically
+      commit only the next contiguous sequence with its receipt and cursor
+      advance. A gap, missing sequence, or conflicting sequence remains visible
+      and pending; never acknowledge a later sequence across a gap. Exact
+      same-digest retries recover the same receipt; conflicting event-ID reuse
+      remains visible and pending. Receipt
+      commit is the terminal disposition's authorization
+      boundary: an exact retry may finish acknowledgement from that receipt even
+      if approval later expires or is revoked, but the receipt cannot authorize
+      another event. Acknowledge only after the approved disposition and receipt
+      are durable. Inject approval expiry, revocation, or scope change before
+      receipt commit and after commit but before source acknowledgement; before
+      commit, leave the event pending without a receipt or ack, and after commit,
+      allow only the exact idempotent retry. Test replay, lost response, restart,
+      ID/epoch reuse, digest conflict, missing/out-of-order sequences, and
+      missing/ambiguous baseline, sequence reset, and separate-cursor continuity
+      without changing the active cursor;
+      none may reactivate or mutate the retired identity. Data retention or
+      deletion remains independently gated by a complete inventory and explicit
+      approval.
+      Inject suspension or retirement before claim, during event processing,
+      after durable receipt but before source acknowledgement, and around
+      purge/unlink; restart and verify each operation completes exactly once or
+      remains visibly pending. Inject config, grant,
+      cursor, purge-inventory, and observation-expiry changes between review and
+      activation; reject the stale receipt without changing status or grants and
+      require a fresh review. Exercise reactivation with unchanged and changed
+      bindings; after reactivation, replay pre-suspension operation and lease
+      tokens at claim and effect boundaries and reject them. Also reject stale
+      grants and old source epochs. Keep these semantics open until registry
+      owners approve the lifecycle policy and deployment-bound recovery evidence.
 - [x] Implement reference-plugin checklist mapping that records the configured
       source ID, exact selected source line, and SHA-256 file revision; source edits
       do not mutate an existing goal snapshot. Format-specific consumer adapters
@@ -1626,6 +2607,61 @@ consumer plugin, Hermes integration, or production deployment.
       their respective integration work. Production retention policy, scheduler
       deployment, and Hermes-authenticated reviewer identity remain separate
       release gates; this local implementation does not close them.
+- [ ] **Audit actual consumer producer coverage and out-of-root artifacts.**
+      For each approved pilot consumer, build an owner-reviewed source-to-class
+      matrix of real producers, transient artifact classes, lifecycle owners,
+      and expected destinations. Mark a class absent only with owner
+      confirmation. Proposed acceptance: exercise each mapped producer/class
+      through the consuming application's real adapter in disposable state and
+      verify atomic publication to the exact project staging root; compare the
+      results with a fresh complete project inventory, including duplicates and
+      orphaned goals. Confirm skipped, changed, unreadable, or over-limit entries
+      inside the root keep the inventory incomplete. Classify every out-of-root
+      source as either routed through an approved producer path or outside
+      Curator-controlled deletion with a separately documented owner disposition;
+      never expand scan or purge roots by inference. Keep the source-coverage
+      gate open while any producer, artifact class, or destination is unknown;
+      never treat an outside-scope artifact as purged by V2. Record only bounded
+      source/class IDs, config/target fingerprints, hashes, counts, and outcomes.
+      Completeness and freshness acceptance: bind each matrix to the consumer
+      source revision, repository config fingerprint, and adapter version.
+      Enumerate producer entrypoints and their create/copy/move/rename/temp-file
+      paths, including imports, background/retry work, generated intermediates,
+      cancellation and failure branches; identify absent classes only through
+      named owner confirmation. Correlate that source review with bounded
+      filesystem observations from each owner-approved disposable workflow,
+      including out-of-root writes by the workflow process where the observation
+      boundary permits them. State the process/namespace scope and exclusions of
+      each observation; an unobserved host or provider boundary stays explicitly
+      unknown and must not be represented as a complete scan. For every class,
+      record its producer ID, expected destination class, publication point,
+      hold/expiry owner, and approved disposition for outputs outside the
+      Curator staging root. Include ordinary, retry, cancellation, and failed
+      workflows when those branches can create artifacts. A source, config, or
+      adapter fingerprint change invalidates the matrix for current coverage and
+      requires a new owner review; prior observations remain historical evidence
+      only. Report unknown producers or destinations as an open gate, never as an
+      empty result. This proposal authorizes no capture or purge.
+      Local source review (2026-10-23): the dirty `renew_ssl` checkout at
+      `7d2b10f5433cfe566fc560741bbc9401265176f4` has Curator config SHA-256
+      `4f3a34e84832b7e8ccfe4e91a68b0664c6aa603409318197f0b44e6454ece44a`
+      (`backend_api_version = 1`) and a consumer Hermes hook. The hook accepts
+      an explicit goal-bind command plus bounded Codex turn start/end events;
+      its reviewed file SHA-256 is
+      `381abaefcc34455472ea3ea9ef69f7ded80c7905255fec7a8d3e1fa34d3c623f0`.
+      The hook routes those lifecycle events to `hermes_codex_event`; no
+      Vhost Manager application producer or call to Curator staging,
+      inventory, or expiry APIs was found in the reviewed server/UI source.
+      Vhost Manager source does create site/config outputs, operation
+      snapshots/archives, manager state, and security counters under its
+      configured site, server, backup, or state paths. These are Vhost-owned
+      outputs outside the Curator staging root, with their dispositions not
+      reviewed or authorized here. This is a bounded source scan only: the
+      checkout has unrelated dirty changes, no clean source revision can be
+      attested, no owner-reviewed source/class matrix or workflow filesystem
+      observation exists, and ordinary/retry/cancel/failure branches and
+      out-of-root writes remain unverified. Do not treat absent Curator calls
+      in this scan as owner-confirmed absent producers.
 - [ ] Test two isolated consumer repositories, including cross-project access
       denial and independent configuration/persistence through real plugins and
       their configured persistence adapters. Progress (2026-10-19): the local
@@ -1657,6 +2693,52 @@ consumer plugin, Hermes integration, or production deployment.
       repository; the second is a synthetic consumer config, so a second real
       consumer and trusted live identity remain open. All seven Vhost contracts
       pass under the installed alpha environment.
+      Proposed owner-gated generalization sequence: the Vhost owner and a second
+      consumer owner identify the actual checkouts, repository-owned configs,
+      exact project grants, and separate persistence/staging targets; synthetic
+      configs do not count as the second consumer. Pin the same reviewed package
+      artifact and record each config/root fingerprint. Through each installed
+      plugin and its configured persistence adapter, write a checklist-bound
+      goal and compact fact, then verify only that repository's configured
+      projection changes and reconciles. From both consumers, request access to
+      the other project's read and write surfaces and confirm denial without
+      exposing its records. Snapshot both projects' scoped database state,
+      receipts, staging inventories, and canonical targets before each denied
+      request; verify all remain unchanged afterward, including after restarting
+      the consumer launcher so a cached grant cannot mask the result. Attempt a
+      project-ID substitution and a stale config/root binding through each
+      consumer and confirm fail-closed denial with no side effect. Retain only
+      package/config/target digests, record IDs, before/after hashes,
+      reconciliation results, and denial outcomes as review evidence.
+      Inject failure of one consumer's configured persistence adapter, including
+      an unavailable adapter and a failed or incomplete reconciliation. Its
+      operation must fail visibly and closed, with no fallback to global state,
+      the other consumer's adapter, or another repository root; compare scoped
+      records, receipts, staging inventories, and canonical targets before and
+      after to prove the failed operation made no unauthorized change. While
+      that adapter remains unavailable, complete and reconcile an authorized
+      operation through the other consumer and verify it changes only its own
+      target. Restore the failed adapter, restart that consumer launcher, and
+      retry the same operation ID; prove durable replay handling creates no
+      duplicate record or receipt and reconciles only the original consumer's
+      target. Distinguish a known pre-commit failure from a lost acknowledgement
+      or incomplete reconciliation after a possible commit: the latter is
+      `unknown` and recovery-pending, not a no-op or success. Before retrying,
+      recover under the same project/config binding and inspect that exact
+      operation ID, its receipts, and its configured target. Retry only with
+      the same ID after reconciling the prior outcome; if it remains ambiguous,
+      leave it open for owner action. Inject failure before commit, after commit
+      but before acknowledgement, during projection/reconciliation, and during
+      retry; prove no duplicate mutation or receipt and no cross-consumer effect.
+      Keep failure visibility and recovery evidence separate from readiness
+      claims. Retain only package/config/target
+      fingerprints, operation and receipt IDs, bounded before/after hashes,
+      reconciliation results, and failure/retry outcomes. This remains proposed
+      until both real consumer owners approve the scenario and deployment-bound
+      adapters and identity are exercised.
+      Keep human identity, real application event production, purge approval,
+      and production isolation as separate gates. This proposal does not
+      authorize installation or capture in a second repository.
 - [x] Document plugin installation, upgrades, disablement, and recovery for a
       repository owner in [`consumer-operations-v1.md`](consumer-operations-v1.md).
       The runbook explicitly distinguishes a local profile-ID assertion from
@@ -1722,9 +2804,11 @@ consumer plugin, Hermes integration, or production deployment.
       sessions. The shared opaque source ID is derived identically by Hermes
       and Curator, and session IDs are bounded before they enter the binding.
       The Curator adapter now routes the exact outbox envelope through the
-      trusted MCP event tool and acknowledges only a processed/duplicate
-      receipt. A new in-memory acceptance test exercises adapter → trusted MCP
-      metadata → translator → project authorization → durable goal fact; a
+      trusted MCP event tool and acknowledges only a durable `processed` receipt
+      (including `suppressed_nonactive_goal` after atomic cursor advancement) or
+      an exact `duplicate` receipt. A new in-memory acceptance test exercises
+      adapter → trusted MCP metadata → translator → project authorization →
+      durable goal fact; a
       matching Hermes regression verifies successful activation is persisted
       and an unbound session is not queued. A later grouped local run passed 86
       Hermes tests across six Codex-hook, profile-scope, MCP-trust, migration,
@@ -1792,7 +2876,9 @@ consumer plugin, Hermes integration, or production deployment.
       now binds a session/goal in the profile-local outbox, persists a bounded
       Codex event, dispatches it through a real durable hook handler receiving
       public `ctx`, calls the allowlisted managed MCP handler with session and
-      durable-event context, and acknowledges only the processed receipt. The
+      durable-event context, and acknowledges only a durable processed receipt,
+      including terminal `suppressed_nonactive_goal` after its cursor advances
+      atomically. The
       12-test hook module and all 12 Hermes `scripts/check` checks pass. The
       regression now invokes the production `_make_tool_handler` and its
       managed call path against a fake connected MCP session, with a separate
@@ -2021,35 +3107,53 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       This is local implementation guidance; production authority, identity,
       retention, backup, deployment, and recovery drills remain open.
 
-      Fresh Hermes Core verification (2026-10-21, source head
-      `9b8fc71e30`): repository `scripts/run_tests.sh` passes 61 tests across
-      `tests/gateway/test_hooks.py`,
-      `tests/agent/test_profile_usage_accounting.py`, and
-      `tests/agent/test_codex_app_server_integration.py`; `python3
-      scripts/check` passes all 12 checks. The Hermes integration checkout is
-      clean. Host Steward remains Hermes Core-owned; these local checks do not
-      prove live root-account enablement, authenticated reviewer identity,
-      production supervision, or deployment recovery.
-      Additional verification (2026-10-22, unchanged Hermes source head
-      `9b8fc71e30`): focused Host Steward and gateway-hook suites pass 39 tests,
-      and Hermes Core `python3 scripts/check` passes all 12 checks. The Hermes
-      checkout remains clean. This rechecks local integration code only; root
-      account enablement, authenticated identity, live supervision, and
-      deployment recovery remain open.
+### Fresh Hermes Core verification (2026-10-21, source head `9b8fc71e30`)
 
-      Vhost alpha package update (2026-10-21): rebuilt wheel SHA-256
-      `b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3`
-      was installed only in the dedicated `renew-ssl-coding` alpha virtualenv;
-      all 34 installed module hashes match Curator source. The seven Vhost
-      consumer contracts and the Hermes-managed disposable integration harness
-      pass. Profile MCP discovery connects with `auth=none` and discovers 46
-      tools. A read-only SQLite probe after the supported schema migration
-      reports `quick_check=ok`, schema 18, one project goal, two facts, 12
-      processed event receipts, zero retained inbox payload JSON bytes, and
-      both SDE context columns. No Vhost source or application data changed.
-      This package/profile integration result does not prove authenticated
-      identity, successful interactive MCP approval, application workflow,
-      production health, or deployment recovery.
+Repository `scripts/run_tests.sh` passes 61 tests across
+`tests/gateway/test_hooks.py`,
+`tests/agent/test_profile_usage_accounting.py`, and
+`tests/agent/test_codex_app_server_integration.py`; Hermes Core
+`python3 scripts/check` passes all 12 checks. The Hermes integration checkout
+is clean. Host Steward remains Hermes Core-owned; these local checks do not
+prove live root-account enablement, authenticated reviewer identity,
+production supervision, or deployment recovery.
+
+Additional verification (2026-10-22, unchanged Hermes source head
+`9b8fc71e30`): focused Host Steward and gateway-hook suites pass 39 tests, and
+Hermes Core `python3 scripts/check` passes all 12 checks. The Hermes checkout
+remains clean. This rechecks local integration code only; root account
+enablement, authenticated identity, live supervision, and deployment recovery
+remain open.
+
+Hermes source freshness (2026-10-22): the current clean Core checkout is
+`cbf36955a2a0dab40224efa49af692300194f9df`, ten commits after the verified
+source head `9b8fc71e30`. The recorded 61-test and 39-test lifecycle,
+profile-usage, Host Steward, and gateway suites are for `9b8fc71e30`. The
+current checkout is blob-filtered and non-shallow: `.git` is 145 MiB,
+`v0.22.2..HEAD` contains 2,258 commits, and `git describe --tags --long
+--always` returns `v0.22.2+canary.20261019T071120Z-279-gcbf36955a2`.
+The worktree and index are clean. This confirms the version-distance history
+at this checkout; it is not additional test or runtime evidence. The current
+`cbf36955a2` trace-upload change has separate documented focused coverage:
+seven trace-export tests (one optional-upload test skipped) and all 12
+`scripts/check` checks. That covers trace rendering only; it does not
+revalidate the broader integration suites at current `HEAD`. Rerun those suites
+before treating Hermes integration verification as current.
+No Hermes tests were run for this documentation update.
+
+Vhost alpha package update (2026-10-21): rebuilt wheel SHA-256
+`b141087b8f9359097d5246195d8c9a09cc60a8fae37dfb128539956c267f94b3`
+was installed only in the dedicated `renew-ssl-coding` alpha virtualenv;
+all 34 installed module hashes match Curator source. The seven Vhost
+consumer contracts and the Hermes-managed disposable integration harness
+pass. Profile MCP discovery connects with `auth=none` and discovers 46
+tools. A read-only SQLite probe after the supported schema migration
+reports `quick_check=ok`, schema 18, one project goal, two facts, 12
+processed event receipts, zero retained inbox payload JSON bytes, and
+both SDE context columns. No Vhost source or application data changed.
+This package/profile integration result does not prove authenticated
+identity, successful interactive MCP approval, application workflow,
+production health, or deployment recovery.
 
 ### 8. Security, privacy, token, and disk controls
 
@@ -2079,6 +3183,64 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       broader raw-material flow criterion.
 - [ ] Apply least-privilege identities, encrypted transport/storage where
       appropriate, secret rotation, audit access, and project-level authorization.
+      Proposed closure sequence: the product/security and deployment owners
+      inventory each deployed caller, service, network or local-stdio boundary,
+      SQLite/WAL/SHM and canonical store, backup, staging, and administrative
+      path; assign each principal only the project/action grants it needs and
+      define which grants and administrative actions produce content-free,
+      attributable audit records. Owners classify each transport and storage
+      boundary and decide whether TLS or encryption at rest is required there,
+      then name the trust roots, key/secret custodians, rotation interval or
+      trigger, revocation path, and recovery procedure. Do not infer a need for
+      network TLS on local stdio, or infer encryption from private file modes.
+      In a deployment-like isolated acceptance, prove allowed in-scope access,
+      denial for missing, expired, revoked, wrong-role, and cross-project
+      credentials, rotation with the old credential rejected, and audit records
+      without secrets or event payloads; inspect the configured channel and
+      every selected store/backup boundary against the owners' recorded
+      encryption decision. Repeat rotation/revocation with independent worker
+      processes and already-established sessions: verify stale process-local
+      caches or refresh paths cannot continue protected reads/writes beyond the
+      owner-approved revocation bound, and test the defined behavior for
+      in-flight operations at revocation. If the identity provider cannot
+      guarantee immediate invalidation, record its maximum propagation window
+      and fail closed for operations whose approved policy requires fresher
+      authorization. Where at-rest encryption is required, rotate the selected
+      storage/backup key through the approved key custodian, verify new writes
+      use the new version, and restore an older retained backup only to a new
+      isolated path using the documented recovery key path. Prove key retirement
+      does not precede backup expiry or destroy the approved recovery route, and
+      that a retired key version cannot encrypt new writes while it remains
+      available only for approved recovery of retained backups. Keep this gate
+      open until owners approve the
+      decisions and the deployed boundaries, identity source, and audit trail
+      are verified; local UID/profile grants and synthetic authorizers do not
+      close it. For every deployed grant, denial, credential rotation/revocation,
+      administrative change, and security-relevant recovery action, verify that
+      the audit record identifies the verified actor, project/action scope,
+      policy or credential version, time, and outcome without recording secret
+      values or payloads. Define and approve audit-record retention, read access,
+      and behavior when the audit sink is unavailable before enabling protected
+      operations; a caller must not be able to rewrite or delete its own audit
+      history. Classify every audit-required action, including grant or policy
+      changes, project suspension/reactivation/retirement, source-epoch
+      reconciliation, terminal event rejection, reviewer decisions, hold
+      release, and manual or scheduled purge.
+      For each mutation, define a commit/outbox protocol that cannot report
+      success while losing its audit record; when the audit sink is unavailable,
+      fail the protected mutation closed and prove its domain state is unchanged.
+      If the audit record and mutation cannot share one transaction, prove the
+      durable intent/recovery path is idempotent across a crash at every
+      boundary. Bind each external effect to a stable action key and require
+      receiver-side deduplication; if the receiver cannot establish the outcome,
+      stop in a visible reconciliation state instead of blindly repeating the
+      effect. Define approved sink-outage behavior for read-only operations; an
+      allowed read must not imply that its audit record was persisted. Exercise
+      allowed/denied audit reads, attempted record mutation, restart/recovery,
+      and sink outage; reconcile observed records against source identities,
+      grants, and key rotations. Missing, unauthenticated, or irreconcilable
+      records remain an explicit open/degraded security gate. Do not report the
+      related control as audited solely because the operation returned success.
 - [x] Establish explicit maximum event sizes and stream large sources; add
       regression tests that demonstrate bounded memory for large imports.
       Event envelopes are limited to 16 KiB; repository plugin staging reads
@@ -2089,7 +3251,8 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       allocation bound, not total process RSS or end-to-end producer behavior;
       see `tests/test_project_plugin.py`.
 - [ ] Prove raw material is not copied into logs, exceptions, metrics, traces,
-      backups, or canonical persistence. Progress (2026-10-19): the hosted
+      backups, crash/core dumps, host journals, command history, or canonical
+      persistence. Progress (2026-10-19): the hosted
       launcher now emits a generic startup failure instead of echoing exception
       text, and a backup regression proves a successfully processed event's
       serialized source envelope is absent from the SQLite snapshot while its
@@ -2359,22 +3522,83 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       All 44 project-plugin tests pass; strict Pyright and errors-only Pylint
       pass for the changed source and test modules. Other source-to-sink paths
       remain open, so this does not close the privacy item.
-      Hermes trace-export follow-up (2026-10-22): Curator V2 MCP tool arguments
-      and results are now replaced with fixed markers before local or uploaded
-      trace rendering, even when `--no-redact` disables generic secret
-      redaction. A regression confirms both canaries are absent while the tool
-      name/call association and ordinary non-Curator content remain available.
-      The full trace-export test file passes seven tests (one optional-upload
-      test skipped), Hermes `scripts/check` passes all 12 checks, and
-      `git diff --check` passes. This covers the trace converter sink only;
+      Hermes trace-export follow-up (2026-10-22, Core HEAD `cbf36955a2`):
+      Curator V2 MCP tool arguments and results are now replaced with fixed
+      markers before local or uploaded trace rendering, even when `--no-redact`
+      disables generic secret redaction. The corresponding
+      [`test_trace_upload.py`](/home/eaglesvn/.hermes/hermes-agent/tests/agent/test_trace_upload.py)
+      regression confirms both canaries are absent while the tool name/call
+      association and ordinary non-Curator content remain available. Its
+      recorded run passes seven tests (one optional-upload test skipped);
+      Hermes `scripts/check` passes all 12 checks, and `git diff --check`
+      passes. This covers the trace converter sink only;
       historical rows, WAL/recovery, other backup paths, provider retention,
       and the wider source-to-sink review remain open.
+      Proposed owner-gated closure sequence: inventory payload-bearing sources,
+      lifecycle states, serializers, and sinks across Curator and Hermes,
+      including logs, exception chains, CLI/MCP replies, metrics, canonical
+      projections, SQLite main/WAL/SHM/journal files, backup/restore, traces,
+      session viewers, provider-facing paths, process/core dumps, service-manager
+      journals, crash-reporting agents, command history, and swap/hibernation
+      storage where enabled. For each sink, record whether it is enabled, its
+      effective configuration, access and retention boundary, and the canary
+      observation. Verify disabled sinks from host configuration; absence of a
+      canary alone does not prove a sink is disabled. Inject process termination
+      while a distinct payload canary is in memory and inspect every enabled
+      crash-reporting and supervisor path for unauthorized persistence. Before
+      accepting backup evidence, product/privacy and recovery owners must decide
+      how pending, retryable, or quarantined payloads remain recoverable without
+      silently entering general backups. Preserve the no-raw-backup criterion
+      unless the owner explicitly revises it. Then route distinct synthetic
+      canaries through accepted, duplicate, rejected, owner-approved terminal
+      rejection for a retired project, failed, quarantined, retried, processed,
+      discarded, migration, restore, and local/uploaded-trace paths. For terminal
+      rejection, verify the receipt and audit record contain only approved
+      content-free identity/digest metadata, never the event payload; denied or
+      stale approval leaves the event in its approved pending store without an
+      acknowledgement. Verify aggregate operator views expose neither event IDs
+      nor payloads.
+      Assert canaries are absent from every unapproved sink; pending payloads
+      follow only the approved transient-storage and recovery policy, while
+      terminal states satisfy the scrub contract. Keep evidence content-free:
+      record sink IDs, fixture digests, state transitions, and outcomes only.
+      Keep the privacy row open until the owner-reviewed source/sink matrix and
+      every applicable local and deployed path have direct evidence; focused
+      canary tests do not close the full review.
 - [ ] Define retention and deletion policies by artifact class, with measured
       disk budgets and monitoring for unexplained growth. The local-alpha
       72-hour maximum and prompt post-record/disposition expiry are implemented;
       content-free per-class measurements and configurable project staging
       limits are available. Owner-approved measured budgets and deployed growth
-      monitoring remain open.
+      monitoring remain open. Proposed production closure sequence: artifact
+      owners set retention, expiry triggers, hold discovery/release, and recovery
+      rules for each class and lifecycle state; do not infer these from the
+      local-alpha 72-hour default. Measure content-free bytes, counts, and age by
+      project, artifact class, and pending/held/purge state across representative
+      normal, peak, and full-retention workloads, including database, WAL, backup,
+      staging, and retry growth. Product and deployment owners approve class
+      budgets, safety margins, alert recipients, and thresholds from those
+      measurements. Exercise expected growth, held/unknown-age artifacts,
+      incomplete inventory, stalled purge, WAL blockage, and alert-delivery
+      failure; verify unexplained growth is reported as unknown/unattributed and
+      never healthy, while alerts and retention actions do not expose content or
+      trigger unapproved deletion. Keep this gate open until the owner-approved
+      policy, measured thresholds, and deployment alert/recovery evidence are
+      reviewable. Specify the age anchor for each artifact class (authoritative
+      source creation, first controlled publication, or another owner-selected
+      event) and how artifact identity distinguishes a genuinely new source
+      occurrence from a retry or duplicate with identical content. Do not infer
+      that a retry, rename, copy, backup/restore, process restart, or exact event
+      replay starts a new retention interval. Preserve the original age and
+      maximum-age deadline across those operations unless the policy explicitly
+      defines a new artifact occurrence and records its provenance. Define how
+      holds affect eligibility and whether expiry continues while a hold is
+      active; the local-alpha hold exception does not decide production policy.
+      Exercise before/at/after-threshold cases with retries, duplicate delivery,
+      rename/copy/restore, clock rollback, future or missing timestamps, and
+      hold placement/release. Unknown or untrustworthy age remains visible and
+      cannot silently reset the clock or become a deletion authorization. This
+      is a proposal, not a production policy or cleanup grant.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
       pinned/reviewed tool versions and documented failure handling.
 
@@ -2926,7 +4150,356 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       strict Pyright reports zero diagnostics and focused router Pylint is
       10.00/10. The full suite and whole-tree warning-level inventory were not
       rerun; repository-wide cleanup remains open.
+      Further progress (2026-10-23): grouped cursor, staging-age, expiry-purge,
+      and cleanup-authorization storage queries into typed
+      `_ProjectAuxiliaryUsageRows`, preserving query order and logical totals.
+      Global scrub-queue totals are grouped in `EventPayloadScrubUsage`, keeping
+      the inbox-capacity read model within Pylint's attribute limit. All 28
+      event tests pass, strict Pyright, errors-only Pylint, and `git diff
+      --check` pass. Targeted scans no longer flag `_project_record_usage_rows`
+      or `GlobalEventInboxUsage`; a refreshed whole-tree inventory falls from
+      163 to 161 findings. Repository-wide cleanup remains open.
+      Further progress (2026-10-23): replaced the multi-parameter store
+      interfaces for lifecycle transitions, goal retirement, and criteria
+      amendments with immutable typed requests; migrated the service and direct
+      test callers. Validation order, write transaction boundaries, and stored
+      results remain unchanged. All 46 lifecycle tests pass, strict Pyright,
+      errors-only Pylint, and `git diff --check` pass. The full warning-level
+      inventory falls from 161 to 153 findings, and the three store methods no
+      longer report argument-count findings. Repository-wide cleanup remains
+      open.
+      Further progress (2026-10-23): split unversioned schema bootstrap repair
+      into ordered goal/archive, receipt, and event helpers. The original
+      caller-owned transaction still contains base DDL, legacy repairs, the v1
+      stamp, and v2-v22 migration sequence. All 30 migration tests pass, strict
+      Pyright, errors-only Pylint, and `git diff --check` pass. `_create_schema`
+      no longer reports excess branches; the whole-tree warning inventory falls
+      from 153 to 152 findings. Repository-wide cleanup remains open.
+      Further progress (2026-10-23): consolidated the attended TTY confirmation
+      prompt and bounded exact-phrase read used by access and review CLIs into
+      `cli_interaction.py`, retaining each command's refusal text. Eleven
+      focused CLI tests pass; strict Pyright, errors-only Pylint, and
+      `git diff --check` pass. The duplicate-code finding between the two CLI
+      modules is gone, and the refreshed whole-tree inventory falls from 152 to
+      151 findings. Repository-wide cleanup remains open.
+      Additional progress (2026-10-23): corrected the remaining eight
+      line-length findings and one import-order finding from the whole-tree
+      Pylint report without changing behavior. The fresh pinned full-tree run
+      reports 177 diagnostics, including repeated duplicate-code reports, at
+      9.90/10 and exit 28; it reported 186 diagnostics immediately before this
+      slice. There are now no line-length or import-order diagnostics. Strict
+      Pyright, errors-only Pylint, `uv lock --check`, Bandit, and
+      `git diff --check` pass. Structural complexity, fixture-size, and
+      duplicate-code cleanup remain open; no delivery row or checklist count
+      changed.
+      Follow-up (2026-10-23): extracted the active registration, captured
+      revision, and repository/config/API fingerprint comparisons from the
+      project grant authorizer into one typed match predicate. The eight
+      project-access tests pass and strict Pyright reports zero diagnostics.
+      The full-tree diagnostic count falls from 177 to 176 at 9.90/10 (exit
+      28); the authorizer no longer has a boolean-expression finding. The
+      repository-wide cleanup remains open.
+      Further follow-up (2026-10-23): grouped the exact project-registration
+      update retry fields into one ordered audit-row comparison. The same eight
+      project-access tests pass; strict Pyright, errors-only Pylint, and
+      `git diff --check` pass. The full-tree report now has 175 diagnostic
+      entries at 9.90/10 (exit 28), and no `too-many-boolean-expressions`
+      finding remains. The repository-wide item remains open.
+      Further follow-up (2026-10-23): removed redundant field aliases from
+      `update_project_registration` and kept its validated
+      `ProjectRegistrationRequest` as the source for validation, SQL, and the
+      audit receipt. The existing transaction and exact-retry behavior remain
+      unchanged; all eight focused project-access tests pass. Strict Pyright
+      and errors-only Pylint pass, and the full-tree report falls from 175 to
+      174 diagnostics at 9.90/10 (exit 28). The method's excessive-local
+      finding is gone; other repository findings remain open.
+      Further follow-up (2026-10-23): reused the shared exact-integer
+      TypeGuard at all three project revision boundaries, so boolean values
+      remain invalid without local Pylint suppressions. Enum-instance checks
+      retain exact-type validation with narrow code-local reasons. Added a
+      regression proving update and suspend requests reject `True` without
+      changing registry state or audit receipts. All nine project-access and
+      27 purge tests pass and strict Pyright is clean; focused Pylint reports
+      no unidiomatic-typecheck findings in these files. The fresh
+      whole-tree inventory falls from 174 to 169 diagnostics at 9.91/10 (exit
+      28), with no unidiomatic-typecheck findings. The repository-wide item
+      remains open.
+      Further progress (2026-10-23): replaced the parallel arguments to
+      project-status transitions with one immutable `ProjectStatusChangeRequest`
+      across the manager, SQLite store, and attended access CLI. The request
+      preserves host-derived actor identity, exact revision validation, and
+      the existing transactional replay path. The focused project-access,
+      access-CLI, and hosted-MCP suites pass 25 tests; strict Pyright and
+      errors-only Pylint pass. Whole-tree Pylint falls from 169 to 164
+      diagnostics at 9.91/10 (exit 28); the manager/store argument and local
+      count findings are removed. Repository-wide cleanup remains open.
+      Further progress (2026-10-23): extracted cleanup inventory completeness,
+      per-artifact retention/reacquisition consistency, and occurrence-bound
+      manifest verification into a helper that receives the existing SQLite
+      transaction connection. All 27 purge tests pass; strict Pyright and
+      errors-only Pylint pass. The whole-tree warning inventory falls from 164
+      to 163 diagnostic entries, and `create_cleanup_authorization` no longer
+      has an excessive-local finding. Repository-wide cleanup remains open.
+      Further progress (2026-10-23): grouped the pre-write verified evidence,
+      fact IDs, and lifecycle/criteria revisions into an immutable
+      `_VerifiedProjectionSnapshot`. Evidence verification remains before the
+      write transaction; the transaction still rejects changed revisions or
+      facts before Markdown replacement. All 19 Markdown persistence tests
+      pass; strict Pyright and errors-only Pylint pass. The whole-tree report
+      falls from 163 to 162 diagnostic entries at 9.91/10 (exit 28), and
+      `persist_goal` no longer has an excessive-local warning. The broad
+      Pylint item remains open.
+      Further progress (2026-10-23): grouped candidates, pending and completed
+      receipts, corrections, and optional verified criterion progress into an
+      immutable `_GoalProjectionRecords` passed to the Markdown block renderer.
+      The 19 Markdown persistence tests pass; strict Pyright and errors-only
+      Pylint pass. Whole-tree Pylint falls from 162 to 160 diagnostic entries
+      at 9.91/10 (exit 28); `_render_block` no longer has argument-count
+      findings. Other module-size and repository-wide findings remain open.
+      Further progress (2026-10-23): separated allowed artifact-action
+      collection and attended decision parsing from `_review`, keeping invalid
+      input, incomplete inventory, exact confirmation, rationale, canonical
+      persistence, and purge ordering unchanged. All nine review-CLI tests
+      pass; strict Pyright, focused Pylint, errors-only Pylint, and
+      `git diff --check` pass. Whole-tree Pylint falls from 160 to 158
+      diagnostic entries at 9.91/10 (exit 28); the production review method
+      no longer reports excessive locals. Test-fixture local-count findings
+      remain, and the repository-wide item stays open.
+      Further progress (2026-10-23): moved verified-candidate and artifact
+      inventory setup into typed fixture records/helpers, and separated the
+      expiry test's fixture creation, CLI invocation, and receipt assertions.
+      This preserves the existing lifecycle assertions while removing both
+      test-fixture excessive-local findings. Focused Pylint for
+      `tests/test_review_cli.py` rates 10.00/10; strict Pyright reports zero
+      diagnostics and `git diff --check` passes. Fresh whole-tree verification
+      (2026-10-23): `uv run --locked --group quality pylint
+      src/curatormd_v2 tests` on HEAD `860ca84328dda9e3085460f257d1d5429519aa0f`
+      with 48 dirty status entries, using Pylint 4.1.3, reports 156 diagnostics
+      at 9.91/10 and exits 28. This is down from the immediately prior
+      158-diagnostic report; neither `tests/test_review_cli.py` finding remains.
+      The largest categories are excessive locals (27), duplicate code (25),
+      excessive arguments (23), instance attributes (19), and positional
+      arguments (12). Further progress (2026-10-23): replaced the checklist
+      plugin's parallel intake parameters with frozen `ChecklistGoalStartRequest`
+      and `GoalStartOptions` values, exported for consumer plugins, and migrated
+      all six current call sites. This preserves exact source snapshotting and
+      lifecycle options while removing the plugin method's excessive-argument
+      finding without adding a dataclass attribute warning. A fresh whole-tree
+      Pylint 4.1.3 run reports 155 diagnostics at 9.91/10 (exit 28); strict
+      Pyright reports zero diagnostics and `git diff --check` passes. The
+      Pylint checklist item remains open.
+      Further progress (2026-10-23): the contract-schema test now checks the
+      artifact dependency result count explicitly before indexing, removing two
+      whole-tree `W0632` unbalanced-unpacking warnings. Focused Pylint for the
+      test file rates 9.93/10 with one separate excessive-local warning. A new
+      full-tree Pylint 4.1.3 run on HEAD `860ca84328dda9e3085460f257d1d5429519aa0f`
+      reports 153 diagnostics at 9.92/10 (exit 28), down from 155. The largest
+      categories are excessive locals (27), duplicate code (25), excessive
+      arguments (22), excessive instance attributes (19), and positional
+      arguments (12); report saved at `/tmp/curator-v2-pylint-current.txt`.
+      Further progress (2026-10-23): changed the recursive sensitive-config
+      scan to an iterative depth-first traversal that preserves table/list
+      order and avoids recursion-limit failure on deeply nested valid TOML.
+      Strict Pyright reports zero diagnostics; the new full-tree Pylint report
+      has 152 diagnostics at 9.92/10 (exit 28), with the helper's `R0911`
+      finding removed. Rebuilt the current dirty source wheel and imported
+      `project_config` directly from it; SHA-256 is
+      `4b36edf42e49e8444b3a27320c85b3793486e3c1e23f678d3fe7c938fabb2d05`.
+      No tests were run; the whole-tree Pylint item and production security
+      gates remain open.
+      Follow-up regression (2026-10-23): added a focused case that nests safe
+      and credential-like values deeper than the interpreter's recursion limit;
+      the scan returns normally and still identifies the sensitive category.
+      The one test passes, strict Pyright reports zero diagnostics, and focused
+      Pylint for the changed source/test pair scores 9.95/10 with only existing
+      class/module/fixture-shape findings. A fresh full-tree Pylint run remains
+      at 152 diagnostics and 9.92/10 (exit 28); no whole-tree finding was added.
+      The repository-wide Pylint item remains open.
+      Further progress (2026-10-23): the SQLite health-read failure path made
+      event counters nullable so missing aggregates cannot masquerade as zero.
+      A current full-tree report identified a new excessive-boolean-expression
+      finding in the Prometheus guard; the guard is now factored into a typed
+      event-count helper. The two healthy/failure health regressions pass,
+      strict Pyright reports zero diagnostics, and focused Pylint for
+      `observability.py` rates 10.00/10. The whole-tree warning report was not
+      rerun after this extraction; the repository-wide item remains open.
+      Further progress (2026-10-23): split the attended project-access CLI
+      regression into registration/grant, config-transition replay,
+      suspend/reactivate/revoke, and audit phases without changing its single
+      end-to-end test. The focused regression passes and
+      `tests/test_access_cli.py` rates 10.00/10 under Pylint. Strict Pyright is
+      clean. A fresh complete warning-level run now reports 152 diagnostics at
+      9.92/10 (exit 28); the report is
+      `/tmp/curator-v2-pylint-2026-10-23-active-final.txt`. The
+      repository-wide item remains open.
+      Follow-up (2026-10-23): Pylint treated the decorator closure's read of
+      its owning facade's private project registry as client access. Kept the
+      registry private and added a one-line, reasoned `protected-access`
+      suppression at that same-class access. Focused Pylint for `api.py` no
+      longer reports `W0212`; the existing structural/interface findings in
+      that module remain. The whole-tree inventory was not rerun after this
+      narrow exception, which remains reviewable under the closure procedure.
+      Further progress (2026-10-23): consolidated the lifecycle-matrix test
+      helper's action branches into one result/return, removing its
+      `too-many-return-statements` finding. The exhaustive status/action matrix
+      regression passes; focused Pylint for `tests/test_lifecycle.py` no longer
+      reports `R0911`, and strict Pyright is clean. The 151-entry inventory
+      above predates this extraction; the fresh report below includes it.
+      Fresh full-tree refresh (2026-10-23): pinned Pylint 4.1.3 reports 150
+      diagnostic entries at 9.92/10 (exit 24), including 25 duplicate-code
+      entries; the report is
+      `/tmp/curator-v2-pylint-2026-10-23-current-final.txt`. This is one fewer
+      than the immediately preceding 151-entry run after removing the lifecycle
+      helper's `R0911`. The global structural and duplicate-code inventory
+      remains open.
+      Further progress (2026-10-23): split the Prometheus contract test into
+      fixture creation, content/privacy checks, exposition-format validation,
+      and staging-budget assertions. Its existing single regression passes;
+      strict Pyright is clean, and focused Pylint for `test_api.py` no longer
+      reports the former excessive-locals finding for this test (9.94/10 with
+      other existing file findings). The whole-tree report above predates this
+      refactor; repository-wide findings remain open.
+      Additional progress (2026-10-23): the Hermes goal-binding regression now
+      checks uncomplicated MCP responses inline and narrows JSON payloads
+      without retaining redundant locals. Its focused behavioral test passes,
+      strict Pyright reports zero diagnostics, and focused Pylint no longer
+      reports excessive locals in that test; the module still has other
+      complexity and size findings. The documented Pyright/errors-only
+      Pylint/Bandit quality sequence and `git diff --check` pass. No checklist
+      status changed.
+      Further progress (2026-10-23): moved the MCP SDE instruction-contract
+      assertions into a focused helper, removing one excessive-locals finding
+      from the end-to-end review/persistence/purge test. That focused scenario
+      passes and strict Pyright is clean; `tests/test_mcp_server.py` now rates
+      9.89/10, with the scenario's excessive-statement findings and other
+      module complexity/size findings still reported. `git diff --check` passes.
+      The whole-tree warning inventory and this checklist item remain open.
       The whole-tree warning-level inventory and its checklist item remain open.
+      Fresh inventory (2026-10-23): the documented full-tree warning-level
+      invocation reports 145 diagnostics at 9.92/10 and exits 24 on the current
+      dirty tree. Wrapping the project storage occurrence-byte assignment
+      removed one `C0301` line-length finding from the immediately preceding
+      146-diagnostic run. The schema inventory guard now lives with migration
+      tests; the 25 `R0801` duplicate-code findings remain unchanged. This is
+      one style correction, not repository-wide lint closure.
+      Further progress (2026-10-23): simplified setup in
+      `test_competing_nonterminal_updates_reject_stale_lifecycle_revision`,
+      removing that test's `R0914` too-many-locals finding. The focused
+      concurrency regression passes and strict Pyright reports zero
+      diagnostics. Focused `tests/test_concurrency.py` Pylint still reports
+      other findings; the 145-diagnostic whole-tree snapshot above predates
+      this refactor and remains the last full-tree count. Repository-wide lint
+      cleanup stays open.
+      Further progress (2026-10-23): extracted barrier-driven claim setup and
+      single-owner assertion from `test_router_claims_are_exclusive_across_connections_and_expire_safely`.
+      Its `R0914` finding is gone; the lease-expiry/stale-owner recovery
+      regression passes, strict Pyright is clean, and focused module Pylint
+      improves from 9.76 to 9.80/10 with unrelated findings remaining. The
+      145-diagnostic full-tree snapshot predates both concurrency refactors and
+      is not a current post-change count. The repository-wide item remains open.
+      Further progress (2026-10-23): extracted the admitted-fact/completion
+      worker race from `test_fact_validated_active_cannot_append_after_concurrent_completion`
+      and simplified setup in
+      `test_concurrent_cancel_and_supersede_have_one_terminal_winner`. Both
+      focused regressions pass; strict Pyright is clean. Focused concurrency
+      Pylint no longer reports excess locals in those scenarios and rates the
+      module 9.86/10, with three other `R0914` findings and unrelated findings
+      remaining. The 145-diagnostic whole-tree snapshot predates these changes.
+      Repository-wide lint cleanup remains open.
+      Further progress (2026-10-23): moved race-result assertions into the
+      fact-append/completion helper and simplified setup in the fact-cap and
+      global-event-cap concurrency scenarios. Five focused race regressions
+      pass, covering single-owner lease recovery, write-versus-finish fencing,
+      terminal cancel/supersede, fact-cap enforcement, and the global event
+      receipt cap. Strict Pyright reports zero diagnostics. Focused Pylint for
+      `tests/test_concurrency.py` is now 10.00/10; its one-method test verifier
+      has a narrow exception matching the `EvidenceVerifier` protocol. The
+      last full-tree count of 145 predates these edits; repository-wide lint
+      cleanup remains open.
+      Fresh full-tree inventory (2026-10-23): on branch `main` at
+      `860ca84328dda9e3085460f257d1d5429519aa0f`, with 56 dirty status entries
+      (status fingerprint `f34a8de3f98eb387c7694797eb5c856eb8f678260602f192fea1de5680f68fcb`),
+      `uv run --locked --group quality pylint src/curatormd_v2 tests` under
+      Pylint 4.1.3 / Python 3.12.3 reports 137 diagnostics at 9.93/10 and exits
+      24. The report hash is
+      `ea6d3e1e7954bb8affe48385aee761e4fc5cb60e80f18ac47edf89caffc3ba7c`.
+      This is eight fewer findings than the preceding 145-diagnostic run:
+      six `R0914`, one `R0903` with the one-method protocol exception, and one
+      `C0301`; `R0801` remains at 25. The warning-level repository gate remains
+      open.
+      Proposed closure sequence: discard the old 245-finding count as a current
+      baseline and regenerate the warning-level report over the complete current
+      `src/curatormd_v2` and `tests` tree using the pinned Pylint version and
+      documented invocation. Record the exact source revision, dirty-file set,
+      command, tool version, exit status, score, and diagnostic IDs/locations.
+      Classify findings by production behavior, public contract, test-fixture
+      structure, or duplication; refactor genuine complexity/module-size and
+      duplicated logic without changing transaction boundaries, error ordering,
+      public schemas, or persisted behavior. Resolve each finding or use only a
+      narrow, code-local exception with a written reason tied to the required
+      interface/fixture shape; do not lower global thresholds or disable a
+      diagnostic category to improve the score. Run the focused behavioral
+      regressions after each behavior-preserving extraction, then the complete
+      blocking quality chain and a fresh whole-tree warning-level report on the
+      final tree. Keep the item open until the final report exits successfully
+      with no unexplained findings and the reviewed exceptions, if any, are
+      explicitly accepted; historical focused-module scores and stale whole-tree
+      counts do not close it.
+      Current refresh (2026-10-23): on Python 3.12.3 at
+      `860ca84328dda9e3085460f257d1d5429519aa0f`, the tracked/untracked worktree
+      Pylint-input fingerprint over `pyproject.toml`, `uv.lock`,
+      `src/curatormd_v2`, and `tests` is
+      `02570862a1f6c80155e928f208f34f689fe76752ff8b29f3a3a9528f0d3ddd74`.
+      There are 58 dirty status entries; their status-list fingerprint is
+      `79018ec416591aa025087da6ace80f8ae26fa6ae4714993dd10067b2ce7a5d79`.
+      The pinned full-tree command `uv run --locked --group quality pylint
+      src/curatormd_v2 tests --output-format=json` reports 130 diagnostics
+      (119 refactor, 11 convention) and exits 24. Report SHA-256:
+      `8492f75cd16bcdaad0f9f27d1e0fc012d892e658670b8314172468950bfb0343`.
+      This is 11 fewer than the preceding 141-finding run: one unnecessary
+      guard-lambda diagnostic was removed, and ten `too-few-public-methods`
+      exceptions now document one-method test protocols and a bounded `read`
+      fixture at their class declarations. The focused diagnostic check passes
+      at 10.00/10; `git diff --check` passes. Tests were not rerun for these
+      lint-only changes. Earlier status-list fingerprints identify changed
+      paths, not equivalent dirty file contents. Repository-wide Pylint remains
+      open.
+      Further progress (2026-10-23): split the new SQLite physical-storage
+      result into nested page-allocation and file-size records, keeping the
+      same host-view measurements while avoiding a new excessive-attributes
+      finding. Focused project-access and access-CLI serialization regressions,
+      strict Pyright, errors-only Pylint on changed files, and `git diff --check`
+      pass. The refreshed pinned full-tree inventory reports 130 diagnostics
+      (119 refactor, 11 convention), down from 131 immediately before this
+      refactor, and exits 24. Report SHA-256 is
+      `f23461b733bff84c270d8fb62de9d8fe71cbb86fffdeeae2f171bc64426d5447`;
+      the Pylint-input fingerprint over `pyproject.toml`, `uv.lock`,
+      `src/curatormd_v2`, and `tests` is
+      `1e008e1f5b6a17f54f5b9402ad35a4c2c79246a980e934d403d51f8be1952fae`.
+      Repository-wide Pylint remains open.
+      Follow-up (2026-10-23): added reasoned, class-local
+      `too-many-instance-attributes` exceptions to the six flat receipt,
+      activity, health, and storage API/MCP records whose fields must remain
+      individually serialized. The focused diagnostic scan for
+      `read_models.py` now passes. Strict Pyright reports zero diagnostics and
+      `git diff --check` passes. A fresh pinned full-tree report is down from
+      130 to 124 diagnostics (113 refactor, 11 convention), exit 24; report
+      SHA-256 is
+      `33751864fee6f107a283d5470854b51b5a74efcca43b89abfaf5058592c4aa67`.
+      No behavioral tests were needed for these comment/directive-only edits.
+      Repository-wide Pylint remains open; no checklist status changed.
+      Current rerun (2026-10-23): the exact end-to-end purge acceptance test
+      `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end`
+      passes by itself. A fresh pinned full-tree Pylint run reports 122
+      diagnostics (111 refactor, 11 convention) and exits 24; the warning
+      cleanup item remains open. `git diff --check` passes. The configured
+      direct Curator V2 `project_health` call returned `unauthenticated` because
+      it lacked trusted Hermes profile context. A separate read-only Hermes
+      `renew-ssl-coding` profile probe succeeded: 12 processed receipts, one
+      goal, two facts, and health `unknown` with five missing dependency probes
+      (event router, purge scheduler, host identity, human review, and artifact
+      producer inventory). This verifies profile-scoped ledger reads, not a
+      healthy runtime or live event delivery.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
@@ -2975,7 +4548,10 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       runtime, and retention/approval gates remain open.
 - [x] Add deterministic property/fuzz tests for generated event validation,
       evidence-gated lifecycle transitions, path traversal, and event/fact
-      replay; see `tests/test_property_fuzz.py`.
+      replay; see `tests/test_property_fuzz.py`. These generated cases do not
+      cover reopen rejection through cancelled or superseded parent/dependency
+      links; the focused direct/event-replay regression remains open in
+      [Section 1](#1-goal-intake-and-lifecycle).
 - [x] Exercise the MCP tool contract with the SDK in-memory client and real
       stdio subprocess; use temporary SQLite and repository plugin fixtures.
 - [ ] Add deployment-level integration tests using the Hermes router,
@@ -3022,10 +4598,83 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       The harness passes locally. It does not run the Hermes gateway service,
       production router, actual Vhost application request, or production target;
       identity, retention, deployment and release gates remain open.
+      Proposed owner-gated deployment acceptance: satisfy the identity,
+      production-router, two-real-consumer, producer/source-coverage, recovery,
+      and named one-run approval prerequisites in Slices C-I. In an isolated
+      deployment-like environment, start the actual Hermes gateway and scheduled
+      router with the reviewed package, authenticated identities, owner configs,
+      and intended canonical-persistence adapter implementations, but bind them
+      only to disposable repository, database, staging, and Markdown targets.
+      Exercise one separately named, owner-authorized real application request
+      for each included consumer, with its approval bound to that project's
+      exact repository/config/target; no approval carries across projects or
+      later runs. Follow each request from producer/source inventory through the
+      Hermes outbox, ordered router delivery, durable processed receipt, scoped
+      goal/fact state, authorized evidence check, canonical projection, and
+      read-only reconciliation. Verify that acknowledgment follows only a
+      durable `processed` receipt (including terminal `suppressed_nonactive_goal`
+      after its cursor commits atomically) or exact `duplicate` receipt; inject
+      a missing sequence,
+      denied project grant, router restart, and projection failure, then prove
+      exact-envelope retry, no duplicate fact, no cross-project write, no
+      premature acknowledgment, and visible open/degraded state until recovery.
+      Compare each consumer's target and the other consumer's state before and
+      after; inspect logs, traces, metrics, backups, WAL, and canonical outputs
+      with distinct synthetic privacy canaries. Retain a content-free run packet
+      with build/config/identity fingerprints, producer-matrix digest, event and
+      receipt IDs, sequence/ack outcomes, goal/fact IDs, target/recovery hashes,
+      and owner approvals. Give the producer audit the stable ID
+      `CONSUMER-SOURCE-COVERAGE`, with a distinct catalog and release-gate entry.
+      For each consumer, freeze and hash its owner-reviewed producer/class
+      matrix against the source revision, repository config, and adapter
+      version. Exercise every mapped producer/class through the actual adapter
+      in disposable workflows, including create/copy/move/rename/temp/import
+      and applicable retry/cancel/failure paths. Bound filesystem observations
+      to the workflow process/namespace, record exclusions, and reconcile them
+      against a complete staging inventory and explicit out-of-root owner
+      dispositions. Unobserved boundaries stay unknown; a source/config/adapter
+      change invalidates the matrix and requires owner review. Map this ID to
+      its own Section 9 scenario and release-gate row before freezing the
+      deployment catalog. Extend the deployment matrix to the project and
+      consumer-binding lifecycle in Section 6, using the corresponding IDs in
+      the [lifecycle Definition of Done](#definition-of-done). Run each case
+      independently against disposable project data with the intended service
+      and administrator identity paths; never use a retained production project
+      for retirement or terminal disposition. Bind each packet to its exact
+      package/config fingerprints, project and binding revisions, source epoch,
+      transition ID, approval reference, and before/after state digests:
+      `LC-TRANSITION-CAS` must recover an exact retry after a lost response and
+      reject stale revisions or changed-input reuse without mutation;
+      `LC-SUSPEND-REACTIVATE` must hold work during suspension, reject activation
+      after any bound grant/cursor/inventory change, then accept only a fresh
+      review and fence old sessions; `LC-DEREG-DRAIN` must admit only an
+      inventoried exact old-envelope retry during the bounded drain, reject new
+      IDs, and remain pending when an old event is unresolved;
+      `LC-REENROLL-EPOCH` must require reconciliation of every old event and
+      reject old-epoch events, grants, sessions, and configs after fresh binding;
+      `LC-RETIRE-FENCE` must preserve the tombstone/replay fence, keep the active
+      cursor unchanged, and require separate approval for a contiguous terminal
+      disposition; `LC-EFFECT-BOUNDARY` must race transitions with persistence,
+      source acknowledgement, and unlink and prove no stale-revision effect
+      crosses the cutover; `LC-OPERATOR-STATUS` must reconcile bounded counts,
+      completeness, and observation times without exposing event IDs or payloads;
+      and `LC-V22-MIGRATION` must verify preserved registry/grant/audit state,
+      unknown legacy epoch/sequence baselines, transactional failure behavior,
+      and the approved restore/rollback boundary. Give each case a distinct
+      result and evidence reference; a combined run does not collapse their
+      dispositions. Keep this item open until both owners review the
+      observed results and the separate rollback drill succeeds; the existing
+      managed-MCP harness and disposable profile tests remain local composition
+      evidence only.
 - [x] Add end-to-end acceptance tests for: start -> fact bullets -> evidence
       -> open or complete -> SDE review -> receipt -> complete artifact inventory
       -> purge -> truthful status; the MCP acceptance path is in
-      `tests/test_mcp_server.py`.
+      `tests/test_mcp_server.py`. Fresh focused verification (2026-10-23):
+      `test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end`
+      passes. It confirms canonical persistence precedes immediate purge of the
+      unheld transient canary, the held artifact stays present, and the canary
+      is absent from Markdown. This refreshes local test evidence only; no
+      checklist count or live-consumer gate changes.
 - [x] Verify approval and rejection both preserve the intended compact facts
       while purging only the inventoried transient artifacts; the MCP acceptance
       test checks both decisions, canonical receipts, exact inventory, and purge
@@ -3047,7 +4696,139 @@ cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       failed dependency probes. This proves the local API snapshot contract;
       external probes, alert delivery, and deployment behavior remain open.
 - [ ] Run security, privacy, load, restart, restore, and disk-growth tests on
-      deployment-like infrastructure.
+      deployment-like infrastructure. Proposed acceptance sequence: the
+      deployment and product owners select an isolated environment that uses
+      the intended service identities, installed package, storage and staging
+      adapters, network path, backup path, and monitoring route. Record build
+      and configuration fingerprints, project bindings, adapter versions, and
+      secret/key version identifiers without recording secret values; confirm
+      the test data, restore target, and reset procedure cannot reach live
+      projects. Define expected outcomes and stop conditions before each run.
+      For load and disk-growth runs, freeze a reproducible owner-approved
+      workload profile: project/event/artifact mix, input-size distribution,
+      arrival and burst rates, concurrency, retry/failure rate, run duration,
+      warm/cold start, and configured CPU, memory, database, and staging limits.
+      Set acceptable throughput, response and queue-age percentiles, processing
+      lag, error rate, and per-class disk/WAL/staging growth from the intended
+      pilot and service objectives; identify measurement windows and thresholds
+      before observing results. Exercise normal, peak, burst, and overload with
+      recovery, and retain the profile/version and bounded measurement summary
+      so a later run can be compared against the same conditions. An undefined
+      workload, missing required metric, or owner-unapproved threshold leaves
+      the performance gate open.
+      Exercise unauthorized, expired, revoked, wrong-role, and cross-project
+      requests and verify exact grants, content-free audit records, and denied
+      side effects. Send distinct synthetic canaries through accepted, failed,
+      retry, quarantine, completion, backup, restore, log, trace, and metric
+      paths; prove each payload appears only in owner-approved transient or
+      recovery locations and that terminal states meet the approved scrub
+      policy. Execute the profile's normal, peak, burst, and overload/recovery
+      phases under quota and storage pressure; verify bounded queues, ordering,
+      replay idempotency, measured per-class disk growth, alert delivery, and no
+      false-green health.
+      Run `EVENT-CAP-ALLOCATION` with at least two registered projects and the
+      approved allocation policy: bring project A to its allocation or the
+      shared-pool threshold while project B submits a new event and retries an
+      unresolved event; replay an already processed event for A at the same
+      boundary. Verify that accepted or rejected writes match the approved
+      shared-pool/quota rule, rejected source events remain unacknowledged and
+      retryable, exact processed replays remain idempotent, and reads do not
+      expose the other project's state. Confirm global capacity, health, stop-
+      capture action, and alerts report saturation truthfully; after the
+      approved exposition choice, read project metrics for both projects and
+      verify `event_capacity_available` either appears as the same shared
+      boolean or is absent from both project views and present once in the
+      service view. The dashboard and alert must represent one global capacity
+      transition, never a sum or per-project quota. Confirm no global receipt
+      counts or other-project event details leak through project metrics. After
+      the approved retention/compaction remedy, verify only the eligible events
+      resume and no source-order fence or pending receipt is lost. Bind the
+      observed outcomes to one stable scenario record; an aggregate cap test
+      without cross-project traffic does not close this case.
+      Run `EVENT-RETENTION-RECOVERY` as a separate owner-approved scenario in
+      an isolated database. Start with at least two projects and mixed processed,
+      duplicate, received, failed, and quarantined receipts, including retry
+      payloads, source-sequence gaps, and a replay horizon that includes an
+      offline producer. Inject interruption during archive/compaction, restore,
+      and receipt commit/acknowledgment; preserve the source database and make
+      incomplete recovery visible. After the approved horizon, verify that
+      eligible compacted records retain the event-ID/hash and source-order
+      fences needed for exact replay, conflicting-ID rejection, and stale
+      sequence rejection. Exercise producer retirement and re-enrollment only
+      after the versioned source-epoch and typed `terminal_rejection` contract
+      is implemented and owner-approved; prove an old epoch cannot mutate the
+      new lifecycle or advance its cursor. Exercise v1-to-v2 migration and
+      verify legacy cursors and event digests are preserved without silent
+      identity reassignment or inferred retirement; test only the owner-approved
+      compatibility path for those sources. Unresolved payloads stay retryable,
+      pending, and visible; no receipt is deleted without its approved
+      disposition and durable recovery receipt. Verify terminal-rejection
+      acknowledgment alone does not purge payloads; any authorized scrub has
+      its own retention basis and durable receipt while the event digest fence
+      remains for the approved replay horizon. Bind the policy, source epoch,
+      fault outcomes, and recovered-state hashes to one stable scenario record.
+      Run `PERMANENT-DATA-BUDGET` against the pinned schema/migration set and
+      owner-approved deployment workload. Reconcile every application-owned
+      persistent table and retained external artifact class with the inventory;
+      for each, record
+      project or service ownership, logical rows/bytes or a justified hard
+      bound, retention horizon, warning/stop threshold, recovery source, and
+      measured database/WAL/backup overhead. Exercise the writes, retries,
+      terminal transitions, and cleanup paths that grow each class, including
+      access/audit records, rate buckets, event cursors/retry audit, staging-age
+      metadata, expiry and cleanup receipts/targets, and scrub work. Exercise
+      active and retired source/epoch cursors at the approved cardinality and
+      replay-horizon boundaries: retain each fence through its horizon, retain
+      indefinitely when the horizon is unknown, and reject new enrollment
+      before the approved cursor/tombstone reserve is exceeded. Verify that an
+      old epoch cannot advance the active cursor. Also verify alerts and
+      fail-closed behavior at each approved threshold, plus the
+      distinction between project-attributed totals and shared service storage;
+      specifically prove that `event_retry_audit` bytes count toward the global
+      inbox byte ceiling without being misreported as inbox receipt rows. Take
+      and restore a verified backup to a new isolated path, then reconcile
+      bounded counts/hashes for every class. Any unclassified schema object,
+      unexplained growth, missing measurement, or unapproved threshold keeps
+      this case open. Bind the inventory digest and before/after measurements to
+      one stable scenario record.
+      Run `PROJECT-STAGING-BUDGET` against at least two configured projects,
+      with one at and over its approved byte/file and age thresholds while the
+      other remains within limits. Include incomplete and over-limit scans,
+      active writes, pending review/purge work, alert delivery, and restart.
+      Verify the configured stop behavior, project isolation, and truthful
+      unknown/degraded health; prove cleanup occurs only for eligible artifacts
+      after the required human approval and durable receipt. Run
+      `PROJECT-USAGE-BUDGET` against project-bound source records spanning
+      provider/model groups, known and unknown token counts, missing responses,
+      auxiliary calls, and unbound sessions. Verify the approved accounting
+      window and thresholds, project attribution, incomplete-coverage alert,
+      and no false zero or billing claim; inspect Curator event/fact sinks to
+      confirm token counts and private turn/session identifiers are absent.
+      Each case requires its owner-approved policy, bounded evidence, and one
+      stable scenario record; local metrics or plugin reads alone do not close
+      either case.
+      Restart or interrupt at declared durability boundaries, then verify
+      receipts, exact retry, visible pending work, and no duplicate facts or
+      unapproved deletion. Build a fault-interaction catalog from boundaries
+      that share durable state, leases, authorization, or storage, then exercise
+      those faults together rather than treating separate passing scenarios as
+      combined recovery evidence. Include, at minimum, commit followed by lost
+      acknowledgement plus restart/replay; storage or database failure during
+      retry and purge/hold coordination; approval or grant revocation during an
+      in-flight effect; old-writer activity during restore/switch; and alert
+      receiver outage while required-work backlog grows. Bind each scenario to
+      an injection order, expected bounded status, and recovery proof. If an
+      interaction is excluded, record the owner-approved rationale; a missing
+      interaction result leaves the affected gate open. Restore a verified
+      snapshot only to a new isolated
+      path, check database integrity and expected records, and compare managed
+      projections read-only; do not activate the restored copy without the
+      separately approved recovery decision and rollback point. Preserve a
+      content-free run record with scenario IDs, expected/observed outcomes,
+      artifact digests, failures, owner decisions, and unresolved gates. Keep
+      this item open until the deployment owners review the complete matrix and
+      the observed evidence covers the intended deployment boundaries; local
+      fixtures and synthetic identities are not substitutes.
 - [x] Publish release notes, supported versions, known limitations, and
       operator runbooks before declaring the system production-ready. The
       versioned alpha scope, supported Python range, limitations, and linked
@@ -3407,14 +5188,14 @@ replaying the full session:
       checklist item done merely because the agent stopped.
 - [ ] **Resolve review and cleanup separately.** Show SDE state, cleanup
       authorization, canonical write/receipt state, artifact-inventory
-      completeness, and purge state as independent fields. One explicit review
-      action may decide SDE disposition and authorize cleanup of the exact
-      displayed inventory; retain distinct immutable receipts for both. Persist
-      canonical facts and both applicable receipts before deletion. Leave
-      unapproved cleanup visibly
-      awaiting authorization and failed cleanup visibly `purge_pending`, with a
-      safe retry owner/action. Cleanup success must not mark unfinished
-      development complete.
+      completeness, artifact-to-criterion dependencies and their retention or
+      reacquisition consequences, and purge state as independent fields. One
+      explicit review action may decide SDE disposition and authorize cleanup
+      of the exact displayed inventory; retain distinct immutable receipts for
+      both. Persist canonical facts and both applicable receipts before
+      deletion. Leave unapproved cleanup visibly awaiting authorization and
+      failed cleanup visibly `purge_pending`, with a safe retry owner/action.
+      Cleanup success must not mark unfinished development complete.
 - [ ] **Keep the update efficient.** Emit a bounded bullet delta and current
       status, not another narrative recap. Apply configured per-event, per-goal,
       evidence, staging-byte, and retention limits; report budget/limit pressure
@@ -3423,7 +5204,8 @@ replaying the full session:
 
 **Required handoff summary:** `Problem`; `Success criteria`; `Verified facts to
 date`; `Outcome`; `Open checklist/TODO items`; `Blocker and next action`; `SDE
-review`; `Canonical write/receipt`; `Artifact inventory/purge`. Each field must
+review`; `Canonical write/receipt`; `Artifact inventory/purge`; `Artifact-to-
+criterion dependency and retention/reacquisition consequence`. Each field must
 come from the current goal ledger or be explicitly labeled unavailable, never
 filled from an unsupported inference.
 
@@ -3474,17 +5256,25 @@ verified work.
 - [ ] **Present review and cleanup consequences together.** Show the proposed
       bullet record, selected fact/evidence references, project scope, decision
       consequences, and complete exact eligible artifact inventory with hashes
-      and target before asking for one explicit review action. That action may
-      authorize cleanup only for the displayed manifest. Record SDE and cleanup
-      authorization in distinct immutable receipts; no purge is allowed until
-      both are durable and canonically projected.
+      and target. Before the one explicit review action, map each inventoried
+      artifact to any evidence reference and open criterion that depends on it;
+      show whether deletion removes the source needed for revalidation and the
+      approved retention or reacquisition path. That action may authorize cleanup
+      only for the displayed manifest and its stated consequences. Record SDE
+      and cleanup authorization in distinct immutable receipts; no purge is allowed
+      until both are durable and canonically projected.
 - [ ] **Persist before purging.** Write the approved compact facts (or the
       required rejection/goal facts) and disposition receipt to the configured
       canonical target, verify the resulting projection/hash, then persist the
       cleanup-authorization receipt from the same review action, bound to the
-      complete exact inventory, before purging only that allowlisted inventory. Keep evidence
-      needed for unresolved criteria only when policy explicitly permits it;
-      never delete source, canonical, or unrelated user files.
+      complete exact inventory, before purging only that allowlisted inventory.
+      If an authorized deletion removes the only source needed for an unresolved
+      criterion, retain its content-free verifier receipt for historical review,
+      keep the criterion open/stale, and record the approved reacquisition or
+      recovery action; the receipt alone cannot satisfy the criterion. If policy
+      requires preserving that source, keep it held and cleanup pending until a
+      valid retention or release decision exists. Never delete source, canonical,
+      or unrelated user files.
 - [ ] **Close the cleanup loop.** Report per-artifact deleted, already absent,
       held, changed, or failed state. Retry safe failures idempotently. Any
       missing, rejected, or stale cleanup approval prevents deletion and stays
@@ -3512,13 +5302,17 @@ Facts (compact bullets, typed and linked to source/evidence IDs):
 Criterion status:
   - Verified: criterion ID -> proof fact IDs and result
   - Open: criterion ID -> reason, owner, next action
+Artifact/evidence dependency:
+  - occurrence ID -> evidence IDs -> criterion IDs
+    -> retention/hold decision -> post-purge state -> reacquisition action
 Goal outcome: planned | active | complete | open | blocked | deferred | cancelled | superseded
 SDE disposition: not-assessed | ordinary-update | pending | approved | rejected
 Canonical write: not-started | pending | verified | failed (target/hash)
 Cleanup authorization: not-requested | pending | approved | rejected | stale
 Artifact inventory/purge: not-started | incomplete | awaiting-authorization | purged | purge_pending
 SDE disposition receipt: decision ID, reviewer, timestamp, fact/projection hashes
-Cleanup receipt: approver, timestamp, exact manifest hash, per-artifact purge results
+Cleanup receipt: approver, timestamp, exact manifest and dependency-map hashes,
+  consequence disposition, per-artifact purge results
 Final report: completed facts, open items, recovery path, next action
 ```
 
@@ -3547,9 +5341,17 @@ Final report: completed facts, open items, recovery path, next action
       registration/grants and Hermes metadata are synthetic test inputs; this
       closes the local consumer contract, not interactive user authentication,
       real-session delivery, or canonical persistence in a live session.
-- [ ] Record success as named, observable criteria before implementation;
+- [x] Record success as named, observable criteria before implementation;
       preserve the source wording/version and require an explicit amendment event
-      when criteria change.
+      when criteria change. `GoalStarted` requires nonempty, uniquely named
+      criteria; repository checklist starts retain the exact source line and
+      SHA-256 revision, and event intake rejects forged snapshots. Amendments
+      require the expected criteria revision, reason, and next action, append a
+      `criteria_amended` fact and immutable history entry, and reset evidence
+      for the new revision. Regressions:
+      `test_criteria_amendment_is_versioned_and_starts_a_fresh_evidence_epoch`,
+      `test_reference_plugin_creates_checklist_goal_in_its_project_only`, and
+      `test_checklist_event_intake_rejects_forged_snapshot_and_allows_exact_retry`.
 - [x] Support in-process child goals with their own problem/criteria/status,
       same-project parent/dependency links, child listing, and evidence-gated
       completion of children and parent. The interactive task mapper and real
@@ -3665,14 +5467,17 @@ substitute for evidence at a later integration boundary.
       records, all lifecycle event payloads, both durable event dispositions,
       repository config examples, and the API error envelope; the lifecycle
       action matrix regression checks every public action against every stored
-      goal status. Version 1 is frozen for the current source contract. The
-      installed Vhost alpha wheel is still schema v20 while source is v21, so
-      installed-consumer synchronization remains separate and open.
+      goal status. Version 1 is frozen for the current source contract. An
+      earlier consumer check observed the installed Vhost alpha wheel at
+      schema v20 while source was v21. Source has since advanced to v22; that
+      historical comparison does not establish whether the installed consumer
+      is synchronized with v22, so consumer-side version synchronization stays
+      open for verification in the consuming project.
       Cross-repository interoperability, external serializers/transports, and
       production compatibility approval remain separate open gates.
 - [x] **B. Harden the local domain slice:** finish bounds, schema/privacy
       validation, concurrency/replay behavior, correction/supersession semantics,
-      property tests, and the local v0-to-v21 migration fixtures; attach
+      property tests, and the local v0-to-v22 migration fixtures; attach
       test evidence. Broader source-to-sink privacy review and production
       migration support remain open. Progress (2026-10-22): content-free staging usage
       records now reject negative, boolean, floating-point, oversized, or
@@ -3699,7 +5504,7 @@ substitute for evidence at a later integration boundary.
       suite rerun or checklist status change. Further migration coverage
       (2026-10-22): a v20-to-v21 fixture confirms an existing SDE receipt is
       preserved without inventing the new cleanup authorization. The schema
-      migration reference now lists the complete v2-to-v21 fresh-install chain;
+      migration reference now lists the complete v2-to-v22 fresh-install chain;
       production upgrade/rollback remains unapproved. A malformed pre-existing
       `cleanup_authorizations` table now fails closed before the v21 stamp if
       its columns, defaults, nullability, primary key, or receipt foreign key
@@ -3711,21 +5516,303 @@ substitute for evidence at a later integration boundary.
       `git diff --check` pass. This closes the local domain slice; broader
       source-to-sink privacy, production migration, deployment, identity,
       retention, and live-runtime gates remain open.
+      Schema follow-up (2026-10-22): the current source schema is v22, and the
+      v21-to-v22 fixture covers queuing a content-free WAL scrub receipt for a
+      legacy inbox without copying or deleting its payload rows. The source
+      fixture is documented in [`schema-migrations-v1.md`](schema-migrations-v1.md);
+      this note does not claim a fresh test run. Production migration, privacy
+      erasure, recovery, and rollback evidence remain open.
 - [ ] **C. Complete storage and projection recovery:** define the authoritative
       record, reconcile SQLite and Markdown after interruption, test backup/restore
       and integrity recovery, and document operator repair steps. Local backup,
       restore-to-new-file, and SQLite migration fixtures exist; production drills
-      and cross-store recovery remain open.
+      and cross-store recovery remain open. Proposed owner-gated closure sequence
+      (see the [authority options](storage-recovery-v1.md#authority-options-for-owner-review),
+      [unapproved conflict-policy draft](storage-recovery-v1.md#proposed-authority-and-conflict-policy-not-approved),
+      [recovery decision table](storage-recovery-v1.md#proposed-recovery-decision-table),
+      and [recovery-record template](storage-recovery-v1.md#proposed-recovery-record)):
+      first obtain owner approval for the field-level authority model, bounded
+      recovery-record fields, incident owner, pause/switch roles, and exact
+      database and projection inventory.
+      Exercise every proposed recovery-decision row against disposable data:
+      synced and missing projections; divergent, malformed, or incomplete
+      inventory; failed integrity, unreadable or unsupported-schema databases;
+      and disagreement that remains after restore. Restore only to a distinct
+      review path and retain both original stores and their before-state hashes.
+      Inject interruption around projection and receipt persistence, verify
+      recovery and complete reconciliation without automatic conflict repair,
+      and require a bounded owner decision and receipt for each conflict. Then
+      rehearse backup custody, producer pause/resume, recovery, and rollback on
+      an approved deployment-like target. Keep the active-store switch open
+      until integrity and application checks, complete projection
+      reconciliation, rollback evidence, and required owner approvals are
+      recorded. This sequence is proposed; it does
+      not select an authority model or authorize a live restore or switch.
+      Additional local evidence (2026-10-23): the review-receipt persistence
+      regression now snapshots SQLite after the receipt commits but before
+      Markdown projection and restores it to a distinct review path. The
+      restored receipt remains unpersisted and the artifact untouched until
+      projection is retried; the recovered store then completes the
+      receipt/purge gate while the original database retains its unpersisted
+      receipt. A ledger-first projection test now uses the same backup/restore
+      path. The focused Markdown suite passes 19 tests; strict Pyright and
+      errors-only Pylint pass for the changed test module, and `git diff --check`
+      passes. This adds process-termination and backup/restore interruption
+      evidence; it does not select an authority policy or close the production
+      recovery gate.
 - [ ] **D. Build authenticated backend interfaces:** implement event ingress,
       review queue/detail/decision API, MCP transport, authorization, rate limits,
       audit identities, and end-to-end denial tests for wrong project/role.
+      Local progress (2026-10-22): [`api.py`](../src/curatormd_v2/api.py) and
+      [`mcp_server.py`](../src/curatormd_v2/mcp_server.py) provide the
+      fail-closed API/MCP boundary; [`project_access.py`](../src/curatormd_v2/project_access.py)
+      binds durable project registrations to repository/config/API fingerprints
+      and checks exact project/action grants with immediate revocation and
+      suspension. The [`access_cli.py`](../src/curatormd_v2/access_cli.py)
+      provides attended local grants; [`rate_limiter.py`](../src/curatormd_v2/rate_limiter.py)
+      implements the persistent SQLite subject/project quota. Source fixtures cover registration and
+      grant denial, revocation, suspension, quota persistence, and concurrent
+      quota enforcement in [`test_project_access.py`](../tests/test_project_access.py)
+      and [`test_rate_limiter.py`](../tests/test_rate_limiter.py); see
+      [`release-gates-v2.md`](release-gates-v2.md) for the broader evidence
+      inventory. These controls enforce host-supplied principals;
+      the local OS UID and Hermes profile/session metadata do not establish a
+      verified human identity. This slice remains open for trusted Hermes
+      identity/role binding, deployment-grade administrator and fingerprint
+      authority, distributed rate limiting, production denial probes, and
+      owner-approved feedback retention/evaluation policy. This documentation
+      update records fixture presence and does not claim a fresh test run.
+      Proposed owner-gated closure sequence: the Hermes identity owner selects
+      the host-authenticated identity source and trusted role claims; product
+      and repository owners approve repository/config fingerprint authority
+      and administrator scope; owners define revocation and freshness rules;
+      then the installed Hermes-to-Curator path is probed for the exact
+      authorized project/action and for missing, caller-supplied, wrong-project,
+      wrong-role, expired, and revoked identities. Record bounded audit
+      receipts for the authorization decisions. Extend the same authenticated
+      boundary to the proposed project-lifecycle and consumer-binding actions
+      in [Section 6](#6-per-project-plugin-and-repository-boundary): assign
+      distinct owner-approved roles and scopes for suspension, reactivation,
+      deregistration, re-enrollment, and retirement; bind each transition to
+      its stable ID and observed project or binding revision; and atomically
+      compare-and-set that scope with an immutable receipt. Probe missing,
+      wrong-scope, expired, revoked, stale-revision, and conflicting-retry
+      cases and confirm they change neither status nor grants. Verify that
+      exact retries recover the same receipt and cannot change the original
+      decision. Human-identity and registry-owner approval remain deployment
+      gates. Keep distributed quota and feedback-retention decisions as
+      separate gates; local fixtures do not close them. Local progress
+      (2026-10-23): project registration updates, suspension, and reactivation
+      now require the revision displayed at review, increment it atomically,
+      and bind the new revision into the append-only audit entry. Schema v31
+      assigns deterministic revisions to legacy project audit history. A stale
+      revision is rejected before status, fingerprints, or audit history change.
+      Schema v32 adds caller-supplied transition IDs: exact config/status retries
+      return the same audit receipt without a second revision, while conflicting
+      reuse is rejected. The attended CLI binds the transition ID, revision, and
+      reviewed config fingerprints into its exact confirmation phrase.
+      Further local progress (2026-10-23): the fingerprint-bound launcher now
+      captures its project revision at startup and checks it on every request.
+      A context started before suspension stays denied after reactivation; a
+      newly started context binds the new revision. This fences cached launcher
+      contexts across a full project status cycle. The API now holds a database
+      write transaction while rechecking the active project revision and
+      completing each wrapped write, review, and purge operation. A concurrency
+      regression pauses an admitted event, starts suspension on a second
+      connection, and verifies suspension cannot commit until the event receipt
+      is durable; suspension then commits at revision 2. This keeps an admitted
+      operation before the cutover and prevents its effect from landing after
+      suspension. The no-registration compatibility path also preserves the
+      API's existing input-error behavior. Local verification on 2026-10-23:
+      all 413 unit tests passed, strict Pyright reported 0 errors, and
+      errors-only Pylint passed. This fence covers effects routed through this
+      API process and its database/filesystem work. Local progress (2026-10-23):
+      direct reference-plugin event intake now also takes the staging lock and
+      active project revision fence; a focused regression confirms a suspended
+      project rejects that call before creating an event receipt. Direct
+      reference-plugin expiry approval, exact expiry retry, and pending purge
+      retry now use that same fence; a regression confirms suspension blocks
+      each path and leaves the artifact and pending receipt intact. Direct
+      staging writes now also recheck the project revision before publication.
+      Inventory and staging take the filesystem lock before project/database
+      reads, preserving the staging-lock then SQLite-lock order; the plugin
+      concurrency regression covers atomic publication. Direct service calls,
+      other direct plugin methods, source acknowledgements outside the facade,
+      separate consumer-binding revisions, and bounded deregistration drains
+      remain open. Local concurrency evidence does not close the authenticated
+      deployment gate.
+      Further local progress (2026-10-23): direct plugin goal starts
+      (request, accepted subtask, and checklist) and lifecycle transitions
+      (activation, reopen, and criteria amendment) now require the active
+      registered project revision. The suspension regression confirms direct
+      request-start and activation are denied alongside event and staging
+      writes, with no new goal, receipt, or artifact. The focused regression
+      passes and strict Pyright reports zero diagnostics. This does not fence
+      every remaining direct plugin/service write or close deployment identity.
+      Further local progress (2026-10-23): direct project-plugin fact archival,
+      SDE assessment/correction/feedback/disposition, artifact-inventory
+      finalization, cleanup-authorization receipt creation, hold release, and
+      quarantined-event retry now recheck the active project revision. The
+      existing suspended-project regression verifies these service writes are
+      not reached. API review and quarantined-retry regressions also pass under
+      the nested fence. Further local progress (2026-10-23): evidence-backed
+      SDE assessment and review validation now run before the effect transaction;
+      their final writes use the revision captured before verification. Markdown
+      projection follows the same boundary: evidence verification occurs outside
+      SQLite transactions, then atomic replacement and canonical receipt/purge
+      transitions recheck that captured revision. The API projection route no
+      longer holds an outer fence across the verifier. A two-connection race
+      suspends the project during evidence verification and proves the target
+      remains unchanged when the stale projection is denied. Fresh verification:
+      all 20 Markdown-persistence and 39 API tests pass, along with all 49
+      project-plugin tests; strict Pyright reports zero diagnostics and
+      `git diff --check` passes. Direct service calls, source acknowledgments,
+      consumer-binding lifecycle, and deployment identity remain open.
+      This is a local project-level compare-and-set only; it does not implement
+      consumer-binding lifecycle or trusted human identity, and it does not
+      close the deployment gate.
+      Test-fixture follow-up (2026-10-23): plugin-bound MCP and Hermes hook
+      tests now seed an exact active project registration and action grants via
+      the test access manager before binding the plugin, including the separate
+      stdio child process. Shared fixture setup keeps the consumer config,
+      registered revision, and test identity consistent across both transport
+      paths. All 3 Hermes-hook and 7 MCP-server tests pass; strict Pyright,
+      errors-only Pylint on the affected tests, and `git diff --check` pass.
+      The refreshed whole-tree warning report is down from 124 to 122 findings
+      (111 refactor, 11 convention), with two duplicate-code findings removed;
+      report SHA-256 is
+      `8ebe9152ac1455833d11b4ef06d9a3bc65aff611483191d0b63804eb713a7279`. No
+      checklist status changed. This validates the local revision-fenced test
+      path only, not consumer-binding lifecycle or deployment identity.
 - [ ] **E. Add durable routing and operations:** implement retry/quarantine,
       event lag, review and purge queues, truthful health, metrics/alerts, storage
       budgets, and restart/load/failure-injection evidence.
+      Local progress (2026-10-22): [`router.py`](../src/curatormd_v2/router.py)
+      implements ordered delivery, persisted retry/backoff, quarantine and
+      audited retry, plus expiring claims with stale-owner fencing. The
+      [`curatormd-v2-router` CLI](../src/curatormd_v2/router_cli.py) runs one
+      bounded pass only for explicitly configured project roots; it is not a
+      resident worker. Local purge retry state and deadlines are persisted, and
+      project health/metrics are exposed through authorized API/MCP reads with
+      freshness-bounded host-probe evaluation and content-free labels. Source
+      health now reports a failed SQLite aggregate read as unknown with a
+      `database_observation_failed` gate and null database-derived fields;
+      Prometheus exposes database-observation completeness and omits unavailable
+      counts rather than emitting zero. A focused regression covers this path.
+      This is local failure reporting only, not production storage-failure
+      monitoring or alert delivery.
+      MCP transport follow-up (2026-10-23): the SQLite failure case now runs
+      through the SDK's in-memory client. The serialized response preserves
+      unknown status, null database fields, and the zero completeness gauge;
+      unavailable queue samples and the injected diagnostic remain absent.
+      This proves local API-to-MCP serialization only, not live Hermes transport
+      or production monitoring.
+      regressions cover ordered/replayed events, process-kill claim recovery,
+      quarantine/retry, one-shot scope, purge retry, and unknown/degraded health
+      ([router](../tests/test_router.py), [router CLI](../tests/test_router_cli.py),
+      [purge](../tests/test_purge.py), [API](../tests/test_api.py)). This note
+      records source and fixture presence, not a fresh test run. Production
+      schedulers, host probe adapters, scrape endpoint, dashboards/alerts,
+      measured storage/lag budgets, and deployment/load/restart drills remain
+      open; see [`release-gates-v2.md`](release-gates-v2.md).
+      Proposed operator-gated closure sequence: appoint event-router and
+      purge-scheduler owners; approve the supervised host, exact project roots,
+      bounded pass limits, restart/stop behavior, and overlap policy; provide
+      timestamped, target-bound observations for every required health probe;
+      expose authenticated content-free metrics and route owner-approved alerts;
+      set storage/lag thresholds from measured workload; then exercise backlog,
+      stale-claim, process-restart, blocked-WAL, purge-retry, and probe-loss
+      cases in a deployment-like environment, recording recovery and rollback
+      evidence. Include the proposed lifecycle fences in the fault matrix:
+      compare project and consumer-binding status/revision at event claim and
+      each final effect boundary, including persistence, source acknowledgement,
+      and unlink. During deregistration, allow only the inventoried exact
+      pre-cutover retry with its unexpired transition-scoped drain capability;
+      reject new IDs and stale operations without effects or acknowledgement.
+      Inject suspension, deregistration, and retirement around in-flight work,
+      lost acknowledgements, process restart, and purge; prove work either
+      completes under the captured revision before cutover or remains visible
+      and pending until reconciliation. Where a sink cannot enforce the fence,
+      require quiescence before committing the terminal state. Do not report
+      healthy until all required probes are fresh and queues, staging inventory,
+      and capacity satisfy the existing health contract. This is a proposed
+      acceptance order; scheduler, probe, alert, budget, and deployment choices
+      remain unapproved.
+      Local event-fence progress (2026-10-23): event intake now verifies
+      external evidence outside SQLite write transactions. It captures the
+      registered project revision before repository validation and rechecks
+      that revision around the durable event claim, commit, or failure receipt.
+      The API no longer holds its broad write fence across event verification.
+      A two-connection regression pauses verification, commits suspension, then
+      confirms the event fact is absent and its receipt remains visible as
+      `received`. The project-plugin, API, and event suites pass (111 tests);
+      strict Pyright and `git diff --check` pass. This closes only the local
+      event verification/effect boundary; production routing, direct service
+      construction outside a bound ProjectPlugin, consumer-binding revision
+      checks, acknowledgements, scheduler and deployment evidence remain open.
+      The E checklist item remains open.
+      Further local progress (2026-10-23): each CuratorService created by
+      `ProjectPlugin.bind` now receives a project revision capture/fence pair.
+      Explicit plugin-supplied fences compose with the bound service fence and
+      cannot replace it.
+      Direct service goal creation and lifecycle transitions capture the
+      revision before validation; verification-backed fact append and goal
+      completion capture before external evidence checks and fence the final
+      transaction. Event claims, commits and failure receipts, SDE review and
+      correction writes, inventory/hold/cleanup receipts, and purge/unlink
+      retries use the same bound service fence. A suspended-project regression
+      now also calls `plugin.service.goal_start` directly; the event evidence
+      cutover regression calls a separately constructed `CuratorService` for
+      the registered project and confirms its verifier runs outside SQLite and
+      its fact does not persist after suspension. The standalone regression and
+      full 50-test project-plugin and 39-test API suites pass; strict
+      Pyright, errors-only Pylint on the changed service/plugin/test files, and
+      `git diff --check` pass. Standalone CuratorService instances not created
+      through ProjectPlugin now use the store registry revision when their
+      project is registered; unregistered service construction retains its
+      compatibility path. The standalone fence does not validate a consumer
+      repository/config fingerprint. Consumer-binding revisions and production
+      lifecycle supervision remain open. The E checklist item remains open.
 - [ ] **F. Integrate one real consumer plugin:** install repository-local config
       and adapter in a pilot repo; prove checklist source mapping, scoped evidence,
       canonical bullet persistence, full artifact inventory, and independent
       project isolation.
+      Local progress (2026-10-22): [`release-gates-v2.md`](release-gates-v2.md)
+      records the Vhost Manager alpha package, isolated project paths,
+      consumer-owned hook, bounded profile grant, disposable contract coverage,
+      and a composed disposable hook-to-MCP-to-projection flow. This establishes
+      one consumer integration in disposable/local contexts, not a Vhost
+      application workflow or production pilot. The consuming checkout's
+      contract test file is currently modified and its managed-integration
+      harness is untracked; the recorded pass does not identify whether those
+      exact working-tree versions were included, and they were not rerun for
+      this update. Freshness recheck (2026-10-23): the Vhost Manager checkout is
+      at `7d2b10f5433cfe566fc560741bbc9401265176f4`; its worktree remains dirty,
+      including those two consumer-test changes. Keep this one-consumer pilot
+      item open for real application event production and canonical persistence,
+      owner-reviewed producer/source coverage (see the audit in
+      [Section 6](#6-per-project-plugin-and-repository-boundary)), trusted
+      evidence and identity, interactive isolation, production retention,
+      rollback, and release approval. The
+      proposed two-real-consumer sequence in
+      [Section 6](#6-per-project-plugin-and-repository-boundary) remains open;
+      a synthetic second config does not satisfy it. Track each consumer's
+      source inventory under `CONSUMER-SOURCE-COVERAGE`; the named application
+      request exercises only the producers it actually invokes and cannot
+      establish coverage for other classes or confirm their absence. Reconcile
+      each consumer's scenario disposition with Gate F in
+      [`release-gates-v2.md`](release-gates-v2.md).
+      Current-source alpha verification (2026-10-23): built wheel
+      `cdc16e2c36dfee6963d14b588650beb2637f03e6af0938ccb3c7022a74d77c4b`
+      from the current dirty V2 tree and installed it in a fresh disposable
+      Python 3.12 environment. The Vhost contract fixtures now provision the
+      exact active project registration required by the current lifecycle
+      fence. All seven Vhost contracts pass, and the Vhost-owned managed-MCP
+      harness passes with three processed events, exact-replay acknowledgment,
+      retry after denial, reconciled disposable Markdown, and privacy canaries
+      absent. No active profile, application source, or application data was
+      changed. Real application producer coverage and canonical application
+      workflow remain open.
 - [ ] **G. Integrate Hermes Core:** map real app-server lifecycle events through
       the global router and managed gateway; prove profile/project authorization
       and that no raw session transcript is retained. Local diagnostic progress
@@ -3744,18 +5831,21 @@ substitute for evidence at a later integration boundary.
       injects host-derived profile/session metadata for the opted-in local stdio
       server. Two focused Hermes trust-gating tests pass. These checks do not
       establish that a real managed-gateway tool call or app-server event was
-      delivered. Human identity and live-runtime gates remain open. Current
-      probe (2026-10-22): the checkout CLI exits 0, discovers 48
+      delivered. Human identity and live-runtime gates remain open. Probe
+      snapshot (2026-10-22): the checkout CLI exits 0, discovers 48
       tools, and reads `vhost-manager-alpha` activity status: 12 event receipts,
       all processed, one goal, two facts, and no pending SDEs or event failures.
       The alpha database is schema 21, passes `PRAGMA quick_check=ok`, and has
       12 inbox receipts. The refreshed source wheel with SHA-256
       `e268f1eddce61c44b1f132f93c6afad842a5ddd39e9e791cabd7091c25fdc2d0` is
-      installed in the isolated profile; all 38 Python module hashes match
-      source and all seven disposable Vhost consumer contracts pass against
-      it. These are profile-context, installed-package, and disposable
-      consumer-contract results, not person authentication, a `goal_list`
-      result, a health probe, or live application capture.
+      installed in the isolated profile at that probe; all 38 Python module
+      hashes matched the source revision then, and all seven disposable Vhost
+      consumer contracts passed against it. These are profile-context,
+      installed-package, and disposable consumer-contract results from that
+      snapshot, not person authentication, a `goal_list` result, a health
+      probe, or live application capture. The schema-21 probe predates source
+      schema 22 and does not establish current installed-consumer
+      synchronization.
       Follow-up (2026-10-22): Hermes Core's checkout CLI probe now reads the
       activity summary, paginated goal total, and aggregate project health over
       the same trusted local profile/session context. The probe exits 0 and
@@ -3789,6 +5879,41 @@ substitute for evidence at a later integration boundary.
       the test now stubs only the unrelated bootstrap import. The complete file
       passes 46/46, and a fresh Hermes `scripts/check` passes all 12 checks. No
       production bootstrap behavior, identity, or live-runtime gate changed.
+      Fresh profile probe (2026-10-23): the Hermes checkout connects to the
+      configured local stdio server, discovers 48 tools, and reads the
+      `vhost-manager-alpha` ledger with host-injected profile/session context.
+      At `2026-10-23T13:30:35Z` it reports 12 receipts, all processed, one goal,
+      two facts, zero pending SDEs, and goal-list total 1. Health remains
+      `unknown` with event-router, purge-scheduler, host-identity, human-review,
+      and artifact-producer-inventory gates. This read is not a new app-server
+      event, a human-authentication result, or a healthy/green state; the last
+      event remains the 2026-10-21 receipt. Slice G remains open.
+      Current-source integration check (2026-10-23): the Vhost-owned harness
+      now passes against the freshly built current-source wheel and the Hermes
+      Core checkout. It dispatches three bounded events through actual Hermes
+      hooks and the managed stdio MCP route, confirms exact retry/replay and
+      receipt acknowledgment, and reconciles only its disposable configured
+      projection. This is local composition evidence; no live gateway event or
+      authenticated human identity was added, and Slice G remains open.
+      Proposed Hermes-owned acceptance sequence, separate from the Vhost
+      application pilot in Slices F and I: approve the exact lifecycle event
+      classes and bounded fields; confirm the approved local-alpha retention
+      ceiling applies, and obtain separate approval for any production retention
+      period. Satisfy the trusted identity and production-router prerequisites
+      in Slices D and E, then run one real Codex app-server turn through the
+      managed gateway using an
+      explicitly bound profile, project, session, and goal. Verify stable event
+      IDs and source order, and that Hermes acknowledges only after a durable
+      `processed` receipt (including terminal `suppressed_nonactive_goal` after
+      its cursor commits atomically) or exact `duplicate` receipt. Inspect the
+      outbox, inbox, facts, exports, WAL, and backup surfaces for absence of
+      prompts, message bodies,
+      tool arguments, and provider output. Inject one route failure/restart and
+      prove exact-envelope retry without duplicate facts or a lost sequence.
+      Preserve bounded receipts and hashes for owner review; keep Slice G open
+      until the real route, authorization, privacy, and recovery evidence is
+      independently reviewable. This acceptance sequence is proposed, not an
+      authorization to enable capture.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
@@ -3800,9 +5925,105 @@ substitute for evidence at a later integration boundary.
       only; root-account activation, live host attribution, authenticated
       approver identity, cross-process supervision, and production recovery
       remain open in the release gate.
+      Proposed Hermes-owner deployment sequence: verify the plugin is configured
+      only in the Hermes Core account home, inspect the explicit bounded target
+      manifest and service bindings, and label unmatched filesystem growth as
+      unattributed rather than assigning causality. Establish a host-authenticated
+      approver and fresh one-use approval for each exact proposal. Exercise the
+      full approve/reject and interrupted-cleanup paths against a disposable
+      configured cache target; after an interruption, confirm the process has
+      stopped, reconcile the receipt without repeating deletion, then take fresh
+      inventory and verify target contents, free space, and configured service
+      health; without configured service units, retain
+      `verification_incomplete`. Demonstrate cross-process supervision,
+      disable/recovery behavior, and bounded receipt retention. Keep actual host
+      cleanup disabled until the Hermes account owner approves the target
+      manifest, identity, supervision, recovery procedure, and recorded pilot
+      evidence. This proposal does not authorize cleanup on a live host.
 - [ ] **I. Pilot and release:** run the V2 consumer workflow and rollback drill,
-      publish runbooks/release notes, and obtain owner sign-off on retention,
-      cleanup, and capture policy. V1 migration or rollback is not a V2 gate.
+      publish runbooks/release notes, and obtain owner sign-off on the pilot and
+      any production retention, cleanup, or capture policy beyond the approved
+      local-alpha defaults. V1 migration or rollback is not a V2 gate.
+      Local alpha evidence (2026-10-22) is summarized in
+      [`release-gates-v2.md`](release-gates-v2.md): profile-bound event delivery,
+      bounded payload disposal, and disposable consumer contracts were checked.
+      This evidence does not include a Vhost application workflow, live
+      canonical-target write, production rollback, or owner sign-off; project
+      health remains `unknown` while required runtime probes are absent. Next
+      pilot checkpoint (owner-led): confirm the named request's event class,
+      profile/project binding, and targets fit the approved local-alpha policy
+      ([`Curator V2 Pilot Default Policy`](<Curator V2 Pilot Default Policy.md>));
+      obtain explicit authorization for this one capture, and approve a policy
+      change before expanding scope. Exercise the named Vhost application
+      request through the real producer and verify its scoped receipt and
+      canonical projection; preserve and inspect a recovery copy; complete an
+      approved rollback drill with a recovery receipt; then publish the
+      runbook/release notes and record the owner's cleanup, retention, and
+      capture decisions. Treat production
+      policy approval as a separate gate. Keep Slice I open until those artifacts
+      and approvals are reviewable.
+      Proposed approval ownership: the pilot owner authorizes the named one-run
+      capture and approves its source inventory, exact bindings, and targets;
+      the product owner signs off the pilot and residual risks; production
+      policy changes require their policy owner; the deployment owner approves
+      rollback; and the release owner approves the runbook and release. Keep
+      each decision independent; no approval authorizes a broader capture or a
+      different target.
+      Proposed pilot evidence packet (content-free, retained in the owner's
+      access-controlled operations system): bind the approved local-alpha policy
+      reference, one-run capture authorization, and approver reference to the
+      exact profile, project, repository and config fingerprints, plus
+      persistence/staging targets. Record separately scoped approval references
+      for the one-run capture, product pilot/risk sign-off, any production-policy
+      change, rollback, and release; missing approvals leave their gates open.
+      Include the owner-reviewed producer/source-
+      to-class matrix digest and a disposition for every source: V2-staged,
+      owner-confirmed absent, or owner-managed outside V2. No unresolved
+      producer, class, or destination may remain for the approved run. List only
+      bounded source/class IDs and dispositions, event IDs, source sequences,
+      receipt dispositions, goal/fact IDs, the stable run ID, and the durable
+      action-intent and authorization-consumption receipt references. Prove an
+      exact retry resumes that run and a different run is denied without a
+      second capture or target mutation; record only their IDs and outcomes.
+      Include one bounded run disposition (`completed`, `open/degraded`, or
+      `unknown`), the last confirmed durable step, and the next owner/action.
+      If stopped, bind the stop trigger, operator ID, and bounded control result
+      to the same run ID so a partial run cannot be presented as complete.
+      Include the complete inventory hash and canonical projection
+      hash/reconciliation result; then attach the recovery snapshot digest and
+      integrity outcomes, before/after target digests, rollback point, and
+      recovery/rollback receipt references.
+      Reuse the proposed record fields in
+      [`storage-recovery-v1.md`](storage-recovery-v1.md#proposed-recovery-record).
+      Exclude request bodies, transcripts, tool arguments, provider output,
+      credentials, and raw exception text. This packet is a proposed review
+      format, not an implemented receipt schema or authorization to capture.
+      Proposed pilot stop conditions: before the one-run authorization, name
+      the operator who may stop the producer/router and the exact bounded
+      control used to do so. Stop capture and routing if the profile, project,
+      repository/config fingerprint, event class, or persistence/staging target
+      differs from the approved binding; if producer coverage or inventory is
+      incomplete; if acknowledgment occurs without a durable `processed` receipt
+      (including `suppressed_nonactive_goal` with an atomic cursor advance) or
+      exact `duplicate` receipt; if any write reaches another project or an
+      unapproved target; if a health observation that the approved local-alpha
+      policy or this run's preflight designates mandatory is unknown or stale;
+      or if a privacy canary appears in an unapproved sink. Production-only
+      probes are not local-alpha prerequisites unless owners explicitly include
+      them in the one-run authorization. On stop, keep any pending
+      envelope only in its approved retry/quarantine store, retain content-free
+      receipt references without copying the envelope into the review packet,
+      prevent automatic replay or cleanup from expanding the action, preserve
+      the pre-run recovery copy, and record the run as open/degraded with the
+      failed condition and owner.
+      Do not resume, purge, switch storage, or perform rollback beyond an
+      existing approval's exact conditions and targets; if the observed state
+      falls outside that approval, require the applicable product, repository,
+      policy, or deployment owner to record a fresh decision bound to the state
+      and targets. Record the stop trigger, time, operator, bounded control
+      result, preserved receipt references, and resume/rollback approval
+      reference in the content-free evidence packet. This proposed containment
+      protocol grants no operational access.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
@@ -3818,28 +6039,388 @@ substitute for evidence at a later integration boundary.
 ### Definition of done
 
 - [ ] A real request/checklist/subtask creates a correctly scoped goal with
-      its original problem and success criteria intact.
+      its original problem and success criteria intact. Proposed acceptance,
+      tied to the separately approved one-run pilot in Slice I: submit one real
+      user request through the consumer's supported application entrypoint, with
+      the exact profile, project, repository/config fingerprints, source
+      checklist item, and persistence target bound before processing. Compare
+      the source request's authorized problem and success criteria with the
+      created goal and a subsequent bounded `goal_report`; confirm no criterion
+      is lost, merged, silently rewritten, or marked verified without its own
+      passing evidence. Preserve user intent in the compact goal fields and
+      approved criteria without retaining the raw conversation or request body
+      in canonical records, logs, traces, metrics, or backups. A missing,
+      ambiguous, expired, or cross-project binding must create no goal and leave
+      a visible denial/open gate. Replay the same request/event and restart at
+      the durable boundary; verify one correctly scoped goal and stable receipts,
+      with another project's goal list and targets unchanged. Retain a
+      content-free acceptance record containing the request reference/digest,
+      goal and project IDs, approved bindings/fingerprints, criterion count and
+      evidence dispositions, receipt IDs, and before/after out-of-scope hashes.
+      Keep this item open until the named real-consumer run and owner-reviewed
+      evidence packet exist; synthetic API/MCP fixtures do not close it.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
-      claims remain open.
+      claims remain open. Proposed acceptance, using the same approved pilot
+      goal: render the goal card and paged fact report in the authenticated,
+      project-scoped user-facing dashboard, not only through API/MCP output.
+      Show recorded facts, currently evidence-verified facts, unverified claims,
+      and current open gates as distinct states; show page/total information so
+      truncation is explicit. Bind pages to a stable report revision/snapshot
+      token or detect and label when the underlying goal, fact, evidence, or
+      review state changed between page reads; never combine pages from different
+      revisions and present them as one complete report. If the snapshot expires
+      or changes, mark the report stale and require a bounded refresh from the
+      first page. If the dashboard uses a client-held cursor or snapshot token,
+      make it opaque and integrity-bound to the authenticated subject, project,
+      goal, page offsets, snapshot revision, and expiry; it never grants access.
+      Reject tampered, expired, or cross-subject/project/goal tokens without
+      returning page data, and restart at the first page under fresh
+      authorization. Test token replay and substitution independently of the
+      per-request authorization check. Bind the snapshot to each verifier or
+      adapter and trust-root or revocation version, plus the source observation
+      time and validity bound;
+      external trust can change without a database revision. At every page read,
+      revalidate that binding or expire the whole snapshot as stale/unknown.
+      Reauthorize each page request against the current user, project, and read
+      grant; revocation, expiry, suspension, or role change invalidates the page
+      cursor and report snapshot. Inject grant changes between page requests and
+      prove no subsequent page or cached response is served under stale access;
+      clear the rendered report and require a newly authorized first-page read.
+      Inject trust-version change, revocation, and evidence expiry between pages;
+      prove earlier verification pages are not combined with later state as one
+      current report. Exercise fact append, correction/supersession, goal reopen,
+      and archive/compaction between page requests; prove there are no silent gaps
+      or duplicates and that page totals and evidence labels correspond to the
+      displayed revision. For the reopen case, use a disposable goal through the
+      same supported user-facing route: begin with a completed goal whose
+      criteria have passing evidence, reopen it with a reason and concrete next
+      action, and confirm the old facts and proof remain visible only as history,
+      current criteria return to `open`, and another finish is rejected until
+      fresh evidence is recorded in the new epoch. Reopen a completed parent
+      before its completed child and completed dependents before their
+      dependency. Reject reopening when the parent or dependency is cancelled
+      or superseded; resume only by starting a new goal with a nonterminal
+      parent and valid dependencies, replacing a cancelled or superseded
+      dependency with an active same-project goal. Leave the old relationship
+      and terminal history intact. Verify that a
+      cached page or report from the completed epoch is marked stale and cannot
+      restore its prior completion state. Do not reopen the named real pilot
+      goal solely to create this test case. Replay identical source events and
+      semantically
+      duplicate adapter facts to prove idempotent bullets, while preserving
+      distinct evidence and decisions. Each verification bullet must expose a
+      bounded evidence reference that an authorized reviewer can independently
+      resolve to its source/command or artifact digest and observed outcome.
+      Before an authorized purge removes a cited source artifact, persist a
+      content-free verifier receipt that an independent reviewer can validate
+      under the owner-approved trust root: bind issuer/subject, project/goal/
+      criterion, source revision and digest, observed outcome/time, verifier
+      version, and expiry/revocation reference. A bare `verified` flag or
+      caller-supplied digest is insufficient. After purge, this receipt supports
+      historical integrity only; if current verification requires rereading a
+      source that is no longer available, retain the immutable fact but mark
+      current evidence stale/unknown and leave the criterion open. Never infer
+      fresh verification from a historical receipt or digest alone.
+      Missing, stale, mismatched, or inaccessible evidence must render as
+      unverified with its open criterion and next action; it must never appear
+      complete because a fact exists or an earlier goal epoch passed. Verify
+      cross-project denial and synthetic privacy canaries in rendered output,
+      logs, traces, and exports. Keep the item open until the actual dashboard
+      and its authorization path are exercised by an approved user against the
+      real-consumer pilot; bounded local report tests establish service behavior
+      only.
 - [ ] SDE assessment produces reviewable candidates only for supported,
-      material facts; a human's decision and rationale are auditable.
+      material facts; a human's decision and rationale are auditable. Proposed
+      acceptance, using a candidate from the approved real-consumer pilot:
+      demonstrate that a routine update, unsupported assertion, stale proof, or
+      fact from another goal produces no review candidate, while a selected
+      currently verified material fact produces one candidate bound to its
+      goal and evidence. Present the bounded packet and exact current inventory
+      through the authenticated reviewer experience; identify the reviewer
+      from a verified subject/role mapping, not a local UID, profile assertion,
+      or synthetic test authorizer. Missing, expired, revoked, or wrong-project
+      authority must leave the candidate pending and record no decision. For an
+      authorized approve or reject, persist the reviewer subject, bounded
+      single-line rationale, disposition, decision time, candidate/evidence
+      binding, and immutable receipt; repeat the exact request idempotently and
+      reject a conflicting retry without rewriting the receipt. Confirm that a
+      disposition does not itself claim goal completion, and that any cleanup
+      remains bound only to the exact inventory shown in that review action as
+      specified by the next criterion. Keep this item open until an authenticated
+      human completes the review path in the real consumer and the receipt is
+      independently checked; synthetic authorizers and profile metadata do not
+      establish human identity.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are
       durable before deletion; every transient artifact is inventoried, safely
-      purged or visibly pending, and retryable.
+      purged or visibly pending, and retryable. Proposed acceptance, using the
+      authenticated reviewer path and approved pilot candidate above: show the
+      reviewer the selected fact/evidence packet, complete inventory digest,
+      and dependency map from artifact occurrence through evidence and criterion
+      to retention/hold, post-purge state, and reacquisition action. Show each
+      exact target's path/class/hash/hold state and explicit empty-inventory
+      status before the single decision. Bind the map digest, reviewer,
+      disposition, rationale, decision time, projection target/hash, and cleanup
+      authorization to that unchanged manifest and map. Verify the approved
+      facts and both immutable receipts are durable in the canonical projection
+      and ledger before any
+      unlink begins. After deletion, compare every inventoried target with its
+      recorded outcome: approved unheld files are absent; held, changed,
+      inaccessible, or failed targets remain present as applicable and expose
+      `purge_pending` with a retry or hold-release action. Inject interruption
+      before and after receipt commit, projection write, first deletion, and final
+      status commit; reopen and retry the same decision to prove no duplicate
+      facts/receipts, no deletion outside the original approval, and truthful
+      per-target recovery. At decision submission, revalidate the same
+      authenticated reviewer subject and current project/action grant, including
+      expiry and revocation, and compare the candidate state, supporting
+      fact/evidence digests, project/config binding, projection revision, and
+      complete inventory and dependency-map digests and consequence dispositions
+      with the packet the reviewer saw. Bind a fresh,
+      short-lived authorization assertion to that exact action and packet. If
+      authority expires or is revoked, or any bound state changes after display,
+      record neither a disposition nor cleanup authorization, perform no unlink,
+      and require a newly rendered packet and explicit decision. Inject grant
+      revocation, expiry, target mutation, candidate disposition, and evidence
+      revision changes between packet display and submit, including at the
+      durable transaction boundary; verify database, projection, and staging
+      state remain unchanged on rejection. Owners must approve the assertion
+      freshness and revocation-race semantics used by the deployment identity
+      provider. A changed or incomplete inventory must never be silently
+      substituted into the old approval. Keep this item open until a
+      real authenticated reviewer completes the one-action flow in the approved
+      consumer and the exact manifest, dependency map, pre-delete durability
+      proof, per-target outcomes, and recovery receipt are independently
+      reconciled. Local synthetic-reviewer tests do not satisfy that gate.
+      Local safety progress (2026-10-23): new targets bind a persistent file
+      occurrence ID; schema v28 marks unpurged legacy approvals without one as
+      stale, leaves completed deletions intact and active holds in force, and
+      exposes stale targets while excluding them from retries. The v27-to-v28
+      regression covers pending, failed, held, purged, and expiry targets plus
+      hold release. This does not close the authenticated-review, recovery, or
+      owner-approval gates.
+      Additional local safety progress (2026-10-23): the review packet now lists
+      every inventory artifact and hashes its dependency map; exact path-and-
+      digest matches identify supporting evidence and criteria, while unmatched
+      artifacts remain explicitly unmapped. Evidence links remain occurrence-
+      unbound, and reacquisition actions remain unrecorded. Confirmation,
+      inventory completion, and cleanup authorization revalidate the displayed
+      map digest; new cleanup receipts persist it. Schema v29 marks unpurged
+      authorizations without a map digest stale and leaves completed deletions
+      intact. This does not prove occurrence-level evidence lineage, reacquisition
+      policy, real reviewer identity, interruption recovery, or owner approval.
+      Further local progress (2026-10-23): evidence references and host-verified
+      receipts now carry optional occurrence IDs through event, fact, archive,
+      and read-model serialization. The dependency map calls an occurrence
+      matched only when the verified receipt attests the same ID; it flags
+      mismatched, unattested, mixed, legacy-unbound, and unmapped links
+      separately. At that checkpoint, all 410 local tests, strict Pyright,
+      errors-only Pylint, schema parsing, and `git diff --check` passed. This
+      does not create a real consumer identity, record a reacquisition policy,
+      or satisfy the pilot, recovery, or owner-approval gates.
+      Additional local progress (2026-10-23): each reviewed artifact now must
+      carry an explicit `not_required`, `reacquire_from_source`, or
+      `retain_under_hold` decision consistent with its current hold and open
+      criteria. The action is bound into the displayed dependency map, repeated
+      in the exact confirmation packet, and persisted on the purge target;
+      schema v30 marks pending legacy targets for fresh review. This records an
+      approved next step but does not itself reacquire a source or verify an
+      open criterion. The real-consumer reviewer, reacquisition/recovery,
+      interruption, pilot, and owner-approval gates remain open.
 - [ ] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
-      failures without false-green health.
+      failures without false-green health. Proposed acceptance, on the approved
+      real-consumer pilot, is to render an authenticated project dashboard and
+      reconcile its goal lifecycle, candidate/review, event-error, and purge
+      totals against the complete authorized store state, including records
+      beyond list-page limits. Label the database aggregate snapshot separately
+      from staging inventory and host-probe observations; show each observation's
+      timestamp and completeness so independently sampled inputs are not
+      presented as one atomic snapshot. Exercise an empty project, each goal
+      lifecycle state, pending/rejected review, failed and quarantined events,
+      incomplete and over-limit inventory, purge-pending targets, and absent,
+      stale, malformed, or failed host probes. Known backlog or failure must be
+      degraded; missing, stale, malformed, or failed required observations must
+      be unknown; healthy is allowed only when all required observations are
+      fresh and complete and no required work is pending or failed. Verify
+      multiple projects, cross-project denial, and paging without leaking
+      identifiers or content. The dashboard must retain the open gates and
+      separate event activity from readiness; a successful read or empty queue
+      is not itself health evidence. Keep this item open until an authenticated
+      user exercises the deployed dashboard with the pilot project's actual
+      authorization and probe adapters, and the displayed totals/statuses are
+      independently reconciled with their recorded observation scopes.
+- [ ] Project suspension, consumer deregistration, reactivation, re-enrollment,
+      and permanent retirement have separate authenticated transitions and
+      durable receipts. Proposed acceptance, following the owner-gated
+      lifecycle case in [Section 6](#6-per-project-plugin-and-repository-boundary):
+      exercise each transition against a real consumer binding and verify
+      project and binding revisions are independently compared and advanced;
+      stale grants, sessions, leases, and cached operations cannot cross a
+      transition or produce a late write, acknowledgement, or unlink. During
+      deregistration, only an inventoried exact pre-cutover retry may use the
+      bounded transition-scoped drain; unresolved or ambiguously acknowledged
+      events keep deregistration pending and block a new source epoch. Resolve
+      each old event against its durable receipt or separately approved
+      terminal disposition before enrolling a fresh binding, and prove that
+      re-enrollment neither copies/resequences old envelopes nor automatically
+      replays events or resumes purge. Reactivation must consume a current
+      review receipt bound to complete repository/config, grant, cursor,
+      backlog, and purge-inventory observations; changed or incomplete inputs
+      leave the project suspended. Retirement must leave an irreversible
+      project/source-epoch tombstone and replay fence; discarding backlog or
+      later events requires its own authorized disposition. Verify every
+      pending and terminal state through content-free operator status with
+      bounded in-flight/backlog counts, observation time, and completeness;
+      unknown or incomplete observations never render as zero or healthy.
+      Exercise concurrent transitions, lost responses, delayed envelopes, and
+      migration from v22 with injected failures, proving retries are
+      idempotent and no partial revision, binding, grant, audit, cursor, or
+      tombstone state commits. Keep this item open until the authenticated
+      deployment-boundary runs, lifecycle migration/rollback evidence, and
+      owner approvals are independently reconciled. Local fixtures and
+      synthetic identities do not close this gate. Before the deployment
+      evidence catalog is frozen, assign separate entries with stable IDs for
+      `LC-TRANSITION-CAS` (authenticated scope, revision checks, retry/conflict),
+      `LC-SUSPEND-REACTIVATE` (review-bound reactivation and stale-review
+      rejection), `LC-DEREG-DRAIN` (exact retry, unresolved backlog, and cutover),
+      `LC-REENROLL-EPOCH` (old-event reconciliation and fresh-binding fencing),
+      `LC-RETIRE-FENCE` (tombstone, replay horizon, and approved terminal
+      disposition), `LC-EFFECT-BOUNDARY` (in-flight write, acknowledgement, and
+      unlink fencing), `LC-OPERATOR-STATUS` (bounded counts and unknown/failure
+      states), and `LC-V22-MIGRATION` (upgrade failure, recovery, and rollback).
+      Before freezing the catalog, add each ID to exactly one corresponding
+      deployment gate in [`release-gates-v2.md`](release-gates-v2.md) and
+      cross-reference its applicable Section 9 scenario; reject any missing,
+      duplicate, or orphaned cross-reference. Give each entry its own
+      preconditions, expected result, evidence binding, owner, and disposition;
+      one passing scenario cannot close another entry unless the versioned
+      catalog explicitly permits that reuse.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary
       and confirm that an approved disposable cleanup leaves Curator project
       history unchanged; live root-account activation remains a deployment gate.
 - [ ] Per-project plugins are isolated and configurable without copying global
-      backend state or mixing repository roots.
+      backend state or mixing repository roots. Closure follows the
+      [Section 6 two-real-consumer sequence](#6-per-project-plugin-and-repository-boundary):
+      both consumers must be actual owner-approved repositories with their own
+      repository configs, project grants, staging roots, and persistence
+      adapters. Verify each configured plugin writes and reconciles only its
+      own target, that reads and writes are denied in both cross-project
+      directions, and that changing either repository/config fingerprint
+      invalidates its prior binding. Compare both project records and
+      out-of-scope targets after the run; no consumer may need copied global
+      state or access to the other's repository root. The same package artifact
+      and recorded package/config/target fingerprints must identify the tested
+      installation. For each consumer, bind an owner-reviewed, complete
+      producer-to-artifact-class matrix to the source revision, repository
+      config fingerprint, and adapter version. Exercise every mapped producer
+      and class through the real consumer adapter in disposable workflows,
+      including import, retry, cancellation, and failure paths where applicable;
+      reconcile bounded process/namespace observations with the full staging
+      inventory and every approved out-of-root disposition. Unknown producers,
+      classes, destinations, or observation boundaries keep this item open;
+      neither incomplete scans nor out-of-root artifacts may be treated as
+      absent or purged, and no scan or deletion root is inferred. A synthetic
+      second config is insufficient. Track this matrix under
+      `CONSUMER-SOURCE-COVERAGE`, with its own Section 9 scenario and release-gate
+      row as required by the manifest catalog. Keep this item open until both
+      consumer owners review the deployment-like results and trusted
+      identity/runtime isolation is proven; local two-config tests do not close
+      it.
 - [ ] Operational, security, retention, disk, token, upgrade, backup, restore,
-      and rollback gates have evidence from deployment-like testing.
-- [ ] Product owner signs off the pilot, remaining risks, and explicit policy
-      for enabling capture and destructive cleanup.
+      and rollback gates have evidence from deployment-like testing. Proposed
+      closure: maintain one content-free deployment evidence manifest that maps
+      every applicable release-gate row and Section 9 deployment scenario to
+      the exact package/build, configuration and project fingerprints, identity
+      source, storage/staging/backup adapters, and environment used. For each
+      scenario, record its ID, preconditions, expected result, observed result,
+      receipt or artifact digest, owner, approval reference, and recovery/rollback
+      outcome; reconcile the result with the corresponding open criterion and
+      gate status in [`release-gates-v2.md`](release-gates-v2.md). Mark a gate
+      verified only when its required deployment-boundary evidence and owner
+      decisions are present. Failed, missing, stale, or inconclusive observations
+      remain open with an owner and next action; local tests, profile discovery,
+      and synthetic identities cannot substitute for a deployment result.
+      Completeness acceptance: version and hash the required-gate/scenario
+      catalog before the run by cross-checking every applicable deployment-bound
+      criterion and embedded proposed acceptance case in this plan against the
+      release-gate rows and Section 9 scenarios. Assign stable IDs to embedded
+      cases too, and reject orphan criteria or scenarios instead of silently
+      omitting them. The final manifest must contain exactly one
+      disposition for every catalog entry, with no missing or duplicate IDs.
+      A `not applicable` disposition requires a scoped reason and approval from
+      the owner responsible for that requirement; it cannot be inferred from a
+      missing adapter or absent test. Reject evidence whose package, build,
+      configuration, identity, project, or target fingerprints do not match the
+      scenario binding, and prevent one observation from closing multiple gates
+      unless the catalog explicitly authorizes that reuse. When the catalog or a
+      binding changes, create a new manifest version and re-evaluate affected
+      entries; retain the earlier manifest as history rather than overwriting
+      its results. Independently reconcile catalog and manifest digests, counts,
+      dispositions, and evidence references before release review.
+      Review the complete manifest against the intended release scope before
+      product sign-off, and preserve the recovery snapshot and rollback point
+      until the deployment owner accepts the outcome. This criterion does not
+      itself authorize capture, production activation, data migration, or
+      destructive cleanup.
+- [ ] Product owner signs off the pilot and residual risks after reviewing the
+      proposed evidence packet in Slice I. The pilot owner separately authorizes
+      only the named one-run capture under the approved local-alpha policy; the
+      policy owner approves any changes for broader capture, retention, or
+      destructive-cleanup policy; the deployment owner approves rollback; and
+      the release owner approves the runbook and release. Verify each decision
+      against its own scoped approval reference and evidence. No approval stands
+      in for another, and no one-run authorization permits a different source,
+      project, target, or later run. Keep this item open until all required
+      owners have recorded their independent decisions and the packet matches
+      the exact pilot bindings and release-gate evidence. Proposed sign-off
+      acceptance: present the product owner with a content-free residual-risk
+      register tied to the packet digest; for each open risk, state its scope,
+      observed evidence, impact/likelihood assessment, mitigation or explicit
+      acceptance, accountable owner, and review/expiry trigger. Distinguish
+      risks accepted for the single local-alpha run from unresolved production
+      risks; local pilot sign-off must not imply production readiness or approve
+      an unreviewed policy change. Record the verified approver subject/role,
+      exact decision, bounded rationale, time, packet digest, approved scope,
+      and any expiry in a durable approval reference. The pilot owner, product
+      owner, policy owner, deployment owner, and release owner must each decide
+      only within their stated authority. A change to the package/build,
+      repository/config binding, source inventory, project, or target, or a
+      triggered stop condition, invalidates the affected approval and requires a
+      new packet review before the affected action resumes. Bind the packet to
+      its exact evidence/observation revisions, verifier and trust-root or
+      revocation versions, observation times, freshness limits, and gate
+      snapshot. Revalidate those bindings at each decision submission. If proof
+      expires or is revoked, a required source becomes unavailable, or a gate
+      changes after display, reject the stale decision and require a newly
+      rendered packet; an earlier approval cannot authorize capture, policy
+      change, rollback, or release against changed evidence. Inject expiry,
+      revocation, source outage, and gate changes between display and submit for
+      each approval scope, and verify the old packet remains historical and
+      non-authorizing. Missing owners,
+      unclassified risks, or an approval that cannot be matched to the packet
+      leave sign-off open; no verbal or implied assent closes the gate.
+      Before any authorized action begins, recheck approval expiry/revocation,
+      current approver grant, packet and target fingerprints, evidence freshness,
+      and stop conditions. Inject changes after the approval receipt commits but
+      before the first effect; stale approval must produce no capture, purge,
+      rollback, or release side effect and requires a newly rendered packet and
+      scoped decision. Consume the one-run capture authorization atomically with
+      a durable action intent bound to a run ID: an exact retry resumes that run
+      idempotently, while a different run cannot reuse the consumed approval.
+      Define crash/restart recovery for the interval between intent, first
+      effect, and outcome receipt; when the effect is ambiguous, reconcile its
+      exact target state before retrying rather than starting a second run.
+      Authorization consumption is permanent even if the run stops, fails, or
+      has an unknown outcome; do not refund, transfer, or reuse it. After
+      restart, recover the durable intent and run ID before considering an
+      exact retry, and never automatically replay. A retry may resume the same
+      run only while its approval remains valid and no stop condition has
+      invalidated it. After a triggered stop, reconcile any ambiguous effect
+      and require a fresh, explicitly scoped resume decision bound to the
+      reconciled state; continuation keeps the same run ID. Any new run ID
+      requires a new one-run capture authorization.

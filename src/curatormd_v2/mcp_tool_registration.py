@@ -752,11 +752,21 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
             read_only_hint=True, destructive_hint=False, open_world_hint=False
         )
     )
-    def sde_review_packet(candidate_id: str) -> str:
-        """Present candidate provenance and current exact artifact inventory."""
+    def sde_review_packet(
+        candidate_id: str,
+        review_artifacts: list[ArtifactInput] | None = None,
+    ) -> str:
+        """Present provenance and inventory with the exact proposed hold state."""
 
         return json_result(
-            api.sde_review_packet(caller, project_id, candidate_id)
+            api.sde_review_packet(
+                caller,
+                project_id,
+                candidate_id,
+                parse_artifacts(review_artifacts)
+                if review_artifacts is not None
+                else None,
+            )
         )
 
     @_safe_tool()
@@ -823,6 +833,7 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
         decision: str,
         artifacts: list[ArtifactInput],
         artifact_inventory_complete: bool,
+        dependency_map_sha256: str,
         rationale: str | None = None,
     ) -> str:
         """Record disposition and authorize purge of its exact complete manifest."""
@@ -835,6 +846,7 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
                 ReviewDecision(decision),
                 parse_artifacts(artifacts),
                 artifact_inventory_complete=artifact_inventory_complete,
+                dependency_map_sha256=dependency_map_sha256,
                 rationale=rationale,
             )
         )
@@ -845,7 +857,9 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
         )
     )
     def artifact_inventory_complete(
-        receipt_id: str, artifacts: list[ArtifactInput]
+        receipt_id: str,
+        artifacts: list[ArtifactInput],
+        dependency_map_sha256: str,
     ) -> str:
         """Finalize an exact artifact inventory after review authorization."""
 
@@ -855,6 +869,7 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
                 project_id,
                 receipt_id,
                 parse_artifacts(artifacts),
+                dependency_map_sha256,
             )
         )
 
@@ -867,6 +882,7 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
         receipt_id: str,
         artifacts: list[ArtifactInput],
         manifest_sha256: str,
+        dependency_map_sha256: str,
         target: str,
     ) -> str:
         """Record compatibility cleanup approval for an exact manifest."""
@@ -877,6 +893,7 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
             receipt_id,
             parse_artifacts(artifacts),
             manifest_sha256,
+            dependency_map_sha256,
             target,
         )
         return json_result(

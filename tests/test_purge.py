@@ -10,6 +10,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from uuid import uuid4
 from unittest.mock import patch
 
 from purge_fixtures import FlakyPurger, TestReviewAuthorizer, TestVerifier
@@ -28,6 +29,7 @@ from curatormd_v2 import (
     ConflictError,
     PurgeError,
     PurgeStatus,
+    ReacquisitionAction,
     RetentionHoldKind,
     ReviewAuthorizationError,
     ReviewDecision,
@@ -35,7 +37,12 @@ from curatormd_v2 import (
     SuccessCriterion,
 )
 from curatormd_v2.maintenance_cli import main as maintenance_main
-from curatormd_v2.store import NotFoundError
+from curatormd_v2.project_config import ProjectConfig
+from curatormd_v2.store import (
+    NotFoundError,
+    ProjectRegistrationRequest,
+    ProjectStatusChangeRequest,
+)
 
 
 class ReceiptCheckingPurger(ArtifactPurger):
@@ -66,7 +73,8 @@ class ReceiptCheckingPurger(ArtifactPurger):
             raise AssertionError("purge started before durable audit receipt")
 
 
-class DeleteThenCrashPurger(ArtifactPurger):
+# ArtifactPurger test double intentionally overrides only the required `purge`.
+class DeleteThenCrashPurger(ArtifactPurger):  # pylint: disable=too-few-public-methods
     """Simulate process loss after unlink but before its SQLite result."""
 
     def __init__(self, staging_root: Path):
@@ -176,7 +184,38 @@ targets = ["persistence/HISTORY.md"]
         path = self.stage / name
         path.write_bytes(b"temporary evidence")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        return path, ArtifactRef(str(path), digest)
+        metadata = path.stat()
+        return path, ArtifactRef(
+            str(path), digest, device_id=metadata.st_dev, inode_id=metadata.st_ino,
+            occurrence_id=uuid4().hex,
+        )
+
+    def test_same_content_replacement_after_review_is_not_unlinked(self) -> None:
+        """A reviewed hash cannot authorize a different file occurrence."""
+
+        candidate_id = self.candidate("same-content replacement")
+        path, artifact = self.artifact("same-content-replacement.json")
+        receipt = self.service.sde_confirm(
+            candidate_id,
+            ReviewDecision.APPROVED,
+            (artifact,),
+            artifact_inventory_complete=True,
+        )
+        replacement = path.with_name("replacement.tmp")
+        replacement.write_bytes(b"temporary evidence")
+        self.assertNotEqual(
+            (replacement.stat().st_dev, replacement.stat().st_ino),
+            (artifact.device_id, artifact.inode_id),
+        )
+        path.unlink()
+        replacement.rename(path)
+
+        result = self.persist_canonical(receipt)
+
+        self.assertTrue(path.exists())
+        self.assertEqual(result.purge_status, PurgeStatus.PURGE_PENDING)
+        _, targets = self.service.artifact_purge_status(receipt.receipt_id)
+        self.assertEqual(targets[0].error, "path_changed")
 
     def persist_canonical(
         self, receipt: AuditReceipt, service: CuratorService | None = None
@@ -191,9 +230,21 @@ targets = ["persistence/HISTORY.md"]
         )
         if not receipt.artifact_inventory_complete:
             return active_service.store.get_receipt(receipt.receipt_id)
+        with active_service.store.transaction() as connection:
+            for artifact in receipt.artifacts:
+                action = (
+                    ReacquisitionAction.RETAIN_UNDER_HOLD
+                    if artifact.retention_hold is not None
+                    else ReacquisitionAction.NOT_REQUIRED
+                )
+                connection.execute(
+                    "UPDATE purge_targets SET reacquisition_action = ? "
+                    "WHERE receipt_id = ? AND path = ?",
+                    (action.value, receipt.receipt_id, artifact.path),
+                )
         manifest = json.dumps(
             [
-                (item.path, item.sha256)
+                (item.path, item.sha256, item.occurrence_id)
                 for item in sorted(receipt.artifacts, key=lambda item: item.path)
             ],
             ensure_ascii=False,
@@ -202,6 +253,7 @@ targets = ["persistence/HISTORY.md"]
         _authorization, _pending_receipt = active_service.authorize_artifact_cleanup(
             receipt.receipt_id,
             hashlib.sha256(manifest.encode("utf-8")).hexdigest(),
+            "a" * 64,
         )
         return active_service.mark_cleanup_authorization_canonical_persisted(
             receipt.receipt_id,
@@ -224,6 +276,16 @@ targets = ["persistence/HISTORY.md"]
             hashlib.sha256(receipt.receipt_id.encode()).hexdigest(),
         )
         self.assertTrue(artifact_path.exists())
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE purge_targets SET reacquisition_action = ? "
+                "WHERE receipt_id = ? AND path = ?",
+                (
+                    ReacquisitionAction.NOT_REQUIRED.value,
+                    receipt.receipt_id,
+                    artifact.path,
+                ),
+            )
         self.assertIsNone(
             self.store.cleanup_authorization(receipt.receipt_id, "default")
         )
@@ -231,21 +293,31 @@ targets = ["persistence/HISTORY.md"]
         self.service.retry_due_purges()
         self.assertTrue(artifact_path.exists())
         manifest = json.dumps(
-            [(artifact.path, artifact.sha256)],
+            [(artifact.path, artifact.sha256, artifact.occurrence_id)],
             ensure_ascii=False,
             separators=(",", ":"),
         )
         manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
         with self.assertRaises(ConflictError):
             self.service.authorize_artifact_cleanup(
-                receipt.receipt_id, "0" * 64
+                receipt.receipt_id, "0" * 64, "b" * 64
             )
         self.assertTrue(artifact_path.exists())
         authorization, _pending_receipt = self.service.authorize_artifact_cleanup(
-            receipt.receipt_id, manifest_sha256
+            receipt.receipt_id, manifest_sha256, "b" * 64
         )
         self.assertEqual(authorization.manifest_sha256, manifest_sha256)
+        self.assertEqual(authorization.dependency_map_sha256, "b" * 64)
         self.assertEqual(authorization.reviewer_id, "test-reviewer")
+        usage = self.store.project_storage_usage("default")
+        other_usage = self.store.project_storage_usage("other-project")
+        self.assertEqual(usage.cleanup_authorization_count, 1)
+        self.assertGreater(usage.cleanup_authorization_record_bytes, 0)
+        self.assertGreaterEqual(
+            usage.logical_record_bytes, usage.cleanup_authorization_record_bytes
+        )
+        self.assertEqual(other_usage.cleanup_authorization_count, 0)
+        self.assertEqual(other_usage.cleanup_authorization_record_bytes, 0)
         purged = self.service.mark_cleanup_authorization_canonical_persisted(
             receipt.receipt_id,
             "/consumer/persistence/HISTORY.md",
@@ -283,7 +355,12 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate("legal retention")
         artifact_path, artifact = self.artifact("legal-hold.json")
         held_artifact = ArtifactRef(
-            artifact.path, artifact.sha256, RetentionHoldKind.LEGAL
+            artifact.path,
+            artifact.sha256,
+            RetentionHoldKind.LEGAL,
+            artifact.device_id,
+            artifact.inode_id,
+            artifact.occurrence_id,
         )
 
         receipt = self.service.sde_confirm(
@@ -292,6 +369,16 @@ targets = ["persistence/HISTORY.md"]
             (held_artifact,),
             artifact_inventory_complete=True,
         )
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE purge_targets SET reacquisition_action = ? "
+                "WHERE receipt_id = ? AND path = ?",
+                (
+                    ReacquisitionAction.RETAIN_UNDER_HOLD.value,
+                    receipt.receipt_id,
+                    held_artifact.path,
+                ),
+            )
         receipt = self.persist_canonical(receipt)
 
         self.assertTrue(artifact_path.exists())
@@ -368,10 +455,12 @@ targets = ["persistence/HISTORY.md"]
         first_path, first = self.artifact("first-held.json")
         second_path, second = self.artifact("second-held.json")
         original_hold = ArtifactRef(
-            first.path, first.sha256, RetentionHoldKind.LEGAL
+            first.path, first.sha256, RetentionHoldKind.LEGAL,
+            first.device_id, first.inode_id, first.occurrence_id,
         )
         newly_held = ArtifactRef(
-            second.path, second.sha256, RetentionHoldKind.OPERATIONAL
+            second.path, second.sha256, RetentionHoldKind.OPERATIONAL,
+            second.device_id, second.inode_id, second.occurrence_id,
         )
 
         receipt = self.service.sde_confirm(
@@ -544,6 +633,13 @@ targets = ["persistence/HISTORY.md"]
                 "UPDATE purge_targets SET next_attempt_at = ? WHERE receipt_id = ?",
                 ("2000-01-01T00:00:00+00:00", receipt.receipt_id),
             )
+        config = ProjectConfig.load(self.root)
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                config, "Register the local maintenance retry fixture"
+            ),
+            "test-admin",
+        )
         self.store.close()
         output = StringIO()
         exit_code = maintenance_main(
@@ -571,6 +667,78 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(recovered.purge_status, PurgeStatus.COMPLETE)
         self.assertEqual(flaky.calls, 1)
         self.assertFalse(artifact_path.exists())
+
+    def test_suspended_project_blocks_due_purge_retry(self) -> None:
+        candidate_id = self.candidate("suspension boundary")
+        artifact_path, artifact = self.artifact()
+        flaky = FlakyPurger(self.stage)
+        service = CuratorService(
+            self.store, flaky, TestVerifier(), TestReviewAuthorizer()
+        )
+        receipt = service.sde_confirm(
+            candidate_id,
+            ReviewDecision.APPROVED,
+            (artifact,),
+            artifact_inventory_complete=True,
+        )
+        receipt = self.persist_canonical(receipt, service)
+        self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
+        self.assertTrue(artifact_path.exists())
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE purge_targets SET next_attempt_at = ? WHERE receipt_id = ?",
+                ("2000-01-01T00:00:00+00:00", receipt.receipt_id),
+            )
+
+        config = ProjectConfig.load(self.root)
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                config, "Register the local maintenance suspension fixture"
+            ),
+            "test-admin",
+        )
+        self.store.set_project_status(
+            ProjectStatusChangeRequest(
+                project_id=config.project_id,
+                status="suspended",
+                rationale="Verify scheduled cleanup respects suspension",
+                expected_revision=1,
+                transition_id="suspend-maintenance-test",
+            ),
+            "test-admin",
+        )
+        self.store.close()
+
+        output = StringIO()
+        errors = StringIO()
+        exit_code = maintenance_main(
+            [
+                "--project-root",
+                str(self.root),
+                "--database",
+                str(self.root / "curator.sqlite3"),
+                "--batch-limit",
+                "1",
+                "--execute-due-purges",
+            ],
+            stdout=output,
+            stderr=errors,
+        )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("maintenance failed", errors.getvalue())
+        self.assertEqual(output.getvalue(), "")
+        self.assertTrue(artifact_path.exists())
+        self.assertEqual(flaky.calls, 1)
+        self.store = CuratorStore(self.root / "curator.sqlite3")
+        self.assertEqual(
+            self.store.get_receipt(receipt.receipt_id).purge_status,
+            PurgeStatus.PURGE_PENDING,
+        )
+        self.assertEqual(
+            self.store.get_project_registration(config.project_id).status,
+            "suspended",
+        )
 
     def test_retry_recovers_crash_after_delete_before_receipt_update(self) -> None:
         candidate_id = self.candidate()
@@ -703,6 +871,197 @@ targets = ["persistence/HISTORY.md"]
         self.assertFalse(receipt.canonical_persisted)
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
 
+    def test_v28_migration_stales_unpurged_legacy_approvals(self) -> None:
+        """Keep old targets visible but remove their automatic delete authority."""
+
+        candidate_id = self.candidate("legacy occurrence identity")
+        pending_path, pending = self.artifact("legacy-pending.json")
+        failed_path, failed = self.artifact("legacy-failed.json")
+        held_path, held_source = self.artifact("legacy-held.json")
+        purged_path, purged = self.artifact("legacy-purged.json")
+        held = ArtifactRef(
+            held_source.path,
+            held_source.sha256,
+            RetentionHoldKind.LEGAL,
+            held_source.device_id,
+            held_source.inode_id,
+            held_source.occurrence_id,
+        )
+        receipt = self.service.sde_confirm(
+            candidate_id,
+            ReviewDecision.APPROVED,
+            (pending, failed, held, purged),
+            artifact_inventory_complete=True,
+        )
+        self.store.mark_receipt_canonical_persisted(
+            receipt.receipt_id,
+            "/consumer/persistence/HISTORY.md",
+            hashlib.sha256(b"legacy canonical proof").hexdigest(),
+            "default",
+        )
+
+        _expiry_path, expiry_artifact = self.artifact("legacy-expiry.json")
+        expiry_manifest = hashlib.sha256(
+            json.dumps(
+                [(expiry_artifact.path, expiry_artifact.sha256, expiry_artifact.occurrence_id)],
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        expiry = self.store.create_expiry_purge_receipt(
+            "default", "legacy-reviewer", expiry_manifest, (expiry_artifact,)
+        )
+
+        self.store.close()
+        connection = sqlite3.connect(self.root / "curator.sqlite3")
+        connection.execute(
+            "UPDATE purge_targets SET occurrence_id = NULL, approval_stale = 0 "
+            "WHERE receipt_id = ?",
+            (receipt.receipt_id,),
+        )
+        connection.execute(
+            "UPDATE purge_targets SET status = 'failed', attempts = 1, "
+            "error = 'path_changed', next_attempt_at = '2026-01-01T00:00:00+00:00' "
+            "WHERE receipt_id = ? AND path = ?",
+            (receipt.receipt_id, failed_path.as_posix()),
+        )
+        connection.execute(
+            "UPDATE purge_targets SET status = 'purged', attempts = 1 "
+            "WHERE receipt_id = ? AND path = ?",
+            (receipt.receipt_id, purged_path.as_posix()),
+        )
+        connection.execute(
+            "UPDATE expiry_purge_targets SET occurrence_id = NULL, approval_stale = 0, "
+            "status = 'failed', attempts = 1, next_attempt_at = '2026-01-01T00:00:00+00:00' "
+            "WHERE receipt_id = ?",
+            (expiry.receipt_id,),
+        )
+        connection.execute("ALTER TABLE purge_targets DROP COLUMN approval_stale")
+        connection.execute("ALTER TABLE expiry_purge_targets DROP COLUMN approval_stale")
+        connection.execute("PRAGMA user_version = 27")
+        connection.commit()
+        connection.close()
+
+        self.store = CuratorStore(self.root / "curator.sqlite3")
+        self.service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            TestReviewAuthorizer(),
+        )
+        targets = self.store.get_purge_target_records(receipt.receipt_id, "default")
+        by_path = {item.artifact.path: item for item in targets}
+        for path in (pending_path, failed_path, held_path):
+            self.assertTrue(by_path[str(path)].approval_stale)
+            self.assertIsNone(by_path[str(path)].next_attempt_at)
+        self.assertEqual(by_path[str(pending_path)].status.value, "pending")
+        self.assertEqual(by_path[str(failed_path)].status.value, "failed")
+        self.assertEqual(by_path[str(held_path)].status.value, "held")
+        self.assertEqual(by_path[str(held_path)].artifact.retention_hold, RetentionHoldKind.LEGAL)
+        self.assertEqual(by_path[str(purged_path)].status.value, "purged")
+        self.assertFalse(by_path[str(purged_path)].approval_stale)
+        self.assertEqual(
+            self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
+        )
+        with self.assertRaisesRegex(ConflictError, "already complete"):
+            self.store.begin_purge_attempt(receipt.receipt_id, str(pending_path), "default")
+
+        self.service.release_artifact_hold(
+            receipt.receipt_id,
+            str(held_path),
+            "Retention owner confirmed release",
+            authenticated_subject="test-reviewer",
+        )
+        released = self.store.get_purge_target_records(receipt.receipt_id, "default")
+        released_by_path = {item.artifact.path: item for item in released}
+        self.assertEqual(released_by_path[str(held_path)].status.value, "pending")
+        self.assertTrue(released_by_path[str(held_path)].approval_stale)
+        self.assertEqual(
+            self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
+        )
+
+        migrated_expiry = self.store.expiry_purge_receipt(expiry.receipt_id, "default")
+        self.assertEqual(
+            tuple(item.path for item in migrated_expiry.approval_stale_artifacts),
+            (expiry_artifact.path,),
+        )
+        self.assertIsNone(migrated_expiry.approval_stale_artifacts[0].occurrence_id)
+        self.assertEqual(self.store.due_expiry_purge_receipts("default"), ())
+        self.assertEqual(self.store.expiry_purge_targets(expiry.receipt_id, "default"), ())
+
+    def test_v29_migration_stales_cleanup_receipts_without_dependency_maps(self) -> None:
+        """A v28 approval without a reviewed map cannot authorize another unlink."""
+
+        candidate_id = self.candidate("legacy dependency map")
+        artifact_path, artifact = self.artifact("legacy-map-approval.json")
+        receipt = self.service.sde_confirm(
+            candidate_id,
+            ReviewDecision.APPROVED,
+            (artifact,),
+            artifact_inventory_complete=True,
+        )
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE purge_targets SET reacquisition_action = ? "
+                "WHERE receipt_id = ? AND path = ?",
+                (
+                    ReacquisitionAction.NOT_REQUIRED.value,
+                    receipt.receipt_id,
+                    artifact.path,
+                ),
+            )
+        self.store.mark_receipt_canonical_persisted(
+            receipt.receipt_id,
+            "/consumer/persistence/HISTORY.md",
+            hashlib.sha256(b"legacy map projection").hexdigest(),
+            "default",
+        )
+        manifest = json.dumps(
+            [(artifact.path, artifact.sha256, artifact.occurrence_id)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        manifest_sha256 = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+        self.store.create_cleanup_authorization(
+            receipt.receipt_id,
+            "default",
+            "test-reviewer",
+            manifest_sha256,
+            "a" * 64,
+        )
+
+        self.store.close()
+        connection = sqlite3.connect(self.root / "curator.sqlite3")
+        connection.execute(
+            "ALTER TABLE cleanup_authorizations DROP COLUMN dependency_map_sha256"
+        )
+        connection.execute("PRAGMA user_version = 28")
+        connection.commit()
+        connection.close()
+
+        self.store = CuratorStore(self.root / "curator.sqlite3")
+        self.service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            TestReviewAuthorizer(),
+        )
+        target = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )[0]
+        authorization = self.store.cleanup_authorization(
+            receipt.receipt_id, "default"
+        )
+
+        self.assertTrue(artifact_path.exists())
+        self.assertTrue(target.approval_stale)
+        self.assertIsNone(target.next_attempt_at)
+        self.assertIsNotNone(authorization)
+        assert authorization is not None
+        self.assertIsNone(authorization.dependency_map_sha256)
+        self.assertEqual(
+            self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
+        )
+
     def test_hash_mismatch_never_deletes_artifact_and_reports_pending(self) -> None:
         candidate_id = self.candidate()
         path, artifact = self.artifact()
@@ -763,7 +1122,9 @@ targets = ["persistence/HISTORY.md"]
         outside = self.root / "outside.json"
         outside.write_text("private", encoding="utf-8")
         artifact = ArtifactRef(
-            str(outside), hashlib.sha256(b"private").hexdigest()
+            str(outside), hashlib.sha256(b"private").hexdigest(),
+            occurrence_id=uuid4().hex,
+            reacquisition_action=ReacquisitionAction.REACQUIRE_FROM_SOURCE,
         )
         receipt = self.service.sde_confirm(
             candidate_id,

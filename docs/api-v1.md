@@ -125,13 +125,24 @@ SDE count is valid activity data and does not affect operational readiness.
 requires complete staging inventory, available event/fact capacity, no
 event/review/purge backlog or expired claims, and explicit healthy readings for
 every required host dependency (`event_router`, `purge_scheduler`,
-`host_identity`, `human_review`, and `artifact_producer_inventory`). Missing or
-failed probes are `unknown`; probe timestamps must be timezone-aware and no
-older than 60 seconds (a clock more than five seconds ahead is also `unknown`).
-The local SQLite counters are read in one database snapshot; staging is scanned
-separately with a bounded no-follow filesystem traversal. Known backlog or
+`database_storage_adapter`, `host_identity`, `human_review`, `alert_delivery`,
+and `artifact_producer_inventory`). Missing or failed probes are `unknown`;
+probe timestamps must be timezone-aware and no older than 60 seconds (a clock
+more than five seconds ahead is also `unknown`). The response reports the
+SQLite aggregate's `database_observed_at` and
+`database_observation_complete` from one read transaction, the staging scan's
+`staging_observed_at` and `staging_inventory_complete`, and each host
+dependency's own status and observation time. These are separately sampled
+observations, not one atomic cross-source snapshot. Missing staging observation
+time is `unknown`; incomplete inventory is `degraded`. Known backlog or
 unavailable dependencies are `degraded`. Production probes and schedulers are
-not implemented here.
+not implemented here. If the SQLite aggregate read fails, the health response
+sets `database_observation_complete=false`, leaves the database timestamp and
+database-derived counts/capacity fields null, and adds the
+`database_observation_failed` gate. Health is `unknown` unless a separate
+dependency observation makes it `degraded`. Prometheus exports a zero database
+completeness gauge and omits unavailable database-derived samples; it does not
+substitute zero counts.
 `project_prometheus_metrics` renders the same local health/storage snapshot as
 Prometheus text for a project-authorized caller. Labels are bounded or
 allowlisted; problem statements, fact text, event payloads, evidence locators,
@@ -178,6 +189,14 @@ and whether new event IDs are accepted. The inbox has hard count/retained-byte
 ceilings across projects; reaching either gate rejects new IDs without pruning
 receipts. Exact same-ID/same-payload replays continue to work. Retention and
 recovery at that ceiling remain an operator policy gate.
+
+Per-project logical usage counts staging-age metadata and the separate
+filesystem-occurrence registry as distinct classes. The occurrence registry
+measurement includes the stored path, digest, device/inode, generation ID, and
+observation timestamp as UTF-8/decimal-text byte lengths; only aggregate counts
+and byte totals are returned. These logical bytes exclude SQLite page and
+index overhead, which is represented only by the separate global database/WAL
+sizes.
 
 `artifact_purge_status` is project-scoped and reports per-target status,
 including `held` plus its `legal`/`operational` retention class, durable attempt count, creation and last-attempt timestamps with age in

@@ -11,24 +11,38 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 import tempfile
 import time
 import tracemalloc
 import unittest
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from typing import BinaryIO, cast
 from unittest.mock import patch
 
+from evidence_fixtures import attest_test_evidence
 from project_fixtures import create_consumer_repo
 from purge_fixtures import TestReviewAuthorizer
 
-from curatormd_v2 import CuratorStore, SuccessCriterion
-from curatormd_v2.events import EventEnvelope, GoalStarted
+from curatormd_v2 import (
+    ChecklistGoalStartRequest,
+    CuratorService,
+    CuratorStore,
+    EvidenceOutcome,
+    EvidenceRef,
+    EvidenceVerificationContext,
+    GoalStartOptions,
+    ProjectRegistrationRequest,
+    ProjectStatusChangeRequest,
+    SuccessCriterion,
+)
+from curatormd_v2.events import EventEnvelope, FactRecorded, GoalStarted
 from curatormd_v2.models import (
     FactKind,
     Materiality,
     ReviewDecision,
     SDECandidate,
+    SDEQualityFeedbackLabel,
     SDEStatus,
 )
 from curatormd_v2.project_config import (
@@ -36,10 +50,32 @@ from curatormd_v2.project_config import (
     PROJECT_PLUGIN_API_VERSION,
     ProjectConfig,
     ProjectConfigError,
+    _sensitive_config_category,  # pyright: ignore[reportPrivateUsage]  # Direct traversal regression.
 )
 from curatormd_v2.project_plugin import ProjectPlugin
-from curatormd_v2.store import ConflictError
+from curatormd_v2.store import ConflictError, NotFoundError
 from curatormd_v2.testing import assert_goal_started_event_contract
+
+
+class PausingEvidenceVerifier:  # pylint: disable=too-few-public-methods
+    """Pause source verification to exercise a project lifecycle cutover."""
+
+    def __init__(self, store: CuratorStore, entered: Event, release: Event) -> None:
+        self.store = store
+        self.entered = entered
+        self.release = release
+        self.transaction_states: list[bool] = []
+
+    def attest(
+        self, evidence: EvidenceRef, context: EvidenceVerificationContext
+    ):
+        """Record transaction state, block, then issue fixture provenance."""
+
+        self.transaction_states.append(self.store.transaction_active)
+        self.entered.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("test did not release evidence verification")
+        return attest_test_evidence(evidence, context)
 
 
 class ProjectPluginTests(unittest.TestCase):
@@ -57,11 +93,13 @@ class ProjectPluginTests(unittest.TestCase):
         self.write_config()
         self.store = CuratorStore(Path(self.temporary) / "global.sqlite3")
         self.addCleanup(self.store.close)
+        self._register_project("Register the reference-plugin test project")
 
     def test_due_purge_scheduler_uses_exclusive_staging_lock(self) -> None:
         """Serialize scheduled deletes against project plugin staging writes."""
 
-        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
         probe_fd = os.open(self.stage, os.O_RDONLY | os.O_DIRECTORY)
 
         def assert_staging_locked(limit: int) -> tuple[()]:
@@ -133,6 +171,38 @@ class ProjectPluginTests(unittest.TestCase):
             (SuccessCriterion("verified", "The staging scope is isolated"),),
             goal_id=goal_id,
         )
+
+    def _register_project(self, rationale: str) -> ProjectConfig:
+        """Provision the exact local binding required by lifecycle-fenced effects."""
+
+        config = ProjectConfig.load(self.root)
+        try:
+            registration = self.store.get_project_registration(config.project_id)
+        except NotFoundError:
+            self.store.register_project(
+                ProjectRegistrationRequest.from_project_config(config, rationale),
+                "test-admin",
+            )
+        else:
+            binding = (
+                registration.repository_fingerprint,
+                registration.config_sha256,
+                registration.backend_api_version,
+            )
+            configured = (
+                config.repository_fingerprint,
+                config.config_sha256,
+                config.backend_api_version,
+            )
+            if binding != configured:
+                self.store.update_project_registration(
+                    ProjectRegistrationRequest.from_project_config(
+                        config, rationale, registration.revision
+                    ),
+                    "test-admin",
+                    f"test-config-update-{registration.revision + 1}",
+                )
+        return config
 
     def test_valid_config_binds_only_existing_scoped_paths(self) -> None:
         """Load project identity, checklist, staging, and Markdown targets."""
@@ -206,6 +276,21 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertEqual(len(load_frames), 1)
         self.assertNotIn("root_table", load_frames[0])
         self.assertNotIn(secret, repr(load_frames[0]))
+
+    def test_sensitive_config_scan_handles_deep_nesting(self) -> None:
+        """Scan deeply nested TOML values without consuming Python call depth."""
+
+        safe_value: object = "ordinary bounded value"
+        sensitive_value: object = "token=private-test-canary"
+        for _ in range(sys.getrecursionlimit() + 32):
+            safe_value = [safe_value]
+            sensitive_value = [sensitive_value]
+
+        self.assertIsNone(_sensitive_config_category(safe_value))
+        self.assertEqual(
+            _sensitive_config_category(sensitive_value),
+            "credential_assignment",
+        )
 
     def test_missing_config_path_error_does_not_echo_untrusted_path(self) -> None:
         """Path resolution errors must not expose a configured filesystem path."""
@@ -293,11 +378,15 @@ class ProjectPluginTests(unittest.TestCase):
         config = ProjectConfig.load(self.root)
         plugin = ProjectPlugin.bind(config, self.store)
         goal = plugin.goal_start_from_checklist(
-            "tasks",
-            "Implement the linked task",
-            (SuccessCriterion("done", "Task is verified"),),
-            exact_item_text="- [ ] Example task",
-            next_action="Inspect the linked implementation files",
+            ChecklistGoalStartRequest(
+                checklist_id="tasks",
+                problem="Implement the linked task",
+                success_criteria=(SuccessCriterion("done", "Task is verified"),),
+                exact_item_text="- [ ] Example task",
+                options=GoalStartOptions(
+                    next_action="Inspect the linked implementation files"
+                ),
+            )
         )
 
         self.assertEqual(goal.project_id, "consumer-a")
@@ -313,10 +402,12 @@ class ProjectPluginTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ProjectConfigError, "exact source line"):
             plugin.goal_start_from_checklist(
-                "tasks",
-                "Not on the checklist",
-                (SuccessCriterion("done", "Task is verified"),),
-                exact_item_text="- [ ] Not the source",
+                ChecklistGoalStartRequest(
+                    checklist_id="tasks",
+                    problem="Not on the checklist",
+                    success_criteria=(SuccessCriterion("done", "Task is verified"),),
+                    exact_item_text="- [ ] Not the source",
+                )
             )
         self.assertEqual(len(plugin.goal_list()), 1)
         with self.assertRaises(ProjectConfigError):
@@ -368,7 +459,8 @@ class ProjectPluginTests(unittest.TestCase):
     def test_checklist_event_intake_rejects_forged_snapshot_and_allows_exact_retry(self) -> None:
         """Bind event-based checklist starts to the configured current source."""
 
-        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
         version, source_text = plugin.config.checklist_snapshot(
             "tasks", "- [ ] Example task"
         )
@@ -410,10 +502,202 @@ class ProjectPluginTests(unittest.TestCase):
             plugin.process_event(forged)
         self.assertEqual([item.goal.goal_id for item in plugin.goal_list()], [payload.goal_id])
 
+    def test_direct_plugin_event_and_stage_writes_are_fenced_after_suspension(
+        self,
+    ) -> None:
+        """Direct reference-plugin writes cannot bypass project suspension."""
+
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal_id = "direct-plugin-suspended-stage-goal"
+        self._goal(plugin, goal_id)
+        self.store.set_project_status(
+            ProjectStatusChangeRequest(
+                project_id=config.project_id,
+                status="suspended",
+                rationale="Suspend before direct plugin event processing",
+                expected_revision=1,
+                transition_id="direct-plugin-suspend-1",
+            ),
+            "test-admin",
+        )
+        event = EventEnvelope(
+            event_id="direct-plugin-suspended-event",
+            project_id=config.project_id,
+            source_id="direct-plugin-test",
+            payload=GoalStarted(
+                goal_id="direct-plugin-suspended-goal",
+                problem="Prove suspended plugin writes are fenced",
+                success_criteria=(
+                    SuccessCriterion("denied", "No event receipt is created"),
+                ),
+            ),
+        )
+
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.goal_start_from_request(
+                "A direct plugin start must honor project suspension",
+                (SuccessCriterion("denied", "No new goal is created"),),
+            )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.service.goal_start(
+                "A direct service start must honor project suspension",
+                (SuccessCriterion("denied", "No new goal is created"),),
+            )
+        standalone_service = CuratorService(
+            self.store, plugin.service.purger, project_id=config.project_id
+        )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            standalone_service.goal_start(
+                "A standalone registered service start must be denied",
+                (SuccessCriterion("denied", "No new goal is created"),),
+            )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.goal_activate(goal_id, "Must remain planned", 1)
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.process_event(event)
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.stage_artifact(
+                goal_id, "cue", "suspended-stage", io.BytesIO(b"must not write")
+            )
+        with (
+            patch.object(plugin.service, "fact_compaction_approve") as archive,
+            patch.object(plugin.service, "sde_assess") as assess,
+            patch.object(plugin.service, "sde_correction_record") as correction,
+            patch.object(plugin.service, "sde_quality_feedback_record") as feedback,
+            patch.object(plugin.service, "sde_confirm") as confirm,
+            patch.object(plugin.service, "artifact_inventory_complete") as inventory,
+            patch.object(plugin.service, "authorize_artifact_cleanup") as authorize,
+            patch.object(plugin.service, "release_artifact_hold") as release_hold,
+            patch.object(plugin.service.store, "retry_quarantined_event") as retry_event,
+        ):
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.fact_compaction_approve(
+                    "compaction", goal_id, (), "0" * 64, "reviewer", "reason"
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_assess(goal_id, Materiality.ROUTINE, "reason", ())
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_correction_record("correction", "candidate", "fix", "why")
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_quality_feedback_record(
+                    "feedback", "candidate", SDEQualityFeedbackLabel.USEFUL
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_confirm(
+                    "candidate",
+                    ReviewDecision.REJECTED,
+                    (),
+                    artifact_inventory_complete=False,
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.artifact_inventory_complete("receipt", (), "0" * 64)
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.authorize_artifact_cleanup(
+                    "receipt", (), "0" * 64, "0" * 64, "persistence/HISTORY.md"
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.release_artifact_hold("receipt", "goal/cue/file", "reason")
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.retry_quarantined_event("event", "test-operator")
+            for service_write in (
+                archive,
+                assess,
+                correction,
+                feedback,
+                confirm,
+                inventory,
+                authorize,
+                release_hold,
+                retry_event,
+            ):
+                service_write.assert_not_called()
+        with self.assertRaises(NotFoundError):
+            self.store.event_receipt(config.project_id, event.event_id)
+        self.assertEqual(
+            [item.goal.goal_id for item in plugin.goal_list()], [goal_id]
+        )
+        self.assertFalse((self.stage / goal_id).exists())
+
+    def test_event_verification_runs_outside_transaction_and_rechecks_revision(self) -> None:
+        """A project cutover during evidence proof prevents the event commit."""
+
+        config = ProjectConfig.load(self.root)
+        verifier_entered = Event()
+        release_verifier = Event()
+        verifier = PausingEvidenceVerifier(
+            self.store, verifier_entered, release_verifier
+        )
+        plugin = ProjectPlugin.bind(config, self.store, verifier)
+        standalone_service = CuratorService(
+            self.store,
+            plugin.service.purger,
+            verifier,
+            project_id=config.project_id,
+        )
+        goal = self._goal(plugin, "event-proof-cutover-goal")
+        evidence = EvidenceRef(
+            "unit-test",
+            "test-proof:event-cutover",
+            hashlib.sha256(b"event-cutover-proof").hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        event = EventEnvelope(
+            event_id="event-proof-cutover",
+            project_id=config.project_id,
+            source_id="test-producer",
+            payload=FactRecorded(
+                goal_id=goal.goal_id,
+                fact_id="event-proof-cutover-fact",
+                kind=FactKind.VERIFICATION,
+                bullet="The event evidence was verified",
+                criterion_id="verified",
+                evidence=(evidence,),
+            ),
+        )
+        failures: list[BaseException] = []
+
+        def process() -> None:
+            try:
+                standalone_service.process_event(event)
+            except BaseException as exc:  # pylint: disable=broad-exception-caught
+                failures.append(exc)
+
+        worker = Thread(target=process)
+        worker.start()
+        self.assertTrue(verifier_entered.wait(timeout=3))
+        secondary_store = CuratorStore(Path(self.temporary) / "global.sqlite3")
+        self.addCleanup(secondary_store.close)
+        registration = secondary_store.get_project_registration(config.project_id)
+        secondary_store.set_project_status(
+            ProjectStatusChangeRequest(
+                project_id=config.project_id,
+                status="suspended",
+                rationale="Suspend during event evidence verification",
+                expected_revision=registration.revision,
+                transition_id="event-proof-cutover-suspend",
+            ),
+            "test-admin",
+        )
+        release_verifier.set()
+        worker.join(timeout=5)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(verifier.transaction_states, [False])
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], ConflictError)
+        with self.assertRaises(NotFoundError):
+            self.store.get_fact("event-proof-cutover-fact", config.project_id)
+        self.assertEqual(
+            self.store.event_receipt(config.project_id, event.event_id).status.value,
+            "received",
+        )
+
     def test_reusable_producer_backend_contract_assertions(self) -> None:
         """Exercise the importable contract helper against the reference plugin."""
 
-        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
         event = EventEnvelope(
             event_id="shared-contract-event-1",
             project_id="consumer-a",
@@ -572,6 +856,44 @@ class ProjectPluginTests(unittest.TestCase):
         }
         self.assertEqual(scratch_hashes, {hashlib.sha256(b"scratch bytes").hexdigest()})
 
+    def test_occurrence_registry_is_stable_and_separate_from_expiry_age(self) -> None:
+        """Persist content-free file identity without granting direct files age."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "occurrence-registry-goal"
+        self._goal(plugin, goal_id)
+        path = self.stage / goal_id / "scratch" / "manual.tmp"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"same transient bytes")
+
+        first = plugin.discover_staging_artifacts(goal_id).artifacts[0]
+        self.assertIsNotNone(first.occurrence_id)
+        second = plugin.discover_staging_artifacts(goal_id).artifacts[0]
+        self.assertEqual(second.occurrence_id, first.occurrence_id)
+
+        reopened_store = CuratorStore(Path(self.temporary) / "global.sqlite3")
+        self.addCleanup(reopened_store.close)
+        reopened_plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), reopened_store
+        )
+        after_reopen = reopened_plugin.discover_staging_artifacts(goal_id).artifacts[0]
+        self.assertEqual(after_reopen.occurrence_id, first.occurrence_id)
+
+        replacement = path.with_name("replacement.tmp")
+        replacement.write_bytes(b"same transient bytes")
+        replacement.replace(path)
+        after_replacement = reopened_plugin.discover_staging_artifacts(
+            goal_id
+        ).artifacts[0]
+        self.assertNotEqual(after_replacement.occurrence_id, first.occurrence_id)
+
+        expiry = reopened_plugin.discover_expired_staging_artifacts(
+            datetime.now(UTC) + timedelta(hours=73)
+        )
+        self.assertFalse(expiry.inventory_complete)
+        self.assertEqual(expiry.unknown_age_count, 1)
+        self.assertEqual(expiry.eligible_artifacts, ())
+
     def test_discovery_hash_byte_limit_returns_no_false_complete_manifest(self) -> None:
         """Do not hash past the configured byte budget or claim completeness."""
 
@@ -647,7 +969,10 @@ class ProjectPluginTests(unittest.TestCase):
             at_cap.manifest_sha256,
             hashlib.sha256(
                 json.dumps(
-                    [(item.path, item.sha256) for item in at_cap.eligible_artifacts],
+                    [
+                        (item.path, item.sha256, item.occurrence_id)
+                        for item in at_cap.eligible_artifacts
+                    ],
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ).encode("utf-8")
@@ -684,11 +1009,106 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertEqual(after_facts.eligible_artifacts, (artifact,))
         self.assertEqual(after_facts.pending_sde_artifact_count, 0)
 
+    def test_expiry_retry_preserves_same_content_replacement_after_approval(self) -> None:
+        """A persisted expiry receipt cannot unlink a replacement occurrence."""
+
+        config = self._register_project("Register the expiry retry fixture")
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal_id = "expiry-replacement-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            approved = plugin.stage_artifact(
+                goal_id, "cue", "same-content", io.BytesIO(b"temporary source")
+            )
+        snapshot = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
+        )
+        manifest = snapshot.manifest_sha256
+        if manifest is None:
+            self.fail("complete expiry snapshot must have a manifest hash")
+        receipt = self.store.create_expiry_purge_receipt(
+            "consumer-a", "expiry-reviewer", manifest, snapshot.eligible_artifacts
+        )
+
+        original_path = Path(approved.path)
+        replacement = original_path.with_name("replacement.tmp")
+        replacement.write_bytes(b"temporary source")
+        original_path.unlink()
+        replacement.rename(original_path)
+
+        current_expiry = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
+        )
+        self.assertEqual(current_expiry.eligible_artifacts, ())
+        self.assertEqual(current_expiry.unknown_age_count, 1)
+
+        retried = plugin.retry_expiry_purge(receipt.receipt_id)
+
+        self.assertTrue(original_path.exists())
+        self.assertEqual(original_path.read_bytes(), b"temporary source")
+        self.assertEqual(retried.status.value, "purge_pending")
+        self.assertEqual(retried.artifacts[0].device_id, approved.device_id)
+        self.assertEqual(retried.artifacts[0].inode_id, approved.inode_id)
+
+    def test_suspended_project_blocks_direct_expiry_purge_paths(self) -> None:
+        """Direct expiry approval and retry cannot unlink after suspension."""
+
+        config = self._register_project("Register the suspended expiry fixture")
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal_id = "suspended-expiry-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "suspended-expiry", io.BytesIO(b"retained source")
+            )
+        expired = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
+        )
+        manifest_sha256 = expired.manifest_sha256
+        if manifest_sha256 is None:
+            self.fail("complete expiry inventory must have a manifest hash")
+        receipt = self.store.create_expiry_purge_receipt(
+            config.project_id,
+            "test-admin",
+            manifest_sha256,
+            expired.eligible_artifacts,
+        )
+        self.store.set_project_status(
+            ProjectStatusChangeRequest(
+                project_id=config.project_id,
+                status="suspended",
+                rationale="Fence expiry cleanup before suspension cutover",
+                expected_revision=1,
+                transition_id="suspend-expiry-cleanup-1",
+            ),
+            "test-admin",
+        )
+
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.approve_expired_staging_inventory(
+                expired.eligible_artifacts,
+                manifest_sha256,
+                now=staged_at + timedelta(hours=72),
+            )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.retry_expiry_purge(receipt.receipt_id)
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.retry_pending_purges()
+
+        self.assertTrue(Path(artifact.path).is_file())
+        self.assertEqual(
+            self.store.expiry_purge_receipt(receipt.receipt_id, config.project_id).status.value,
+            "purge_pending",
+        )
+
     def test_pending_sde_cannot_extend_the_72_hour_retention_ceiling(self) -> None:
         """Pending review delays prompt expiry but not the absolute age cap."""
 
+        config = self._register_project("Register the pending SDE expiry fixture")
         plugin = ProjectPlugin.bind(
-            ProjectConfig.load(self.root),
+            config,
             self.store,
             review_authorizer=TestReviewAuthorizer(),
         )
@@ -820,7 +1240,8 @@ class ProjectPluginTests(unittest.TestCase):
     def test_large_import_staging_uses_bounded_python_memory(self) -> None:
         """A large producer stream is copied in bounded chunks, not buffered whole."""
 
-        class GeneratedStream:
+        # Stream fixture exposes only the required bounded `read` interface.
+        class GeneratedStream:  # pylint: disable=too-few-public-methods
             """Generate a repeatable source without retaining the complete payload."""
 
             def __init__(self, total_bytes: int) -> None:
@@ -898,6 +1319,7 @@ class ProjectPluginTests(unittest.TestCase):
                 "max_project_files = 10",
             )
         )
+        self._register_project("Update the project staging budget fixture")
         plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
         goal_id = "budget-goal"
         self._goal(plugin, goal_id)
@@ -929,6 +1351,7 @@ class ProjectPluginTests(unittest.TestCase):
                 'root = ".curatormd-v2/staging-files"\nmax_project_files = 1',
             )
         )
+        self._register_project("Update the project file budget fixture")
         file_limited = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
         file_goal = "file-budget"
         self._goal(file_limited, file_goal)
@@ -946,6 +1369,7 @@ class ProjectPluginTests(unittest.TestCase):
                 'root = ".curatormd-v2/staging"\nmax_project_files = 10',
             )
         )
+        self._register_project("Update the incomplete inventory fixture")
         plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
         goal_id = "incomplete-budget"
         self._goal(plugin, goal_id)
@@ -968,7 +1392,7 @@ class ProjectPluginTests(unittest.TestCase):
         contending_lock_attempted = Event()
         lock_call_guard = Lock()
         lock_calls = 0
-        original_flock = fcntl.flock
+        original_staging_lock = getattr(plugin, "_locked_staging_root")
 
         class PausingStream(io.BytesIO):
             """Hold a staged write open while another operation requests a lock."""
@@ -981,19 +1405,18 @@ class ProjectPluginTests(unittest.TestCase):
 
         stream = PausingStream(b"complete artifact bytes")
 
-        def tracked_flock(descriptor: int, operation: int) -> None:
+        def tracked_staging_lock():
             nonlocal lock_calls
-            if operation == fcntl.LOCK_EX:
-                with lock_call_guard:
-                    lock_calls += 1
-                    if lock_calls == 2:
-                        contending_lock_attempted.set()
-            original_flock(descriptor, operation)
+            with lock_call_guard:
+                lock_calls += 1
+                if lock_calls == 2:
+                    contending_lock_attempted.set()
+            return original_staging_lock()
 
         def discover():
             return plugin.discover_staging_artifacts(goal_id)
 
-        with patch("curatormd_v2.project_plugin.fcntl.flock", tracked_flock):
+        with patch.object(plugin, "_locked_staging_root", tracked_staging_lock):
             with ThreadPoolExecutor(max_workers=2) as pool:
                 writer = pool.submit(
                     plugin.stage_artifact,
@@ -1130,19 +1553,30 @@ class ProjectPluginTests(unittest.TestCase):
             'project_id = "consumer-a"', 'project_id = "consumer-b"'
         )
         self.write_config_at(root_b, config_b)
-        project_b = ProjectPlugin.bind(ProjectConfig.load(root_b), self.store)
+        config_b = ProjectConfig.load(root_b)
+        self.store.register_project(
+            ProjectRegistrationRequest.from_project_config(
+                config_b, "Register the second isolated plugin fixture"
+            ),
+            "test-admin",
+        )
+        project_b = ProjectPlugin.bind(config_b, self.store)
 
         goal_a = project_a.goal_start_from_checklist(
-            "tasks",
-            "Project A task",
-            (SuccessCriterion("a", "A is done"),),
-            exact_item_text="- [ ] Example task",
+            ChecklistGoalStartRequest(
+                checklist_id="tasks",
+                problem="Project A task",
+                success_criteria=(SuccessCriterion("a", "A is done"),),
+                exact_item_text="- [ ] Example task",
+            )
         )
         goal_b = project_b.goal_start_from_checklist(
-            "tasks",
-            "Project B task",
-            (SuccessCriterion("b", "B is done"),),
-            exact_item_text="- [ ] Separate task",
+            ChecklistGoalStartRequest(
+                checklist_id="tasks",
+                problem="Project B task",
+                success_criteria=(SuccessCriterion("b", "B is done"),),
+                exact_item_text="- [ ] Separate task",
+            )
         )
 
         artifact_a = (

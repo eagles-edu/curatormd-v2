@@ -10,7 +10,7 @@ import unittest
 from io import StringIO
 from unittest.mock import patch
 
-from project_fixtures import create_consumer_repo
+from project_fixtures import bind_test_project, create_consumer_repo
 
 from curatormd_v2 import (
     CuratorStore,
@@ -84,6 +84,7 @@ class RouterCliTests(unittest.TestCase):
             database = root / "global.sqlite3"
             store = CuratorStore(database)
             try:
+                bind_test_project(store, consumer_a, "router-test")
                 for project_id, event_id, goal_id in (
                     ("router-consumer-a", "event-a", "goal-a"),
                     ("router-consumer-b", "event-b", "goal-b"),

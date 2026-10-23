@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import wraps
 import re
+import sqlite3
 from threading import Lock
 import time
-from typing import Callable, Iterable, Mapping, Protocol
+from typing import Callable, Concatenate, Iterable, Mapping, ParamSpec, Protocol, TypeVar
 
 from .events import (
     EventEnvelope,
@@ -61,6 +63,7 @@ from .observability import render_project_metrics
 from .project_plugin import ProjectPlugin
 from .reporting import GoalReportPage
 from .service import PurgeTargetStatus
+from .store import NotFoundError
 
 
 _SUBJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
@@ -248,6 +251,10 @@ class InMemoryTokenBucket:
         }
 
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
 class AuthenticatedCuratorAPI:
     """Expose project-scoped operations after host authentication/authorization.
 
@@ -273,6 +280,60 @@ class AuthenticatedCuratorAPI:
         self.authorizer = authorizer or RejectAllProjectAccess()
         self.limiter = limiter or InMemoryTokenBucket()
         self.dependency_readiness = dependency_readiness
+
+    @staticmethod
+    def _project_effect_fenced(
+        action: ProjectAction,
+    ) -> Callable[
+        [
+            Callable[
+                Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P],
+                _R,
+            ]
+        ],
+        Callable[
+            Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
+        ],
+    ]:
+        """Fence one API effect against project suspension/revision cutover."""
+
+        def decorate(
+            method: Callable[
+                Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
+            ],
+        ) -> Callable[
+            Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
+        ]:
+            @wraps(method)
+            def fenced(
+                self: AuthenticatedCuratorAPI,
+                caller: AuthenticatedCaller,
+                project_id: str,
+                *args: _P.args,
+                **kwargs: _P.kwargs,
+            ) -> _R:
+                plugin = self._plugins.get(project_id)  # pylint: disable=protected-access  # Same-class decorator closure.
+                if (
+                    plugin is None
+                    or not self.authorizer.authorize(caller, project_id, action)
+                ):
+                    return method(self, caller, project_id, *args, **kwargs)
+                store = plugin.service.store
+                try:
+                    registration = store.get_project_registration(project_id)
+                except NotFoundError:
+                    registration = None
+                if registration is None:
+                    return method(self, caller, project_id, *args, **kwargs)
+                with plugin.project_effect_lock():
+                    with store.project_revision_fence(
+                        project_id, registration.revision
+                    ):
+                        return method(self, caller, project_id, *args, **kwargs)
+
+            return fenced
+
+        return decorate
 
     def process_event_json(
         self, caller: AuthenticatedCaller, project_id: str, serialized: str
@@ -329,19 +390,54 @@ class AuthenticatedCuratorAPI:
 
         plugin = self._authorized_plugin(caller, project_id, ProjectAction.READ)
         health, usage = self._collect_project_health_snapshot(plugin, project_id)
-        feedback = plugin.sde_quality_feedback_summary()
+        feedback = (
+            plugin.sde_quality_feedback_summary() if usage is not None else None
+        )
         return render_project_metrics(health, usage, feedback)
 
     def _collect_project_health_snapshot(
         self, plugin: ProjectPlugin, project_id: str
-    ) -> tuple[ProjectHealthSnapshot, ProjectStorageUsage]:
+    ) -> tuple[ProjectHealthSnapshot, ProjectStorageUsage | None]:
         """Build health and storage observations from one project plugin read."""
-        queue, counts, usage = plugin.operational_health_inputs()
+        try:
+            queue, counts, usage, scrub_count, database_observed_at = (
+                plugin.operational_health_inputs()
+            )
+        except sqlite3.Error:
+            dependencies = evaluate_dependencies(
+                self.dependency_readiness, project_id, datetime.now(UTC)
+            )
+            snapshot = ProjectHealthSnapshot(
+                project_id=project_id,
+                observed_at=utc_now(),
+                database_observed_at=None,
+                database_observation_complete=False,
+                status=(
+                    OperationalHealth.DEGRADED
+                    if dependencies.degraded
+                    else OperationalHealth.UNKNOWN
+                ),
+                event_received_count=None,
+                event_failed_count=None,
+                event_quarantined_count=None,
+                event_claimed_count=None,
+                event_expired_claim_count=None,
+                oldest_pending_event_age_seconds=None,
+                operational_counts=None,
+                fact_capacity_reached=None,
+                event_capacity_available=None,
+                staging_inventory_complete=None,
+                staging_observed_at=None,
+                staging_regular_file_count=None,
+                dependencies=dependencies.dependencies,
+                gate_codes=("database_observation_failed",) + dependencies.gates,
+            )
+            return snapshot, None
         local = evaluate_local_health(
             queue,
             counts,
             usage,
-            plugin.service.store.event_payload_scrub_pending_count(project_id),
+            scrub_count,
         )
         dependencies = evaluate_dependencies(
             self.dependency_readiness, project_id, datetime.now(UTC)
@@ -359,6 +455,8 @@ class AuthenticatedCuratorAPI:
         snapshot = ProjectHealthSnapshot(
             project_id=project_id,
             observed_at=utc_now(),
+            database_observed_at=database_observed_at,
+            database_observation_complete=True,
             status=status,
             event_received_count=queue.received_count,
             event_failed_count=queue.failed_count,
@@ -370,12 +468,14 @@ class AuthenticatedCuratorAPI:
             fact_capacity_reached=usage.fact_capacity_reached,
             event_capacity_available=usage.global_event_inbox.can_accept_new_event,
             staging_inventory_complete=staging_complete,
+            staging_observed_at=usage.staging.observed_at if usage.staging else None,
             staging_regular_file_count=staging_file_count,
             dependencies=dependencies.dependencies,
             gate_codes=gates,
         )
         return snapshot, usage
 
+    @_project_effect_fenced(ProjectAction.EVENT_RETRY)
     def retry_quarantined_event(
         self,
         caller: AuthenticatedCaller,
@@ -437,6 +537,7 @@ class AuthenticatedCuratorAPI:
             caller, project_id, ProjectAction.READ
         ).fact_compaction_propose(goal_id, max_facts)
 
+    @_project_effect_fenced(ProjectAction.REVIEW)
     def fact_compaction_approve(
         self,
         caller: AuthenticatedCaller,
@@ -531,6 +632,7 @@ class AuthenticatedCuratorAPI:
             statuses=statuses,
         )
 
+    @_project_effect_fenced(ProjectAction.WRITE)
     def goal_reopen(
         self,
         caller: AuthenticatedCaller,
@@ -545,6 +647,7 @@ class AuthenticatedCuratorAPI:
         plugin.goal_reopen(goal_id, reason, next_action)
         return plugin.goal_status(goal_id)
 
+    @_project_effect_fenced(ProjectAction.WRITE)
     def goal_amend_criteria(
         self,
         caller: AuthenticatedCaller,
@@ -603,6 +706,7 @@ class AuthenticatedCuratorAPI:
             caller, project_id, ProjectAction.REVIEW
         ).discover_expired_staging_artifacts()
 
+    @_project_effect_fenced(ProjectAction.REVIEW)
     def approve_project_expiry_inventory(
         self,
         caller: AuthenticatedCaller,
@@ -620,6 +724,7 @@ class AuthenticatedCuratorAPI:
             authenticated_subject=caller.subject_id,
         )
 
+    @_project_effect_fenced(ProjectAction.REVIEW)
     def retry_expiry_purge(
         self,
         caller: AuthenticatedCaller,
@@ -670,18 +775,17 @@ class AuthenticatedCuratorAPI:
         ).sde_review_detail(candidate_id)
 
     def sde_review_packet(
-        self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        candidate_id: str,
+        review_artifacts: tuple[ArtifactRef, ...] | None = None,
     ) -> SDEReviewPacket:
         """Read candidate facts and a fresh staging manifest under review scope."""
 
-        plugin = self._authorized_plugin(caller, project_id, ProjectAction.REVIEW)
-        detail = plugin.sde_review_detail(candidate_id)
-        return SDEReviewPacket(
-            detail=detail,
-            artifact_inventory=plugin.discover_staging_artifacts(
-                detail.candidate.goal_id
-            ),
-        )
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).sde_review_packet(candidate_id, review_artifacts)
 
     def sde_confirm(
         self,
@@ -692,6 +796,7 @@ class AuthenticatedCuratorAPI:
         artifacts: tuple[ArtifactRef, ...],
         *,
         artifact_inventory_complete: bool,
+        dependency_map_sha256: str | None = None,
         rationale: str | None = None,
     ) -> AuditReceipt:
         """Submit a review decision; plugin authorizer independently rechecks it."""
@@ -703,10 +808,12 @@ class AuthenticatedCuratorAPI:
             decision,
             artifacts,
             artifact_inventory_complete=artifact_inventory_complete,
+            dependency_map_sha256=dependency_map_sha256,
             rationale=rationale,
             authenticated_subject=caller.subject_id,
         )
 
+    @_project_effect_fenced(ProjectAction.REVIEW)
     def sde_correction_record(
         self,
         caller: AuthenticatedCaller,
@@ -728,6 +835,7 @@ class AuthenticatedCuratorAPI:
             authenticated_subject=caller.subject_id,
         )
 
+    @_project_effect_fenced(ProjectAction.REVIEW)
     def sde_quality_feedback_record(
         self,
         caller: AuthenticatedCaller,
@@ -767,6 +875,9 @@ class AuthenticatedCuratorAPI:
     ) -> MarkdownProjectionResult:
         """Persist one goal to a configured target before any eligible purge."""
 
+        # The plugin fences each projection/receipt/purge effect after evidence
+        # verification. Do not hold the API-wide SQLite fence while the verifier
+        # runs; verifier adapters may consult external evidence sources.
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).persist_goal(goal_id, target)
@@ -805,6 +916,7 @@ class AuthenticatedCuratorAPI:
         project_id: str,
         receipt_id: str,
         artifacts: tuple[ArtifactRef, ...],
+        dependency_map_sha256: str,
     ) -> AuditReceipt:
         """Authorize completion of an exact review receipt's purge manifest."""
 
@@ -813,6 +925,7 @@ class AuthenticatedCuratorAPI:
         ).artifact_inventory_complete(
             receipt_id,
             artifacts,
+            dependency_map_sha256,
             authenticated_subject=caller.subject_id,
         )
 
@@ -832,6 +945,7 @@ class AuthenticatedCuratorAPI:
         receipt_id: str,
         artifacts: tuple[ArtifactRef, ...],
         manifest_sha256: str,
+        dependency_map_sha256: str,
         target: str,
     ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
         """Record a separate reviewer decision for one exact current manifest."""
@@ -842,10 +956,12 @@ class AuthenticatedCuratorAPI:
             receipt_id,
             artifacts,
             manifest_sha256,
+            dependency_map_sha256,
             target,
             authenticated_subject=caller.subject_id,
         )
 
+    @_project_effect_fenced(ProjectAction.RETENTION_HOLD_RELEASE)
     def release_artifact_hold(
         self,
         caller: AuthenticatedCaller,
@@ -865,6 +981,7 @@ class AuthenticatedCuratorAPI:
             authenticated_subject=caller.subject_id,
         )
 
+    @_project_effect_fenced(ProjectAction.PURGE_RETRY)
     def retry_pending_purges(
         self, caller: AuthenticatedCaller, project_id: str
     ) -> tuple[AuditReceipt, ...]:

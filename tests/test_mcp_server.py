@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -13,13 +14,17 @@ import unittest
 from unittest.mock import patch
 
 from mcp import Client
-from mcp.client.stdio import StdioServerParameters
 from mcp.types import TextContent
 
 from evidence_fixtures import attest_test_evidence
-from project_fixtures import create_consumer_repo
+from project_fixtures import (
+    bind_test_project,
+    configure_stdio_consumer,
+    create_consumer_repo,
+)
 
 from curatormd_v2 import (
+    ArtifactRef,
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     CodexGoalBinding,
@@ -31,8 +36,6 @@ from curatormd_v2 import (
     InMemoryTokenBucket,
     Materiality,
     ProjectAction,
-    ProjectConfig,
-    ProjectPlugin,
     PurgeError,
     PurgeFailureCode,
     ArtifactPurger,
@@ -166,6 +169,18 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
 class McpServerTests(unittest.TestCase):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""
 
+    def _assert_sde_instruction_contract(self, instructions: str) -> None:
+        """Check safety guidance exposed alongside the MCP SDE tools."""
+        for required_guidance in (
+            "observable success criteria",
+            "record deduplicated compact fact bullets",
+            "healthy readiness are not proof",
+            "verified criteria separately from open criteria",
+            "Store a distinct cleanup receipt and project it",
+            "unapproved or failed cleanup visibly pending",
+        ):
+            self.assertIn(required_guidance, instructions)
+
     def test_dynamic_exception_type_name_is_not_logged_or_returned(self) -> None:
         """Do not trust adapter-controlled exception class names in diagnostics."""
 
@@ -187,6 +202,89 @@ class McpServerTests(unittest.TestCase):
         self.assertIn("exception_type=unexpected_exception", log_output)
         self.assertNotIn(exception_type_canary, log_output)
         self.assertNotIn(exception_message_canary, log_output)
+
+    def test_project_health_sqlite_failure_serializes_unknown_over_mcp(self) -> None:
+        """Do not turn an unavailable health snapshot into wire-level zeros."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            create_consumer_repo(root)
+            (root / "docs" / "tasks.md").write_text("- [ ] Health transport test\n")
+            (root / "persistence" / "HISTORY.md").write_text("# History\n")
+            (root / ".curatormd-v2.toml").write_text(
+                """\
+                schema_version = 1
+                backend_api_version = 1
+                project_id = "mcp-project"
+
+                [scope]
+                read_paths = ["src", "docs"]
+
+                [checklists]
+                tasks = "docs/tasks.md"
+
+                [evidence]
+                adapters = []
+
+                [staging]
+                root = ".curatormd-v2/staging"
+
+                [persistence]
+                targets = ["persistence/HISTORY.md"]
+                """
+            )
+            (root / ".curatormd-v2.toml").chmod(0o600)
+            store = CuratorStore(Path(temporary) / "global.sqlite3")
+            try:
+                plugin = bind_test_project(store, root, "host-subject")
+                api = AuthenticatedCuratorAPI(
+                    {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
+                )
+                server = build_mcp_server(
+                    api,
+                    AuthenticatedCaller("host-subject"),
+                    "mcp-project",
+                    "health-failure-test",
+                )
+
+                async def exercise() -> None:
+                    async with Client(server, raise_exceptions=True) as client:
+                        health_result = await client.call_tool("project_health", {})
+                        self.assertFalse(health_result.is_error)
+                        health_content = health_result.content[0]
+                        assert isinstance(health_content, TextContent)
+                        health = json.loads(health_content.text)
+                        self.assertEqual(health["status"], "unknown")
+                        self.assertFalse(health["database_observation_complete"])
+                        self.assertIsNone(health["database_observed_at"])
+                        self.assertIsNone(health["event_received_count"])
+                        self.assertIsNone(health["operational_counts"])
+                        self.assertIn(
+                            "database_observation_failed", health["gate_codes"]
+                        )
+                        metrics_result = await client.call_tool("project_metrics", {})
+                        self.assertFalse(metrics_result.is_error)
+                        metrics_content = metrics_result.content[0]
+                        assert isinstance(metrics_content, TextContent)
+                        self.assertIn(
+                            'curatormd_database_observation_complete'
+                            '{project_id="mcp-project"} 0',
+                            metrics_content.text,
+                        )
+                        self.assertIn(
+                            'state="unknown"} 1', metrics_content.text
+                        )
+                        self.assertNotIn("curatormd_event_queue_received", metrics_content.text)
+                        self.assertNotIn("private SQLite diagnostic", health_content.text)
+                        self.assertNotIn("private SQLite diagnostic", metrics_content.text)
+
+                with patch.object(
+                    plugin,
+                    "operational_health_inputs",
+                    side_effect=sqlite3.OperationalError("private SQLite diagnostic"),
+                ):
+                    asyncio.run(exercise())
+            finally:
+                store.close()
 
     def test_hermes_goal_binding_requires_trusted_context_and_active_project_goal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -219,7 +317,7 @@ class McpServerTests(unittest.TestCase):
             (root / ".curatormd-v2.toml").chmod(0o600)
             store = CuratorStore(Path(temporary) / "global.sqlite3")
             try:
-                plugin = ProjectPlugin.bind(ProjectConfig.load(root), store)
+                plugin = bind_test_project(store, root, "host-subject")
                 caller = AuthenticatedCaller("host-subject")
                 api = AuthenticatedCuratorAPI(
                     {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
@@ -228,13 +326,14 @@ class McpServerTests(unittest.TestCase):
 
                 async def exercise() -> None:
                     async with Client(server, raise_exceptions=True) as client:
-                        tools = await client.list_tools()
                         binding_tool = next(
-                            tool for tool in tools.tools if tool.name == "hermes_goal_bind"
+                            tool
+                            for tool in (await client.list_tools()).tools
+                            if tool.name == "hermes_goal_bind"
                         )
                         self.assertNotIn("ctx", binding_tool.input_schema["properties"])
 
-                        started = await client.call_tool(
+                        self.assertFalse((await client.call_tool(
                             "goal_start",
                             {
                                 "event_id": "bind-goal-start",
@@ -245,9 +344,8 @@ class McpServerTests(unittest.TestCase):
                                 ],
                                 "source_sequence": 1,
                             },
-                        )
-                        self.assertFalse(started.is_error)
-                        planned_bind = await client.call_tool(
+                        )).is_error)
+                        self.assertTrue((await client.call_tool(
                             "hermes_goal_bind",
                             {"goal_id": "bind-goal"},
                             meta={
@@ -255,10 +353,9 @@ class McpServerTests(unittest.TestCase):
                                 "hermes/session_id": "session-1",
                                 "hermes/durable_event": True,
                             },
-                        )
-                        self.assertTrue(planned_bind.is_error)
+                        )).is_error)
 
-                        activated = await client.call_tool(
+                        self.assertFalse((await client.call_tool(
                             "goal_activate",
                             {
                                 "event_id": "bind-goal-activate",
@@ -267,8 +364,7 @@ class McpServerTests(unittest.TestCase):
                                 "expected_lifecycle_revision": 1,
                                 "source_sequence": 2,
                             },
-                        )
-                        self.assertFalse(activated.is_error)
+                        )).is_error)
                         valid = await client.call_tool(
                             "hermes_goal_bind",
                             {"goal_id": "bind-goal"},
@@ -278,9 +374,8 @@ class McpServerTests(unittest.TestCase):
                             },
                         )
                         self.assertFalse(valid.is_error)
-                        valid_text = valid.content[0]
-                        assert isinstance(valid_text, TextContent)
-                        valid_payload = json.loads(valid_text.text)
+                        assert isinstance(valid.content[0], TextContent)
+                        valid_payload = json.loads(valid.content[0].text)
                         self.assertEqual(valid_payload["binding"], "validated")
                         self.assertEqual(valid_payload["goal_id"], "bind-goal")
 
@@ -320,9 +415,8 @@ class McpServerTests(unittest.TestCase):
                             },
                         )
                         self.assertFalse(accepted.is_error)
-                        accepted_text = accepted.content[0]
-                        assert isinstance(accepted_text, TextContent)
-                        accepted_receipt = json.loads(accepted_text.text)
+                        assert isinstance(accepted.content[0], TextContent)
+                        accepted_receipt = json.loads(accepted.content[0].text)
                         self.assertEqual(accepted_receipt["status"], "processed")
 
                         replay = await client.call_tool(
@@ -342,11 +436,12 @@ class McpServerTests(unittest.TestCase):
                             },
                         )
                         self.assertFalse(replay.is_error)
-                        replay_text = replay.content[0]
-                        assert isinstance(replay_text, TextContent)
-                        self.assertEqual(json.loads(replay_text.text)["status"], "processed")
+                        assert isinstance(replay.content[0], TextContent)
+                        self.assertEqual(
+                            json.loads(replay.content[0].text)["status"], "processed"
+                        )
 
-                        forged = await client.call_tool(
+                        self.assertTrue((await client.call_tool(
                             "hermes_codex_event",
                             {
                                 "event_type": "codex:turn:start",
@@ -360,18 +455,16 @@ class McpServerTests(unittest.TestCase):
                                 "hermes/profile_id": "host-subject",
                                 "hermes/session_id": "session-1",
                             },
-                        )
-                        self.assertTrue(forged.is_error)
+                        )).is_error)
 
-                        mismatched = await client.call_tool(
+                        self.assertTrue((await client.call_tool(
                             "hermes_goal_bind",
                             {"goal_id": "bind-goal"},
                             meta={
                                 "hermes/profile_id": "another-profile",
                                 "hermes/session_id": "session-1",
                             },
-                        )
-                        self.assertTrue(mismatched.is_error)
+                        )).is_error)
 
                 asyncio.run(exercise())
             finally:
@@ -410,11 +503,12 @@ class McpServerTests(unittest.TestCase):
             (root / ".curatormd-v2.toml").chmod(0o600)
             store = CuratorStore(Path(temporary) / "global.sqlite3")
             try:
-                plugin = ProjectPlugin.bind(
-                    ProjectConfig.load(root),
+                plugin = bind_test_project(
                     store,
-                    TestVerifier(),
-                    TestReviewAuthorizer(),
+                    root,
+                    "host-subject",
+                    evidence_verifier=TestVerifier(),
+                    review_authorizer=TestReviewAuthorizer(),
                 )
                 caller = AuthenticatedCaller("host-subject")
                 api = AuthenticatedCuratorAPI(
@@ -425,16 +519,9 @@ class McpServerTests(unittest.TestCase):
                 server = build_mcp_server(
                     api, caller, "mcp-project", "mcp-sde-test-stream"
                 )
-                instructions = " ".join((server.instructions or "").split())
-                for required_guidance in (
-                    "observable success criteria",
-                    "record deduplicated compact fact bullets",
-                    "healthy readiness are not proof",
-                    "verified criteria separately from open criteria",
-                    "Store a distinct cleanup receipt and project it",
-                    "unapproved or failed cleanup visibly pending",
-                ):
-                    self.assertIn(required_guidance, instructions)
+                self._assert_sde_instruction_contract(
+                    " ".join((server.instructions or "").split())
+                )
                 staged = (
                     staging
                     / "mcp-sde-goal"
@@ -586,10 +673,30 @@ class McpServerTests(unittest.TestCase):
                             "artifact_inventory_discover",
                             {"goal_id": "mcp-sde-goal"},
                         )
+                        manifest = inventory["artifacts"]
+                        self.assertEqual(len(manifest), 2)
+                        reviewed_manifest = [
+                            (
+                                {
+                                    **artifact,
+                                    "retention_hold": "operational",
+                                    "reacquisition_action": "retain_under_hold",
+                                }
+                                if Path(artifact["path"]) == staged
+                                else {
+                                    **artifact,
+                                    "reacquisition_action": "not_required",
+                                }
+                            )
+                            for artifact in manifest
+                        ]
 
                         packet = await call_json(
                             "sde_review_packet",
-                            {"candidate_id": candidate["candidate_id"]},
+                            {
+                                "candidate_id": candidate["candidate_id"],
+                                "review_artifacts": reviewed_manifest,
+                            },
                         )
                         self.assertEqual(
                             packet["detail"]["candidate"]["candidate_id"],
@@ -608,21 +715,14 @@ class McpServerTests(unittest.TestCase):
                             packet["artifact_inventory"]["artifacts"],
                             inventory["artifacts"],
                         )
+                        self.assertEqual(packet["review_artifacts"], reviewed_manifest)
+                        self.assertEqual(
+                            len(packet["artifact_dependencies"]),
+                            len(inventory["artifacts"]),
+                        )
+                        self.assertEqual(len(packet["dependency_map_sha256"]), 64)
 
                         self.assertTrue(inventory["usage"]["inventory_complete"])
-                        manifest = inventory["artifacts"]
-                        self.assertEqual(len(manifest), 2)
-                        reviewed_manifest = [
-                            (
-                                {
-                                    **artifact,
-                                    "retention_hold": "operational",
-                                }
-                                if Path(artifact["path"]) == staged
-                                else artifact
-                            )
-                            for artifact in manifest
-                        ]
                         receipt = await call_json(
                             "sde_confirm",
                             {
@@ -630,6 +730,9 @@ class McpServerTests(unittest.TestCase):
                                 "decision": "approved",
                                 "artifacts": reviewed_manifest,
                                 "artifact_inventory_complete": True,
+                                "dependency_map_sha256": packet[
+                                    "dependency_map_sha256"
+                                ],
                                 "rationale": "Human reviewer approved the bounded facts",
                             },
                         )
@@ -637,6 +740,10 @@ class McpServerTests(unittest.TestCase):
                         self.assertTrue(receipt["artifact_inventory_complete"])
                         self.assertFalse(receipt["canonical_persisted"])
                         self.assertTrue(receipt["cleanup_authorized"])
+                        self.assertEqual(
+                            receipt["cleanup_dependency_map_sha256"],
+                            packet["dependency_map_sha256"],
+                        )
                         self.assertEqual(receipt["purge_status"], "purge_pending")
                         self.assertTrue(staged.exists())
                         pending_health = await call_json("project_health", {})
@@ -950,6 +1057,19 @@ class McpServerTests(unittest.TestCase):
                         )
                         rejected_manifest = rejected_inventory["artifacts"]
                         self.assertEqual(len(rejected_manifest), 1)
+                        rejected_manifest = [
+                            {
+                                **rejected_manifest[0],
+                                "reacquisition_action": "not_required",
+                            }
+                        ]
+                        rejected_packet = await call_json(
+                            "sde_review_packet",
+                            {
+                                "candidate_id": rejected_candidate["candidate_id"],
+                                "review_artifacts": rejected_manifest,
+                            },
+                        )
                         rejected_receipt = await call_json(
                             "sde_confirm",
                             {
@@ -957,6 +1077,9 @@ class McpServerTests(unittest.TestCase):
                                 "decision": "rejected",
                                 "artifacts": rejected_manifest,
                                 "artifact_inventory_complete": True,
+                                "dependency_map_sha256": rejected_packet[
+                                    "dependency_map_sha256"
+                                ],
                                 "rationale": "The evidence proves only a local test result",
                             },
                         )
@@ -1073,11 +1196,12 @@ class McpServerTests(unittest.TestCase):
             (root / ".curatormd-v2.toml").chmod(0o600)
             store = CuratorStore(Path(temporary) / "global.sqlite3")
             try:
-                plugin = ProjectPlugin.bind(
-                    ProjectConfig.load(root),
+                plugin = bind_test_project(
                     store,
-                    TestVerifier(),
-                    TestReviewAuthorizer(),
+                    root,
+                    "host-subject",
+                    evidence_verifier=TestVerifier(),
+                    review_authorizer=TestReviewAuthorizer(),
                 )
                 reviewed_goal = plugin.service.goal_start(
                     "Record an MCP-reviewed correction",
@@ -1469,6 +1593,16 @@ class McpServerTests(unittest.TestCase):
                             archive_receipts[0]["archive_sha256"],
                             approval_value["archive_sha256"],
                         )
+                        plugin.service.store.record_staging_artifact_time(
+                            "mcp-project",
+                            ArtifactRef(
+                                "mcp-goal/import/staged.bin",
+                                "f" * 64,
+                                device_id=3,
+                                inode_id=4,
+                                occurrence_id="c" * 32,
+                            ),
+                        )
                         usage_result = await client.call_tool(
                             "project_storage_usage", {}
                         )
@@ -1478,6 +1612,41 @@ class McpServerTests(unittest.TestCase):
                         usage_value = json.loads(usage_content.text)
                         self.assertEqual(usage_value["project_id"], "mcp-project")
                         self.assertEqual(usage_value["goal_count"], 2)
+                        self.assertEqual(usage_value["event_cursor_count"], 1)
+                        self.assertGreater(usage_value["event_cursor_record_bytes"], 0)
+                        self.assertEqual(usage_value["event_retry_audit_count"], 0)
+                        self.assertEqual(
+                            usage_value["event_retry_audit_record_bytes"], 0
+                        )
+                        self.assertEqual(usage_value["staging_artifact_time_count"], 1)
+                        self.assertGreater(
+                            usage_value["staging_artifact_time_record_bytes"], 0
+                        )
+                        self.assertEqual(
+                            usage_value["staging_artifact_occurrence_count"], 1
+                        )
+                        self.assertGreater(
+                            usage_value["staging_artifact_occurrence_record_bytes"], 0
+                        )
+                        self.assertNotIn("c" * 32, usage_content.text)
+                        self.assertEqual(usage_value["expiry_purge_receipt_count"], 0)
+                        self.assertEqual(
+                            usage_value["expiry_purge_receipt_record_bytes"], 0
+                        )
+                        self.assertEqual(usage_value["expiry_purge_target_count"], 0)
+                        self.assertEqual(
+                            usage_value["expiry_purge_target_record_bytes"], 0
+                        )
+                        self.assertEqual(usage_value["cleanup_authorization_count"], 0)
+                        self.assertEqual(
+                            usage_value["cleanup_authorization_record_bytes"], 0
+                        )
+                        self.assertIsInstance(
+                            usage_value["event_payload_scrub_count"], int
+                        )
+                        self.assertIsInstance(
+                            usage_value["event_payload_scrub_record_bytes"], int
+                        )
                         self.assertEqual(usage_value["fact_archive_item_count"], 1)
                         self.assertGreater(
                             usage_value["fact_archive_compressed_bytes"], 0
@@ -1502,6 +1671,11 @@ class McpServerTests(unittest.TestCase):
                         health_value = json.loads(health_content.text)
                         self.assertEqual(health_value["project_id"], "mcp-project")
                         self.assertEqual(health_value["status"], "degraded")
+                        self.assertTrue(
+                            health_value["database_observation_complete"]
+                        )
+                        self.assertIsNotNone(health_value["database_observed_at"])
+                        self.assertIsNotNone(health_value["staging_observed_at"])
                         self.assertIn(
                             "dependency_unknown:event_router",
                             health_value["gate_codes"],
@@ -1511,6 +1685,15 @@ class McpServerTests(unittest.TestCase):
                         metrics_content = metrics_result.content[0]
                         assert isinstance(metrics_content, TextContent)
                         self.assertIn("curatormd_project_health_state", metrics_content.text)
+                        self.assertIn(
+                            'curatormd_event_cursors{project_id="mcp-project"} 1',
+                            metrics_content.text,
+                        )
+                        self.assertIn(
+                            'curatormd_event_retry_audit_records'
+                            '{project_id="mcp-project"} 0',
+                            metrics_content.text,
+                        )
                         inventory_result = await client.call_tool(
                             "artifact_inventory_discover",
                             {"goal_id": "mcp-goal-1"},
@@ -1656,38 +1839,7 @@ class McpServerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
-            create_consumer_repo(root)
-            (root / "docs" / "tasks.md").write_text("- [ ] stdio task\n")
-            (root / "persistence" / "HISTORY.md").write_text("# History\n")
-            (root / ".curatormd-v2.toml").write_text(
-                """\
-                schema_version = 1
-                backend_api_version = 1
-                project_id = "stdio-project"
-
-                [scope]
-                read_paths = ["src", "docs"]
-
-                [checklists]
-                tasks = "docs/tasks.md"
-
-                [evidence]
-                adapters = []
-
-                [staging]
-                root = ".curatormd-v2/staging"
-
-                [persistence]
-                targets = ["persistence/HISTORY.md"]
-                """
-            )
-            (root / ".curatormd-v2.toml").chmod(0o600)
-            parameters = StdioServerParameters(
-                command=sys.executable,
-                args=[str(Path(__file__).with_name("mcp_stdio_fixture.py"))],
-                env={"CURATOR_TEST_PROJECT_ROOT": str(root)},
-                cwd=Path(__file__).parents[1],
-            )
+            parameters = configure_stdio_consumer(root, "stdio-project")
 
             async def exercise() -> None:
                 async with Client(parameters, raise_exceptions=True) as client:
@@ -1757,8 +1909,7 @@ class McpServerTests(unittest.TestCase):
             asyncio.run(exercise())
 
     def test_sensitive_event_is_absent_from_mcp_errors_logs_and_storage(self) -> None:
-        """Keep a rejected credential-like MCP event out of errors, logs, and stores."""
-
+        """Keep rejected credential-like content out of MCP errors and storage."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             create_consumer_repo(root)
@@ -1790,64 +1941,80 @@ class McpServerTests(unittest.TestCase):
             database_path = Path(temporary) / "global.sqlite3"
             store = CuratorStore(database_path)
             try:
-                plugin = ProjectPlugin.bind(ProjectConfig.load(root), store)
-                caller = AuthenticatedCaller("host-subject")
-                api = AuthenticatedCuratorAPI(
-                    {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
+                secret = self._assert_sensitive_event_rejected_without_echo(
+                    root, store
                 )
-                server = build_mcp_server(api, caller, "mcp-project", "privacy-test")
-                secret = (
-                    "ghs_1234567890_"
-                    + "A" * 480
-                    + ".eyJhbGciOiJIUzI1NiJ9.signature"
+                self._assert_sensitive_event_absent_from_storage(
+                    secret, database_path, root
                 )
-                payload = json.dumps(
-                    {
-                        "schema_version": 1,
-                        "event_id": "sensitive-mcp-event",
-                        "project_id": "mcp-project",
-                        "source_id": "privacy-test",
-                        "source_sequence": 1,
-                        "occurred_at": "2026-10-20T00:00:00Z",
-                        "event_type": "goal.started",
-                        "payload": {
-                            "goal_id": "sensitive-mcp-goal",
-                            "problem": f"Example token {secret}",
-                            "success_criteria": [
-                                {"criterion_id": "done", "description": "No leak"}
-                            ],
-                        },
-                    }
-                )
-
-                async def exercise() -> None:
-                    async with Client(server, raise_exceptions=True) as client:
-                        result = await client.call_tool(
-                            "event_ingest", {"event_json": payload}
-                        )
-                        self.assertTrue(result.is_error)
-                        content = result.content[0]
-                        assert isinstance(content, TextContent)
-                        self.assertNotIn(secret, content.text)
-
-                with self.assertLogs("curatormd_v2.mcp_server", level="WARNING") as captured:
-                    asyncio.run(exercise())
-
-                self.assertTrue(captured.output)
-                self.assertNotIn(secret, "\n".join(captured.output))
-                secret_bytes = secret.encode("utf-8")
-                for suffix in ("", "-wal", "-shm", "-journal"):
-                    database_file = Path(f"{database_path}{suffix}")
-                    if database_file.exists():
-                        self.assertNotIn(secret_bytes, database_file.read_bytes())
-                history = root / "persistence" / "HISTORY.md"
-                self.assertNotIn(secret_bytes, history.read_bytes())
-                staging = root / ".curatormd-v2" / "staging"
-                for staged_file in staging.rglob("*"):
-                    if staged_file.is_file():
-                        self.assertNotIn(secret_bytes, staged_file.read_bytes())
             finally:
                 store.close()
+
+    def _assert_sensitive_event_rejected_without_echo(
+        self, root: Path, store: CuratorStore
+    ) -> str:
+        """Exercise MCP and logs while returning the test-only canary for scans."""
+        plugin = bind_test_project(store, root, "host-subject")
+        caller = AuthenticatedCaller("host-subject")
+        api = AuthenticatedCuratorAPI(
+            {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
+        )
+        server = build_mcp_server(api, caller, "mcp-project", "privacy-test")
+        secret = (
+            "ghs_1234567890_"
+            + "A" * 480
+            + ".eyJhbGciOiJIUzI1NiJ9.signature"
+        )
+        payload = json.dumps(
+            {
+                "schema_version": 1,
+                "event_id": "sensitive-mcp-event",
+                "project_id": "mcp-project",
+                "source_id": "privacy-test",
+                "source_sequence": 1,
+                "occurred_at": "2026-10-20T00:00:00Z",
+                "event_type": "goal.started",
+                "payload": {
+                    "goal_id": "sensitive-mcp-goal",
+                    "problem": f"Example token {secret}",
+                    "success_criteria": [
+                        {"criterion_id": "done", "description": "No leak"}
+                    ],
+                },
+            }
+        )
+
+        async def exercise() -> None:
+            async with Client(server, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "event_ingest", {"event_json": payload}
+                )
+                self.assertTrue(result.is_error)
+                content = result.content[0]
+                assert isinstance(content, TextContent)
+                self.assertNotIn(secret, content.text)
+
+        with self.assertLogs("curatormd_v2.mcp_server", level="WARNING") as captured:
+            asyncio.run(exercise())
+        self.assertTrue(captured.output)
+        self.assertNotIn(secret, "\n".join(captured.output))
+        return secret
+
+    def _assert_sensitive_event_absent_from_storage(
+        self, secret: str, database_path: Path, root: Path
+    ) -> None:
+        """Scan SQLite sidecars, canonical Markdown, and staging bytes."""
+        secret_bytes = secret.encode("utf-8")
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            database_file = Path(f"{database_path}{suffix}")
+            if database_file.exists():
+                self.assertNotIn(secret_bytes, database_file.read_bytes())
+        history = root / "persistence" / "HISTORY.md"
+        self.assertNotIn(secret_bytes, history.read_bytes())
+        staging = root / ".curatormd-v2" / "staging"
+        for staged_file in staging.rglob("*"):
+            if staged_file.is_file():
+                self.assertNotIn(secret_bytes, staged_file.read_bytes())
 
 
 if __name__ == "__main__":

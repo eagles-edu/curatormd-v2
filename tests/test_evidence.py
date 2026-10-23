@@ -32,7 +32,8 @@ from curatormd_v2.git_evidence import (
 )
 
 
-class FixedReceiptResolver:
+# ReceiptResolver test double intentionally implements only `resolve`.
+class FixedReceiptResolver:  # pylint: disable=too-few-public-methods
     """Return one controlled host-side receipt for trust-boundary tests."""
 
     def __init__(self, receipt: EvidenceSourceReceipt) -> None:
@@ -103,6 +104,22 @@ class EvidenceAdapterTests(unittest.TestCase):
         self.assertEqual(attestation.adapter_id, "gptmd-readiness-probe")
         self.assertEqual(attestation.source_revision, "probe-receipt-42")
         self.assertEqual(self.resolver.calls, 1)
+
+    def test_attestation_binds_exact_staging_occurrence(self) -> None:
+        occurrence_id = "d" * 32
+        evidence = replace(self.evidence, occurrence_id=occurrence_id)
+        self.resolver.receipt = replace(
+            self.receipt,
+            occurrence_id=occurrence_id,
+        )
+
+        attestation = self.adapter.attest(evidence, self.context)
+
+        self.assertIsNotNone(attestation)
+        assert attestation is not None
+        self.assertEqual(attestation.occurrence_id, occurrence_id)
+        self.resolver.receipt = replace(self.resolver.receipt, occurrence_id="e" * 32)
+        self.assertIsNone(self.adapter.attest(evidence, self.context))
 
     def test_rejects_project_goal_criterion_scope_identity_and_digest_mismatch(self) -> None:
         changes = (

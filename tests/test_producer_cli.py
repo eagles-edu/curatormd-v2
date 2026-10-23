@@ -12,11 +12,9 @@ import sys
 import tempfile
 import unittest
 
-from project_fixtures import create_consumer_repo
+from project_fixtures import bind_test_project, create_consumer_repo
 
 from curatormd_v2 import CuratorStore, SuccessCriterion
-from curatormd_v2.project_config import ProjectConfig
-from curatormd_v2.project_plugin import ProjectPlugin
 
 
 class ProducerCliTests(unittest.TestCase):
@@ -55,10 +53,9 @@ class ProducerCliTests(unittest.TestCase):
         )
         config_path.chmod(0o600)
         self.database = Path(self.temporary) / "global.sqlite3"
-        config = ProjectConfig.load(self.root)
         store = CuratorStore(self.database)
         try:
-            plugin = ProjectPlugin.bind(config, store)
+            plugin = bind_test_project(store, self.root, "producer-test")
             plugin.service.goal_start(
                 "Stage an exact producer payload",
                 (SuccessCriterion("review", "A reviewer can inspect this import"),),

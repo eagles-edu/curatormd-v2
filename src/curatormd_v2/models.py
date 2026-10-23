@@ -43,10 +43,14 @@ MAX_GOAL_STATUS_CANDIDATES = 32
 MAX_GOAL_STATUS_PURGE_RECEIPTS = 16
 
 __all__ = [
+    "ArtifactEvidenceBinding",
+    "ArtifactEvidenceDependency",
+    "ArtifactReviewDependency",
     "CleanupAuthorizationReceipt",
     "DependencyHealth",
     "DependencyProbeObservation",
     "EventClassStorageUsage",
+    "EventPayloadScrubUsage",
     "EventFailureCategory",
     "EventFailureCategoryUsage",
     "ExpiryPurgeReceipt",
@@ -56,22 +60,33 @@ __all__ = [
     "GlobalEventInboxUsage",
     "GoalStatusStorageUsage",
     "ProjectActivitySnapshot",
+    "ProjectControlPlaneStorageUsage",
     "ProjectHealthSnapshot",
     "ProjectOperationalCounts",
     "ProjectStorageUsage",
+    "SQLiteDatabaseFileUsage",
+    "SQLiteDatabasePageUsage",
+    "SQLitePhysicalStorageUsage",
+    "StorageClassUsage",
+    "StoragePhysicalClassUsage",
     "SDEReviewDetail",
     "SDEReviewPacket",
     "StagingArtifactInventory",
     "StagingExpirySnapshot",
+    "artifact_dependency_map_sha256",
 ]
 _READ_MODEL_NAMES = frozenset(__all__)
 
 if TYPE_CHECKING:
     from .read_models import (
+        ArtifactEvidenceBinding,
+        ArtifactEvidenceDependency,
+        ArtifactReviewDependency,
         CleanupAuthorizationReceipt,
         DependencyHealth,
         DependencyProbeObservation,
         EventClassStorageUsage,
+        EventPayloadScrubUsage,
         EventFailureCategory,
         EventFailureCategoryUsage,
         ExpiryPurgeReceipt,
@@ -81,13 +96,20 @@ if TYPE_CHECKING:
         GlobalEventInboxUsage,
         GoalStatusStorageUsage,
         ProjectActivitySnapshot,
+        ProjectControlPlaneStorageUsage,
         ProjectHealthSnapshot,
         ProjectOperationalCounts,
+        SQLiteDatabaseFileUsage,
+        SQLiteDatabasePageUsage,
+        SQLitePhysicalStorageUsage,
+        StorageClassUsage,
+        StoragePhysicalClassUsage,
         ProjectStorageUsage,
         SDEReviewDetail,
         SDEReviewPacket,
         StagingArtifactInventory,
         StagingExpirySnapshot,
+        artifact_dependency_map_sha256,
     )
 
 
@@ -252,6 +274,15 @@ class RetentionHoldKind(StrEnum):
     OPERATIONAL = "operational"
 
 
+class ReacquisitionAction(StrEnum):
+    """Reviewer decision for an artifact that may be removed after review."""
+
+    NOT_RECORDED = "not_recorded"
+    NOT_REQUIRED = "not_required"
+    REACQUIRE_FROM_SOURCE = "reacquire_from_source"
+    RETAIN_UNDER_HOLD = "retain_under_hold"
+
+
 def _is_retention_hold_kind(value: object) -> TypeGuard[RetentionHoldKind]:
     """Reject strings and other impostors passed through dynamic callers."""
 
@@ -279,6 +310,29 @@ class SuccessCriterion:
 
 
 @dataclass(frozen=True, slots=True)
+class GoalStartOptions:
+    """Optional ownership and lifecycle metadata for accepted goal intake."""
+
+    owner: str | None = None
+    next_action: str | None = None
+    parent_goal_id: str | None = None
+    depends_on_goal_ids: tuple[str, ...] = ()
+    initial_status: GoalStatus = GoalStatus.PLANNED
+    source_event_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChecklistGoalStartRequest:
+    """Exact consumer checklist source and explicit goal acceptance fields."""
+
+    checklist_id: str
+    problem: str
+    success_criteria: tuple[SuccessCriterion, ...]
+    exact_item_text: str
+    options: GoalStartOptions = GoalStartOptions()
+
+
+@dataclass(frozen=True, slots=True)
 class EvidenceRef:
     """A compact pointer to proof; output/transcript contents are not stored."""
 
@@ -286,6 +340,7 @@ class EvidenceRef:
     locator: str
     sha256: str
     outcome: EvidenceOutcome
+    occurrence_id: str | None = None
 
     def __post_init__(self) -> None:
         validate_safe_text(self.evidence_kind, "evidence.evidence_kind")
@@ -300,6 +355,10 @@ class EvidenceRef:
             raise ValueError("evidence locator must be a single line")
         if not _SHA256_RE.fullmatch(self.sha256):
             raise ValueError("evidence sha256 must be 64 lowercase hex characters")
+        if self.occurrence_id is not None and not re.fullmatch(
+            r"[0-9a-f]{32}", self.occurrence_id
+        ):
+            raise ValueError("evidence occurrence_id must be a lowercase UUID hex value")
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,6 +377,7 @@ class EvidenceAttestation:  # pylint: disable=too-many-instance-attributes  # Ve
     verified_at: str
     valid_until: str
     revocation_checked_at: str
+    occurrence_id: str | None = None
 
     def __post_init__(self) -> None:
         for name, value, limit in (
@@ -336,6 +396,10 @@ class EvidenceAttestation:  # pylint: disable=too-many-instance-attributes  # Ve
                 raise ValueError(f"{name} must be a single line")
         if not _SHA256_RE.fullmatch(self.evidence_sha256):
             raise ValueError("attested evidence SHA-256 must be 64 lowercase hex characters")
+        if self.occurrence_id is not None and not re.fullmatch(
+            r"[0-9a-f]{32}", self.occurrence_id
+        ):
+            raise ValueError("attested occurrence_id must be a lowercase UUID hex value")
         timestamps: dict[str, datetime] = {}
         for name, value in (
             ("observed_at", self.observed_at),
@@ -559,6 +623,7 @@ class Fact:  # pylint: disable=too-many-instance-attributes  # Immutable fact re
             if any(
                 attestation.evidence_kind != evidence.evidence_kind
                 or attestation.evidence_sha256 != evidence.sha256
+                or attestation.occurrence_id != evidence.occurrence_id
                 or attestation.goal_id != self.goal_id
                 or attestation.criterion_id != self.criterion_id
                 for evidence, attestation in zip(
@@ -710,6 +775,10 @@ class ArtifactRef:
     path: str
     sha256: str
     retention_hold: RetentionHoldKind | None = None
+    device_id: int | None = None
+    inode_id: int | None = None
+    occurrence_id: str | None = None
+    reacquisition_action: ReacquisitionAction = ReacquisitionAction.NOT_RECORDED
 
     def __post_init__(self) -> None:
         if not self.path.strip():
@@ -722,6 +791,22 @@ class ArtifactRef:
             self.retention_hold
         ):
             raise ValueError("retention_hold must be legal, operational, or null")
+        if (self.device_id is None) != (self.inode_id is None):
+            raise ValueError("artifact filesystem identity must include device and inode")
+        if self.device_id is not None and (
+            not is_exact_int(self.device_id)
+            or self.device_id < 0
+            or not is_exact_int(self.inode_id)
+            or self.inode_id < 0
+        ):
+            raise ValueError("artifact filesystem identity must be nonnegative integers")
+        if self.occurrence_id is not None and not re.fullmatch(
+            r"[0-9a-f]{32}", self.occurrence_id
+        ):
+            raise ValueError("artifact occurrence_id must be a lowercase UUID hex value")
+        # Exact type rejects runtime values from unrelated enum classes.
+        if type(self.reacquisition_action) is not ReacquisitionAction:  # pylint: disable=unidiomatic-typecheck
+            raise ValueError("reacquisition_action must be a supported reviewer decision")
 
 
 @dataclass(frozen=True, slots=True)
@@ -740,6 +825,7 @@ class PurgeTargetRecord:  # pylint: disable=too-many-instance-attributes  # Retr
     hold_released_at: str | None = None
     hold_released_by: str | None = None
     hold_release_rationale: str | None = None
+    approval_stale: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -764,6 +850,7 @@ class AuditReceipt:  # pylint: disable=too-many-instance-attributes  # Versioned
     cleanup_authorized: bool = False
     cleanup_reviewer_id: str | None = None
     cleanup_manifest_sha256: str | None = None
+    cleanup_dependency_map_sha256: str | None = None
     cleanup_approved_at: str | None = None
     cleanup_canonical_persisted: bool = False
 
@@ -780,6 +867,10 @@ class AuditReceipt:  # pylint: disable=too-many-instance-attributes  # Versioned
                 raise ValueError("cleanup reviewer must be a bounded opaque identifier")
             if not _SHA256_RE.fullmatch(self.cleanup_manifest_sha256):
                 raise ValueError("cleanup manifest must be a lowercase SHA-256")
+            if self.cleanup_dependency_map_sha256 is not None and not _SHA256_RE.fullmatch(
+                self.cleanup_dependency_map_sha256
+            ):
+                raise ValueError("cleanup dependency map must be a lowercase SHA-256")
             if self.cleanup_approved_at is None:
                 raise ValueError("cleanup authorization requires its approval timestamp")
             _parse_aware_timestamp("cleanup_approved_at", self.cleanup_approved_at)
@@ -790,6 +881,7 @@ class AuditReceipt:  # pylint: disable=too-many-instance-attributes  # Versioned
             for value in (
                 self.cleanup_reviewer_id,
                 self.cleanup_manifest_sha256,
+                self.cleanup_dependency_map_sha256,
                 self.cleanup_approved_at,
             ) or self.cleanup_canonical_persisted
         ):

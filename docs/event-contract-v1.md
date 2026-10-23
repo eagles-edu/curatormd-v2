@@ -230,6 +230,24 @@ retirement paths enforce their extra invariants; the generic transition store
 primitive cannot target those dedicated statuses or move planned work directly
 to finish evaluation.
 
+Reopen relationship order treats hierarchy parents and dependency edges
+separately. A completed child may reopen only after its completed parent has
+reopened; a cancelled or superseded parent cannot be reopened, so continuation
+requires a new goal under a nonterminal parent. Before reopening a dependency,
+reopen every completed goal that depends on it. A goal that references a
+cancelled or superseded dependency cannot reopen; continue with a new goal that
+uses an active same-project replacement dependency. Reopen never reparents a
+goal or rewrites its dependency list. The existing relationship and terminal
+history remain intact. These reopen constraints are distinct from retirement,
+which rejects unfinished children or dependents.
+
+A rejected relationship check changes no goal status, lifecycle revision, or
+facts. Direct API rejection has no inbox receipt. If an event requests the same
+invalid reopen, retain one retryable failed receipt under its original project
+and event ID, do not advance the source cursor, and return that receipt on exact
+replay; normal retry attempts may advance without creating another receipt or
+mutating the goal.
+
 ## Cancellation, supersession, and conflicts
 
 `complete`, `cancelled`, and `superseded` are terminal statuses. Cancellation
@@ -283,7 +301,10 @@ while a dependency is cancelled or superseded.
 Fact kinds include `intent`, `research`, `advice`, `proposal`, `change`,
 `verification`, `open_gate`, `completion_claim`, and `outcome`. Research,
 advice, proposals, and completion claims are not verification. Evidence
-references contain only `evidence_kind`, `locator`, `sha256`, and `outcome`.
+references contain `evidence_kind`, `locator`, `sha256`, and `outcome`, with an
+optional `occurrence_id` when the proof refers to one exact staged-file
+occurrence. A verified evidence receipt must attest the same occurrence ID;
+path and digest alone remain occurrence-unbound.
 The backend's configured evidence verifier remains authoritative; the
 serialized `passed` value alone must never close a success criterion.
 

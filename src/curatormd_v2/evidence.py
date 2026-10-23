@@ -83,6 +83,7 @@ class EvidenceSourceReceipt:
     valid_until: str
     revocation_checked_at: str
     revoked: bool = False
+    occurrence_id: str | None = None
 
     def __post_init__(self) -> None:
         """Reject malformed or oversized resolver output at its typed boundary."""
@@ -113,6 +114,10 @@ class EvidenceSourceReceipt:
                 raise ValueError(f"evidence receipt {name} must be a timezone-aware timestamp")
         if not is_exact_bool(self.revoked):
             raise ValueError("evidence receipt revoked must be a boolean")
+        if self.occurrence_id is not None and not re.fullmatch(
+            r"[0-9a-f]{32}", self.occurrence_id
+        ):
+            raise ValueError("evidence receipt occurrence_id is invalid")
 
 
 class EvidenceSourceResolver(Protocol):
@@ -327,6 +332,7 @@ class ReceiptEvidenceAdapter:
                 verified_at=now.isoformat(timespec="microseconds"),
                 valid_until=receipt.valid_until,
                 revocation_checked_at=receipt.revocation_checked_at,
+                occurrence_id=receipt.occurrence_id,
             )
         except Exception:  # pylint: disable=broad-exception-caught
             # Distinguish a broken trusted adapter from an ordinary bad proof,
@@ -346,6 +352,7 @@ class ReceiptEvidenceAdapter:
                 receipt.evidence_kind != evidence.evidence_kind,
                 receipt.locator != evidence.locator,
                 receipt.evidence_sha256 != evidence.sha256,
+                receipt.occurrence_id != evidence.occurrence_id,
                 receipt.project_id != context.project_id,
                 receipt.goal_id != context.goal_id,
                 receipt.criterion_id != context.criterion_id,
@@ -500,6 +507,7 @@ def _attestation_matches_reference(
     return (
         attestation.evidence_kind == reference.evidence_kind
         and attestation.evidence_sha256 == reference.sha256
+        and attestation.occurrence_id == reference.occurrence_id
     )
 
 

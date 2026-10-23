@@ -141,6 +141,9 @@ class DurableEventRouterTests(unittest.TestCase):
 
         self.assertEqual(first.processed_count, 1)
         self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 1)
+        usage = self.store.project_storage_usage("project-a")
+        self.assertEqual(usage.event_payload_scrub_count, 1)
+        self.assertGreater(usage.event_payload_scrub_record_bytes, 0)
         reader.execute("ROLLBACK")
         reader.close()
 
@@ -148,6 +151,10 @@ class DurableEventRouterTests(unittest.TestCase):
 
         self.assertEqual(idle.attempted_count, 0)
         self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 0)
+        self.assertEqual(
+            self.store.project_storage_usage("project-a").event_payload_scrub_count,
+            0,
+        )
         wal_path = Path(f"{self.database}-wal")
         wal_bytes = wal_path.read_bytes() if wal_path.exists() else b""
         self.assertNotIn(canary.encode(), wal_bytes)
@@ -376,6 +383,15 @@ finally:
         self.assertEqual(retried.status, EventInboxStatus.FAILED)
         self.assertEqual(retried.attempts, 0)
         self.assertEqual(self.retry_audit_actor(event.event_id), "operator-7")
+        usage_a = self.store.project_storage_usage("project-a")
+        usage_b = self.store.project_storage_usage("project-b")
+        self.assertEqual(usage_a.event_retry_audit_count, 1)
+        self.assertGreater(usage_a.event_retry_audit_record_bytes, 0)
+        self.assertGreaterEqual(
+            usage_a.logical_record_bytes, usage_a.event_retry_audit_record_bytes
+        )
+        self.assertEqual(usage_b.event_retry_audit_count, 0)
+        self.assertEqual(usage_b.event_retry_audit_record_bytes, 0)
         final = self.router.route_once()
         self.assertEqual(final.processed_count, 1)
         self.assertEqual(
