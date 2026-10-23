@@ -2428,7 +2428,14 @@ consumer plugin, Hermes integration, or production deployment.
       counts, active leases, unresolved inventory digest, and a bounded
       terminal-event page. The current Vhost read reports `complete=true`, 12
       processed events, and no unresolved events. Authenticated production
-      lifecycle evidence remains open.
+      lifecycle evidence remains open. Focused lifecycle refresh (2026-10-23):
+      eight local access/CLI regressions pass for separate binding
+      deregistration, unresolved-event blocking, exact drain identity and
+      digest checks, terminal disposition, irreversible retirement,
+      source-epoch re-enrollment, and attended CLI state. This confirms the
+      local slices only; review-bound reactivation, source-acknowledgement and
+      unlink race coverage, production identity, and deployment acceptance
+      remain open.
       Represent binding state separately from project lifecycle state and expose
       `active`, `deregistration_pending`, or `deregistered` in content-free
       operator status; deregistration must never appear as project retirement.

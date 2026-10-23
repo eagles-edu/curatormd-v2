@@ -4979,3 +4979,15 @@
 **Open gate:** This verifies a local alpha operator view and test database behavior. It does not establish Hermes-authenticated human identity, production status sources, production lifecycle evidence, or release/rollback approval.
 
 **Outcome:** Deployed a bounded status snapshot that reports its observation scope and completeness instead of requiring separate reads to infer lifecycle state.
+
+## 2026-10-23 — Refresh local consumer lifecycle evidence
+
+**Intent:** Continue the Curator V2 lifecycle checklist by checking the local drain, retirement, and source-epoch implementation at its current source revision, then correct the release ledger where it still described those local features as absent.
+
+**Changed fact:** The V2 release-gate ledger now distinguishes implemented local lifecycle behavior from open deployment gates. It records schema-v35 exact inventory-bound drain authorization, schema-v34 source-epoch re-enrollment, schema-v35 retirement tombstones, schema-v36 terminal disposition, and the single-snapshot attended lifecycle view. The ledger explicitly retains review-bound reactivation, incomplete effect-boundary coverage, authenticated deployment identity, and production acceptance as open.
+
+**Verification:** Eight focused `unittest` cases pass across `test_project_access` and `test_access_cli`, covering binding deregistration, unresolved-event blocking, exact drain/profile checks, terminal disposition, retirement, re-enrollment, and attended lifecycle reporting. `git diff --check` passes. No full suite or live destructive operation was run.
+
+**Open gate:** Local regression evidence does not prove production identity, operator approval, deployment migration/rollback, all source-acknowledgement/unlink races, review-bound reactivation, or a live consumer workflow. No checklist row was changed.
+
+**Outcome:** Corrected the stale local-evidence descriptions without closing any deployment gate or changing the checklist count.
