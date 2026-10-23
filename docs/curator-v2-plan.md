@@ -6406,9 +6406,17 @@ substitute for evidence at a later integration boundary.
       cutover. Focused access regressions prove new events cannot enter during
       a reviewed deregistration drain or after retirement, and that the
       pre-cutover event remains available for exact retry. Local account
-      attribution remains `local-uid:1000`; the deployed Hermes profile still
-      reports transport auth `none`, so authenticated human identity and
-      deployment lifecycle acceptance remain open.
+      attribution remains `local-uid:1000`. Deployed local-alpha identity
+      check (2026-10-24): the installed `renew-ssl-coding` stdio command runs
+      from the Hermes profile's dedicated V2 environment with
+      `hermes_context = true`; the live database shows the active
+      `vhost-manager-alpha` registration/binding and unrevoked read/write/review
+      grants only for `local-uid:1000`. The OS maps UID 1000 to the
+      owner-selected `eaglesvn` account, and the installed Hermes MCP probe
+      connects and discovers all 48 tools. This verifies the local single-host
+      pilot principal. Hermes reports transport auth `none`, so authenticated
+      Hermes person identity for multi-user/production use and deployment
+      lifecycle acceptance remain open.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary

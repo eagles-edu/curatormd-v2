@@ -5051,3 +5051,15 @@
 **Open gate:** This closes only the local inbox-admission gap. Expiry/lost-ack and binding-effect races, authenticated Hermes human identity, owner-approved terminal dispositions in deployment, replay-horizon policy, and deployment migration/rollback evidence remain open. The deployed Hermes profile reports transport auth `none`; the approved local OS UID does not establish a human principal.
 
 **Outcome:** The reference store keeps the pre-cutover event receipt available but will not create new event records after a project or consumer binding is fenced.
+
+## 2026-10-24 — Verify the deployed local pilot principal
+
+**Intent:** Establish which identity the installed Vhost alpha Curator profile actually uses, without changing its configuration or database.
+
+**Changed fact:** Read-only inspection found the `renew-ssl-coding` Hermes profile starts the dedicated Curator V2 stdio command with trusted local Hermes context and the `vhost-manager-alpha` database. The profile process runs as OS UID 1000, which resolves to the owner-selected `eaglesvn` account. The active project and binding have unrevoked read, write, and review grants for exactly `local-uid:1000`; the legacy profile-string grants are revoked.
+
+**Verification:** The installed `hermes --profile renew-ssl-coding mcp test curator_v2` command connects and discovers 48 tools. A read-only SQLite connection reports the project and binding active and `PRAGMA quick_check` returns `ok`. No profile, database, or runtime state was changed.
+
+**Open gate:** This verifies the local single-host OS-account principal. Hermes reports transport auth `none`; there is no evidence that an authenticated Hermes person identity is propagated to this MCP process, nor does this establish a multi-user or production identity boundary. The deployed lifecycle and identity release gates remain open for those scopes.
+
+**Outcome:** Local pilot authorization is bound to the approved `eaglesvn` OS account; no person-level or production identity claim is made.
