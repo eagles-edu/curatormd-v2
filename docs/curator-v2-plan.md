@@ -6433,9 +6433,11 @@ substitute for evidence at a later integration boundary.
       database now injects an incompatible consumer-binding table so upgrade
       fails during v33 after earlier migrations have changed the registry.
       The migration transaction rolls back those earlier changes and preserves
-      schema version 22 and the original registry row. The full migration test
-      file passes (38 tests). This adds local failure-rollback evidence only;
-      deployment migration, recovery, and rollback acceptance remain open.
+      schema version 22 and the original registry row. After removing the
+      conflict, retry reaches the current schema and creates the default active
+      binding at revision and source epoch 1. The full migration test file
+      passes (38 tests). This adds local failure/retry evidence only; deployment
+      migration, recovery, and rollback acceptance remain open.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary

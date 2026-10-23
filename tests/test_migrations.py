@@ -834,6 +834,16 @@ class SchemaMigrationTests(unittest.TestCase):
                     "INSERT INTO project_registry VALUES (?, ?, ?)",
                     ("legacy-project", "legacy-owner", "2026-10-23T00:00:00Z"),
                 )
+                connection.execute(
+                    """CREATE TABLE event_payload_scrub_queue (
+                           scrub_id INTEGER PRIMARY KEY,
+                           project_id TEXT,
+                           event_id TEXT,
+                           queued_at TEXT NOT NULL,
+                           attempts INTEGER NOT NULL DEFAULT 0,
+                           last_error_code TEXT
+                       )"""
+                )
                 # Simulate a conflicting legacy object so v33 fails after v31
                 # has already altered project_registry inside the migration tx.
                 connection.execute(
@@ -869,8 +879,30 @@ class SchemaMigrationTests(unittest.TestCase):
                     ).fetchone(),
                     None,
                 )
+                connection.execute("DROP TABLE consumer_bindings")
+                connection.commit()
             finally:
                 connection.close()
+
+            recovered = CuratorStore(database_path)
+            try:
+                with recovered.transaction() as migrated:
+                    self.assertEqual(
+                        migrated.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+                    self.assertEqual(
+                        tuple(
+                            migrated.execute(
+                                "SELECT status, revision, source_epoch "
+                                "FROM consumer_bindings WHERE project_id = ?",
+                                ("legacy-project",),
+                            ).fetchone()
+                        ),
+                        ("active", 1, 1),
+                    )
+            finally:
+                recovered.close()
 
     def test_v20_migration_rejects_incompatible_cleanup_authorization_table(self) -> None:
         """Do not stamp v21 over a conflicting object with the expected table name."""
