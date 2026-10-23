@@ -4943,3 +4943,15 @@
 **Open gate:** This is local reference-store and Hermes checkout evidence only. It does not implement the inventoried drain, separately approved terminal event disposition, review-bound reactivation, retirement/replay tombstone, authenticated operator status, verified production identity, retention approval, or live deployment behavior. No full lifecycle checklist item is complete; live persistence and runtime status remain unverified.
 
 **Outcome:** Added a local re-enrollment path and old-event fence while leaving the authenticated deployment lifecycle acceptance open.
+
+## 2026-10-23 — Complete local drain, retirement, and alpha identity deployment
+
+**Intent:** Finish the locally implementable consumer drain and retirement protections, bind the Vhost alpha profile to the owner-approved local reviewer identity, and keep production identity and lifecycle acceptance accurately open.
+
+**Changed fact:** Schema v35 adds a content-free, digest-bound inventory for authorized pre-cutover retries, an expiring transition-scoped drain, and irreversible project retirement tombstones. The profile API derives the authorization subject from the process real/effective OS UID and carries the Hermes profile ID separately as routing context. `renew-ssl-coding` now has local UID `1000` read/write/review grants; the legacy profile-string read/write grants are revoked. The isolated alpha profile enables review and runs the rebuilt wheel. The active Vhost project and consumer binding were preserved through the schema v22 to v35 migration.
+
+**Verification:** The full Curator suite passes 435 tests. Strict Pyright reports zero diagnostics, errors-only Pylint passes, Bandit exits successfully, and `git diff --check` passes. A disposable copy of the alpha DB migrated v22 to v35 with `quick_check=ok` and preserved the active project. Before live migration, a mode-0600 SQLite online backup was written to `/home/eaglesvn/.local/share/curatormd-v2-alpha/backups/pre-drain-retirement-20261023.sqlite3`; a mode-0600 package backup and profile-config backup were also saved in that directory. The rebuilt wheel SHA-256 is `7f5f646d047e9f5907e1d033fff92b0145c4fa647ea6a4fa601620e2f1ea0539`. The installed `hermes --profile renew-ssl-coding mcp test curator_v2` connects and discovers 48 tools. The live DB reports schema 35, `quick_check=ok`, active project/binding, 12 processed receipts, and only local UID `1000` active grants. Hermes transport still reports `Auth: none`.
+
+**Open gate:** The alpha identity is the approved local OS account, not an authenticated Hermes human subject. Source-side acknowledgement fencing, terminal disposition for unresolved events, complete bounded retirement status/counts, production identity, production lifecycle migration/rollback evidence, and owner acceptance remain open. The active Vhost project was not retired; retirement is verified by local lifecycle tests only.
+
+**Outcome:** Deployed and verified the local-alpha drain/retirement code and OS-bound identity without treating MCP discovery or synthetic lifecycle tests as production evidence.

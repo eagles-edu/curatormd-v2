@@ -38,6 +38,8 @@ _OPERATION_ACTIONS = {
     "deregister": ProjectAdministrationAction.DEREGISTER,
     "deregister_finalize": ProjectAdministrationAction.DEREGISTER_FINALIZE,
     "reenroll": ProjectAdministrationAction.REENROLL,
+    "drain": ProjectAdministrationAction.DRAIN,
+    "retire": ProjectAdministrationAction.RETIRE,
     "grant": ProjectAdministrationAction.GRANT,
     "revoke": ProjectAdministrationAction.REVOKE,
     "view": ProjectAdministrationAction.VIEW,
@@ -113,11 +115,13 @@ def _parser() -> argparse.ArgumentParser:
         if name in {
             "register", "update", "suspend", "reactivate", "deregister",
             "deregister_finalize", "reenroll", "grant", "revoke",
+            "drain", "retire",
         }:
             command.add_argument("--rationale", required=True)
         if name in {
             "update", "suspend", "reactivate", "deregister",
             "deregister_finalize", "reenroll",
+            "drain", "retire",
         }:
             command.add_argument(
                 "--expected-revision", required=True, type=_positive_revision
@@ -130,6 +134,10 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument(
                 "--expected-project-revision", required=True, type=_positive_revision
             )
+        if name == "drain":
+            command.add_argument("--inventory-sha256", required=True)
+            command.add_argument("--lifetime-seconds", required=True, type=int)
+            command.add_argument("--consumer-profile", required=True)
         if name in {"grant", "revoke"}:
             command.add_argument("--subject-id", required=True)
             command.add_argument(
@@ -190,6 +198,19 @@ def _confirmation_phrase(
             f"{arguments.transition_id} REPOSITORY "
             f"{config.repository_fingerprint} CONFIG {config.config_sha256} "
             f"API {config.backend_api_version}"
+        )
+    if operation == "drain":
+        return (
+            f"DRAIN {config.project_id} TRANSITION {arguments.transition_id} "
+            f"AT BINDING REVISION {arguments.expected_revision} "
+            f"INVENTORY {arguments.inventory_sha256} FOR "
+            f"{arguments.lifetime_seconds} SECONDS PROFILE "
+            f"{arguments.consumer_profile}"
+        )
+    if operation == "retire":
+        return (
+            f"RETIRE PROJECT {config.project_id} AT REVISION "
+            f"{arguments.expected_revision} TRANSITION {arguments.transition_id}"
         )
     return f"{operation.upper()} {config.project_id}"
 
@@ -298,6 +319,30 @@ def _perform(
             "transition_receipt": asdict(result.receipt),
             "replayed": result.replayed,
         }
+    if operation == "drain":
+        count, expires_at = manager.authorize_consumer_drain(
+            caller,
+            config.project_id,
+            arguments.transition_id,
+            arguments.expected_revision,
+            arguments.inventory_sha256,
+            arguments.lifetime_seconds,
+            arguments.consumer_profile,
+        )
+        return {
+            "operation": operation,
+            "authorized_event_count": count,
+            "expires_at": expires_at,
+        }
+    if operation == "retire":
+        receipt = manager.retire_project(
+            caller,
+            config.project_id,
+            rationale,
+            arguments.expected_revision,
+            arguments.transition_id,
+        )
+        return {"operation": operation, "retirement": asdict(receipt)}
     if operation in {"grant", "revoke"}:
         action = ProjectAction(arguments.action)
         method = manager.grant if operation == "grant" else manager.revoke
@@ -311,6 +356,9 @@ def _perform(
         return {"operation": operation, "grant": asdict(record)}
     if operation == "view":
         registration = manager.get_registration(caller, config.project_id)
+        drain_count, drain_digest = manager.consumer_drain_inventory(
+            caller, config.project_id
+        )
         return {
             "operation": operation,
             "registration": asdict(registration),
@@ -326,6 +374,17 @@ def _perform(
                 asdict(item)
                 for item in manager.list_consumer_binding_audit(caller, config.project_id)
             ],
+            "retirement": (
+                asdict(retirement)
+                if (retirement := manager.get_project_retirement(
+                    caller, config.project_id
+                )) is not None
+                else None
+            ),
+            "unprocessed_event_inventory": {
+                "count": drain_count,
+                "sha256": drain_digest,
+            },
             "control_plane_storage_usage": asdict(
                 manager.storage_usage(caller, config.project_id)
             ),

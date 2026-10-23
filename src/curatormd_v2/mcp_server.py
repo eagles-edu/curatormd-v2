@@ -160,6 +160,7 @@ def build_mcp_server(
     source_id: str,
     *,
     require_hermes_context: bool = False,
+    hermes_profile_id: str | None = None,
 ) -> MCPServer:
     """Build tools with trusted caller/project captured outside tool arguments.
 
@@ -171,7 +172,9 @@ def build_mcp_server(
     if not _SOURCE_ID_RE.fullmatch(source_id):
         raise ValueError("source_id must be a bounded opaque producer identifier")
     middleware = (
-        [_hermes_identity_middleware(caller.subject_id)]
+        [_hermes_identity_middleware(
+            hermes_profile_id or caller.profile_id or caller.subject_id
+        )]
         if require_hermes_context
         else None
     )

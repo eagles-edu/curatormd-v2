@@ -28,6 +28,7 @@ from .store import (
     ConsumerBindingTransitionResult,
     NotFoundError,
     ProjectControlPlaneStorageUsage,
+    ProjectRetirementRecord,
 )
 
 
@@ -42,6 +43,8 @@ class ProjectAdministrationAction(StrEnum):
     DEREGISTER = "deregister"
     DEREGISTER_FINALIZE = "deregister_finalize"
     REENROLL = "reenroll"
+    DRAIN = "drain"
+    RETIRE = "retire"
     GRANT = "grant"
     REVOKE = "revoke"
 
@@ -285,6 +288,21 @@ class ProjectAccessManager:
             caller.subject_id,
         )
 
+    def retire_project(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        rationale: str,
+        expected_revision: int,
+        transition_id: str,
+    ) -> ProjectRetirementRecord:
+        """Irreversibly retire one project without deleting its records."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.RETIRE)
+        return self._store.retire_project(
+            project_id, caller.subject_id, rationale, expected_revision, transition_id
+        )
+
     def transition_consumer_binding(
         self,
         caller: AuthenticatedCaller,
@@ -321,6 +339,46 @@ class ProjectAccessManager:
 
         self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
         return self._store.consumer_binding_audit(project_id)
+
+    def authorize_consumer_drain(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        transition_id: str,
+        expected_revision: int,
+        expected_inventory_sha256: str,
+        lifetime_seconds: int,
+        consumer_profile: str | None,
+    ) -> tuple[int, str]:
+        """Authorize exact retries from a reviewed inventory for one profile."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.DRAIN)
+        return self._store.authorize_consumer_drain(
+            project_id=project_id,
+            transition_id=transition_id,
+            actor_id=caller.subject_id,
+            caller_subject=caller.subject_id,
+            caller_profile=consumer_profile,
+            expected_revision=expected_revision,
+            expected_inventory_sha256=expected_inventory_sha256,
+            lifetime_seconds=lifetime_seconds,
+        )
+
+    def consumer_drain_inventory(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> tuple[int, str]:
+        """Read only the count and digest needed for attended drain approval."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.consumer_drain_inventory(project_id)
+
+    def get_project_retirement(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> ProjectRetirementRecord | None:
+        """Read the permanent project tombstone after host authorization."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.get_project_retirement(project_id)
 
     def grant(
         self,

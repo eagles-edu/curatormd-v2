@@ -96,10 +96,15 @@ class AuthenticatedCaller:
     """
 
     subject_id: str
+    profile_id: str | None = None
 
     def __post_init__(self) -> None:
         if not _SUBJECT_ID_RE.fullmatch(self.subject_id):
             raise ValueError("subject_id must be a bounded opaque identifier")
+        if self.profile_id is not None and not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", self.profile_id
+        ):
+            raise ValueError("profile_id must be a bounded opaque identifier")
 
 
 class ProjectAuthorizer(Protocol):
@@ -351,11 +356,40 @@ class AuthenticatedCuratorAPI:
             raise ValueError("event must be valid UTF-8")
         if encoded_size > MAX_EVENT_BYTES:
             raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
-        plugin = self._authorized_plugin(caller, project_id, ProjectAction.WRITE)
         event = EventEnvelope.from_json(serialized)
         if event.project_id != project_id:
             raise PermissionError("event project does not match authorized project")
-        return plugin.process_event(event)
+        plugin = self._plugins.get(project_id)
+        if plugin is None:
+            raise PermissionError("project is not authorized")
+        normally_authorized = self.authorizer.authorize(
+            caller, project_id, ProjectAction.WRITE
+        )
+        if normally_authorized:
+            if not self.limiter.allow(caller.subject_id, project_id):
+                raise RateLimitExceeded("project request budget exceeded")
+        elif not plugin.service.store.consumer_drain_allows(
+            caller.subject_id, caller.profile_id, event
+        ):
+            raise PermissionError("project is not authorized")
+        else:
+            if not self.limiter.allow(caller.subject_id, project_id):
+                raise RateLimitExceeded("project request budget exceeded")
+        registration = plugin.service.store.get_project_registration(project_id)
+        with plugin.project_effect_lock():
+            with plugin.service.store.project_revision_fence(
+                project_id,
+                registration.revision,
+                drain_event=None if normally_authorized else event,
+                caller_subject=caller.subject_id,
+                caller_profile=caller.profile_id,
+            ):
+                return plugin.process_event(
+                    event,
+                    drain_caller=(caller.subject_id, caller.profile_id)
+                    if not normally_authorized
+                    else None,
+                )
 
     def event_queue_status(
         self, caller: AuthenticatedCaller, project_id: str
@@ -367,15 +401,30 @@ class AuthenticatedCuratorAPI:
         ).event_queue_status()
 
     def consumer_source_epoch(
-        self, caller: AuthenticatedCaller, project_id: str
+        self, caller: AuthenticatedCaller, project_id: str,
+        event_id: str | None = None,
     ) -> int:
         """Return the active writer's current consumer source epoch."""
 
-        plugin = self._authorized_plugin(caller, project_id, ProjectAction.WRITE)
+        plugin = self._plugins.get(project_id)
+        if plugin is None:
+            raise PermissionError("project is not authorized")
         binding = plugin.service.store.get_consumer_binding(project_id)
-        if binding.status != "active":
-            raise PermissionError("consumer binding is not active")
-        return binding.source_epoch
+        if binding.status == "active":
+            if not self.authorizer.authorize(caller, project_id, ProjectAction.WRITE):
+                raise PermissionError("project is not authorized")
+            if not self.limiter.allow(caller.subject_id, project_id):
+                raise RateLimitExceeded("project request budget exceeded")
+            return binding.source_epoch
+        if binding.status == "deregistration_pending" and event_id is not None:
+            drain_epoch = plugin.service.store.consumer_drain_epoch(
+                project_id, caller.subject_id, caller.profile_id, event_id
+            )
+            if drain_epoch is not None:
+                if not self.limiter.allow(caller.subject_id, project_id):
+                    raise RateLimitExceeded("project request budget exceeded")
+                return drain_epoch
+        raise PermissionError("consumer binding is not active")
 
     def project_activity_status(
         self, caller: AuthenticatedCaller, project_id: str

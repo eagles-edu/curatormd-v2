@@ -2393,11 +2393,29 @@ consumer plugin, Hermes integration, or production deployment.
       processed receipt. Focused access and migration tests cover the state
       transitions, grants, independent project state, stale launcher denial,
       unresolved backlog, and migration backfill. This is local reference-store
-      behavior and an attended local CLI surface only. Exact pre-cutover drain,
-      source acknowledgement fencing,
-      event disposition/reconciliation, fresh enrollment and epoch rotation,
-      retirement, authenticated operator status, deployment identity, and
-      production lifecycle evidence remain open.
+      behavior and an attended local CLI surface only. Further local progress
+      (2026-10-23): schema v35 records a reviewed, expiring drain against a
+      digest of the unprocessed event list. The API and Hermes event handler
+      permit only the same event identity, payload digest, source, sequence,
+      account, profile, config, and binding revision; the effect fence checks
+      approval again while writing. A new event or changed envelope stays
+      denied. Permanent retirement writes an irreversible tombstone after the
+      binding is fenced, preserves unresolved inbox rows, and prevents
+      reactivation, registration changes, or re-enrollment. Local profile
+      launchers now use the OS UID (`local-uid:<uid>`) as the project access
+      subject while keeping Hermes profile/session context separate for
+      routing. Vhost alpha deployment (2026-10-23): backed up the schema-v22
+      database and installed the current `0.1.0a1` wheel after migration to
+      schema v35 passed on a disposable copy. The live alpha database now
+      passes `PRAGMA quick_check`, retains its active project and binding, and
+      grants read/write/review to the owner-approved `local-uid:1000` subject;
+      legacy profile-string grants are revoked. The isolated Hermes profile
+      starts the package and discovers all 48 MCP tools. Hermes still reports
+      transport auth as `none`; this verifies the approved local OS identity,
+      not a Hermes-authenticated human or production identity. Source-side
+      acknowledgement fencing, terminal disposition/reconciliation, complete
+      retirement status/count reporting, and authenticated production
+      lifecycle evidence remain open.
       Represent binding state separately from project lifecycle state and expose
       `active`, `deregistration_pending`, or `deregistered` in content-free
       operator status; deregistration must never appear as project retirement.

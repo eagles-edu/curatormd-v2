@@ -96,6 +96,7 @@ class AccessCliTests(unittest.TestCase):
 
     def _register_grants_and_verify_launcher(self, root: Path, database: Path) -> None:
         """Register one isolated project, grant exact access, and verify launch."""
+        subject_id = f"local-uid:{os.geteuid()}"
         registered, registration_output, errors = self._run(
             "register",
             root,
@@ -110,14 +111,14 @@ class AccessCliTests(unittest.TestCase):
             json.loads(registration_output)["registration"]["status"], "active"
         )
         for action in ("read", "write"):
-            phrase = f"GRANT {action} cli-project gptmd-coding"
+            phrase = f"GRANT {action} cli-project {subject_id}"
             granted, _, errors = self._run(
                 "grant",
                 root,
                 database,
                 phrase,
                 "--subject-id",
-                "gptmd-coding",
+                subject_id,
                 "--action",
                 action,
                 "--rationale",
@@ -188,6 +189,7 @@ class AccessCliTests(unittest.TestCase):
         )
 
     def _suspend_reactivate_and_revoke(self, root: Path, database: Path) -> None:
+        subject_id = f"local-uid:{os.geteuid()}"
         """Verify suspension fencing, explicit reactivation, and exact revoke."""
         suspended, _, errors = self._run(
             "suspend",
@@ -226,9 +228,9 @@ class AccessCliTests(unittest.TestCase):
             "revoke",
             root,
             database,
-            "REVOKE write cli-project gptmd-coding",
+            f"REVOKE write cli-project {subject_id}",
             "--subject-id",
-            "gptmd-coding",
+            subject_id,
             "--action",
             "write",
             "--rationale",

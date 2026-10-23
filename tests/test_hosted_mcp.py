@@ -25,6 +25,7 @@ from mcp.types import RequestParamsMeta, TextContent
 from curatormd_v2 import (
     AuthenticatedCaller,
     CuratorStore,
+    ConsumerBindingTransitionRequest,
     EventEnvelope,
     EventInboxReceipt,
     EventInboxStatus,
@@ -54,6 +55,12 @@ def _hermes_meta(
     }
 
 
+def _local_subject() -> str:
+    """Match the authenticated account used by the local MCP child process."""
+
+    return f"local-uid:{os.geteuid()}"
+
+
 # ProjectAdminAuthorizer fixture intentionally implements one protocol method.
 class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
     def authorize_project_administration(
@@ -65,7 +72,13 @@ class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
         """Allow administration only to the explicitly named test operator."""
 
         return (
-            caller.subject_id == "test-operator"
+            (
+                caller.subject_id == "test-operator"
+                or (
+                    caller.subject_id.startswith("local-uid:")
+                    and action is ProjectAdministrationAction.DRAIN
+                )
+            )
             and bool(project_id)
             and action
             in {
@@ -76,6 +89,10 @@ class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
                 ProjectAdministrationAction.VIEW,
                 ProjectAdministrationAction.GRANT,
                 ProjectAdministrationAction.REVOKE,
+                ProjectAdministrationAction.DEREGISTER,
+                ProjectAdministrationAction.DEREGISTER_FINALIZE,
+                ProjectAdministrationAction.DRAIN,
+                ProjectAdministrationAction.RETIRE,
             }
         )
 
@@ -146,7 +163,7 @@ class HostedMcpTests(unittest.TestCase):
                 manager.grant(
                     operator,
                     config.project_id,
-                    profile_id,
+                    _local_subject(),
                     action,
                     "Grant the disposable integration-test profile exact access",
                 )
@@ -165,6 +182,8 @@ class HostedMcpTests(unittest.TestCase):
                 profile_id="gptmd-coding",
             )
             try:
+                self.assertEqual(runtime.caller.subject_id, _local_subject())
+                self.assertEqual(runtime.caller.profile_id, "gptmd-coding")
                 self.assertIsInstance(runtime.api.limiter, SQLiteTokenBucket)
                 authorizer = runtime.api.authorizer
                 self.assertTrue(
@@ -193,7 +212,7 @@ class HostedMcpTests(unittest.TestCase):
             finally:
                 runtime.close()
 
-    def test_write_grant_is_exact_to_profile_project_and_still_not_reviewer(self) -> None:
+    def test_write_grant_is_exact_to_local_account_project_and_not_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             self._project(root)
@@ -214,7 +233,7 @@ class HostedMcpTests(unittest.TestCase):
                 )
                 self.assertFalse(
                     authorizer.authorize(
-                        type(runtime.caller)("other-profile"),
+                        type(runtime.caller)("local-uid:999"),
                         "bound-project",
                         ProjectAction.WRITE,
                     )
@@ -258,7 +277,7 @@ class HostedMcpTests(unittest.TestCase):
                 )
                 self.assertFalse(
                     authorizer.authorize(
-                        AuthenticatedCaller("other-profile"),
+                        AuthenticatedCaller("local-uid:999"),
                         "bound-project",
                         ProjectAction.REVIEW,
                     )
@@ -295,12 +314,12 @@ class HostedMcpTests(unittest.TestCase):
             store = CuratorStore(database)
             try:
                 manager = ProjectAccessManager(store, _TestProjectAdmin())
-                manager.grant(
+                manager.revoke(
                     AuthenticatedCaller("test-operator"),
                     "bound-project",
-                    "read-only-profile",
-                    ProjectAction.READ,
-                    "Grant only read access for the launcher opt-in test",
+                    _local_subject(),
+                    ProjectAction.REVIEW,
+                    "Revoke review access before testing launcher opt-in",
                 )
             finally:
                 store.close()
@@ -359,6 +378,85 @@ class HostedMcpTests(unittest.TestCase):
                         self.assertEqual(json.loads(conflict_content.text)["code"], "conflict")
 
                 asyncio.run(exercise())
+            finally:
+                runtime.close()
+
+    def test_profile_processes_only_inventoried_event_during_approved_drain(self) -> None:
+        """Exercise the exact old-event exception through the bound API facade."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "drain-profile", allow_write=True)
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="drain-profile",
+                allow_write=True,
+            )
+            try:
+                config = ProjectConfig.load(root)
+                event = EventEnvelope(
+                    "drain-event-1",
+                    config.project_id,
+                    GoalStarted(
+                        goal_id="drain-goal",
+                        problem="Complete the queued task",
+                        success_criteria=(SuccessCriterion("done", "Task is done"),),
+                    ),
+                    source_id="hermes-profile-drain-profile-generation-1",
+                    source_sequence=1,
+                )
+                runtime.store.ingest_event(event)
+                admin = AuthenticatedCaller("test-operator")
+                policy = _TestProjectAdmin()
+                manager = ProjectAccessManager(runtime.store, policy)
+                manager.transition_consumer_binding(
+                    admin,
+                    ConsumerBindingTransitionRequest(
+                        config.project_id,
+                        "deregistration_pending",
+                        "Stop new work before reviewing queued events",
+                        1,
+                        "drain-api-transition-1",
+                    ),
+                )
+                inventory_count, inventory_digest = runtime.store.consumer_drain_inventory(
+                    config.project_id
+                )
+                self.assertEqual(inventory_count, 1)
+                local_operator = AuthenticatedCaller(_local_subject())
+                manager.authorize_consumer_drain(
+                    local_operator,
+                    config.project_id,
+                    "drain-api-transition-1",
+                    2,
+                    inventory_digest,
+                    60,
+                    "drain-profile",
+                )
+                self.assertEqual(
+                    runtime.api.consumer_source_epoch(
+                        runtime.caller, config.project_id, event.event_id
+                    ),
+                    1,
+                )
+                receipt = runtime.api.process_event_json(
+                    runtime.caller, config.project_id, event.to_json()
+                )
+                self.assertEqual(receipt.status.value, "processed")
+                new_event = EventEnvelope(
+                    "new-event-during-drain",
+                    config.project_id,
+                    event.payload,
+                    source_id=event.source_id,
+                    source_sequence=2,
+                )
+                with self.assertRaises(PermissionError):
+                    runtime.api.process_event_json(
+                        runtime.caller, config.project_id, new_event.to_json()
+                    )
             finally:
                 runtime.close()
 

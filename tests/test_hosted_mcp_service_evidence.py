@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -102,7 +103,7 @@ class HostedServiceEvidenceTests(
                     manager.grant(
                         operator,
                         config.project_id,
-                        "profile-a",
+                        f"local-uid:{os.geteuid()}",
                         action,
                         "Grant exact disposable integration-test access",
                     )

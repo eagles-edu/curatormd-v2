@@ -227,6 +227,19 @@ PROJECT_USAGE_COLUMNS = {
 }
 
 CONTROL_PLANE_USAGE_COLUMNS = {
+    "consumer_drain_events": frozenset(
+        {
+            "project_id", "transition_id", "event_id", "payload_sha256",
+            "idempotency_sha256", "source_id", "source_sequence",
+        }
+    ),
+    "consumer_drain_sessions": frozenset(
+        {
+            "project_id", "transition_id", "actor_id", "caller_subject",
+            "caller_profile", "binding_revision", "source_epoch", "config_sha256",
+            "inventory_sha256", "created_at", "expires_at", "revoked_at",
+        }
+    ),
     "consumer_bindings": frozenset(
         {"project_id", "status", "revision", "source_epoch", "updated_by", "updated_at"}
     ),
@@ -253,6 +266,12 @@ CONTROL_PLANE_USAGE_COLUMNS = {
             "audit_id", "project_id", "actor_id", "action", "repository_fingerprint",
             "config_sha256", "backend_api_version", "rationale", "created_at", "revision",
             "transition_id",
+        }
+    ),
+    "project_retirement_tombstones": frozenset(
+        {
+            "project_id", "transition_id", "retired_by", "retired_revision",
+            "source_epoch", "rationale", "retired_at",
         }
     ),
     "request_rate_buckets": frozenset(
@@ -426,7 +445,10 @@ class SchemaMigrationTests(unittest.TestCase):
                 "SELECT receipt_id, reacquisition_action, approval_stale, next_attempt_at "
                 "FROM purge_targets ORDER BY receipt_id"
             ).fetchall()
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 34)
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                SQLITE_SCHEMA_VERSION,
+            )
             self.assertEqual(
                 tuple(rows[0]), ("pending", "not_recorded", 1, None)
             )
@@ -510,7 +532,9 @@ class SchemaMigrationTests(unittest.TestCase):
                            'reenrolled', 'deregistered', 'active', 2, 2,
                            'reenroll-1', 'reviewed config', '2026-10-23T00:01:00Z')"""
             )
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 34)
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0], 34
+            )
         finally:
             connection.close()
 
@@ -583,7 +607,10 @@ class SchemaMigrationTests(unittest.TestCase):
             transition_index = connection.execute(
                 "PRAGMA index_list(project_registry_audit)"
             ).fetchall()
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 34)
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                SQLITE_SCHEMA_VERSION,
+            )
             self.assertEqual(registration["revision"], 4)
             self.assertEqual([row["revision"] for row in audit_revisions], [1, 2, 3, 4])
             self.assertEqual([row["transition_id"] for row in transition_ids], [None] * 4)

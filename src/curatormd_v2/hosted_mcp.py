@@ -1,11 +1,9 @@
 """Local, profile-bound stdio host for one Curator V2 project.
 
 This entrypoint is intended for a trusted local orchestrator such as one
-Hermes profile spawning one MCP subprocess. Its command-line identity is an
-operator assertion, not authentication; every tool call must also carry
-matching host-injected Hermes profile and session metadata. This is a local
-stdio host-context binding, not cryptographic authentication; do not expose
-this process remotely or share its launcher configuration across principals.
+Hermes profile spawning one MCP subprocess. The operating system supplies the
+authenticated local account; Hermes separately supplies the profile and
+session for routing. Neither identity can be selected by tool arguments.
 The profile receives only project read access by default and optional project
 write access, each requiring an exact durable grant. Review, purge,
 retention-hold, and event-retry actions remain denied.
@@ -15,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 import sys
@@ -37,6 +36,20 @@ from .store import CuratorStore
 
 _PROFILE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+
+
+def _local_account_subject() -> str:
+    """Return the kernel-reported local account used to launch this process."""
+
+    get_effective_uid = getattr(os, "geteuid", None)
+    get_real_uid = getattr(os, "getuid", None)
+    if not callable(get_effective_uid) or not callable(get_real_uid):
+        raise RuntimeError("the local host does not provide a trusted account ID")
+    real_uid = get_real_uid()
+    effective_uid = get_effective_uid()
+    if real_uid != effective_uid:
+        raise RuntimeError("set-user-ID execution cannot establish local identity")
+    return f"local-uid:{effective_uid}"
 
 
 def validate_host_evidence_config_path(
@@ -121,7 +134,7 @@ def build_local_profile_mcp(
         )
     store = CuratorStore(database_path)
     try:
-        caller = AuthenticatedCaller(profile_id)
+        caller = AuthenticatedCaller(_local_account_subject(), profile_id=profile_id)
         actions = {ProjectAction.READ}
         if allow_write:
             actions.add(ProjectAction.WRITE)
@@ -161,6 +174,7 @@ def build_local_profile_mcp(
             config.project_id,
             selected_source_id,
             require_hermes_context=True,
+            hermes_profile_id=profile_id,
         )
     except BaseException:
         store.close()

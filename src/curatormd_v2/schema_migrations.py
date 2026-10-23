@@ -7,7 +7,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 34
+SQLITE_SCHEMA_VERSION = 35
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -928,6 +928,54 @@ def migrate_consumer_reenrollment_v34(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 34")
 
 
+def migrate_drain_and_retirement_v35(connection: sqlite3.Connection) -> None:
+    """Persist exact-event drain approvals and irreversible project tombstones."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS consumer_drain_sessions (
+               project_id TEXT NOT NULL REFERENCES consumer_bindings(project_id),
+               transition_id TEXT NOT NULL,
+               actor_id TEXT NOT NULL,
+               caller_subject TEXT NOT NULL,
+               caller_profile TEXT,
+               binding_revision INTEGER NOT NULL,
+               source_epoch INTEGER NOT NULL,
+               config_sha256 TEXT NOT NULL,
+               inventory_sha256 TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               expires_at TEXT NOT NULL,
+               revoked_at TEXT,
+               PRIMARY KEY(project_id, transition_id)
+           )"""
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS consumer_drain_events (
+               project_id TEXT NOT NULL,
+               transition_id TEXT NOT NULL,
+               event_id TEXT NOT NULL,
+               payload_sha256 TEXT NOT NULL,
+               idempotency_sha256 TEXT,
+               source_id TEXT NOT NULL,
+               source_sequence INTEGER,
+               PRIMARY KEY(project_id, transition_id, event_id),
+               FOREIGN KEY(project_id, transition_id)
+                   REFERENCES consumer_drain_sessions(project_id, transition_id)
+           )"""
+    )
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS project_retirement_tombstones (
+               project_id TEXT PRIMARY KEY REFERENCES project_registry(project_id),
+               transition_id TEXT NOT NULL UNIQUE,
+               retired_by TEXT NOT NULL,
+               retired_revision INTEGER NOT NULL,
+               source_epoch INTEGER NOT NULL,
+               rationale TEXT NOT NULL,
+               retired_at TEXT NOT NULL
+           )"""
+    )
+    connection.execute("PRAGMA user_version = 35")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -962,6 +1010,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_project_transition_ids_v32,
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
+    migrate_drain_and_retirement_v35,
 )
 
 

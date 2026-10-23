@@ -2067,6 +2067,7 @@ class CuratorService:
         *,
         lease_owner: str | None = None,
         effect_fence: Callable[[], AbstractContextManager[object]] | None = None,
+        override_project_fence: bool = False,
     ) -> EventInboxReceipt:
         """Apply one event and its inbox receipt atomically within this project.
 
@@ -2077,7 +2078,9 @@ class CuratorService:
 
         if event.project_id != self.project_id:
             raise PermissionError("event project does not match authorized service scope")
-        expected_effect_revision = self._capture_effect_revision()
+        expected_effect_revision = (
+            None if override_project_fence else self._capture_effect_revision()
+        )
 
         def guard() -> AbstractContextManager[object]:
             return self._effect_guard(expected_effect_revision, effect_fence)

@@ -22,6 +22,8 @@ from curatormd_v2 import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAuthorizationBinding,
 )
+from curatormd_v2.events import EventEnvelope, GoalActivityObserved
+from curatormd_v2.models import FactKind
 
 
 class TestProjectAdministrator:  # pylint: disable=too-few-public-methods
@@ -203,14 +205,19 @@ class DurableProjectAccessTests(unittest.TestCase):
             {
                 "consumer_bindings": 1,
                 "consumer_binding_audit": 1,
+                "consumer_drain_events": 0,
+                "consumer_drain_sessions": 0,
                 "project_registry": 1,
                 "project_registry_audit": 1,
+                "project_retirement_tombstones": 0,
                 "project_grants": 1,
                 "project_grant_revocations": 1,
                 "request_rate_buckets": 1,
             },
         )
-        self.assertTrue(all(value > 0 for value in logical_bytes.values()))
+        self.assertTrue(
+            all(count == 0 or logical_bytes[name] > 0 for name, count in counts.items())
+        )
         self.assertEqual(usage.logical_record_bytes, sum(logical_bytes.values()))
         self.assertEqual(usage.project_id, self.project_id)
         self.assertNotIn("subject_id", usage.__dataclass_fields__)
@@ -688,6 +695,104 @@ class DurableProjectAccessTests(unittest.TestCase):
         history = self.store.consumer_binding_audit(self.project_id)
         self.assertEqual(len(history), 2)
         self.assertEqual(history[-1], pending.receipt)
+
+    def test_drain_allows_only_the_reviewed_event_and_matching_profile(self) -> None:
+        """A short drain cannot admit new IDs, changed envelopes, or other profiles."""
+
+        self._register()
+        event = EventEnvelope(
+            "queued-event-1",
+            self.project_id,
+            GoalActivityObserved("goal-1", "fact-1", FactKind.CHANGE, "Done."),
+            source_id="hermes-profile-alpha-generation-1",
+            source_sequence=1,
+        )
+        self.store.ingest_event(event)
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        pending = self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                self.project_id,
+                "deregistration_pending",
+                "Stop new consumer work and review the queued event",
+                1,
+                "drain-transition-1",
+            ),
+        )
+        count, inventory_digest = self.store.consumer_drain_inventory(self.project_id)
+        self.assertEqual(count, 1)
+        self._allow_admin(ProjectAdministrationAction.DRAIN)
+        authorized_count, expires_at = self.manager.authorize_consumer_drain(
+            self.operator,
+            self.project_id,
+            pending.receipt.transition_id,
+            pending.binding.revision,
+            inventory_digest,
+            60,
+            "alpha",
+        )
+        self.assertEqual(authorized_count, 1)
+        self.assertTrue(expires_at)
+        self.assertTrue(
+            self.store.consumer_drain_allows(self.operator.subject_id, "alpha", event)
+        )
+        self.assertFalse(
+            self.store.consumer_drain_allows(self.operator.subject_id, "other", event)
+        )
+        self.assertFalse(
+            self.store.consumer_drain_allows(
+                self.operator.subject_id, "alpha", replace(event, event_id="new-event")
+            )
+        )
+
+    def test_project_retirement_is_irreversible_and_keeps_records(self) -> None:
+        """Retirement fences a project but preserves unresolved event records."""
+
+        self._register()
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT INTO event_inbox
+                   (project_id, event_id, event_type, payload_sha256, payload_bytes,
+                    status, received_at)
+                   VALUES (?, 'preserved-pending-event', 'test.event', ?, 0,
+                           'received', '2026-10-23T00:00:00Z')""",
+                (self.project_id, "0" * 64),
+            )
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                self.project_id, "deregistration_pending", "Close consumer", 1,
+                "retire-pending-1",
+            ),
+        )
+        self._allow_admin(ProjectAdministrationAction.RETIRE)
+        receipt = self.manager.retire_project(
+            self.operator, self.project_id, "Owner retires this project", 1,
+            "retire-project-1",
+        )
+        self.assertEqual(receipt.retired_revision, 2)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status, "suspended"
+        )
+        self.assertEqual(self.store.get_project_retirement(self.project_id), receipt)
+        with self.store.transaction() as connection:
+            preserved_event = connection.execute(
+                "SELECT status FROM event_inbox WHERE project_id = ? AND event_id = ?",
+                (self.project_id, "preserved-pending-event"),
+            ).fetchone()
+        self.assertEqual(preserved_event["status"], "received")
+        self.assertEqual(
+            self.manager.retire_project(
+                self.operator, self.project_id, "Owner retires this project", 1,
+                "retire-project-1",
+            ),
+            receipt,
+        )
+        self._allow_admin(ProjectAdministrationAction.REACTIVATE)
+        with self.assertRaisesRegex(ConflictError, "retired projects"):
+            self._change_status("active", "Attempt to reopen retired project", 2,
+                                "retire-reactivate-1")
 
     def test_reenrollment_rotates_source_epoch_without_restoring_grants(self) -> None:
         """A fresh source epoch requires explicit reviewed enrollment and grants."""

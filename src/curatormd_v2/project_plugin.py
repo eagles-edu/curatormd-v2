@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import fcntl
@@ -89,6 +90,9 @@ MAX_STAGED_ARTIFACT_BYTES = 64 * 1024**2
 MAX_GOAL_STAGING_BYTES = 256 * 1024**2
 MAX_GOAL_STAGING_FILES = MAX_ARTIFACTS_PER_RECEIPT
 _STAGING_SCOPE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
+_DRAIN_EFFECT_CONTEXT: ContextVar[
+    tuple[str, str | None, EventEnvelope] | None
+] = ContextVar("curator_v2_drain_effect_context", default=None)
 _STAGING_CLASS_RE = re.compile(r"^(raw-chat|cue|import|scratch|generated|duplicate)$")
 STAGING_MAX_AGE = timedelta(hours=72)
 
@@ -283,11 +287,26 @@ class ProjectPlugin:
         return registration.revision
 
     @contextmanager
-    def _project_revision_fence(self, expected_revision: int) -> Generator[None, None, None]:
+    def _project_revision_fence(
+        self,
+        expected_revision: int,
+        *,
+        drain_event: EventEnvelope | None = None,
+        caller_subject: str | None = None,
+        caller_profile: str | None = None,
+    ) -> Generator[None, None, None]:
         """Fence an effect to a previously captured project revision."""
 
+        inherited_drain = _DRAIN_EFFECT_CONTEXT.get()
+        if drain_event is None and inherited_drain is not None:
+            caller_subject, caller_profile, drain_event = inherited_drain
+
         with self.service.store.project_revision_fence(
-            self.config.project_id, expected_revision
+            self.config.project_id,
+            expected_revision,
+            drain_event=drain_event,
+            caller_subject=caller_subject,
+            caller_profile=caller_profile,
         ):
             yield
 
@@ -433,7 +452,12 @@ class ProjectPlugin:
 
         return self.config.resolve_read_path(relative_path)
 
-    def process_event(self, event: EventEnvelope) -> EventInboxReceipt:
+    def process_event(
+        self,
+        event: EventEnvelope,
+        *,
+        drain_caller: tuple[str, str | None] | None = None,
+    ) -> EventInboxReceipt:
         """Apply an event only inside this plugin's project binding.
 
         Checklist snapshots are revalidated at the repository boundary so a
@@ -444,10 +468,24 @@ class ProjectPlugin:
 
         with self._locked_staging_root():
             expected_revision = self._capture_active_project_revision()
-            return self._process_event_locked(event, expected_revision)
+            token = (
+                _DRAIN_EFFECT_CONTEXT.set(
+                    (drain_caller[0], drain_caller[1], event)
+                )
+                if drain_caller is not None
+                else None
+            )
+            try:
+                return self._process_event_locked(event, expected_revision, drain_caller)
+            finally:
+                if token is not None:
+                    _DRAIN_EFFECT_CONTEXT.reset(token)
 
     def _process_event_locked(
-        self, event: EventEnvelope, expected_revision: int
+        self,
+        event: EventEnvelope,
+        expected_revision: int,
+        drain_caller: tuple[str, str | None] | None = None,
     ) -> EventInboxReceipt:
         """Validate repository-bound fields, then fence durable event effects."""
 
@@ -475,9 +513,18 @@ class ProjectPlugin:
                     )
 
         def effect_fence():
-            return self._project_revision_fence(expected_revision)
+            return self._project_revision_fence(
+                expected_revision,
+                drain_event=event if drain_caller is not None else None,
+                caller_subject=drain_caller[0] if drain_caller is not None else None,
+                caller_profile=drain_caller[1] if drain_caller is not None else None,
+            )
 
-        return self.service.process_event(event, effect_fence=effect_fence)
+        return self.service.process_event(
+            event,
+            effect_fence=effect_fence,
+            override_project_fence=drain_caller is not None,
+        )
 
     def event_queue_status(self) -> EventQueueStatus:
         """Return event backlog metrics for this project's authorized binding."""

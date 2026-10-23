@@ -126,7 +126,7 @@ class _McpToolRegistrar:
             self.caller, self.project_id, event.to_json()
         )
         source_epoch = self.api.consumer_source_epoch(
-            self.caller, self.project_id
+            self.caller, self.project_id, event.event_id
         )
         return json_result({**asdict(receipt), "source_epoch": source_epoch})
 
@@ -246,7 +246,9 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         metadata = ctx.request_context.meta
         profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
         session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
-        if not isinstance(profile_id, str) or profile_id != caller.subject_id:
+        if not isinstance(profile_id, str) or profile_id != (
+            caller.profile_id or caller.subject_id
+        ):
             raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
         if (
             not isinstance(session_id, str)
@@ -284,7 +286,9 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
         session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
         durable_event = metadata.get("hermes/durable_event") if isinstance(metadata, dict) else None
-        if not isinstance(profile_id, str) or profile_id != caller.subject_id:
+        if not isinstance(profile_id, str) or profile_id != (
+            caller.profile_id or caller.subject_id
+        ):
             raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
         if durable_event is not True:
             raise PermissionError(
@@ -292,7 +296,7 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
             )
         if not isinstance(session_id, str) or not _HERMES_SESSION_ID_RE.fullmatch(session_id):
             raise PermissionError("trusted Hermes session context is unavailable")
-        source_epoch = api.consumer_source_epoch(caller, project_id)
+        source_epoch = api.consumer_source_epoch(caller, project_id, event_id)
         source_id = _hermes_source_id(profile_id, project_id, source_epoch)
         binding = CodexGoalBinding(
             profile_id=profile_id,

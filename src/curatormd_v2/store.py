@@ -126,6 +126,21 @@ COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
 COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
 COALESCE(length(CAST(lease_expires_at AS BLOB)), 0) +
 COALESCE(length(CAST(disposition AS BLOB)), 0)"""
+_EVENT_INBOX_USAGE_SQL = (
+    "SELECT COUNT(*) AS count, COALESCE(SUM("  # nosec B608
+    + _EVENT_INBOX_METADATA_BYTES_SQL
+    + " + COALESCE(length(CAST(payload_json AS BLOB)), 0)), 0) "
+    "AS bytes FROM event_inbox"  # nosec B608 - fixed SQL and module constant only.
+)
+_PROJECT_EVENT_USAGE_SQL = (  # nosec B608 - fixed SQL and module constant only.
+    "SELECT event_type, status, COUNT(*) AS count, "  # nosec B608
+    "COALESCE(SUM(payload_bytes), 0) AS original_bytes, "
+    "COALESCE(SUM(COALESCE(length(CAST(payload_json AS BLOB)), 0)), 0) "
+    "AS retained_bytes, COALESCE(SUM("
+    + _EVENT_INBOX_METADATA_BYTES_SQL
+    + "), 0) AS metadata_bytes FROM event_inbox WHERE project_id = ? "
+    "GROUP BY event_type, status ORDER BY event_type, status"
+)
 
 
 class NotFoundError(LookupError):
@@ -293,6 +308,19 @@ class ConsumerBindingTransitionResult:
     binding: ConsumerBindingRecord
     receipt: ConsumerBindingAuditRecord
     replayed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectRetirementRecord:
+    """Irreversible project tombstone; it does not authorize data deletion."""
+
+    project_id: str
+    transition_id: str
+    retired_by: str
+    retired_revision: int
+    source_epoch: int
+    rationale: str
+    retired_at: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1053,7 +1081,10 @@ class CuratorStore:
 
     @contextmanager
     def project_revision_fence(
-        self, project_id: str, expected_revision: int
+        self, project_id: str, expected_revision: int,
+        *, drain_event: EventEnvelope | None = None,
+        caller_subject: str | None = None,
+        caller_profile: str | None = None,
     ) -> Generator[sqlite3.Connection, None, None]:
         """Serialize one project effect against its reviewed lifecycle revision.
 
@@ -1067,23 +1098,80 @@ class CuratorStore:
             raise ValueError("expected_revision must be a positive integer")
         with self._transaction() as connection:
             registration = connection.execute(
-                "SELECT status, revision FROM project_registry WHERE project_id = ?",
+                "SELECT status, revision, config_sha256 FROM project_registry WHERE project_id = ?",
                 (project_id,),
             ).fetchone()
             binding = connection.execute(
-                "SELECT status FROM consumer_bindings WHERE project_id = ?",
+                "SELECT status, revision, source_epoch FROM consumer_bindings WHERE project_id = ?",
                 (project_id,),
             ).fetchone()
+            drain_allowed = False
+            if (
+                binding is not None
+                and binding["status"] == "deregistration_pending"
+                and drain_event is not None
+                and caller_subject is not None
+            ):
+                drain_allowed = self._consumer_drain_allows_in_connection(
+                    connection, caller_subject, caller_profile, drain_event,
+                    binding["revision"], binding["source_epoch"],
+                    registration["config_sha256"] if registration is not None else "",
+                )
             if registration is None:
                 raise NotFoundError("project registration not found")
             if (
                 registration["status"] != "active"
                 or registration["revision"] != expected_revision
                 or binding is None
-                or binding["status"] != "active"
+                or (binding["status"] != "active" and not drain_allowed)
             ):
                 raise ConflictError("project or consumer lifecycle changed before the effect")
             yield connection
+
+    @staticmethod
+    def _consumer_drain_allows_in_connection(
+        connection: sqlite3.Connection,
+        caller_subject: str,
+        caller_profile: str | None,
+        event: EventEnvelope,
+        binding_revision: int,
+        source_epoch: int,
+        config_sha256: str,
+    ) -> bool:
+        """Recheck the exact live drain token inside the effect transaction."""
+
+        now = datetime.now(UTC).isoformat()
+        row = connection.execute(
+            """SELECT item.payload_sha256, item.idempotency_sha256,
+                      item.source_id, item.source_sequence
+               FROM consumer_drain_sessions AS session
+               JOIN consumer_drain_events AS item
+                 ON item.project_id = session.project_id
+                AND item.transition_id = session.transition_id
+               WHERE session.project_id = ? AND item.event_id = ?
+                 AND session.caller_subject = ? AND session.caller_profile IS ?
+                 AND session.expires_at > ? AND session.revoked_at IS NULL
+                 AND session.binding_revision = ? AND session.source_epoch = ?
+                 AND session.config_sha256 = ?
+               ORDER BY session.created_at DESC LIMIT 1""",
+            (event.project_id, event.event_id, caller_subject, caller_profile,
+             now, binding_revision, source_epoch, config_sha256),
+        ).fetchone()
+        if row is None:
+            return False
+        serialized = event.to_json()
+        identity_matches = (
+            row["idempotency_sha256"] == event.idempotency_sha256
+            if row["idempotency_sha256"] is not None
+            else row["payload_sha256"]
+            == hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        )
+        result = (
+            identity_matches
+            and row["source_id"] == event.source_id
+            and row["source_sequence"] == event.source_sequence
+        )
+        return result
 
     @property
     def transaction_active(self) -> bool:
@@ -1364,6 +1452,11 @@ class CuratorStore:
             ).fetchone()
             if current is None:
                 raise NotFoundError("project registration not found")
+            if connection.execute(
+                "SELECT 1 FROM project_retirement_tombstones WHERE project_id = ?",
+                (request.project_id,),
+            ).fetchone() is not None:
+                raise ConflictError("retired project registrations cannot be changed")
             if current["revision"] != expected_revision:
                 raise ConflictError("project registration revision is stale")
             binding = connection.execute(
@@ -1488,6 +1581,11 @@ class CuratorStore:
             ).fetchone()
             if current is None:
                 raise NotFoundError("project registration not found")
+            if connection.execute(
+                "SELECT 1 FROM project_retirement_tombstones WHERE project_id = ?",
+                (request.project_id,),
+            ).fetchone() is not None:
+                raise ConflictError("retired projects cannot be reactivated or changed")
             if current["revision"] != request.expected_revision:
                 raise ConflictError("project registration revision is stale")
             old_status = current["status"]
@@ -1548,6 +1646,100 @@ class CuratorStore:
         if row is None:
             raise NotFoundError("project registration not found")
         return self._project_registration_from_row(row)
+
+    def retire_project(
+        self,
+        project_id: str,
+        actor_id: str,
+        rationale: str,
+        expected_revision: int,
+        transition_id: str,
+    ) -> ProjectRetirementRecord:
+        """Permanently fence a project after its consumer binding is closed."""
+
+        self._validate_access_identity(project_id, "project_id")
+        self._validate_access_identity(actor_id, "actor_id")
+        self._validate_access_identity(transition_id, "transition_id")
+        self._validate_access_rationale(rationale)
+        if not is_exact_int(expected_revision) or expected_revision < 1:
+            raise ValueError("expected_revision must be a positive integer")
+        now = utc_now()
+        with self._transaction() as connection:
+            prior = connection.execute(
+                "SELECT * FROM project_retirement_tombstones WHERE transition_id = ?",
+                (transition_id,),
+            ).fetchone()
+            if prior is not None:
+                if (
+                    prior["project_id"] != project_id
+                    or prior["retired_by"] != actor_id
+                    or prior["retired_revision"] != expected_revision + 1
+                    or prior["rationale"] != rationale
+                ):
+                    raise ConflictError("retirement transition ID was reused")
+                return self._project_retirement_from_row(prior)
+            current = connection.execute(
+                "SELECT * FROM project_registry WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            binding = connection.execute(
+                "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if current is None or binding is None:
+                raise NotFoundError("project registration not found")
+            if current["revision"] != expected_revision:
+                raise ConflictError("project registration revision is stale")
+            if binding["status"] not in {"deregistration_pending", "deregistered"}:
+                raise ConflictError("consumer binding must be fenced before retirement")
+            cursor = connection.execute(
+                """UPDATE project_registry SET status = 'suspended',
+                   updated_by = ?, updated_at = ?, revision = revision + 1
+                   WHERE project_id = ? AND revision = ?""",
+                (actor_id, now, project_id, expected_revision),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("project registration revision is stale")
+            connection.execute(
+                """INSERT INTO project_retirement_tombstones
+                   (project_id, transition_id, retired_by, retired_revision,
+                    source_epoch, rationale, retired_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (project_id, transition_id, actor_id, expected_revision + 1,
+                 binding["source_epoch"], rationale, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM project_retirement_tombstones WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("retirement tombstone insert returned no row")
+            return self._project_retirement_from_row(row)
+
+    @staticmethod
+    def _project_retirement_from_row(row: sqlite3.Row) -> ProjectRetirementRecord:
+        return ProjectRetirementRecord(
+            project_id=row["project_id"],
+            transition_id=row["transition_id"],
+            retired_by=row["retired_by"],
+            retired_revision=row["retired_revision"],
+            source_epoch=row["source_epoch"],
+            rationale=row["rationale"],
+            retired_at=row["retired_at"],
+        )
+
+    def get_project_retirement(
+        self, project_id: str
+    ) -> ProjectRetirementRecord | None:
+        """Read a project's immutable retirement tombstone, if present."""
+
+        self._validate_access_identity(project_id, "project_id")
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM project_retirement_tombstones WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+        return self._project_retirement_from_row(row) if row is not None else None
 
     @staticmethod
     def _consumer_binding_from_row(row: sqlite3.Row) -> ConsumerBindingRecord:
@@ -1655,7 +1847,8 @@ class CuratorStore:
                 "consumer binding status must be an explicit supported transition"
             )
         transition = transition_actions.get(request.status)
-        assert transition is not None
+        if transition is None:
+            raise ValueError("consumer binding transition is not supported")
         action, expected_from = transition
         if not is_exact_int(request.expected_revision) or request.expected_revision < 1:
             raise ValueError("expected_revision must be a positive integer")
@@ -1693,6 +1886,11 @@ class CuratorStore:
             ).fetchone()
             if current is None:
                 raise NotFoundError("consumer binding not found")
+            if connection.execute(
+                "SELECT 1 FROM project_retirement_tombstones WHERE project_id = ?",
+                (request.project_id,),
+            ).fetchone() is not None:
+                raise ConflictError("retired projects cannot change consumer bindings")
             if current["revision"] != request.expected_revision:
                 raise ConflictError("consumer binding revision is stale")
             if current["status"] != expected_from:
@@ -1783,6 +1981,231 @@ class CuratorStore:
                 self._consumer_binding_from_row(updated), receipt, False
             )
 
+    def consumer_drain_inventory(self, project_id: str) -> tuple[int, str]:
+        """Return count and digest of the exact unprocessed event inventory."""
+
+        digest = hashlib.sha256()
+        count = 0
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT event_id, payload_sha256, idempotency_sha256,
+                          source_id, source_sequence, status
+                   FROM event_inbox WHERE project_id = ? AND status <> 'processed'
+                   ORDER BY event_id""",
+                (project_id,),
+            )
+            for row in rows:
+                encoded = json.dumps(
+                    [row[key] for key in (
+                        "event_id", "payload_sha256", "idempotency_sha256",
+                        "source_id", "source_sequence", "status",
+                    )],
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("ascii")
+                digest.update(len(encoded).to_bytes(4, "big"))
+                digest.update(encoded)
+                count += 1
+        return count, digest.hexdigest()
+
+    def authorize_consumer_drain(
+        self,
+        *,
+        project_id: str,
+        transition_id: str,
+        actor_id: str,
+        caller_subject: str,
+        caller_profile: str | None,
+        expected_revision: int,
+        expected_inventory_sha256: str,
+        lifetime_seconds: int,
+    ) -> tuple[int, str]:
+        """Authorize only the inventoried retries during a short attended drain."""
+
+        if not 1 <= lifetime_seconds <= 900:
+            raise ValueError("drain lifetime must be between 1 and 900 seconds")
+        self._validate_access_identity(project_id, "project_id")
+        self._validate_access_identity(transition_id, "transition_id")
+        self._validate_access_identity(actor_id, "actor_id")
+        self._validate_access_identity(caller_subject, "caller_subject")
+        if caller_profile is not None:
+            self._validate_access_identity(caller_profile, "caller_profile")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_inventory_sha256):
+            raise ValueError("inventory digest must be lowercase SHA-256")
+        now = datetime.now(UTC)
+        created_at = now.isoformat()
+        expires_at = (now + timedelta(seconds=lifetime_seconds)).isoformat()
+        with self._transaction() as connection:
+            binding = connection.execute(
+                "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            registration = connection.execute(
+                "SELECT * FROM project_registry WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            transition = connection.execute(
+                """SELECT 1 FROM consumer_binding_audit
+                   WHERE project_id = ? AND transition_id = ?
+                     AND action = 'deregistration_pending'""",
+                (project_id, transition_id),
+            ).fetchone()
+            if (
+                binding is None or binding["status"] != "deregistration_pending"
+                or binding["revision"] != expected_revision
+                or registration is None or registration["status"] != "active"
+                or transition is None
+            ):
+                raise ConflictError("consumer is not at the reviewed drain transition")
+            prior = connection.execute(
+                """SELECT * FROM consumer_drain_sessions
+                   WHERE project_id = ? AND transition_id = ?""",
+                (project_id, transition_id),
+            ).fetchone()
+            if prior is not None:
+                if tuple(prior[key] for key in (
+                    "actor_id", "caller_subject", "caller_profile",
+                    "binding_revision", "source_epoch", "config_sha256",
+                    "inventory_sha256",
+                )) != (
+                    actor_id, caller_subject, caller_profile, expected_revision,
+                    binding["source_epoch"], registration["config_sha256"],
+                    expected_inventory_sha256,
+                ):
+                    raise ConflictError("drain transition ID was reused with changed input")
+                event_count = connection.execute(
+                    """SELECT COUNT(*) FROM consumer_drain_events
+                       WHERE project_id = ? AND transition_id = ?""",
+                    (project_id, transition_id),
+                ).fetchone()[0]
+                return int(event_count), prior["expires_at"]
+            rows = connection.execute(
+                """SELECT event_id, payload_sha256, idempotency_sha256,
+                          source_id, source_sequence, status
+                   FROM event_inbox WHERE project_id = ? AND status <> 'processed'
+                   ORDER BY event_id""",
+                (project_id,),
+            ).fetchall()
+            actual_digest = hashlib.sha256()
+            for row in rows:
+                encoded = json.dumps(
+                    [row[key] for key in (
+                        "event_id", "payload_sha256", "idempotency_sha256",
+                        "source_id", "source_sequence", "status",
+                    )], separators=(",", ":"), ensure_ascii=True
+                ).encode("ascii")
+                actual_digest.update(len(encoded).to_bytes(4, "big"))
+                actual_digest.update(encoded)
+            if actual_digest.hexdigest() != expected_inventory_sha256:
+                raise ConflictError("event inventory changed; review it again")
+            values = (
+                actor_id, caller_subject, caller_profile, expected_revision,
+                binding["source_epoch"], registration["config_sha256"],
+                expected_inventory_sha256,
+            )
+            connection.execute(
+                """INSERT INTO consumer_drain_sessions
+                   (project_id, transition_id, actor_id, caller_subject,
+                    caller_profile, binding_revision, source_epoch, config_sha256,
+                    inventory_sha256, created_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (project_id, transition_id, *values, created_at, expires_at),
+            )
+            connection.executemany(
+                """INSERT INTO consumer_drain_events
+                   (project_id, transition_id, event_id, payload_sha256,
+                    idempotency_sha256, source_id, source_sequence)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (project_id, transition_id, row["event_id"],
+                     row["payload_sha256"], row["idempotency_sha256"],
+                     row["source_id"], row["source_sequence"])
+                    for row in rows
+                ],
+            )
+            return len(rows), expires_at
+
+    def consumer_drain_allows(
+        self,
+        caller_subject: str,
+        caller_profile: str | None,
+        event: EventEnvelope,
+    ) -> bool:
+        """Check an exact inventoried envelope against a live drain capability."""
+
+        now = datetime.now(UTC).isoformat()
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT session.*, item.payload_sha256, item.idempotency_sha256,
+                          item.source_id, item.source_sequence, inbox.status
+                   FROM consumer_drain_sessions AS session
+                   JOIN consumer_drain_events AS item
+                     ON item.project_id = session.project_id
+                    AND item.transition_id = session.transition_id
+                   JOIN event_inbox AS inbox
+                     ON inbox.project_id = item.project_id
+                    AND inbox.event_id = item.event_id
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = session.project_id
+                   JOIN project_registry AS registration
+                     ON registration.project_id = session.project_id
+                   WHERE session.project_id = ? AND item.event_id = ?
+                     AND session.caller_subject = ?
+                     AND session.caller_profile IS ?
+                     AND session.expires_at > ? AND session.revoked_at IS NULL
+                     AND binding.status = 'deregistration_pending'
+                     AND binding.revision = session.binding_revision
+                     AND binding.source_epoch = session.source_epoch
+                     AND registration.status = 'active'
+                     AND registration.config_sha256 = session.config_sha256
+                   ORDER BY session.created_at DESC LIMIT 1""",
+                (event.project_id, event.event_id, caller_subject, caller_profile, now),
+            ).fetchone()
+        if row is None:
+            return False
+        serialized = event.to_json()
+        payload_matches = (
+            row["idempotency_sha256"] == event.idempotency_sha256
+            if row["idempotency_sha256"] is not None
+            else row["payload_sha256"]
+            == hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        )
+        return (
+            payload_matches
+            and row["source_id"] == event.source_id
+            and row["source_sequence"] == event.source_sequence
+        )
+
+    def consumer_drain_epoch(
+        self, project_id: str, caller_subject: str, caller_profile: str | None,
+        event_id: str,
+    ) -> int | None:
+        """Return the old epoch only for an event in a live reviewed drain."""
+
+        now = datetime.now(UTC).isoformat()
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT session.source_epoch FROM consumer_drain_sessions AS session
+                   JOIN consumer_drain_events AS item
+                     ON item.project_id = session.project_id
+                    AND item.transition_id = session.transition_id
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = session.project_id
+                   JOIN project_registry AS registration
+                     ON registration.project_id = session.project_id
+                   WHERE session.project_id = ? AND item.event_id = ?
+                     AND session.caller_subject = ? AND session.caller_profile IS ?
+                     AND session.expires_at > ? AND session.revoked_at IS NULL
+                     AND binding.status = 'deregistration_pending'
+                     AND binding.revision = session.binding_revision
+                     AND binding.source_epoch = session.source_epoch
+                     AND registration.status = 'active'
+                     AND registration.config_sha256 = session.config_sha256
+                   ORDER BY session.created_at DESC LIMIT 1""",
+                (project_id, event_id, caller_subject, caller_profile, now),
+            ).fetchone()
+        return int(row["source_epoch"]) if row is not None else None
+
     def project_registry_audit(
         self, project_id: str
     ) -> tuple[ProjectRegistryAuditRecord, ...]:
@@ -1852,6 +2275,50 @@ class CuratorStore:
                      length(CAST(created_at AS BLOB))
                    ), 0) AS logical_bytes
                    FROM consumer_binding_audit WHERE project_id = ?""",
+            ),
+            (
+                "consumer_drain_sessions",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(transition_id AS BLOB)) +
+                     length(CAST(actor_id AS BLOB)) +
+                     length(CAST(caller_subject AS BLOB)) +
+                     length(CAST(COALESCE(caller_profile, '') AS BLOB)) +
+                     length(CAST(binding_revision AS TEXT)) +
+                     length(CAST(source_epoch AS TEXT)) +
+                     length(CAST(config_sha256 AS BLOB)) +
+                     length(CAST(inventory_sha256 AS BLOB)) +
+                     length(CAST(created_at AS BLOB)) +
+                     length(CAST(expires_at AS BLOB)) +
+                     length(CAST(COALESCE(revoked_at, '') AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM consumer_drain_sessions WHERE project_id = ?""",
+            ),
+            (
+                "consumer_drain_events",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(transition_id AS BLOB)) +
+                     length(CAST(event_id AS BLOB)) +
+                     length(CAST(payload_sha256 AS BLOB)) +
+                     length(CAST(COALESCE(idempotency_sha256, '') AS BLOB)) +
+                     length(CAST(source_id AS BLOB)) +
+                     COALESCE(length(CAST(source_sequence AS TEXT)), 0)
+                   ), 0) AS logical_bytes
+                   FROM consumer_drain_events WHERE project_id = ?""",
+            ),
+            (
+                "project_retirement_tombstones",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(transition_id AS BLOB)) +
+                     length(CAST(retired_by AS BLOB)) +
+                     length(CAST(retired_revision AS TEXT)) +
+                     length(CAST(source_epoch AS TEXT)) +
+                     length(CAST(rationale AS BLOB)) +
+                     length(CAST(retired_at AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM project_retirement_tombstones WHERE project_id = ?""",
             ),
             (
                 "project_registry",
@@ -6345,12 +6812,7 @@ class CuratorStore:
     def _event_inbox_usage(connection: sqlite3.Connection) -> tuple[int, int]:
         """Measure retained event-row content across every project in the DB."""
 
-        row = connection.execute(
-            f"""SELECT COUNT(*) AS count, COALESCE(SUM(
-                   {_EVENT_INBOX_METADATA_BYTES_SQL} +
-                   COALESCE(length(CAST(payload_json AS BLOB)), 0)
-                 ), 0) AS bytes FROM event_inbox"""
-        ).fetchone()
+        row = connection.execute(_EVENT_INBOX_USAGE_SQL).fetchone()
         audit = connection.execute(
             """SELECT COALESCE(SUM(
                    length(CAST(project_id AS BLOB)) +
@@ -7322,17 +7784,7 @@ class CuratorStore:
         """Query content-free event usage and global inbox capacity."""
 
         event_rows = self._connection.execute(
-            f"""SELECT event_type, status, COUNT(*) AS count,
-                      COALESCE(SUM(payload_bytes), 0) AS original_bytes,
-                      COALESCE(SUM(COALESCE(
-                          length(CAST(payload_json AS BLOB)), 0
-                      )), 0) AS retained_bytes,
-                      COALESCE(SUM(
-                          {_EVENT_INBOX_METADATA_BYTES_SQL}
-                      ), 0) AS metadata_bytes
-               FROM event_inbox WHERE project_id = ?
-               GROUP BY event_type, status ORDER BY event_type, status""",
-            (project_id,),
+            _PROJECT_EVENT_USAGE_SQL, (project_id,)
         ).fetchall()
         failure_rows = self._connection.execute(
             """SELECT CASE last_error
