@@ -6444,6 +6444,12 @@ substitute for evidence at a later integration boundary.
       and the audit contains only the committed transition. This is local CAS
       evidence; authenticated deployment races and lost-response acceptance
       remain open.
+      Lost-response retry regression (2026-10-24): a deregistration transition
+      is committed, then retried with the same transition ID and request through
+      a fresh SQLite store handle. The retry returns the original durable
+      receipt and leaves the binding revision and audit count unchanged. This
+      exercises local reconnect recovery; networked deployment acknowledgement
+      and retry behavior remain open.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary

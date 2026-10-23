@@ -885,6 +885,32 @@ class DurableProjectAccessTests(unittest.TestCase):
         self.assertEqual(len(audit), 2)
         self.assertIn(audit[-1].transition_id, {request.transition_id for request in requests})
 
+    def test_deregistration_retry_after_lost_response_replays_durable_receipt(self) -> None:
+        """A reconnect retry returns the committed transition without a second audit."""
+
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        request = ConsumerBindingTransitionRequest(
+            self.project_id,
+            "deregistration_pending",
+            "Cut over after the source response was lost",
+            1,
+            "lost-response-cutover-1",
+        )
+        committed = self.manager.transition_consumer_binding(self.operator, request)
+
+        reconnected_store = self.enterContext(CuratorStore(self.store.database))
+        reconnected_manager = ProjectAccessManager(reconnected_store, self.admin)
+        replay = reconnected_manager.transition_consumer_binding(self.operator, request)
+
+        self.assertTrue(replay.replayed)
+        self.assertEqual(replay.receipt, committed.receipt)
+        self.assertEqual((replay.binding.status, replay.binding.revision),
+                         ("deregistration_pending", 2))
+        audit = self.store.consumer_binding_audit(self.project_id)
+        self.assertEqual(len(audit), 2)
+        self.assertEqual(audit[-1].transition_id, "lost-response-cutover-1")
+
     def test_drain_allows_only_the_reviewed_event_and_matching_profile(self) -> None:
         """A short drain cannot admit new IDs, changed envelopes, or other profiles."""
 
