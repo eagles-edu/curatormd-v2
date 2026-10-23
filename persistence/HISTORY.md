@@ -5063,3 +5063,15 @@
 **Open gate:** This verifies the local single-host OS-account principal. Hermes reports transport auth `none`; there is no evidence that an authenticated Hermes person identity is propagated to this MCP process, nor does this establish a multi-user or production identity boundary. The deployed lifecycle and identity release gates remain open for those scopes.
 
 **Outcome:** Local pilot authorization is bound to the approved `eaglesvn` OS account; no person-level or production identity claim is made.
+
+## 2026-10-24 — Preserve Hermes goal binding from nested Curator results
+
+**Intent:** Fix the real-source managed Hermes integration failure where Curator processed an activation receipt but Hermes did not persist its profile-local session binding.
+
+**Changed fact:** Hermes Core's `_curator_source_epoch` now reads the epoch from both a top-level structured field and the JSON string inside Curator's structured `result`. The regression uses the nested result envelope returned by the host integration path. Hermes change `dcc1fc8ab1` is committed and pushed to `fork/codex/curator-v2-hermes-integration-upstream`.
+
+**Verification:** The focused Hermes test passes via `scripts/run_tests.sh tests/tools/test_mcp_trust_gating.py -k successful_goal_activation_persists_profile_local_binding -q`. The disposable managed Hermes-to-Vhost integration passes: planned-goal binding is rejected, explicit activation binds, three events are processed, failed delivery retries, exact replay is acknowledged, the configured projection reconciles, and the out-of-scope target is unchanged. Hermes `scripts/check` is still running in the repository-wide code-health scan; its final result is not yet known.
+
+**Open gate:** This verifies disposable local composition only. It does not provide an authenticated Hermes person identity, real gateway event, Vhost UI request workflow, producer coverage approval, or production lifecycle/recovery evidence. The `renew_ssl` checkout remains dirty; no Vhost source, runtime, or database was changed.
+
+**Outcome:** Hermes durably binds an activated Curator goal when the MCP SDK places `source_epoch` inside the structured result envelope.

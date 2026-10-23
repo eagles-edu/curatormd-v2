@@ -5974,6 +5974,18 @@ substitute for evidence at a later integration boundary.
       receipt acknowledgment, and reconciles only its disposable configured
       projection. This is local composition evidence; no live gateway event or
       authenticated human identity was added, and Slice G remains open.
+      Current-source refresh (2026-10-24): the same disposable Vhost harness
+      passes with the updated Curator store and Hermes checkout. It verifies
+      managed stdio event delivery, explicit goal binding, failed-delivery
+      retry, exact replay acknowledgment, projection reconciliation, and an
+      unchanged out-of-scope target. The first run exposed that Hermes read
+      `source_epoch` only at the outer level of a structured MCP result; Hermes
+      now also parses Curator's nested JSON `result` envelope. Its focused
+      regression and the end-to-end harness pass. Hermes change `dcc1fc8ab1`
+      is pushed to the authorized fork branch. The consumer checkout remains
+      dirty and uncommitted; this is disposable local composition evidence,
+      not authenticated person identity, a live gateway event, or Vhost UI
+      workflow evidence.
       Proposed Hermes-owned acceptance sequence, separate from the Vhost
       application pilot in Slices F and I: approve the exact lifecycle event
       classes and bounded fields; confirm the approved local-alpha retention
