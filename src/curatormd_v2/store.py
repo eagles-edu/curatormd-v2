@@ -262,6 +262,11 @@ class ConsumerBindingTransitionRequest:
     rationale: str
     expected_revision: int
     transition_id: str
+    expected_source_epoch: int | None = None
+    expected_project_revision: int | None = None
+    repository_fingerprint: str | None = None
+    config_sha256: str | None = None
+    backend_api_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1365,9 +1370,12 @@ class CuratorStore:
                 "SELECT status FROM consumer_bindings WHERE project_id = ?",
                 (request.project_id,),
             ).fetchone()
-            if binding is None or binding["status"] != "active":
+            if binding is None or binding["status"] not in {"active", "deregistered"}:
                 raise ConflictError("consumer binding is not active")
-            if current["repository_fingerprint"] != request.repository_fingerprint:
+            if (
+                current["repository_fingerprint"] != request.repository_fingerprint
+                and binding["status"] == "active"
+            ):
                 raise ConflictError(
                     "repository fingerprint changes require deregistration "
                     "and fresh enrollment"
@@ -1624,23 +1632,33 @@ class CuratorStore:
     def transition_consumer_binding(
         self, request: ConsumerBindingTransitionRequest, actor_id: str
     ) -> ConsumerBindingTransitionResult:
-        """Move active -> pending -> deregistered with CAS and retry receipts.
+        """Move active -> pending -> deregistered -> new source epoch.
 
-        Deregistration finalization is fail-closed while any source event lacks
-        a processed receipt. No drain exception or new source epoch is granted.
+        Finalization and re-enrollment are fail-closed while any source event
+        lacks a processed receipt. Re-enrollment requires exact project and
+        binding revisions/fingerprints and does not restore revoked grants.
         """
 
         self._validate_access_identity(request.project_id, "project_id")
         self._validate_access_identity(actor_id, "actor_id")
         self._validate_access_identity(request.transition_id, "transition_id")
         self._validate_access_rationale(request.rationale)
-        if request.status not in {"deregistration_pending", "deregistered"}:
+        transition_actions = {
+            "deregistration_pending": ("deregistration_pending", "active"),
+            "deregistered": ("deregistered", "deregistration_pending"),
+            "active": ("reenrolled", "deregistered"),
+        }
+        if request.status not in (
+            "deregistration_pending", "deregistered", "active"
+        ):
             raise ValueError(
-                "consumer binding status must be deregistration_pending or deregistered"
+                "consumer binding status must be an explicit supported transition"
             )
+        transition = transition_actions.get(request.status)
+        assert transition is not None
+        action, expected_from = transition
         if not is_exact_int(request.expected_revision) or request.expected_revision < 1:
             raise ValueError("expected_revision must be a positive integer")
-        action = request.status
         now = utc_now()
         with self._transaction() as connection:
             prior = connection.execute(
@@ -1677,12 +1695,10 @@ class CuratorStore:
                 raise NotFoundError("consumer binding not found")
             if current["revision"] != request.expected_revision:
                 raise ConflictError("consumer binding revision is stale")
-            expected_from = (
-                "active" if action == "deregistration_pending" else "deregistration_pending"
-            )
             if current["status"] != expected_from:
                 raise ConflictError("consumer binding is not in the required lifecycle state")
-            if action == "deregistered":
+            next_source_epoch = current["source_epoch"]
+            if action in {"deregistered", "reenrolled"}:
                 unresolved = connection.execute(
                     """SELECT COUNT(*) FROM event_inbox
                        WHERE project_id = ? AND status <> 'processed'""",
@@ -1690,12 +1706,44 @@ class CuratorStore:
                 ).fetchone()[0]
                 if unresolved:
                     raise ConflictError("consumer binding has unresolved source events")
+            if action == "reenrolled":
+                if (
+                    not is_exact_int(request.expected_source_epoch)
+                    or request.expected_source_epoch != current["source_epoch"]
+                ):
+                    raise ConflictError("consumer source epoch is stale")
+                if (
+                    not is_exact_int(request.expected_project_revision)
+                    or request.repository_fingerprint is None
+                    or request.config_sha256 is None
+                    or not is_exact_int(request.backend_api_version)
+                ):
+                    raise ValueError(
+                        "re-enrollment requires the reviewed project revision and fingerprints"
+                    )
+                registration = connection.execute(
+                    "SELECT * FROM project_registry WHERE project_id = ?",
+                    (request.project_id,),
+                ).fetchone()
+                if registration is None or registration["status"] != "active":
+                    raise ConflictError("project registration is not active")
+                if registration["revision"] != request.expected_project_revision:
+                    raise ConflictError("project registration revision is stale")
+                if (
+                    registration["repository_fingerprint"]
+                    != request.repository_fingerprint
+                    or registration["config_sha256"] != request.config_sha256
+                    or registration["backend_api_version"]
+                    != request.backend_api_version
+                ):
+                    raise ConflictError("project config changed before re-enrollment")
+                next_source_epoch += 1
             next_revision = request.expected_revision + 1
             cursor = connection.execute(
                 """UPDATE consumer_bindings SET status = ?, revision = ?,
-                   updated_by = ?, updated_at = ?
+                   source_epoch = ?, updated_by = ?, updated_at = ?
                    WHERE project_id = ? AND revision = ? AND status = ?""",
-                (action, next_revision, actor_id, now, request.project_id,
+                (request.status, next_revision, next_source_epoch, actor_id, now, request.project_id,
                  request.expected_revision, expected_from),
             )
             if cursor.rowcount != 1:
@@ -1717,8 +1765,8 @@ class CuratorStore:
                 actor_id=actor_id,
                 action=action,
                 from_status=expected_from,
-                to_status=action,
-                source_epoch=current["source_epoch"],
+                to_status=request.status,
+                source_epoch=next_source_epoch,
                 revision=next_revision,
                 transition_id=request.transition_id,
                 rationale=request.rationale,

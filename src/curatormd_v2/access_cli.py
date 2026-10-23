@@ -37,6 +37,7 @@ _OPERATION_ACTIONS = {
     "reactivate": ProjectAdministrationAction.REACTIVATE,
     "deregister": ProjectAdministrationAction.DEREGISTER,
     "deregister_finalize": ProjectAdministrationAction.DEREGISTER_FINALIZE,
+    "reenroll": ProjectAdministrationAction.REENROLL,
     "grant": ProjectAdministrationAction.GRANT,
     "revoke": ProjectAdministrationAction.REVOKE,
     "view": ProjectAdministrationAction.VIEW,
@@ -111,14 +112,24 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--database", required=True, type=Path)
         if name in {
             "register", "update", "suspend", "reactivate", "deregister",
-            "deregister_finalize", "grant", "revoke",
+            "deregister_finalize", "reenroll", "grant", "revoke",
         }:
             command.add_argument("--rationale", required=True)
-        if name in {"update", "suspend", "reactivate", "deregister", "deregister_finalize"}:
+        if name in {
+            "update", "suspend", "reactivate", "deregister",
+            "deregister_finalize", "reenroll",
+        }:
             command.add_argument(
                 "--expected-revision", required=True, type=_positive_revision
             )
             command.add_argument("--transition-id", required=True, type=_transition_id)
+        if name == "reenroll":
+            command.add_argument(
+                "--expected-source-epoch", required=True, type=_positive_revision
+            )
+            command.add_argument(
+                "--expected-project-revision", required=True, type=_positive_revision
+            )
         if name in {"grant", "revoke"}:
             command.add_argument("--subject-id", required=True)
             command.add_argument(
@@ -169,6 +180,16 @@ def _confirmation_phrase(
             f"{operation.upper()} {config.project_id} "
             f"AT BINDING REVISION {arguments.expected_revision} "
             f"TRANSITION {arguments.transition_id}"
+        )
+    if operation == "reenroll":
+        return (
+            f"REENROLL {config.project_id} FROM SOURCE EPOCH "
+            f"{arguments.expected_source_epoch} AT BINDING REVISION "
+            f"{arguments.expected_revision} PROJECT REVISION "
+            f"{arguments.expected_project_revision} TRANSITION "
+            f"{arguments.transition_id} REPOSITORY "
+            f"{config.repository_fingerprint} CONFIG {config.config_sha256} "
+            f"API {config.backend_api_version}"
         )
     return f"{operation.upper()} {config.project_id}"
 
@@ -240,7 +261,8 @@ def _perform(
             "transition_receipt": asdict(result.receipt),
             "replayed": result.replayed,
         }
-    if operation in {"deregister", "deregister_finalize"}:
+    if operation in {"deregister", "deregister_finalize", "reenroll"}:
+        is_reenroll = operation == "reenroll"
         result = manager.transition_consumer_binding(
             caller,
             ConsumerBindingTransitionRequest(
@@ -249,10 +271,25 @@ def _perform(
                     "deregistration_pending"
                     if operation == "deregister"
                     else "deregistered"
+                    if operation == "deregister_finalize"
+                    else "active"
                 ),
                 rationale=rationale,
                 expected_revision=arguments.expected_revision,
                 transition_id=arguments.transition_id,
+                expected_source_epoch=(
+                    arguments.expected_source_epoch if is_reenroll else None
+                ),
+                expected_project_revision=(
+                    arguments.expected_project_revision if is_reenroll else None
+                ),
+                repository_fingerprint=(
+                    config.repository_fingerprint if is_reenroll else None
+                ),
+                config_sha256=config.config_sha256 if is_reenroll else None,
+                backend_api_version=(
+                    config.backend_api_version if is_reenroll else None
+                ),
             ),
         )
         return {

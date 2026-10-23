@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `33`.
+`SQLITE_SCHEMA_VERSION` and is `34`.
 
 ## Version 1 migration
 
@@ -13,7 +13,7 @@ criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
 v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22,
-v23, v24, v25, v26, v27, v28, v29, v30, v31, v32, and v33 migrations below before the store is exposed.
+v23, v24, v25, v26, v27, v28, v29, v30, v31, v32, v33, and v34 migrations below before the store is exposed.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
 closes its SQLite connection before propagating the error. On the next open, the

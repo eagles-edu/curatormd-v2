@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 import tempfile
 import unittest
 
@@ -687,6 +688,165 @@ class DurableProjectAccessTests(unittest.TestCase):
         history = self.store.consumer_binding_audit(self.project_id)
         self.assertEqual(len(history), 2)
         self.assertEqual(history[-1], pending.receipt)
+
+    def test_reenrollment_rotates_source_epoch_without_restoring_grants(self) -> None:
+        """A fresh source epoch requires explicit reviewed enrollment and grants."""
+
+        self._register()
+        original_grant = self._grant()
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                project_id=self.project_id,
+                status="deregistration_pending",
+                rationale="Cut over the old consumer source",
+                expected_revision=1,
+                transition_id="reenroll-pending-1",
+            ),
+        )
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER_FINALIZE)
+        self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                project_id=self.project_id,
+                status="deregistered",
+                rationale="All old events have processed receipts",
+                expected_revision=2,
+                transition_id="reenroll-final-1",
+            ),
+        )
+        self._allow_admin(ProjectAdministrationAction.UPDATE)
+        reviewed_config_sha = hashlib.sha256(b"reviewed-config-v2").hexdigest()
+        updated = self.manager.update_project_registration(
+            self.operator,
+            self._registration_request(
+                "Review the detached consumer's current repository config",
+                config_sha256=reviewed_config_sha,
+                expected_revision=1,
+            ),
+            "reenroll-config-review-1",
+        )
+        self.assertEqual(updated.registration.revision, 2)
+        self._allow_admin(ProjectAdministrationAction.REENROLL)
+        request = ConsumerBindingTransitionRequest(
+            project_id=self.project_id,
+            status="active",
+            rationale="Approve the fresh consumer source epoch",
+            expected_revision=3,
+            transition_id="reenroll-epoch-2",
+            expected_source_epoch=1,
+            expected_project_revision=2,
+            repository_fingerprint=self.repository_fingerprint,
+            config_sha256=reviewed_config_sha,
+            backend_api_version=1,
+        )
+
+        result = self.manager.transition_consumer_binding(self.operator, request)
+
+        self.assertEqual(result.binding.status, "active")
+        self.assertEqual(result.binding.revision, 4)
+        self.assertEqual(result.binding.source_epoch, 2)
+        self.assertEqual(result.receipt.action, "reenrolled")
+        self.assertEqual(result.receipt.source_epoch, 2)
+        self.assertFalse(result.replayed)
+        self.assertFalse(
+            self.store.has_project_grant(
+                self.reader.subject_id, self.project_id, ProjectAction.READ.value
+            )
+        )
+        replay = self.manager.transition_consumer_binding(self.operator, request)
+        self.assertTrue(replay.replayed)
+        self.assertEqual(replay.receipt, result.receipt)
+        self.assertEqual(
+            self.store.project_grants(self.project_id)[0].grant_id,
+            original_grant.grant_id,
+        )
+
+        self._allow_admin(ProjectAdministrationAction.GRANT)
+        self.manager.grant(
+            self.operator,
+            self.project_id,
+            self.reader.subject_id,
+            ProjectAction.READ,
+            "Grant reviewed access to the new consumer source",
+        )
+        current_launcher = FingerprintBoundSQLiteProjectGrantAuthorizer(
+            self.store,
+            ProjectAuthorizationBinding(
+                project_id=self.project_id,
+                repository_fingerprint=self.repository_fingerprint,
+                config_sha256=reviewed_config_sha,
+                backend_api_version=1,
+                allowed_actions=frozenset({ProjectAction.READ}),
+            ),
+        )
+        self.assertTrue(
+            current_launcher.authorize(
+                self.reader, self.project_id, ProjectAction.READ
+            )
+        )
+
+    def test_reenrollment_rejects_stale_epoch_and_unresolved_events(self) -> None:
+        """Old source epochs and late pre-cutover receipts cannot be enrolled."""
+
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                project_id=self.project_id,
+                status="deregistration_pending",
+                rationale="Cut over the old consumer source",
+                expected_revision=1,
+                transition_id="reenroll-pending-open-1",
+            ),
+        )
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER_FINALIZE)
+        self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                project_id=self.project_id,
+                status="deregistered",
+                rationale="No old events were pending at cutover",
+                expected_revision=2,
+                transition_id="reenroll-final-open-1",
+            ),
+        )
+        request = ConsumerBindingTransitionRequest(
+            project_id=self.project_id,
+            status="active",
+            rationale="Approve the fresh consumer source epoch",
+            expected_revision=3,
+            transition_id="reenroll-epoch-stale",
+            expected_source_epoch=2,
+            expected_project_revision=1,
+            repository_fingerprint=self.repository_fingerprint,
+            config_sha256=self.config_sha256,
+            backend_api_version=1,
+        )
+        self._allow_admin(ProjectAdministrationAction.REENROLL)
+        with self.assertRaisesRegex(ConflictError, "source epoch is stale"):
+            self.manager.transition_consumer_binding(self.operator, request)
+
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT INTO event_inbox
+                   (project_id, event_id, event_type, payload_sha256, payload_bytes,
+                    status, received_at)
+                   VALUES (?, 'late-old-event', 'test.event', ?, 0, 'received', ?)""",
+                (self.project_id, "0" * 64, "2026-10-23T00:00:00.000Z"),
+            )
+        with self.assertRaisesRegex(ConflictError, "unresolved source events"):
+            self.manager.transition_consumer_binding(
+                self.operator,
+                replace(request, expected_source_epoch=1),
+            )
+        binding = self.store.get_consumer_binding(self.project_id)
+        self.assertEqual(
+            (binding.status, binding.revision, binding.source_epoch),
+            ("deregistered", 3, 1),
+        )
 
 
 if __name__ == "__main__":

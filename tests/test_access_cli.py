@@ -318,6 +318,33 @@ class AccessCliTests(unittest.TestCase):
             self.assertEqual(state["consumer_binding"]["status"], "deregistered")
             self.assertEqual(len(state["consumer_binding_audit"]), 3)
             self.assertEqual(state["grants"][0]["revoked_by"], f"local-uid:{os.geteuid()}")
+            config = ProjectConfig.load(root)
+            phrase = (
+                "REENROLL cli-project FROM SOURCE EPOCH 1 AT BINDING REVISION 3 "
+                "PROJECT REVISION 1 TRANSITION cli-reenroll-1 REPOSITORY "
+                f"{config.repository_fingerprint} CONFIG {config.config_sha256} API 1"
+            )
+            reenrolled, reenrolled_output, errors = self._run(
+                "reenroll",
+                root,
+                database,
+                phrase,
+                "--rationale",
+                "Review and re-enable the consumer with a fresh event sequence",
+                "--expected-revision",
+                "3",
+                "--expected-source-epoch",
+                "1",
+                "--expected-project-revision",
+                "1",
+                "--transition-id",
+                "cli-reenroll-1",
+            )
+            self.assertEqual(reenrolled, 0, errors)
+            reenrolled_state = json.loads(reenrolled_output)
+            self.assertEqual(reenrolled_state["binding"]["status"], "active")
+            self.assertEqual(reenrolled_state["binding"]["revision"], 4)
+            self.assertEqual(reenrolled_state["binding"]["source_epoch"], 2)
 
     def test_noninteractive_or_wrong_confirmation_cannot_modify_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

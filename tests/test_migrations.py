@@ -31,6 +31,7 @@ from curatormd_v2 import (
 from curatormd_v2.schema_migrations import (
     apply_schema_migrations,
     migrate_consumer_binding_lifecycle_v33,
+    migrate_consumer_reenrollment_v34,
 )
 
 
@@ -425,7 +426,7 @@ class SchemaMigrationTests(unittest.TestCase):
                 "SELECT receipt_id, reacquisition_action, approval_stale, next_attempt_at "
                 "FROM purge_targets ORDER BY receipt_id"
             ).fetchall()
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 33)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 34)
             self.assertEqual(
                 tuple(rows[0]), ("pending", "not_recorded", 1, None)
             )
@@ -468,6 +469,48 @@ class SchemaMigrationTests(unittest.TestCase):
                 ).fetchone()[0],
                 0,
             )
+        finally:
+            connection.close()
+
+    def test_v34_migration_preserves_audit_and_allows_reenrollment(self) -> None:
+        """Preserve binding receipts while extending the action constraint."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.executescript(
+                """CREATE TABLE project_registry (
+                       project_id TEXT PRIMARY KEY,
+                       updated_by TEXT NOT NULL,
+                       updated_at TEXT NOT NULL
+                   );
+                   INSERT INTO project_registry VALUES (
+                       'legacy-project', 'operator', '2026-10-23T00:00:00Z'
+                   );"""
+            )
+            migrate_consumer_binding_lifecycle_v33(connection)
+            connection.execute(
+                """INSERT INTO consumer_binding_audit
+                   (audit_id, project_id, actor_id, action, from_status, to_status,
+                    source_epoch, revision, transition_id, rationale, created_at)
+                   VALUES ('audit-enrolled', 'legacy-project', 'operator', 'enrolled',
+                           NULL, 'active', 1, 1, 'enroll-1', 'legacy',
+                           '2026-10-23T00:00:00Z')"""
+            )
+            migrate_consumer_reenrollment_v34(connection)
+            previous = connection.execute(
+                "SELECT action, source_epoch FROM consumer_binding_audit"
+            ).fetchone()
+            self.assertEqual(tuple(previous), ("enrolled", 1))
+            connection.execute(
+                """INSERT INTO consumer_binding_audit
+                   (audit_id, project_id, actor_id, action, from_status, to_status,
+                    source_epoch, revision, transition_id, rationale, created_at)
+                   VALUES ('audit-reenrolled', 'legacy-project', 'operator',
+                           'reenrolled', 'deregistered', 'active', 2, 2,
+                           'reenroll-1', 'reviewed config', '2026-10-23T00:01:00Z')"""
+            )
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 34)
         finally:
             connection.close()
 
@@ -540,7 +583,7 @@ class SchemaMigrationTests(unittest.TestCase):
             transition_index = connection.execute(
                 "PRAGMA index_list(project_registry_audit)"
             ).fetchall()
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 33)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 34)
             self.assertEqual(registration["revision"], 4)
             self.assertEqual([row["revision"] for row in audit_revisions], [1, 2, 3, 4])
             self.assertEqual([row["transition_id"] for row in transition_ids], [None] * 4)

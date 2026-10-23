@@ -4931,3 +4931,15 @@
 **Open gate:** This local slice does not implement a bounded exact-event drain, source acknowledgement fencing, source backlog reconciliation/disposition, re-enrollment and source-epoch rotation, retirement tombstones, or authenticated content-free lifecycle status. Hermes deployment identity and live/runtime lifecycle evidence remain unverified. The full lifecycle checklist item remains open.
 
 **Outcome:** Established distinct, durable consumer deregistration state and fail-closed local authorization while retaining the full consumer lifecycle acceptance as open.
+
+## 2026-10-23 — Add local consumer re-enrollment and stale-event fencing
+
+**Intent:** Allow an owner-attended consumer re-enrollment to start a fresh Hermes event sequence after old queued events have durable receipts, while keeping project lifecycle and the larger deployment acceptance separate.
+
+**Changed fact:** Schema v34 permits an append-only `reenrolled` binding receipt. Re-enrollment compares the current binding revision, old event-sequence generation, project revision, repository fingerprint, config digest, and backend version; it increments the binding revision and event-sequence generation without restoring revoked grants. The attended CLI exposes this operation. Hermes stores the generation with each profile-local session binding; a new session starts its sequence at 1, and a session cannot be rebound to a different generation. Generation-1 source IDs retain their prior format so already queued events remain identifiable. The MCP event path derives the current source identity and rejects old queued event IDs after re-enrollment.
+
+**Verification:** Curator focused access, CLI, migration, MCP, and Hermes-hook tests pass (62); strict Pyright reports zero diagnostics and errors-only Pylint passes for the changed files. Hermes focused outbox and managed-MCP tests pass (45). Both repository `git diff --check` commands pass. The full Hermes `scripts/check` was stopped after more than four minutes in the repository-wide code-health scan; no full Hermes quality-check result is claimed. Tests cover schema migration with prior audit preservation, stale revision/generation rejection, unresolved event blocking, explicit grant restoration, fresh session sequence 1, and old-event rejection after re-enrollment.
+
+**Open gate:** This is local reference-store and Hermes checkout evidence only. It does not implement the inventoried drain, separately approved terminal event disposition, review-bound reactivation, retirement/replay tombstone, authenticated operator status, verified production identity, retention approval, or live deployment behavior. No full lifecycle checklist item is complete; live persistence and runtime status remain unverified.
+
+**Outcome:** Added a local re-enrollment path and old-event fence while leaving the authenticated deployment lifecycle acceptance open.

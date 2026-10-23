@@ -28,6 +28,7 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     CodexGoalBinding,
+    ConsumerBindingTransitionRequest,
     CuratorStore,
     EvidenceOutcome,
     EvidenceRef,
@@ -439,6 +440,95 @@ class McpServerTests(unittest.TestCase):
                         assert isinstance(replay.content[0], TextContent)
                         self.assertEqual(
                             json.loads(replay.content[0].text)["status"], "processed"
+                        )
+
+                        for revision, status, transition_id in (
+                            (1, "deregistration_pending", "mcp-pending-1"),
+                            (2, "deregistered", "mcp-final-1"),
+                        ):
+                            store.transition_consumer_binding(
+                                ConsumerBindingTransitionRequest(
+                                    project_id="mcp-project",
+                                    status=status,
+                                    rationale="Integration test consumer lifecycle",
+                                    expected_revision=revision,
+                                    transition_id=transition_id,
+                                ),
+                                actor_id="host-subject",
+                            )
+                        registration = store.get_project_registration("mcp-project")
+                        store.transition_consumer_binding(
+                            ConsumerBindingTransitionRequest(
+                                project_id="mcp-project",
+                                status="active",
+                                rationale="Integration test fresh consumer session",
+                                expected_revision=3,
+                                transition_id="mcp-reenroll-1",
+                                expected_source_epoch=1,
+                                expected_project_revision=registration.revision,
+                                repository_fingerprint=registration.repository_fingerprint,
+                                config_sha256=registration.config_sha256,
+                                backend_api_version=registration.backend_api_version,
+                            ),
+                            actor_id="host-subject",
+                        )
+                        stale = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": lifecycle_event.event_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:00:00+00:00",
+                                "context": lifecycle_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertTrue(stale.is_error)
+
+                        fresh_context = {
+                            "attempt_id": "attempt-after-reenrollment",
+                            "session_id": "session-2",
+                        }
+                        fresh_event = codex_hook_to_event(
+                            "codex:turn:start",
+                            fresh_context,
+                            CodexGoalBinding(
+                                profile_id="host-subject",
+                                project_id="mcp-project",
+                                session_id="session-2",
+                                goal_id="bind-goal",
+                                source_id="hermes-" + hashlib.sha256(
+                                    b"host-subject\0mcp-project\0" b"2"
+                                ).hexdigest(),
+                            ),
+                            source_sequence=1,
+                            occurred_at="2026-10-19T00:01:00+00:00",
+                        )
+                        fresh = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": fresh_event.event_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:01:00+00:00",
+                                "context": fresh_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-2",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertFalse(fresh.is_error)
+                        assert isinstance(fresh.content[0], TextContent)
+                        self.assertEqual(
+                            json.loads(fresh.content[0].text)["status"], "processed"
                         )
 
                         self.assertTrue((await client.call_tool(

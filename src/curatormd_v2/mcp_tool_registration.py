@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import asdict
 from typing import Any
 
 from mcp.server import MCPServer
@@ -47,6 +48,15 @@ from .mcp_tool_support import (
 )
 
 _HERMES_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$")
+
+
+def _hermes_source_id(profile_id: str, project_id: str, source_epoch: int) -> str:
+    """Keep existing source IDs at epoch one and separate later enrollments."""
+
+    identity = f"{profile_id}\0{project_id}"
+    if source_epoch > 1:
+        identity += f"\0{source_epoch}"
+    return "hermes-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 class _McpToolRegistrar:
     """Capture trusted project context and share safe registration helpers."""
@@ -109,6 +119,17 @@ class _McpToolRegistrar:
             )
         )
 
+    def process_active_binding_event(self, event: EventEnvelope) -> str:
+        """Return the committed receipt with its active source epoch."""
+
+        receipt = self.api.process_event_json(
+            self.caller, self.project_id, event.to_json()
+        )
+        source_epoch = self.api.consumer_source_epoch(
+            self.caller, self.project_id
+        )
+        return json_result({**asdict(receipt), "source_epoch": source_epoch})
+
 
 def _register_status_tools(registrar: _McpToolRegistrar) -> None:
     api, caller, project_id = registrar.api, registrar.caller, registrar.project_id
@@ -163,6 +184,7 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
     api, caller, project_id = registrar.api, registrar.caller, registrar.project_id
     _safe_tool, _read_tool = registrar.safe_tool, registrar.read_tool
     _event, _process = registrar.event, registrar.process
+    _process_active = registrar.process_active_binding_event
 
     @_safe_tool()
     def goal_start(
@@ -195,7 +217,10 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
             initial_status=GoalStatus(initial_status),
             next_action=next_action,
         )
-        return _process(_event(event_id, payload, source_sequence))
+        event = _event(event_id, payload, source_sequence)
+        if payload.initial_status is GoalStatus.ACTIVE:
+            return _process_active(event)
+        return _process(event)
 
     @_safe_tool()
     def goal_activate(
@@ -207,7 +232,7 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
     ) -> str:
         """Explicitly accept planned work for execution at its current revision."""
 
-        return _process(
+        return _process_active(
             _event(
                 event_id,
                 GoalActivated(goal_id, reason, expected_lifecycle_revision),
@@ -240,6 +265,7 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
                 "project_id": project_id,
                 "goal_id": goal_id,
                 "profile_id": profile_id,
+                "source_epoch": api.consumer_source_epoch(caller, project_id),
             }
         )
 
@@ -266,9 +292,8 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
             )
         if not isinstance(session_id, str) or not _HERMES_SESSION_ID_RE.fullmatch(session_id):
             raise PermissionError("trusted Hermes session context is unavailable")
-        source_id = "hermes-" + hashlib.sha256(
-            f"{profile_id}\0{project_id}".encode("utf-8")
-        ).hexdigest()
+        source_epoch = api.consumer_source_epoch(caller, project_id)
+        source_id = _hermes_source_id(profile_id, project_id, source_epoch)
         binding = CodexGoalBinding(
             profile_id=profile_id,
             project_id=project_id,

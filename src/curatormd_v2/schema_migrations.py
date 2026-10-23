@@ -7,7 +7,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 33
+SQLITE_SCHEMA_VERSION = 34
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -881,6 +881,53 @@ def migrate_consumer_binding_lifecycle_v33(connection: sqlite3.Connection) -> No
     connection.execute("PRAGMA user_version = 33")
 
 
+def migrate_consumer_reenrollment_v34(connection: sqlite3.Connection) -> None:
+    """Permit audited re-enrollment receipts without rewriting prior history."""
+
+    table_exists = connection.execute(
+        """SELECT 1 FROM sqlite_master
+           WHERE type = 'table' AND name = 'consumer_binding_audit'"""
+    ).fetchone()
+    if table_exists is None:
+        connection.execute("PRAGMA user_version = 34")
+        return
+    connection.execute(
+        "ALTER TABLE consumer_binding_audit RENAME TO consumer_binding_audit_v33"
+    )
+    connection.execute(
+        """CREATE TABLE consumer_binding_audit (
+               audit_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL REFERENCES consumer_bindings(project_id),
+               actor_id TEXT NOT NULL,
+               action TEXT NOT NULL CHECK(action IN (
+                   'enrolled', 'deregistration_pending', 'deregistered', 'reenrolled'
+               )),
+               from_status TEXT,
+               to_status TEXT NOT NULL,
+               source_epoch INTEGER NOT NULL,
+               revision INTEGER NOT NULL,
+               transition_id TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               UNIQUE(project_id, transition_id)
+           )"""
+    )
+    connection.execute(
+        """INSERT INTO consumer_binding_audit
+               (audit_id, project_id, actor_id, action, from_status, to_status,
+                source_epoch, revision, transition_id, rationale, created_at)
+           SELECT audit_id, project_id, actor_id, action, from_status, to_status,
+                  source_epoch, revision, transition_id, rationale, created_at
+           FROM consumer_binding_audit_v33"""
+    )
+    connection.execute("DROP TABLE consumer_binding_audit_v33")
+    connection.execute(
+        "CREATE INDEX consumer_binding_audit_project "
+        "ON consumer_binding_audit(project_id, revision, audit_id)"
+    )
+    connection.execute("PRAGMA user_version = 34")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -914,6 +961,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_project_registry_revisions_v31,
     migrate_project_transition_ids_v32,
     migrate_consumer_binding_lifecycle_v33,
+    migrate_consumer_reenrollment_v34,
 )
 
 

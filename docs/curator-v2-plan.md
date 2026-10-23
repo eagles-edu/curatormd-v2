@@ -6313,6 +6313,18 @@ substitute for evidence at a later integration boundary.
       preconditions, expected result, evidence binding, owner, and disposition;
       one passing scenario cannot close another entry unless the versioned
       catalog explicitly permits that reuse.
+      Local progress (2026-10-23): schema v34 now records attended consumer
+      re-enrollment against the current project and binding revisions and the
+      reviewed repository/config fingerprints. Re-enrollment advances the
+      event sequence generation without restoring revoked grants. Hermes Core
+      records that generation with each local session; a new session starts at
+      sequence 1, and Curator rejects an old queued event after re-enrollment.
+      Existing generation-1 event IDs remain unchanged for upgrade compatibility.
+      Focused local Curator and Hermes checks cover the database upgrade,
+      re-enrollment, and old/new event behavior. This does not implement the
+      inventoried drain, terminal event disposition, review-bound reactivation,
+      retirement fence, authenticated operator status, deployment identity, or
+      production acceptance; keep this checklist item open.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary

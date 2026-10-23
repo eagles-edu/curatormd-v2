@@ -366,6 +366,17 @@ class AuthenticatedCuratorAPI:
             caller, project_id, ProjectAction.READ
         ).event_queue_status()
 
+    def consumer_source_epoch(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> int:
+        """Return the active writer's current consumer source epoch."""
+
+        plugin = self._authorized_plugin(caller, project_id, ProjectAction.WRITE)
+        binding = plugin.service.store.get_consumer_binding(project_id)
+        if binding.status != "active":
+            raise PermissionError("consumer binding is not active")
+        return binding.source_epoch
+
     def project_activity_status(
         self, caller: AuthenticatedCaller, project_id: str
     ) -> ProjectActivitySnapshot:

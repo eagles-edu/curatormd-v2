@@ -41,6 +41,7 @@ class ProjectAdministrationAction(StrEnum):
     REACTIVATE = "reactivate"
     DEREGISTER = "deregister"
     DEREGISTER_FINALIZE = "deregister_finalize"
+    REENROLL = "reenroll"
     GRANT = "grant"
     REVOKE = "revoke"
 
@@ -296,6 +297,8 @@ class ProjectAccessManager:
             if request.status == "deregistration_pending"
             else ProjectAdministrationAction.DEREGISTER_FINALIZE
             if request.status == "deregistered"
+            else ProjectAdministrationAction.REENROLL
+            if request.status == "active"
             else None
         )
         if action is None:

@@ -245,7 +245,9 @@ class HermesHookAdapterTests(unittest.TestCase):
                                 session_id=session_id,
                                 goal_id="hermes-e2e-goal",
                                 source_id="hermes-"
-                                + hashlib.sha256(f"{profile}\0project-a".encode()).hexdigest(),
+                                + hashlib.sha256(
+                                    f"{profile}\0project-a".encode()
+                                ).hexdigest(),
                             ),
                             source_sequence=1,
                             occurred_at="2026-10-20T00:00:00+00:00",
