@@ -816,6 +816,62 @@ class SchemaMigrationTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_v22_upgrade_failure_rolls_back_lifecycle_schema_changes(self) -> None:
+        """An injected v33 failure must leave a v22 database wholly unchanged."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v22.sqlite3"
+            connection = sqlite3.connect(database_path)
+            try:
+                connection.execute(
+                    """CREATE TABLE project_registry (
+                           project_id TEXT PRIMARY KEY,
+                           updated_by TEXT NOT NULL,
+                           updated_at TEXT NOT NULL
+                       )"""
+                )
+                connection.execute(
+                    "INSERT INTO project_registry VALUES (?, ?, ?)",
+                    ("legacy-project", "legacy-owner", "2026-10-23T00:00:00Z"),
+                )
+                # Simulate a conflicting legacy object so v33 fails after v31
+                # has already altered project_registry inside the migration tx.
+                connection.execute(
+                    "CREATE TABLE consumer_bindings (project_id TEXT PRIMARY KEY)"
+                )
+                connection.execute("PRAGMA user_version = 22")
+                connection.commit()
+                database_path.chmod(0o600)
+
+                with self.assertRaisesRegex(
+                    sqlite3.OperationalError, "no column named status"
+                ):
+                    CuratorStore(database_path)
+
+                self.assertEqual(
+                    connection.execute("PRAGMA user_version").fetchone()[0], 22
+                )
+                registry_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(project_registry)")
+                }
+                self.assertNotIn("revision", registry_columns)
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT project_id, updated_by, updated_at FROM project_registry"
+                    ).fetchone(),
+                    ("legacy-project", "legacy-owner", "2026-10-23T00:00:00Z"),
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table' "
+                        "AND name = 'consumer_binding_audit'"
+                    ).fetchone(),
+                    None,
+                )
+            finally:
+                connection.close()
+
     def test_v20_migration_rejects_incompatible_cleanup_authorization_table(self) -> None:
         """Do not stamp v21 over a conflicting object with the expected table name."""
 
