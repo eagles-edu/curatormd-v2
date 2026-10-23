@@ -264,19 +264,91 @@ class AccessCliTests(unittest.TestCase):
                 profile_id="gptmd-coding",
                 allow_write=True,
             )
+        viewed, view_output, errors = self._run(
+            "view", root, database, "VIEW cli-project ACCESS"
+        )
+        self.assertEqual(viewed, 0, errors)
+        review = json.loads(view_output)["reactivation_review"]
+        self.assertTrue(review["complete"])
+        stale_review_hash = review["packet_sha256"]
+        suspension_id = review["suspension_transition_id"]
+        staged = root / ".curatormd-v2" / "staging" / "scratch" / "review-race.txt"
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_text("staging changed after review\n")
+        stale_phrase = (
+            "REACTIVATE cli-project AT REVISION 3 AFTER SUSPENSION "
+            f"{suspension_id} REVIEW {stale_review_hash} TRANSITION "
+            "cli-reactivate-stale"
+        )
+        stale_reactivation, _, errors = self._run(
+            "reactivate",
+            root,
+            database,
+            stale_phrase,
+            "--rationale",
+            "Reject a changed staging inventory",
+            "--expected-revision",
+            "3",
+            "--transition-id",
+            "cli-reactivate-stale",
+            "--suspension-transition-id",
+            suspension_id,
+            "--review-packet-sha256",
+            stale_review_hash,
+        )
+        self.assertEqual(stale_reactivation, 2)
+        self.assertEqual(
+            sqlite3.connect(database).execute(
+                "SELECT status FROM project_registry WHERE project_id='cli-project'"
+            ).fetchone()[0],
+            "suspended",
+        )
+        viewed, view_output, errors = self._run(
+            "view", root, database, "VIEW cli-project ACCESS"
+        )
+        self.assertEqual(viewed, 0, errors)
+        review = json.loads(view_output)["reactivation_review"]
+        review_hash = review["packet_sha256"]
+        suspension_id = review["suspension_transition_id"]
+        phrase = (
+            "REACTIVATE cli-project AT REVISION 3 AFTER SUSPENSION "
+            f"{suspension_id} REVIEW {review_hash} TRANSITION cli-reactivate-1"
+        )
         reactivated, _, errors = self._run(
             "reactivate",
             root,
             database,
-            "REACTIVATE cli-project AT REVISION 3 TRANSITION cli-reactivate-1",
+            phrase,
             "--rationale",
             "Restore access after the suspension regression",
             "--expected-revision",
             "3",
             "--transition-id",
             "cli-reactivate-1",
+            "--suspension-transition-id",
+            suspension_id,
+            "--review-packet-sha256",
+            review_hash,
         )
         self.assertEqual(reactivated, 0, errors)
+        replayed, replay_output, errors = self._run(
+            "reactivate",
+            root,
+            database,
+            phrase,
+            "--rationale",
+            "Restore access after the suspension regression",
+            "--expected-revision",
+            "3",
+            "--transition-id",
+            "cli-reactivate-1",
+            "--suspension-transition-id",
+            suspension_id,
+            "--review-packet-sha256",
+            review_hash,
+        )
+        self.assertEqual(replayed, 0, errors)
+        self.assertTrue(json.loads(replay_output)["replayed"])
         revoked, _, errors = self._run(
             "revoke",
             root,

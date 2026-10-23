@@ -790,6 +790,18 @@ class ProjectPlugin:
                 discover_artifacts=True, staging_root_fd=root_fd
             )
 
+    def review_staging_inventory(self) -> StagingArtifactInventory:
+        """Hash a complete staging snapshot without updating inventory metadata."""
+
+        with self._locked_staging_root() as root_fd:
+            scanner = StagingTreeScanner(
+                self.config,
+                self._hash_staged_file,
+                max_entries=MAX_STAGING_SCAN_ENTRIES,
+                max_hash_bytes=MAX_STAGING_HASH_BYTES,
+            )
+            return scanner.discover(staging_root_fd=root_fd)
+
     def discover_expired_staging_artifacts(
         self, now: datetime | None = None
     ) -> StagingExpirySnapshot:

@@ -6351,7 +6351,7 @@ substitute for evidence at a later integration boundary.
       preconditions, expected result, evidence binding, owner, and disposition;
       one passing scenario cannot close another entry unless the versioned
       catalog explicitly permits that reuse.
-      Local progress (2026-10-23): schema v34 now records attended consumer
+      Local progress (2026-10-24): schema v34 records attended consumer
       re-enrollment against the current project and binding revisions and the
       reviewed repository/config fingerprints. Re-enrollment advances the
       event sequence generation without restoring revoked grants. Hermes Core
@@ -6359,10 +6359,21 @@ substitute for evidence at a later integration boundary.
       sequence 1, and Curator rejects an old queued event after re-enrollment.
       Existing generation-1 event IDs remain unchanged for upgrade compatibility.
       Focused local Curator and Hermes checks cover the database upgrade,
-      re-enrollment, and old/new event behavior. This does not implement the
-      inventoried drain, terminal event disposition, review-bound reactivation,
-      retirement fence, authenticated operator status, deployment identity, or
-      production acceptance; keep this checklist item open.
+      re-enrollment, and old/new event behavior. Schemas v35 and v36 add exact
+      inventory-bound drains, irreversible retirement tombstones, and exact
+      terminal event disposition. A bounded lifecycle snapshot reports event
+      counts and completeness. Schema v37 binds reactivation to a fresh packet
+      covering registry/config, binding/source epoch, grants, cursors, event
+      backlog, purge work, and a complete staging-tree scan. The attended CLI
+      shows that packet, confirms its digest and suspension transition, rejects
+      changed filesystem or ledger state, and stores the reviewed packet with
+      the immutable reactivation audit receipt. Exact retries return that
+      receipt. Local lifecycle, CLI, hosted-MCP, and migration suites pass (74
+      tests); strict Pyright, errors-only Pylint, Bandit, and `git diff --check`
+      pass. These are local reference-store results. Keep this checklist item
+      open for authenticated deployment identity, owner-approved transition
+      roles, external staging-inventory authority, production workflow
+      evidence, and migration/rollback acceptance.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary

@@ -7,7 +7,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 36
+SQLITE_SCHEMA_VERSION = 37
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -1002,6 +1002,35 @@ def migrate_terminal_event_dispositions_v36(connection: sqlite3.Connection) -> N
     connection.execute("PRAGMA user_version = 36")
 
 
+def migrate_reactivation_review_receipts_v37(connection: sqlite3.Connection) -> None:
+    """Bind a project reactivation receipt to its reviewed state snapshot."""
+
+    table = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'project_registry_audit'"
+    ).fetchone()
+    if table is None:
+        # Some migration fixtures and partially initialized legacy databases do
+        # not contain the optional access-control tables yet.
+        connection.execute("PRAGMA user_version = 37")
+        return
+    columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(project_registry_audit)"
+        ).fetchall()
+    }
+    for name in (
+        "review_packet_sha256",
+        "review_packet_json",
+        "suspension_transition_id",
+    ):
+        if name not in columns:
+            connection.execute(
+                f"ALTER TABLE project_registry_audit ADD COLUMN {name} TEXT"
+            )
+    connection.execute("PRAGMA user_version = 37")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -1038,6 +1067,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_consumer_reenrollment_v34,
     migrate_drain_and_retirement_v35,
     migrate_terminal_event_dispositions_v36,
+    migrate_reactivation_review_receipts_v37,
 )
 
 

@@ -15,6 +15,7 @@ from typing import Protocol
 from .api import AuthenticatedCaller, ProjectAction
 from .events import EventInboxReceipt
 from .project_config import ProjectConfig
+from .models import StagingArtifactInventory
 from .store import (
     CuratorStore,
     ProjectGrantRecord,
@@ -33,6 +34,7 @@ from .store import (
     TerminalEventDispositionRecord,
     TerminalEventInventory,
     ProjectLifecycleStatusSnapshot,
+    ProjectReactivationReviewPacket,
 )
 
 
@@ -291,6 +293,27 @@ class ProjectAccessManager:
         return self._store.set_project_status(
             request,
             caller.subject_id,
+        )
+
+    def project_reactivation_review_packet(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        staging_inventory: StagingArtifactInventory,
+        *,
+        for_reactivation: bool = False,
+    ) -> ProjectReactivationReviewPacket:
+        """Show the current registration, grants, queues, purge, and staging state."""
+
+        self._require_admin(
+            caller,
+            project_id,
+            ProjectAdministrationAction.REACTIVATE
+            if for_reactivation
+            else ProjectAdministrationAction.VIEW,
+        )
+        return self._store.project_reactivation_review_packet(
+            project_id, staging_inventory
         )
 
     def retire_project(

@@ -4991,3 +4991,15 @@
 **Open gate:** Local regression evidence does not prove production identity, operator approval, deployment migration/rollback, all source-acknowledgement/unlink races, review-bound reactivation, or a live consumer workflow. No checklist row was changed.
 
 **Outcome:** Corrected the stale local-evidence descriptions without closing any deployment gate or changing the checklist count.
+
+## 2026-10-24 — Bind reactivation to a fresh lifecycle review
+
+**Intent:** Require a project owner to review the current project access and pending-work snapshot before restoring a suspended project, and reject the decision if either the ledger or staging tree changes before the transition commits.
+
+**Changed fact:** Schema v37 adds immutable reactivation-audit fields for the packet digest, bounded packet JSON, and exact suspension transition. The packet covers project revision and repository/config identity, consumer binding revision and source epoch, grants and revocations, source cursors, event backlog, pending purge inventory, and a complete staging-tree manifest observed within 60 seconds. The attended CLI shows the packet, requires its digest and suspension transition in the exact confirmation phrase, takes the staging scan under the project effect lock, and rechecks the packet inside the SQLite transition. A changed or incomplete review is denied without state or audit mutation; exact retries recover the original receipt. Migration preserves older audit rows with null review fields.
+
+**Verification:** Focused project-access, attended CLI, hosted-MCP, and migration suites pass (74 tests). Strict Pyright reports zero diagnostics; errors-only Pylint passes; Bandit exits successfully; `git diff --check` passes. Regression cases cover a new event after review, a staging-tree change after review, persisted audit snapshots, exact retry, and v36-to-v37 migration.
+
+**Open gate:** This is local Curator reference-store and attended CLI evidence. Local OS UID attribution is not authenticated Hermes human identity. The external staging inventory producer, owner-approved deployed reviewer roles, production workflow, and migration/rollback acceptance remain open; the lifecycle checklist item remains open.
+
+**Outcome:** Local reactivation now requires a current, content-free, durable review receipt and fails closed when its reviewed ledger or file inventory changes.

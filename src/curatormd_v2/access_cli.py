@@ -23,6 +23,7 @@ from .project_access import (
     ProjectAdministrationAction,
 )
 from .project_config import ProjectConfig
+from .project_plugin import ProjectPlugin
 from .store import (
     ConsumerBindingTransitionRequest,
     CuratorStore,
@@ -68,6 +69,14 @@ def _positive_revision(value: str) -> int:
     if revision < 1:
         raise argparse.ArgumentTypeError("revision must be a positive integer")
     return revision
+
+
+def _sha256(value: str) -> str:
+    """Parse one lowercase SHA-256 from the reviewed status packet."""
+
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise argparse.ArgumentTypeError("value must be a lowercase SHA-256")
+    return value
 
 
 class _SingleOperationPolicy:
@@ -135,6 +144,11 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument(
                 "--expected-project-revision", required=True, type=_positive_revision
             )
+        if name == "reactivate":
+            command.add_argument("--review-packet-sha256", required=True, type=_sha256)
+            command.add_argument(
+                "--suspension-transition-id", required=True, type=_transition_id
+            )
         if name == "drain":
             command.add_argument("--inventory-sha256", required=True)
             command.add_argument("--lifetime-seconds", required=True, type=int)
@@ -185,11 +199,19 @@ def _confirmation_phrase(
             f"TO REPOSITORY {config.repository_fingerprint} CONFIG "
             f"{config.config_sha256} API {config.backend_api_version}"
         )
-    if operation in {"suspend", "reactivate"}:
+    if operation == "suspend":
         return (
             f"{operation.upper()} {config.project_id} "
             f"AT REVISION {arguments.expected_revision} "
             f"TRANSITION {arguments.transition_id}"
+        )
+    if operation == "reactivate":
+        return (
+            f"REACTIVATE {config.project_id} AT REVISION "
+            f"{arguments.expected_revision} AFTER SUSPENSION "
+            f"{arguments.suspension_transition_id} REVIEW "
+            f"{arguments.review_packet_sha256} TRANSITION "
+            f"{arguments.transition_id}"
         )
     if operation in {"deregister", "deregister_finalize"}:
         return (
@@ -255,6 +277,7 @@ def _perform(
     config: ProjectConfig,
     manager: ProjectAccessManager,
     caller: AuthenticatedCaller,
+    plugin: ProjectPlugin | None = None,
 ) -> dict[str, object]:
     operation = arguments.operation
     rationale = getattr(arguments, "rationale", "")
@@ -281,16 +304,69 @@ def _perform(
             "replayed": result.replayed,
         }
     if operation in {"suspend", "reactivate"}:
-        result = manager.set_project_status(
-            caller,
-            ProjectStatusChangeRequest(
-                project_id=config.project_id,
-                status="suspended" if operation == "suspend" else "active",
-                rationale=rationale,
-                expected_revision=arguments.expected_revision,
-                transition_id=arguments.transition_id,
-            ),
-        )
+        review_packet_sha256: str | None = None
+        suspension_transition_id: str | None = None
+        staging_inventory_sha256: str | None = None
+        staging_inventory_count: int | None = None
+        staging_inventory_bytes: int | None = None
+        staging_inventory_observed_at: str | None = None
+        if operation == "reactivate":
+            if plugin is None:
+                raise ValueError("reactivation requires a repository staging scan")
+            with plugin.project_effect_lock():
+                inventory = plugin.review_staging_inventory()
+                packet = manager.project_reactivation_review_packet(
+                    caller,
+                    config.project_id,
+                    inventory,
+                    for_reactivation=True,
+                )
+                if packet.complete and (
+                    packet.packet_sha256 != arguments.review_packet_sha256
+                    or packet.suspension_transition_id
+                    != arguments.suspension_transition_id
+                    or packet.repository_fingerprint
+                    != config.repository_fingerprint
+                    or packet.config_sha256 != config.config_sha256
+                    or packet.backend_api_version != config.backend_api_version
+                ):
+                    raise ValueError(
+                        "reactivation review changed; obtain a fresh view"
+                    )
+                review_packet_sha256 = arguments.review_packet_sha256
+                suspension_transition_id = arguments.suspension_transition_id
+                if packet.complete:
+                    staging_inventory_sha256 = packet.staging_inventory_sha256
+                    staging_inventory_count = packet.staging_inventory_count
+                    staging_inventory_bytes = packet.staging_inventory_bytes
+                    staging_inventory_observed_at = (
+                        packet.staging_inventory_observed_at
+                    )
+                request = ProjectStatusChangeRequest(
+                    project_id=config.project_id,
+                    status="active",
+                    rationale=rationale,
+                    expected_revision=arguments.expected_revision,
+                    transition_id=arguments.transition_id,
+                    review_packet_sha256=review_packet_sha256,
+                    suspension_transition_id=suspension_transition_id,
+                    staging_inventory_sha256=staging_inventory_sha256,
+                    staging_inventory_count=staging_inventory_count,
+                    staging_inventory_bytes=staging_inventory_bytes,
+                    staging_inventory_observed_at=staging_inventory_observed_at,
+                )
+                result = manager.set_project_status(caller, request)
+        else:
+            result = manager.set_project_status(
+                caller,
+                ProjectStatusChangeRequest(
+                    project_id=config.project_id,
+                    status="suspended",
+                    rationale=rationale,
+                    expected_revision=arguments.expected_revision,
+                    transition_id=arguments.transition_id,
+                ),
+            )
         return {
             "operation": operation,
             "registration": asdict(result.registration),
@@ -393,9 +469,17 @@ def _perform(
             after_event_id=arguments.event_after,
         )
         registration = manager.get_registration(caller, config.project_id)
+        reactivation_review: dict[str, object] | None = None
+        if registration.status == "suspended" and plugin is not None:
+            inventory = plugin.review_staging_inventory()
+            packet = manager.project_reactivation_review_packet(
+                caller, config.project_id, inventory
+            )
+            reactivation_review = asdict(packet)
         return {
             "operation": operation,
             "registration": asdict(registration),
+            "reactivation_review": reactivation_review,
             "consumer_binding": asdict(lifecycle_status.consumer_binding),
             "grants": [asdict(item) for item in manager.list_grants(caller, config.project_id)],
             "audit": [
@@ -459,7 +543,12 @@ def main(
                 _OPERATION_ACTIONS[arguments.operation],
             ),
         )
-        result = _perform(arguments, config, manager, caller)
+        plugin = (
+            ProjectPlugin.bind(config, store)
+            if arguments.operation in {"view", "reactivate"}
+            else None
+        )
+        result = _perform(arguments, config, manager, caller, plugin)
         output.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
         return 0
     except Exception:  # pylint: disable=broad-exception-caught

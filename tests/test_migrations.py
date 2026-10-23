@@ -265,7 +265,8 @@ CONTROL_PLANE_USAGE_COLUMNS = {
         {
             "audit_id", "project_id", "actor_id", "action", "repository_fingerprint",
             "config_sha256", "backend_api_version", "rationale", "created_at", "revision",
-            "transition_id",
+            "transition_id", "review_packet_sha256", "review_packet_json",
+            "suspension_transition_id",
         }
     ),
     "project_retirement_tombstones": frozenset(
@@ -352,6 +353,79 @@ class SchemaMigrationTests(unittest.TestCase):
                         connection.execute("PRAGMA user_version").fetchone()[0],
                         SQLITE_SCHEMA_VERSION,
                     )
+            finally:
+                migrated.close()
+
+    def test_v36_migration_adds_reactivation_review_receipt_fields(self) -> None:
+        """Preserve old lifecycle history with null review provenance."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v36.sqlite3"
+            store = CuratorStore(database_path)
+            store.close()
+            connection = sqlite3.connect(database_path)
+            now = "2026-10-24T00:00:00+00:00"
+            connection.execute(
+                """INSERT INTO project_registry
+                   (project_id, repository_fingerprint, config_sha256,
+                    backend_api_version, status, registered_by, registered_at,
+                    updated_by, updated_at, revision)
+                   VALUES ('legacy-review-project', ?, ?, 1, 'suspended',
+                           'legacy-admin', ?, 'legacy-admin', ?, 2)""",
+                ("1" * 64, "2" * 64, now, now),
+            )
+            connection.execute(
+                """INSERT INTO project_registry_audit
+                   (audit_id, project_id, actor_id, action, repository_fingerprint,
+                    config_sha256, backend_api_version, rationale, created_at,
+                    revision, transition_id)
+                   VALUES ('legacy-review-audit', 'legacy-review-project',
+                           'legacy-admin', 'suspended', ?, ?, 1, 'legacy suspension',
+                           ?, 2, 'legacy-suspend-1')""",
+                ("1" * 64, "2" * 64, now),
+            )
+            connection.execute(
+                "ALTER TABLE project_registry_audit DROP COLUMN review_packet_sha256"
+            )
+            connection.execute(
+                "ALTER TABLE project_registry_audit DROP COLUMN review_packet_json"
+            )
+            connection.execute(
+                "ALTER TABLE project_registry_audit DROP COLUMN suspension_transition_id"
+            )
+            connection.execute("PRAGMA user_version = 36")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    columns = {
+                        row["name"]
+                        for row in connection.execute(
+                            "PRAGMA table_info(project_registry_audit)"
+                        ).fetchall()
+                    }
+                    self.assertTrue(
+                        {
+                            "review_packet_sha256",
+                            "review_packet_json",
+                            "suspension_transition_id",
+                        }.issubset(columns)
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+                    legacy = connection.execute(
+                        """SELECT review_packet_sha256, review_packet_json,
+                                  suspension_transition_id
+                           FROM project_registry_audit
+                           WHERE audit_id = 'legacy-review-audit'"""
+                    ).fetchone()
+                    self.assertIsNone(legacy["review_packet_sha256"])
+                    self.assertIsNone(legacy["review_packet_json"])
+                    self.assertIsNone(legacy["suspension_transition_id"])
             finally:
                 migrated.close()
 

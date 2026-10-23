@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import replace
+from datetime import UTC, datetime
+import json
 import tempfile
 import unittest
 
@@ -24,6 +26,8 @@ from curatormd_v2 import (
 )
 from curatormd_v2.events import EventEnvelope, GoalActivityObserved
 from curatormd_v2.models import FactKind
+from curatormd_v2.read_models import StagingArtifactInventory
+from curatormd_v2.staging_models import StagingUsage
 
 
 class TestProjectAdministrator:  # pylint: disable=too-few-public-methods
@@ -95,6 +99,26 @@ class DurableProjectAccessTests(unittest.TestCase):
             self._registration_request("Approve the pilot repository binding"),
         )
 
+    @staticmethod
+    def _empty_staging_inventory() -> StagingArtifactInventory:
+        """Build one complete, freshly observed empty test staging tree."""
+
+        return StagingArtifactInventory(
+            artifacts=(),
+            usage=StagingUsage(
+                entries_scanned=0,
+                regular_file_count=0,
+                observed_file_bytes=0,
+                directory_count=0,
+                symlink_count=0,
+                special_file_count=0,
+                inventory_complete=True,
+                observed_at=datetime.now(UTC).isoformat(),
+            ),
+            manifest_sha256=hashlib.sha256(b"[]").hexdigest(),
+            scope_goal_id=None,
+        )
+
     def _grant(self, action: ProjectAction = ProjectAction.READ):
         self._allow_admin(ProjectAdministrationAction.GRANT)
         return self.manager.grant(
@@ -112,6 +136,35 @@ class DurableProjectAccessTests(unittest.TestCase):
         expected_revision: int,
         transition_id: str,
     ):
+        review_packet_sha256: str | None = None
+        suspension_transition_id: str | None = None
+        staging_inventory_sha256: str | None = None
+        staging_inventory_count: int | None = None
+        staging_inventory_bytes: int | None = None
+        staging_inventory_observed_at: str | None = None
+        if status == "active":
+            registration = self.store.get_project_registration(self.project_id)
+            if (
+                registration.status == "suspended"
+                and self.store.get_project_retirement(self.project_id) is None
+            ):
+                self._allow_admin(ProjectAdministrationAction.VIEW)
+                inventory = self._empty_staging_inventory()
+                packet = self.manager.project_reactivation_review_packet(
+                    self.operator, self.project_id, inventory
+                )
+                assert packet.packet_sha256 is not None
+                review_packet_sha256 = packet.packet_sha256
+                suspension_transition_id = packet.suspension_transition_id
+                staging_inventory_sha256 = packet.staging_inventory_sha256
+                staging_inventory_count = packet.staging_inventory_count
+                staging_inventory_bytes = packet.staging_inventory_bytes
+                staging_inventory_observed_at = packet.staging_inventory_observed_at
+            elif self.store.get_project_retirement(self.project_id) is not None:
+                # Supply syntactically valid review IDs so the store reaches
+                # the irreversible retirement tombstone check.
+                review_packet_sha256 = "0" * 64
+                suspension_transition_id = "prior-suspension"
         return self.manager.set_project_status(
             self.operator,
             ProjectStatusChangeRequest(
@@ -120,8 +173,89 @@ class DurableProjectAccessTests(unittest.TestCase):
                 rationale=rationale,
                 expected_revision=expected_revision,
                 transition_id=transition_id,
+                review_packet_sha256=review_packet_sha256,
+                suspension_transition_id=suspension_transition_id,
+                staging_inventory_sha256=staging_inventory_sha256,
+                staging_inventory_count=staging_inventory_count,
+                staging_inventory_bytes=staging_inventory_bytes,
+                staging_inventory_observed_at=staging_inventory_observed_at,
             ),
         )
+
+    def test_reactivation_review_is_bound_to_current_backlog_and_receipt(self) -> None:
+        """A new old-source event invalidates the reviewed reactivation packet."""
+
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.SUSPEND)
+        suspended = self._change_status(
+            "suspended", "Pause for reviewed reactivation", 1, "suspend-review-1"
+        )
+        self._allow_admin(ProjectAdministrationAction.REACTIVATE)
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        inventory = self._empty_staging_inventory()
+        packet = self.manager.project_reactivation_review_packet(
+            self.operator, self.project_id, inventory
+        )
+        self.assertTrue(packet.complete)
+        self.assertEqual(
+            packet.suspension_transition_id, suspended.receipt.transition_id
+        )
+        self.assertIsNotNone(packet.packet_sha256)
+
+        with self.store.transaction() as connection:
+            connection.execute(
+                """INSERT INTO event_inbox
+                   (project_id, event_id, event_type, payload_sha256, payload_bytes,
+                    status, received_at, source_id, source_sequence)
+                   VALUES (?, 'arrived-after-review', 'test.event', ?, 0,
+                           'received', ?, 'old-source', 8)""",
+                (
+                    self.project_id,
+                    "1" * 64,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+        stale_request = ProjectStatusChangeRequest(
+            project_id=self.project_id,
+            status="active",
+            rationale="Reject a stale reactivation review",
+            expected_revision=2,
+            transition_id="reactivate-stale-review-1",
+            review_packet_sha256=packet.packet_sha256,
+            suspension_transition_id=packet.suspension_transition_id,
+            staging_inventory_sha256=inventory.manifest_sha256,
+            staging_inventory_count=inventory.usage.regular_file_count,
+            staging_inventory_bytes=inventory.usage.observed_file_bytes,
+            staging_inventory_observed_at=inventory.usage.observed_at,
+        )
+        with self.assertRaisesRegex(ConflictError, "review packet is incomplete or stale"):
+            self.manager.set_project_status(self.operator, stale_request)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status,
+            "suspended",
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1], suspended.receipt
+        )
+
+        current = self._change_status(
+            "active",
+            "Reactivate after the fresh review",
+            2,
+            "reactivate-fresh-review-1",
+        )
+        self.assertEqual(current.registration.status, "active")
+        self.assertTrue(current.receipt.review_packet_sha256)
+        self.assertEqual(
+            current.receipt.suspension_transition_id,
+            suspended.receipt.transition_id,
+        )
+        review_receipt = json.loads(current.receipt.review_packet_json or "{}")
+        self.assertEqual(
+            review_receipt["packet_sha256"], current.receipt.review_packet_sha256
+        )
+        self.assertEqual(review_receipt["unresolved_event_count"], 1)
 
     def test_registration_denial_is_atomic_and_records_no_project(self) -> None:
         with self.assertRaisesRegex(PermissionError, "not authorized"):

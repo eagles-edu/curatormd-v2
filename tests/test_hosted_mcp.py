@@ -35,6 +35,7 @@ from curatormd_v2 import (
     ProjectAdministrationAction,
     ProjectConfig,
     ProjectRegistrationRequest,
+    ProjectPlugin,
     ProjectStatusChangeRequest,
     SQLiteTokenBucket,
     SuccessCriterion,
@@ -537,6 +538,8 @@ class HostedMcpTests(unittest.TestCase):
                     manager = ProjectAccessManager(
                         external_store, _TestProjectAdmin()
                     )
+                    config = ProjectConfig.load(root)
+                    plugin = ProjectPlugin.bind(config, external_store)
                     manager.set_project_status(
                         AuthenticatedCaller("test-operator"),
                         ProjectStatusChangeRequest(
@@ -547,6 +550,13 @@ class HostedMcpTests(unittest.TestCase):
                             transition_id="hosted-test-suspend-1",
                         ),
                     )
+                    review_packet = manager.project_reactivation_review_packet(
+                        AuthenticatedCaller("test-operator"),
+                        "bound-project",
+                        plugin.review_staging_inventory(),
+                    )
+                    self.assertTrue(review_packet.complete)
+                    self.assertIsNotNone(review_packet.packet_sha256)
                     manager.set_project_status(
                         AuthenticatedCaller("test-operator"),
                         ProjectStatusChangeRequest(
@@ -555,6 +565,22 @@ class HostedMcpTests(unittest.TestCase):
                             rationale="Reactivate after the disposable suspension",
                             expected_revision=2,
                             transition_id="hosted-test-reactivate-1",
+                            review_packet_sha256=review_packet.packet_sha256,
+                            suspension_transition_id=(
+                                review_packet.suspension_transition_id
+                            ),
+                            staging_inventory_sha256=(
+                                review_packet.staging_inventory_sha256
+                            ),
+                            staging_inventory_count=(
+                                review_packet.staging_inventory_count
+                            ),
+                            staging_inventory_bytes=(
+                                review_packet.staging_inventory_bytes
+                            ),
+                            staging_inventory_observed_at=(
+                                review_packet.staging_inventory_observed_at
+                            ),
                         ),
                     )
                 finally:

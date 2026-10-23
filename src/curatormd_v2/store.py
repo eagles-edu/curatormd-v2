@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
@@ -85,6 +85,7 @@ from .models import (
     PurgeStatus,
     ReviewDecision,
     RetentionHoldKind,
+    StagingArtifactInventory,
     SDECandidate,
     SDEStatus,
     SuccessCriterion,
@@ -254,6 +255,42 @@ class ProjectStatusChangeRequest:
     rationale: str
     expected_revision: int
     transition_id: str
+    review_packet_sha256: str | None = None
+    suspension_transition_id: str | None = None
+    staging_inventory_sha256: str | None = None
+    staging_inventory_count: int | None = None
+    staging_inventory_bytes: int | None = None
+    staging_inventory_observed_at: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectReactivationReviewPacket:
+    """Fresh, content-free snapshot reviewed before project reactivation."""
+
+    project_id: str
+    project_revision: int
+    suspension_transition_id: str
+    repository_fingerprint: str
+    config_sha256: str
+    backend_api_version: int
+    binding_revision: int
+    source_epoch: int
+    active_grant_count: int
+    grant_history_count: int
+    grants_sha256: str
+    source_cursor_count: int
+    source_cursors_sha256: str
+    event_count: int
+    unresolved_event_count: int
+    events_sha256: str
+    pending_purge_work_count: int
+    purge_inventory_sha256: str
+    staging_inventory_sha256: str | None
+    staging_inventory_count: int
+    staging_inventory_bytes: int
+    staging_inventory_observed_at: str
+    complete: bool
+    packet_sha256: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,6 +429,9 @@ class ProjectRegistryAuditRecord:
     created_at: str
     revision: int
     transition_id: str | None
+    review_packet_sha256: str | None = None
+    review_packet_json: str | None = None
+    suspension_transition_id: str | None = None
 
 
 def _project_registration_update_retry_matches(
@@ -463,6 +503,21 @@ class _FactStoragePayload:
 
 _ACCESS_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_REACTIVATION_STAGING_MAX_AGE_SECONDS = 60
+
+
+def _parse_access_observation_time(value: object) -> datetime | None:
+    """Parse one bounded timezone-aware staging observation timestamp."""
+
+    if not isinstance(value, str) or not 1 <= len(value) <= 64:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (OverflowError, ValueError):
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(UTC)
 _ACCESS_RATIONALE_LIMIT = 1000
 _PROJECT_ACCESS_ACTIONS = frozenset(
     {"read", "write", "review", "purge_retry", "retention_hold_release", "event_retry"}
@@ -1303,6 +1358,9 @@ class CuratorStore:
             created_at=row["created_at"],
             revision=row["revision"],
             transition_id=row["transition_id"],
+            review_packet_sha256=row["review_packet_sha256"],
+            review_packet_json=row["review_packet_json"],
+            suspension_transition_id=row["suspension_transition_id"],
         )
 
     @classmethod
@@ -1443,8 +1501,9 @@ class CuratorStore:
             """INSERT INTO project_registry_audit
                (audit_id, project_id, actor_id, action, repository_fingerprint,
                 config_sha256, backend_api_version, rationale, created_at,
-                revision, transition_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                revision, transition_id, review_packet_sha256, review_packet_json,
+                suspension_transition_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record.audit_id,
                 record.project_id,
@@ -1457,6 +1516,9 @@ class CuratorStore:
                 record.created_at,
                 record.revision,
                 record.transition_id,
+                record.review_packet_sha256,
+                record.review_packet_json,
+                record.suspension_transition_id,
             ),
         )
 
@@ -1590,6 +1652,266 @@ class CuratorStore:
                 connection, receipt_row, replayed=False
             )
 
+    @staticmethod
+    def _digest_review_rows(
+        connection: sqlite3.Connection,
+        query: str,
+        project_id: str,
+    ) -> tuple[int, str]:
+        """Hash ordered content-free review rows with bounded memory."""
+
+        digest = hashlib.sha256()
+        count = 0
+        cursor = connection.execute(query, (project_id,))
+        while rows := cursor.fetchmany(128):
+            for row in rows:
+                canonical = json.dumps(
+                    tuple(row), ensure_ascii=False, separators=(",", ":")
+                )
+                digest.update(canonical.encode("utf-8"))
+                digest.update(b"\n")
+                count += 1
+        return count, digest.hexdigest()
+
+    def project_reactivation_review_packet(
+        self,
+        project_id: str,
+        staging_inventory: StagingArtifactInventory,
+    ) -> ProjectReactivationReviewPacket:
+        """Build one bounded-state review packet from DB and staging snapshots."""
+
+        self._validate_access_identity(project_id, "project_id")
+        with self._transaction() as connection:
+            return self._project_reactivation_review_packet(
+                connection,
+                project_id,
+                staging_inventory.manifest_sha256,
+                staging_inventory.usage.regular_file_count,
+                staging_inventory.usage.observed_file_bytes,
+                staging_inventory.usage.observed_at,
+            )
+
+    def _project_reactivation_review_packet(
+        self,
+        connection: sqlite3.Connection,
+        project_id: str,
+        staging_inventory_sha256: str | None,
+        staging_inventory_count: int | None,
+        staging_inventory_bytes: int | None,
+        staging_inventory_observed_at: str | None,
+    ) -> ProjectReactivationReviewPacket:
+        """Build the packet inside the caller's SQLite read/write snapshot."""
+
+        registration = connection.execute(
+            "SELECT * FROM project_registry WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        binding = connection.execute(
+            "SELECT * FROM consumer_bindings WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        suspension = connection.execute(
+            """SELECT transition_id, revision FROM project_registry_audit
+               WHERE project_id = ? AND action = 'suspended'
+               ORDER BY revision DESC LIMIT 1""",
+            (project_id,),
+        ).fetchone()
+        if registration is None:
+            raise NotFoundError("project registration not found")
+        staging_observed = _parse_access_observation_time(
+            staging_inventory_observed_at
+        )
+        complete = (
+            registration["status"] == "suspended"
+            and binding is not None
+            and binding["status"] == "active"
+            and suspension is not None
+            and isinstance(staging_inventory_sha256, str)
+            and _SHA256_RE.fullmatch(staging_inventory_sha256) is not None
+            and is_exact_int(staging_inventory_count)
+            and staging_inventory_count >= 0
+            and is_exact_int(staging_inventory_bytes)
+            and staging_inventory_bytes >= 0
+            and staging_observed is not None
+            and abs((datetime.now(UTC) - staging_observed).total_seconds())
+            <= _REACTIVATION_STAGING_MAX_AGE_SECONDS
+        )
+        grant_history_count, grants_sha256 = self._digest_review_rows(
+            connection,
+            """SELECT grant_row.grant_id, grant_row.subject_id, grant_row.action,
+                      grant_row.granted_at, revocation.revoked_at,
+                      revocation.revoked_by
+               FROM project_grants AS grant_row
+               LEFT JOIN project_grant_revocations AS revocation
+                 ON revocation.grant_id = grant_row.grant_id
+               WHERE grant_row.project_id = ?
+               ORDER BY grant_row.grant_id""",
+            project_id,
+        )
+        cursor_count, cursors_sha256 = self._digest_review_rows(
+            connection,
+            """SELECT source_id, last_sequence, updated_at FROM event_cursors
+               WHERE project_id = ? ORDER BY source_id""",
+            project_id,
+        )
+        event_count, events_sha256 = self._digest_review_rows(
+            connection,
+            """SELECT event_id, event_type, payload_sha256, idempotency_sha256,
+                      status, source_id, source_sequence, disposition,
+                      lease_owner, lease_expires_at
+               FROM event_inbox WHERE project_id = ? ORDER BY event_id""",
+            project_id,
+        )
+        unresolved_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM event_inbox WHERE project_id = ? "
+                "AND status != 'processed'",
+                (project_id,),
+            ).fetchone()[0]
+        )
+        receipt_count, receipt_sha256 = self._digest_review_rows(
+            connection,
+            """SELECT receipt.receipt_id, receipt.decision, receipt.facts_sha256,
+                      receipt.artifact_inventory_complete, receipt.canonical_persisted,
+                      receipt.canonical_sha256, receipt.purge_status,
+                      target.path, target.sha256, target.status, target.attempts,
+                      target.retention_hold, target.approval_stale
+               FROM audit_receipts AS receipt
+               JOIN sde_candidates AS candidate
+                 ON candidate.candidate_id = receipt.candidate_id
+               JOIN goals AS goal ON goal.goal_id = candidate.goal_id
+               LEFT JOIN purge_targets AS target
+                 ON target.receipt_id = receipt.receipt_id
+               WHERE goal.project_id = ?
+               ORDER BY receipt.receipt_id, target.path""",
+            project_id,
+        )
+        expiry_count, expiry_sha256 = self._digest_review_rows(
+            connection,
+            """SELECT receipt.receipt_id, receipt.manifest_sha256, receipt.status,
+                      target.path, target.sha256, target.status, target.attempts,
+                      target.approval_stale
+               FROM expiry_purge_receipts AS receipt
+               LEFT JOIN expiry_purge_targets AS target
+                 ON target.receipt_id = receipt.receipt_id
+               WHERE receipt.project_id = ?
+               ORDER BY receipt.receipt_id, target.path""",
+            project_id,
+        )
+        pending_purge_count = int(
+            connection.execute(
+                """SELECT
+                     (SELECT COUNT(*) FROM purge_targets AS target
+                       JOIN audit_receipts AS receipt
+                         ON receipt.receipt_id = target.receipt_id
+                       JOIN sde_candidates AS candidate
+                         ON candidate.candidate_id = receipt.candidate_id
+                       JOIN goals AS goal ON goal.goal_id = candidate.goal_id
+                       WHERE goal.project_id = ? AND target.status != 'purged')
+                   + (SELECT COUNT(*) FROM expiry_purge_targets AS target
+                       JOIN expiry_purge_receipts AS receipt
+                         ON receipt.receipt_id = target.receipt_id
+                       WHERE receipt.project_id = ? AND target.status != 'purged')""",
+                (project_id, project_id),
+            ).fetchone()[0]
+        )
+        purge_digest = hashlib.sha256(
+            (
+                f"sde:{receipt_count}:{receipt_sha256}\n"
+                f"expiry:{expiry_count}:{expiry_sha256}"
+            ).encode("utf-8")
+        ).hexdigest()
+        active_grant_count = int(
+            connection.execute(
+                """SELECT COUNT(*) FROM project_grants AS grant_row
+                   LEFT JOIN project_grant_revocations AS revocation
+                     ON revocation.grant_id = grant_row.grant_id
+                   WHERE grant_row.project_id = ?
+                     AND revocation.grant_id IS NULL""",
+                (project_id,),
+            ).fetchone()[0]
+        )
+        payload: dict[str, object] = {
+            "project_id": project_id,
+            "project_revision": registration["revision"],
+            "suspension_transition_id": (
+                suspension["transition_id"] if suspension is not None else ""
+            ),
+            "repository_fingerprint": registration["repository_fingerprint"],
+            "config_sha256": registration["config_sha256"],
+            "backend_api_version": registration["backend_api_version"],
+            "binding_revision": binding["revision"] if binding is not None else 0,
+            "source_epoch": binding["source_epoch"] if binding is not None else 0,
+            "active_grant_count": active_grant_count,
+            "grant_history_count": grant_history_count,
+            "grants_sha256": grants_sha256,
+            "source_cursor_count": cursor_count,
+            "source_cursors_sha256": cursors_sha256,
+            "event_count": event_count,
+            "unresolved_event_count": unresolved_count,
+            "events_sha256": events_sha256,
+            "pending_purge_work_count": pending_purge_count,
+            "purge_inventory_sha256": purge_digest,
+            "staging_inventory_sha256": staging_inventory_sha256,
+            "staging_inventory_count": staging_inventory_count or 0,
+            "staging_inventory_bytes": staging_inventory_bytes or 0,
+        }
+        packet_sha256 = None
+        if complete:
+            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            packet_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return ProjectReactivationReviewPacket(
+            project_id=project_id,
+            project_revision=int(registration["revision"]),
+            suspension_transition_id=(
+                suspension["transition_id"] if suspension is not None else ""
+            ),
+            repository_fingerprint=registration["repository_fingerprint"],
+            config_sha256=registration["config_sha256"],
+            backend_api_version=int(registration["backend_api_version"]),
+            binding_revision=int(binding["revision"]) if binding is not None else 0,
+            source_epoch=int(binding["source_epoch"]) if binding is not None else 0,
+            active_grant_count=active_grant_count,
+            grant_history_count=grant_history_count,
+            grants_sha256=grants_sha256,
+            source_cursor_count=cursor_count,
+            source_cursors_sha256=cursors_sha256,
+            event_count=event_count,
+            unresolved_event_count=unresolved_count,
+            events_sha256=events_sha256,
+            pending_purge_work_count=pending_purge_count,
+            purge_inventory_sha256=purge_digest,
+            staging_inventory_sha256=staging_inventory_sha256,
+            staging_inventory_count=staging_inventory_count or 0,
+            staging_inventory_bytes=staging_inventory_bytes or 0,
+            staging_inventory_observed_at=staging_inventory_observed_at or "",
+            complete=complete,
+            packet_sha256=packet_sha256,
+        )
+
+    @staticmethod
+    def _validate_reactivation_review_input(
+        request: ProjectStatusChangeRequest,
+    ) -> None:
+        """Validate the review digest and fresh staging observation fields."""
+
+        CuratorStore._validate_access_digest(
+            request.review_packet_sha256, "review_packet_sha256"
+        )
+        CuratorStore._validate_access_identity(
+            request.suspension_transition_id, "suspension_transition_id"
+        )
+        CuratorStore._validate_access_digest(
+            request.staging_inventory_sha256, "staging_inventory_sha256"
+        )
+        if (
+            not is_exact_int(request.staging_inventory_count)
+            or request.staging_inventory_count < 0
+            or not is_exact_int(request.staging_inventory_bytes)
+            or request.staging_inventory_bytes < 0
+            or _parse_access_observation_time(request.staging_inventory_observed_at)
+            is None
+        ):
+            raise ValueError("reactivation requires a complete staging observation")
+
     def set_project_status(
         self,
         request: ProjectStatusChangeRequest,
@@ -1607,6 +1929,22 @@ class CuratorStore:
             or request.expected_revision < 1
         ):
             raise ValueError("expected_revision must be a positive integer")
+        if status == "suspended" and any(
+            value is not None
+            for value in (
+                request.review_packet_sha256,
+                request.suspension_transition_id,
+                request.staging_inventory_sha256,
+            )
+        ):
+            raise ValueError("suspension does not accept a reactivation review packet")
+        if status == "active":
+            self._validate_access_digest(
+                request.review_packet_sha256, "review_packet_sha256"
+            )
+            self._validate_access_identity(
+                request.suspension_transition_id, "suspension_transition_id"
+            )
         now = utc_now()
         with self._transaction() as connection:
             action = "suspended" if status == "suspended" else "reactivated"
@@ -1622,6 +1960,10 @@ class CuratorStore:
                     or previous_transition["revision"]
                     != request.expected_revision + 1
                     or previous_transition["rationale"] != request.rationale
+                    or previous_transition["review_packet_sha256"]
+                    != request.review_packet_sha256
+                    or previous_transition["suspension_transition_id"]
+                    != request.suspension_transition_id
                 ):
                     raise ConflictError(
                         "project transition ID was already used with different input"
@@ -1645,6 +1987,26 @@ class CuratorStore:
             old_status = current["status"]
             if old_status == status:
                 raise ConflictError("project registration already has that status")
+            review_packet: ProjectReactivationReviewPacket | None = None
+            if status == "active":
+                self._validate_reactivation_review_input(request)
+                review_packet = self._project_reactivation_review_packet(
+                    connection,
+                    request.project_id,
+                    request.staging_inventory_sha256,
+                    request.staging_inventory_count,
+                    request.staging_inventory_bytes,
+                    request.staging_inventory_observed_at,
+                )
+                if (
+                    not review_packet.complete
+                    or review_packet.packet_sha256 != request.review_packet_sha256
+                    or review_packet.suspension_transition_id
+                    != request.suspension_transition_id
+                ):
+                    raise ConflictError(
+                        "reactivation review packet is incomplete or stale"
+                    )
             cursor = connection.execute(
                 """UPDATE project_registry SET status = ?, updated_by = ?,
                    updated_at = ?, revision = revision + 1
@@ -1671,6 +2033,18 @@ class CuratorStore:
                 created_at=now,
                 revision=request.expected_revision + 1,
                 transition_id=request.transition_id,
+                review_packet_sha256=request.review_packet_sha256,
+                review_packet_json=(
+                    json.dumps(
+                        asdict(review_packet),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    if review_packet is not None
+                    else None
+                ),
+                suspension_transition_id=request.suspension_transition_id,
             )
             self._append_project_registry_audit(
                 connection,
@@ -2429,6 +2803,9 @@ class CuratorStore:
                 created_at=row["created_at"],
                 revision=row["revision"],
                 transition_id=row["transition_id"],
+                review_packet_sha256=row["review_packet_sha256"],
+                review_packet_json=row["review_packet_json"],
+                suspension_transition_id=row["suspension_transition_id"],
             )
             for row in rows
         )
