@@ -892,14 +892,17 @@ consumer plugin, Hermes integration, or production deployment.
       alert delivery. Database read failures, deployed freshness/alert wiring,
       authenticated dashboard use, and cross-source reconciliation remain open.
       Local probe bridge progress (2026-10-23): opted-in Hermes Core calls now
-      attach five bounded, content-free observations for the event outbox,
-      purge scheduler, host profile/session context, local reviewer grant, and
-      configured Curator hook manifest. Curator validates the probe names and
+      attach seven bounded, content-free observations for all required health
+      dependencies. The previously missing five cover the event outbox, purge
+      scheduler, host profile/session context, local reviewer grant, and
+      configured Curator hook manifest; SQLite storage integrity and the absent
+      alert receiver are also reported explicitly. Curator validates probe names and
       value shapes, evaluates freshness, and scopes observations to the active
       MCP request. The read-only local probes report a missing outbox or
       manifest as unknown, a pending outbox or absent reviewer grant as
-      degraded, and the unimplemented local purge scheduler as degraded rather
-      than healthy. One Curator handoff regression and 28 Hermes probe/trust
+      degraded, and the unimplemented local purge scheduler and alert receiver
+      as degraded rather than healthy. Two Curator health-bridge regressions
+      and 28 Hermes probe/trust
       tests pass. The hook-manifest check is not exhaustive producer coverage;
       no production scheduler heartbeat, alert receiver, deployment freshness,
       or cross-source reconciliation was exercised, so this checklist item

@@ -4,14 +4,15 @@
 
 - **Intent:** Replace missing host-owned Curator health observations with
   bounded probes from the opted-in Hermes Core local stdio integration.
-  **Changed fact:** Hermes now reports read-only event-outbox, local reviewer
-  grant, hook-manifest, and trusted profile/session observations. The local
-  purge scheduler is explicitly reported unavailable. Curator validates the
+  **Changed fact:** Hermes now reports read-only event-outbox and SQLite storage
+  integrity, local reviewer grant, hook-manifest, alert-receiver availability,
+  and trusted profile/session observations. The local purge scheduler and alert
+  receiver are explicitly reported unavailable. Curator validates the
   metadata and exposes it only during the current MCP request; stale and
   missing probes remain unknown, and known unavailable dependencies degrade
   health. No raw content, paths, or reviewer identifiers are included.
-  **Verification:** The Curator metadata handoff regression passes, Hermes
-  probe and trust-gating tests pass (28 total), Curator Pyright and errors-only
+  **Verification:** Two Curator health-bridge regressions pass, Hermes probe
+  and trust-gating tests pass (28 total), Curator Pyright and errors-only
   Pylint pass for changed modules, and `git diff --check` passes in both
   repositories. The broad Hermes check was stopped after extended time in
   unrelated repository scans.
