@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
 import json
 import tempfile
+from threading import Barrier
 import unittest
 
 from curatormd_v2 import (
@@ -830,6 +832,58 @@ class DurableProjectAccessTests(unittest.TestCase):
         history = self.store.consumer_binding_audit(self.project_id)
         self.assertEqual(len(history), 2)
         self.assertEqual(history[-1], pending.receipt)
+
+    def test_concurrent_deregistration_transitions_compare_and_set_revision(self) -> None:
+        """Two independent SQLite handles cannot both advance one binding revision."""
+
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        second_store = self.enterContext(CuratorStore(self.store.database))
+        second_manager = ProjectAccessManager(second_store, self.admin)
+        start = Barrier(2)
+        requests = (
+            ConsumerBindingTransitionRequest(
+                self.project_id,
+                "deregistration_pending",
+                "Race first source cutover request",
+                1,
+                "concurrent-cutover-a",
+            ),
+            ConsumerBindingTransitionRequest(
+                self.project_id,
+                "deregistration_pending",
+                "Race second source cutover request",
+                1,
+                "concurrent-cutover-b",
+            ),
+        )
+
+        def transition(
+            manager: ProjectAccessManager,
+            request: ConsumerBindingTransitionRequest,
+        ) -> str:
+            start.wait(timeout=5)
+            try:
+                manager.transition_consumer_binding(self.operator, request)
+            except ConflictError:
+                return "conflict"
+            return "committed"
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            results = tuple(
+                future.result(timeout=10)
+                for future in (
+                    workers.submit(transition, self.manager, requests[0]),
+                    workers.submit(transition, second_manager, requests[1]),
+                )
+            )
+
+        self.assertCountEqual(results, ("committed", "conflict"))
+        binding = self.store.get_consumer_binding(self.project_id)
+        self.assertEqual((binding.status, binding.revision), ("deregistration_pending", 2))
+        audit = self.store.consumer_binding_audit(self.project_id)
+        self.assertEqual(len(audit), 2)
+        self.assertIn(audit[-1].transition_id, {request.transition_id for request in requests})
 
     def test_drain_allows_only_the_reviewed_event_and_matching_profile(self) -> None:
         """A short drain cannot admit new IDs, changed envelopes, or other profiles."""

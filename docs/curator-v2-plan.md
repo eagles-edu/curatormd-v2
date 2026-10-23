@@ -6438,6 +6438,12 @@ substitute for evidence at a later integration boundary.
       binding at revision and source epoch 1. The full migration test file
       passes (38 tests). This adds local failure/retry evidence only; deployment
       migration, recovery, and rollback acceptance remain open.
+      Concurrent-cutover regression (2026-10-24): two independent SQLite store
+      handles race deregistration requests against the same binding revision.
+      Exactly one receipt advances the binding; the competing request conflicts,
+      and the audit contains only the committed transition. This is local CAS
+      evidence; authenticated deployment races and lost-response acceptance
+      remain open.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary
