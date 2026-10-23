@@ -84,7 +84,11 @@ class HermesHookAdapterTests(unittest.TestCase):
                 calls.append((server, tool, arguments, kwargs))
                 return {
                     "ok": True,
-                    "result": {"project_id": "project-a", "status": "processed"},
+                    "result": {
+                        "project_id": "project-a",
+                        "event_id": "hermes-event-1",
+                        "status": "processed",
+                    },
                 }
 
             handle = build_hermes_hook_handler(root, "curator-project-a", call_mcp=call_mcp)
@@ -124,6 +128,34 @@ class HermesHookAdapterTests(unittest.TestCase):
                 arguments["context"],
                 {"attempt_id": "attempt-1", "session_id": "session-1"},
             )
+
+            for stale_receipt in (
+                {
+                    "project_id": "project-a",
+                    "event_id": "different-event",
+                    "status": "processed",
+                },
+                {
+                    "project_id": "project-b",
+                    "event_id": "hermes-event-1",
+                    "status": "duplicate",
+                },
+            ):
+                def return_stale_receipt(
+                    *_args: object,
+                    receipt: dict[str, str] = stale_receipt,
+                    **_kwargs: object,
+                ) -> dict[str, object]:
+                    return {"ok": True, "result": receipt}
+
+                stale_handler = build_hermes_hook_handler(
+                    root,
+                    "curator-project-a",
+                    call_mcp=return_stale_receipt,
+                )
+                self.assertFalse(
+                    asyncio.run(stale_handler("codex:turn:start", event))
+                )
 
             failing = build_hermes_hook_handler(
                 root,

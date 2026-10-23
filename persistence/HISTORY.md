@@ -5015,3 +5015,15 @@
 **Open gate:** Source-side acknowledgement races, other purge/unlink interruption points, consumer-binding revision fencing, authenticated deployment identity, and production lifecycle acceptance remain open. The lifecycle checklist item remains open.
 
 **Outcome:** Added regression evidence that this local unlink path completes before suspension cutover or is denied after cutover.
+
+## 2026-10-24 — Match Hermes acknowledgements to exact Curator receipts
+
+**Intent:** Prevent Hermes from dropping an outbox event when the MCP adapter returns a durable receipt for another project or event.
+
+**Changed fact:** The Curator Hermes hook now returns acknowledgement success only when the receipt status is `processed` or `duplicate` and its project ID and event ID match the current outbox envelope. A mismatched receipt remains unacknowledged for retry.
+
+**Verification:** The focused `test_hermes_hook` suite passes all three tests, including wrong-project and wrong-event receipt cases. Strict Pyright reports zero diagnostics; errors-only Pylint on the changed adapter/tests passes; Bandit exits successfully; `git diff --check` passes.
+
+**Open gate:** This closes receipt identity validation only. It does not close the race between a Curator response and Hermes' SQLite outbox update, nor the deployment identity, source-epoch/binding revision, or production lifecycle gates.
+
+**Outcome:** Hermes no longer acknowledges a lifecycle outbox event based on a processed receipt for a different project or event.

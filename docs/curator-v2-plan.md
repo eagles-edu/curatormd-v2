@@ -5834,6 +5834,12 @@ substitute for evidence at a later integration boundary.
       proves the local project fence for one expiry unlink path; source-side
       acknowledgement races, other purge/unlink interruption points, binding
       revision fencing, and deployment evidence remain open.
+      Additional local progress (2026-10-24): the Hermes hook now acknowledges
+      only a `processed` or `duplicate` receipt whose project and event IDs
+      match the exact outbox envelope. Mismatched project/event receipts remain
+      pending for retry. Focused Curator hook integration tests pass. This
+      closes wrong-receipt acknowledgment, not a cutover race between Curator's
+      durable reply and Hermes' local outbox update; that race remains open.
 - [ ] **F. Integrate one real consumer plugin:** install repository-local config
       and adapter in a pilot repo; prove checklist source mapping, scoped evidence,
       canonical bullet persistence, full artifact inventory, and independent

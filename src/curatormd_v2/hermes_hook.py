@@ -104,8 +104,10 @@ async def _call_curator(
     return cast(dict[str, Any], decoded).get("result")
 
 
-def _has_durable_receipt(result: object) -> bool:
-    """Acknowledge only a processed or already-recorded durable receipt."""
+def _has_durable_receipt(
+    result: object, *, project_id: str, event_id: str
+) -> bool:
+    """Acknowledge only a processed receipt for this exact project event."""
 
     if isinstance(result, str):
         result = json.loads(result)
@@ -114,10 +116,12 @@ def _has_durable_receipt(result: object) -> bool:
     receipt = cast(dict[str, Any], result).get("receipt", result)
     if not isinstance(receipt, dict):
         return False
-    return cast(dict[str, Any], receipt).get("status") in {
-        "processed",
-        "duplicate",
-    }
+    value = cast(dict[str, Any], receipt)
+    return (
+        value.get("project_id") == project_id
+        and value.get("event_id") == event_id
+        and value.get("status") in {"processed", "duplicate"}
+    )
 
 
 def build_hermes_hook_handler(
@@ -161,7 +165,11 @@ def build_hermes_hook_handler(
                 call_mcp=call_mcp,
                 call_tool=call_tool,
             )
-            return _has_durable_receipt(result)
+            return _has_durable_receipt(
+                result,
+                project_id=config.project_id,
+                event_id=str(payload["event_id"]),
+            )
         except Exception:  # pylint: disable=broad-exception-caught
             # This is the untrusted host/MCP boundary: unknown adapter failures
             # must not expose source details or acknowledge durable delivery.
