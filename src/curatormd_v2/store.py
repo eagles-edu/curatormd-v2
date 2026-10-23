@@ -324,6 +324,41 @@ class ProjectRetirementRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class TerminalEventDispositionRecord:
+    """Human-authorized terminal disposition for one exact failed event."""
+
+    project_id: str
+    event_id: str
+    transition_id: str
+    actor_id: str
+    prior_status: EventInboxStatus
+    payload_sha256: str
+    rationale: str
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalEventCandidate:
+    """Content-free inventory row for an unresolved source event."""
+
+    event_id: str
+    status: EventInboxStatus
+    payload_sha256: str
+    source_id: str
+    source_sequence: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalEventInventory:
+    """Bounded exact candidate page with an explicit completeness marker."""
+
+    count_after_cursor: int
+    events: tuple[TerminalEventCandidate, ...]
+    complete: bool
+    next_after_event_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectRegistryAuditRecord:
     """Append-only evidence of a project registration or lifecycle change."""
 
@@ -2008,6 +2043,56 @@ class CuratorStore:
                 count += 1
         return count, digest.hexdigest()
 
+    def terminal_event_inventory(
+        self,
+        project_id: str,
+        *,
+        limit: int = 100,
+        after_event_id: str | None = None,
+    ) -> TerminalEventInventory:
+        """Read a content-free page of failed events eligible for disposition."""
+
+        self._validate_access_identity(project_id, "project_id")
+        if not is_exact_int(limit) or not 1 <= limit <= 100:
+            raise ValueError("terminal event inventory limit must be between 1 and 100")
+        if after_event_id is not None:
+            self._validate_access_identity(after_event_id, "after_event_id")
+        with self._lock:
+            count = int(self._connection.execute(
+                """SELECT COUNT(*) FROM event_inbox
+                   WHERE project_id = ? AND status IN (?, ?)
+                     AND (? IS NULL OR event_id > ?)""",
+                (project_id, EventInboxStatus.FAILED.value,
+                 EventInboxStatus.QUARANTINED.value, after_event_id, after_event_id),
+            ).fetchone()[0])
+            rows = self._connection.execute(
+                """SELECT event_id, status, payload_sha256, source_id, source_sequence
+                   FROM event_inbox WHERE project_id = ? AND status IN (?, ?)
+                     AND (? IS NULL OR event_id > ?)
+                   ORDER BY event_id LIMIT ?""",
+                (project_id, EventInboxStatus.FAILED.value,
+                 EventInboxStatus.QUARANTINED.value, after_event_id, after_event_id,
+                 limit + 1),
+            ).fetchall()
+        complete = len(rows) <= limit
+        page = rows[:limit]
+        events = tuple(
+            TerminalEventCandidate(
+                event_id=row["event_id"],
+                status=EventInboxStatus(row["status"]),
+                payload_sha256=row["payload_sha256"],
+                source_id=row["source_id"],
+                source_sequence=row["source_sequence"],
+            )
+            for row in page
+        )
+        return TerminalEventInventory(
+            count_after_cursor=count,
+            events=events,
+            complete=complete,
+            next_after_event_id=events[-1].event_id if not complete and events else None,
+        )
+
     def authorize_consumer_drain(
         self,
         *,
@@ -2319,6 +2404,20 @@ class CuratorStore:
                      length(CAST(retired_at AS BLOB))
                    ), 0) AS logical_bytes
                    FROM project_retirement_tombstones WHERE project_id = ?""",
+            ),
+            (
+                "terminal_event_dispositions",
+                """SELECT COUNT(*) AS record_count, COALESCE(SUM(
+                     length(CAST(project_id AS BLOB)) +
+                     length(CAST(event_id AS BLOB)) +
+                     length(CAST(transition_id AS BLOB)) +
+                     length(CAST(actor_id AS BLOB)) +
+                     length(CAST(prior_status AS BLOB)) +
+                     length(CAST(payload_sha256 AS BLOB)) +
+                     length(CAST(rationale AS BLOB)) +
+                     length(CAST(created_at AS BLOB))
+                   ), 0) AS logical_bytes
+                   FROM terminal_event_dispositions WHERE project_id = ?""",
             ),
             (
                 "project_registry",
@@ -7373,6 +7472,140 @@ class CuratorStore:
             except sqlite3.Error:
                 return 0
         return cursor.rowcount
+
+    def terminally_dispose_event(
+        self,
+        *,
+        project_id: str,
+        event_id: str,
+        transition_id: str,
+        actor_id: str,
+        rationale: str,
+        expected_binding_revision: int,
+        expected_source_epoch: int,
+        expected_payload_sha256: str,
+    ) -> tuple[EventInboxReceipt, TerminalEventDispositionRecord]:
+        """Resolve one failed event by exact human-approved terminal disposition."""
+
+        for name, value in (
+            ("project_id", project_id), ("event_id", event_id),
+            ("transition_id", transition_id), ("actor_id", actor_id),
+        ):
+            self._validate_access_identity(value, name)
+        self._validate_access_rationale(rationale)
+        if (
+            not is_exact_int(expected_binding_revision)
+            or expected_binding_revision < 1
+            or not is_exact_int(expected_source_epoch)
+            or expected_source_epoch < 1
+        ):
+            raise ValueError("binding revision and source epoch must be positive integers")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_payload_sha256):
+            raise ValueError("payload digest must be lowercase SHA-256")
+        now = utc_now()
+        with self._transaction() as connection:
+            prior = connection.execute(
+                "SELECT * FROM terminal_event_dispositions "
+                "WHERE project_id = ? AND (event_id = ? OR transition_id = ?)",
+                (project_id, event_id, transition_id),
+            ).fetchone()
+            if prior is not None:
+                if tuple(prior[key] for key in (
+                    "event_id", "transition_id", "actor_id", "payload_sha256", "rationale"
+                )) != (event_id, transition_id, actor_id, expected_payload_sha256, rationale):
+                    raise ConflictError("terminal disposition ID was reused with changed input")
+                receipt_row = connection.execute(
+                    "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+                    (project_id, event_id),
+                ).fetchone()
+                if receipt_row is None:
+                    raise RuntimeError("terminal disposition lost its inbox receipt")
+                return self._event_receipt(receipt_row), self._terminal_event_disposition_from_row(prior)
+            binding = connection.execute(
+                "SELECT status, revision, source_epoch FROM consumer_bindings "
+                "WHERE project_id = ?", (project_id,),
+            ).fetchone()
+            if (
+                binding is None
+                or binding["status"] not in {"deregistration_pending", "deregistered"}
+                or binding["revision"] != expected_binding_revision
+                or binding["source_epoch"] != expected_source_epoch
+            ):
+                raise ConflictError("consumer binding changed or is not fenced")
+            row = connection.execute(
+                "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+                (project_id, event_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"event not found: {project_id}/{event_id}")
+            if row["status"] not in {"failed", "quarantined"} or row[
+                "payload_sha256"
+            ] != expected_payload_sha256:
+                raise ConflictError("event is not the reviewed unresolved payload")
+            if (
+                row["lease_owner"] is not None
+                and row["lease_expires_at"] is not None
+                and row["lease_expires_at"] > now
+            ):
+                raise ConflictError("event has an active processing lease")
+            if row["source_sequence"] is not None:
+                cursor = connection.execute(
+                    "SELECT last_sequence FROM event_cursors "
+                    "WHERE project_id = ? AND source_id = ?",
+                    (project_id, row["source_id"]),
+                ).fetchone()
+                previous = int(cursor["last_sequence"]) if cursor is not None else 0
+                if row["source_sequence"] != previous + 1:
+                    raise ConflictError("earlier source events must be resolved first")
+                connection.execute(
+                    """INSERT INTO event_cursors
+                       (project_id, source_id, last_sequence, updated_at)
+                       VALUES (?, ?, ?, ?) ON CONFLICT(project_id, source_id)
+                       DO UPDATE SET last_sequence = excluded.last_sequence,
+                       updated_at = excluded.updated_at""",
+                    (project_id, row["source_id"], row["source_sequence"], now),
+                )
+            record = TerminalEventDispositionRecord(
+                project_id, event_id, transition_id, actor_id,
+                EventInboxStatus(row["status"]), expected_payload_sha256,
+                rationale, now,
+            )
+            connection.execute(
+                """INSERT INTO terminal_event_dispositions
+                   (project_id, event_id, transition_id, actor_id, prior_status,
+                    payload_sha256, rationale, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (project_id, event_id, transition_id, actor_id,
+                 record.prior_status.value, expected_payload_sha256, rationale, now),
+            )
+            if row["payload_json"] is not None:
+                self._queue_event_payload_scrub(connection, project_id, event_id)
+            connection.execute(
+                """UPDATE event_inbox SET status = ?, payload_json = NULL,
+                   processed_at = ?, last_error = NULL, next_attempt_at = NULL,
+                   disposition = ?, lease_owner = NULL, lease_expires_at = NULL
+                   WHERE project_id = ? AND event_id = ?""",
+                (EventInboxStatus.PROCESSED.value, now,
+                 EventDisposition.TERMINAL_AUTHORIZED.value, project_id, event_id),
+            )
+            receipt_row = connection.execute(
+                "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+                (project_id, event_id),
+            ).fetchone()
+            if receipt_row is None:
+                raise RuntimeError("terminal disposition lost its inbox receipt")
+        self.retry_pending_event_payload_scrubs()
+        return self.event_receipt(project_id, event_id), record
+
+    @staticmethod
+    def _terminal_event_disposition_from_row(
+        row: sqlite3.Row,
+    ) -> TerminalEventDispositionRecord:
+        return TerminalEventDispositionRecord(
+            row["project_id"], row["event_id"], row["transition_id"],
+            row["actor_id"], EventInboxStatus(row["prior_status"]),
+            row["payload_sha256"], row["rationale"], row["created_at"],
+        )
 
     def event_receipt(self, project_id: str, event_id: str) -> EventInboxReceipt:
         """Return the compact acceptance/processing receipt for an event."""

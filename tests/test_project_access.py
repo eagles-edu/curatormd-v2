@@ -210,6 +210,7 @@ class DurableProjectAccessTests(unittest.TestCase):
                 "project_registry": 1,
                 "project_registry_audit": 1,
                 "project_retirement_tombstones": 0,
+                "terminal_event_dispositions": 0,
                 "project_grants": 1,
                 "project_grant_revocations": 1,
                 "request_rate_buckets": 1,
@@ -744,6 +745,72 @@ class DurableProjectAccessTests(unittest.TestCase):
                 self.operator.subject_id, "alpha", replace(event, event_id="new-event")
             )
         )
+
+    def test_terminal_event_disposition_is_exact_ordered_and_replayable(self) -> None:
+        """A fenced source can close one failed event without losing its receipt."""
+
+        self._register()
+        event = EventEnvelope(
+            "failed-event-1",
+            self.project_id,
+            GoalActivityObserved("goal-1", "fact-1", FactKind.CHANGE, "Done."),
+            source_id="source-generation-1",
+            source_sequence=1,
+        )
+        received, _created = self.store.ingest_event(event)
+        self.store.mark_event_failed(self.project_id, event.event_id, "adapter_error")
+        failed = self.store.quarantine_event(self.project_id, event.event_id, 1)
+        self.assertEqual(failed.status.value, "quarantined")
+        self._allow_admin(ProjectAdministrationAction.DEREGISTER)
+        pending = self.manager.transition_consumer_binding(
+            self.operator,
+            ConsumerBindingTransitionRequest(
+                self.project_id,
+                "deregistration_pending",
+                "Fence the failed source before its terminal review",
+                1,
+                "terminal-review-cutover",
+            ),
+        )
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        candidates = self.manager.terminal_event_inventory(
+            self.operator, self.project_id, limit=1
+        )
+        self.assertTrue(candidates.complete)
+        self.assertEqual(candidates.count_after_cursor, 1)
+        self.assertEqual(candidates.events[0].event_id, event.event_id)
+        self.assertEqual(candidates.events[0].payload_sha256, received.payload_sha256)
+        self._allow_admin(ProjectAdministrationAction.DISPOSE_EVENT)
+        result, disposition = self.manager.terminally_dispose_event(
+            self.operator,
+            project_id=self.project_id,
+            event_id=event.event_id,
+            transition_id="terminal-disposition-1",
+            rationale="Owner approves terminal disposition of this exact failed event",
+            expected_binding_revision=pending.binding.revision,
+            expected_source_epoch=pending.binding.source_epoch,
+            expected_payload_sha256=received.payload_sha256,
+        )
+        self.assertEqual(result.status.value, "processed")
+        self.assertEqual(result.disposition, "terminal_authorized")
+        self.assertEqual(disposition.prior_status.value, "quarantined")
+        self.assertEqual(disposition.payload_sha256, received.payload_sha256)
+        self.assertEqual(self.store.consumer_drain_inventory(self.project_id)[0], 0)
+        replay, replayed_disposition = self.manager.terminally_dispose_event(
+            self.operator,
+            project_id=self.project_id,
+            event_id=event.event_id,
+            transition_id="terminal-disposition-1",
+            rationale="Owner approves terminal disposition of this exact failed event",
+            expected_binding_revision=pending.binding.revision,
+            expected_source_epoch=pending.binding.source_epoch,
+            expected_payload_sha256=received.payload_sha256,
+        )
+        self.assertEqual(replay, result)
+        self.assertEqual(replayed_disposition, disposition)
+        duplicate, is_new = self.store.ingest_event(event)
+        self.assertFalse(is_new)
+        self.assertEqual(duplicate.disposition, "terminal_authorized")
 
     def test_project_retirement_is_irreversible_and_keeps_records(self) -> None:
         """Retirement fences a project but preserves unresolved event records."""

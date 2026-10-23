@@ -72,6 +72,7 @@ class EventDisposition(StrEnum):
 
     APPLIED = "applied"
     SUPPRESSED_NONACTIVE_GOAL = "suppressed_nonactive_goal"
+    TERMINAL_AUTHORIZED = "terminal_authorized"
 
 
 @dataclass(frozen=True, slots=True)

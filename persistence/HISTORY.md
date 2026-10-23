@@ -4955,3 +4955,15 @@
 **Open gate:** The alpha identity is the approved local OS account, not an authenticated Hermes human subject. Terminal disposition for unresolved events, complete bounded retirement status/counts, production identity, production lifecycle migration/rollback evidence, and owner acceptance remain open. The active Vhost project was not retired; retirement is verified by local lifecycle tests only.
 
 **Outcome:** Deployed and verified the local-alpha drain/retirement code and OS-bound identity without treating MCP discovery or synthetic lifecycle tests as production evidence.
+
+## 2026-10-23 — Add owner-approved terminal disposition for fenced events
+
+**Intent:** Let an authorized local operator resolve one exact failed source event after consumer cutover so deregistration and retirement do not require deleting unresolved evidence or replaying an event forever.
+
+**Changed fact:** Schema v36 adds immutable terminal event disposition receipts. The local attended `view` command now pages a bounded, content-free candidate inventory with event ID, prior status, payload digest, source identity/sequence, and an explicit completeness marker. `dispose_event` requires the exact event digest, binding revision, source epoch, stable transition ID, bounded rationale, and exact TTY confirmation. It only accepts failed/quarantined rows after the binding is fenced, refuses a live lease or source-sequence gap, retains the event receipt, records the prior status, scrubs transient payload, and returns `processed` with `terminal_authorized`. The Hermes hook consequently acknowledges only that durable processed receipt.
+
+**Verification:** Focused access, attended CLI, and migration suites pass (17, 4, and 36 tests); the full Curator suite passes 438 tests. Strict Pyright reports zero diagnostics, errors-only Pylint and Bandit pass, and `git diff --check` passes. Schema v35 to v36 migration passes on a disposable copy. The active alpha DB was backed up to `/home/eaglesvn/.local/share/curatormd-v2-alpha/backups/pre-schema-v36-2026-10-23.sqlite3` before live migration; after installing wheel SHA-256 `6b837eb7b1300a2bd522401cb909d81142cb671c84d36617ffebbd1ad5800b76`, the live DB reports schema 36, `quick_check=ok`, and unchanged active project, binding, and UID grants. The profile MCP test connects and discovers 48 tools.
+
+**Open gate:** The active Vhost project was not deregistered or retired. The local disposition was exercised in reference-store and attended CLI tests, not against real failed production events. A unified time-stamped lifecycle status snapshot, production identity, deployment acceptance, and rollback drills remain open.
+
+**Outcome:** Added an auditable terminal event path that preserves receipts and ordering while permitting the Hermes source outbox to stop retrying only after an exact human-approved Curator receipt.

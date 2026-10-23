@@ -6,6 +6,7 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 
@@ -93,6 +94,58 @@ class AccessCliTests(unittest.TestCase):
             self._update_config_and_verify_replay(root, database)
             self._suspend_reactivate_and_revoke(root, database)
             self._assert_access_audit(root, database)
+
+    def test_terminal_disposition_requires_reviewed_event_digest_and_exact_phrase(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "curator.sqlite3"
+            registered, _, errors = self._run(
+                "register", root, database, "REGISTER cli-project",
+                "--rationale", "Approve terminal disposition CLI fixture",
+            )
+            self.assertEqual(registered, 0, errors)
+            digest = "a" * 64
+            connection = sqlite3.connect(database)
+            connection.execute(
+                """INSERT INTO event_inbox
+                   (project_id,event_id,event_type,payload_sha256,payload_bytes,
+                    status,received_at,source_id,source_sequence)
+                   VALUES ('cli-project','failed-cli-event','goal.activity_observed',
+                           ?,100,'quarantined','2026-10-23T00:00:00Z','cli-source',1)""",
+                (digest,),
+            )
+            connection.commit()
+            connection.close()
+            pending, _, errors = self._run(
+                "deregister", root, database,
+                "DEREGISTER cli-project AT BINDING REVISION 1 TRANSITION cli-cutover",
+                "--rationale", "Fence source before exact terminal disposition",
+                "--expected-revision", "1", "--transition-id", "cli-cutover",
+            )
+            self.assertEqual(pending, 0, errors)
+            viewed, view_output, errors = self._run(
+                "view", root, database, "VIEW cli-project ACCESS", "--event-limit", "1"
+            )
+            self.assertEqual(viewed, 0, errors)
+            inventory = json.loads(view_output)["terminal_event_inventory"]
+            self.assertEqual(inventory["events"][0]["event_id"], "failed-cli-event")
+            self.assertNotIn("payload_json", inventory["events"][0])
+            phrase = (
+                "DISPOSE EVENT cli-project failed-cli-event AT BINDING REVISION 2 "
+                f"SOURCE EPOCH 1 TRANSITION cli-terminal-1 PAYLOAD {digest}"
+            )
+            disposed, output, errors = self._run(
+                "dispose_event", root, database, phrase,
+                "--rationale", "Owner approves the exact failed event disposition",
+                "--expected-revision", "2", "--transition-id", "cli-terminal-1",
+                "--expected-source-epoch", "1", "--event-id", "failed-cli-event",
+                "--payload-sha256", digest,
+            )
+            self.assertEqual(disposed, 0, errors)
+            self.assertEqual(
+                json.loads(output)["receipt"]["disposition"], "terminal_authorized"
+            )
 
     def _register_grants_and_verify_launcher(self, root: Path, database: Path) -> None:
         """Register one isolated project, grant exact access, and verify launch."""

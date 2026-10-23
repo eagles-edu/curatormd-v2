@@ -2404,9 +2404,15 @@ consumer plugin, Hermes integration, or production deployment.
       reactivation, registration changes, or re-enrollment. Local profile
       launchers now use the OS UID (`local-uid:<uid>`) as the project access
       subject while keeping Hermes profile/session context separate for
-      routing. Vhost alpha deployment (2026-10-23): backed up the schema-v22
-      database and installed the current `0.1.0a1` wheel after migration to
-      schema v35 passed on a disposable copy. The live alpha database now
+      routing. Schema v36 adds an attended terminal disposition for one exact
+      failed/quarantined event after binding cutover. The `view` operation
+      exposes bounded event IDs, prior status, payload digests, source ordering,
+      and page completeness; disposition records the operator, rationale, and
+      prior status, advances source order only when contiguous, scrubs transient
+      payload, and returns a processed durable receipt for Hermes outbox
+      acknowledgement. Vhost alpha deployment (2026-10-23): backed up the
+      schema-v35 database and installed the current `0.1.0a1` wheel after
+      migration to schema v36 passed on a disposable copy. The live alpha database now
       passes `PRAGMA quick_check`, retains its active project and binding, and
       grants read/write/review to the owner-approved `local-uid:1000` subject;
       legacy profile-string grants are revoked. The isolated Hermes profile
@@ -2416,9 +2422,9 @@ consumer plugin, Hermes integration, or production deployment.
       acknowledgement is receipt-gated: the Hermes hook returns success only
       for a processed or duplicate Curator receipt. A read-only check of the
       deployed profile outbox found 11 acknowledged events, 0 pending, and 22
-      attempts; the Vhost ledger has 12 processed receipts. Terminal
-      disposition/reconciliation, complete retirement status/count reporting,
-      and authenticated production lifecycle evidence remain open.
+      attempts; the Vhost ledger has 12 processed receipts. A unified
+      time-stamped lifecycle status snapshot and authenticated production
+      lifecycle evidence remain open.
       Represent binding state separately from project lifecycle state and expose
       `active`, `deregistration_pending`, or `deregistered` in content-free
       operator status; deregistration must never appear as project retirement.

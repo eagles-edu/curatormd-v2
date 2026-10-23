@@ -39,6 +39,7 @@ _OPERATION_ACTIONS = {
     "deregister_finalize": ProjectAdministrationAction.DEREGISTER_FINALIZE,
     "reenroll": ProjectAdministrationAction.REENROLL,
     "drain": ProjectAdministrationAction.DRAIN,
+    "dispose_event": ProjectAdministrationAction.DISPOSE_EVENT,
     "retire": ProjectAdministrationAction.RETIRE,
     "grant": ProjectAdministrationAction.GRANT,
     "revoke": ProjectAdministrationAction.REVOKE,
@@ -115,13 +116,13 @@ def _parser() -> argparse.ArgumentParser:
         if name in {
             "register", "update", "suspend", "reactivate", "deregister",
             "deregister_finalize", "reenroll", "grant", "revoke",
-            "drain", "retire",
+            "drain", "dispose_event", "retire",
         }:
             command.add_argument("--rationale", required=True)
         if name in {
             "update", "suspend", "reactivate", "deregister",
             "deregister_finalize", "reenroll",
-            "drain", "retire",
+            "drain", "dispose_event", "retire",
         }:
             command.add_argument(
                 "--expected-revision", required=True, type=_positive_revision
@@ -138,6 +139,13 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--inventory-sha256", required=True)
             command.add_argument("--lifetime-seconds", required=True, type=int)
             command.add_argument("--consumer-profile", required=True)
+        if name == "dispose_event":
+            command.add_argument("--event-id", required=True)
+            command.add_argument("--payload-sha256", required=True)
+            command.add_argument("--expected-source-epoch", required=True, type=_positive_revision)
+        if name == "view":
+            command.add_argument("--event-limit", type=int, default=100)
+            command.add_argument("--event-after")
         if name in {"grant", "revoke"}:
             command.add_argument("--subject-id", required=True)
             command.add_argument(
@@ -206,6 +214,13 @@ def _confirmation_phrase(
             f"INVENTORY {arguments.inventory_sha256} FOR "
             f"{arguments.lifetime_seconds} SECONDS PROFILE "
             f"{arguments.consumer_profile}"
+        )
+    if operation == "dispose_event":
+        return (
+            f"DISPOSE EVENT {config.project_id} {arguments.event_id} AT BINDING "
+            f"REVISION {arguments.expected_revision} SOURCE EPOCH "
+            f"{arguments.expected_source_epoch} TRANSITION "
+            f"{arguments.transition_id} PAYLOAD {arguments.payload_sha256}"
         )
     if operation == "retire":
         return (
@@ -334,6 +349,22 @@ def _perform(
             "authorized_event_count": count,
             "expires_at": expires_at,
         }
+    if operation == "dispose_event":
+        receipt, disposition = manager.terminally_dispose_event(
+            caller,
+            project_id=config.project_id,
+            event_id=arguments.event_id,
+            transition_id=arguments.transition_id,
+            rationale=rationale,
+            expected_binding_revision=arguments.expected_revision,
+            expected_source_epoch=arguments.expected_source_epoch,
+            expected_payload_sha256=arguments.payload_sha256,
+        )
+        return {
+            "operation": operation,
+            "receipt": asdict(receipt),
+            "terminal_disposition": asdict(disposition),
+        }
     if operation == "retire":
         receipt = manager.retire_project(
             caller,
@@ -358,6 +389,12 @@ def _perform(
         registration = manager.get_registration(caller, config.project_id)
         drain_count, drain_digest = manager.consumer_drain_inventory(
             caller, config.project_id
+        )
+        terminal_inventory = manager.terminal_event_inventory(
+            caller,
+            config.project_id,
+            limit=arguments.event_limit,
+            after_event_id=arguments.event_after,
         )
         return {
             "operation": operation,
@@ -385,6 +422,7 @@ def _perform(
                 "count": drain_count,
                 "sha256": drain_digest,
             },
+            "terminal_event_inventory": asdict(terminal_inventory),
             "control_plane_storage_usage": asdict(
                 manager.storage_usage(caller, config.project_id)
             ),

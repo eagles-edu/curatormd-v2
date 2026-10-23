@@ -99,19 +99,25 @@ workflow or canonical application-target write was exercised, and
 
 Vhost alpha lifecycle deployment (2026-10-23): rebuilt and installed wheel
 `curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
-`7f5f646d047e9f5907e1d033fff92b0145c4fa647ea6a4fa601620e2f1ea0539`) into the
+`6b837eb7b1300a2bd522401cb909d81142cb671c84d36617ffebbd1ad5800b76`) into the
 isolated `renew-ssl-coding` profile. The profile is configured for local-alpha
-review and write. The active SQLite ledger was backed up before migration from
-schema v22 to v35; it passes `PRAGMA quick_check=ok`, retains the active Vhost
-project/binding, and has exactly three active grants for `local-uid:1000`
-(read, write, review). Obsolete `renew-ssl-coding` subject grants were revoked.
+review and write. The active SQLite ledger was backed up while at schema v35
+before migration to schema v36; both the live DB and a disposable migrated copy
+pass `PRAGMA quick_check=ok` and retain the active Vhost project/binding, with
+exactly three active grants for `local-uid:1000` (read, write, review). Obsolete
+`renew-ssl-coding` subject grants were revoked.
 Hermes MCP connects and discovers 48 tools. Its profile outbox currently has
 11 acknowledged events, no pending events, and 22 attempts; the Curator ledger
 has 12 processed receipts. These counts are independent reads, not a claim that
 all events correspond one-to-one. The 0600 DB, package, and profile-config
 recovery copies are under `/home/eaglesvn/.local/share/curatormd-v2-alpha/
-backups/`. This verifies only the owner-approved local UID and profile flow;
-source terminal disposition, complete retirement status, production identity,
+backups/`. Terminal event disposition now requires an exact failed-event digest,
+fenced binding revision and source epoch, attended exact confirmation, and
+contiguous source order; it preserves an immutable decision receipt and lets
+the Hermes outbox acknowledge that processed receipt. The full Curator suite
+passes 438 tests; strict Pyright, errors-only Pylint, Bandit, and
+`git diff --check` pass. This verifies only local alpha identity and lifecycle behavior;
+a unified time-stamped lifecycle status snapshot, production identity,
 production acceptance, and rollback drills remain open. The active Vhost
 project was not retired.
 

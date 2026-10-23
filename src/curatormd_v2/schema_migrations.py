@@ -7,7 +7,7 @@ import sqlite3
 
 from .events import EventEnvelope
 
-SQLITE_SCHEMA_VERSION = 35
+SQLITE_SCHEMA_VERSION = 36
 
 
 def migrate_event_router_v2(connection: sqlite3.Connection) -> None:
@@ -976,6 +976,32 @@ def migrate_drain_and_retirement_v35(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 35")
 
 
+def migrate_terminal_event_dispositions_v36(connection: sqlite3.Connection) -> None:
+    """Record attended terminal decisions for exact unresolved source events."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS terminal_event_dispositions (
+               project_id TEXT NOT NULL,
+               event_id TEXT NOT NULL,
+               transition_id TEXT NOT NULL,
+               actor_id TEXT NOT NULL,
+               prior_status TEXT NOT NULL CHECK(prior_status IN ('failed', 'quarantined')),
+               payload_sha256 TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               PRIMARY KEY(project_id, event_id),
+               UNIQUE(project_id, transition_id),
+               FOREIGN KEY(project_id, event_id)
+                   REFERENCES event_inbox(project_id, event_id)
+           )"""
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS terminal_event_dispositions_project "
+        "ON terminal_event_dispositions(project_id, created_at, event_id)"
+    )
+    connection.execute("PRAGMA user_version = 36")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -1011,6 +1037,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
     migrate_drain_and_retirement_v35,
+    migrate_terminal_event_dispositions_v36,
 )
 
 

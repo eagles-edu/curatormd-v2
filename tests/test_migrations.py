@@ -274,6 +274,12 @@ CONTROL_PLANE_USAGE_COLUMNS = {
             "source_epoch", "rationale", "retired_at",
         }
     ),
+    "terminal_event_dispositions": frozenset(
+        {
+            "project_id", "event_id", "transition_id", "actor_id", "prior_status",
+            "payload_sha256", "rationale", "created_at",
+        }
+    ),
     "request_rate_buckets": frozenset(
         {"subject_id", "project_id", "tokens", "updated_at", "touched_at"}
     ),
@@ -314,6 +320,40 @@ class SchemaMigrationTests(unittest.TestCase):
             actual_columns,
             PROJECT_USAGE_COLUMNS | CONTROL_PLANE_USAGE_COLUMNS,
         )
+
+    def test_v35_migration_adds_terminal_event_disposition_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v35.sqlite3"
+            store = CuratorStore(database_path)
+            store.close()
+            connection = sqlite3.connect(database_path)
+            connection.execute("DROP TABLE terminal_event_dispositions")
+            connection.execute("PRAGMA user_version = 35")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    columns = {
+                        row["name"]
+                        for row in connection.execute(
+                            "PRAGMA table_info(terminal_event_dispositions)"
+                        ).fetchall()
+                    }
+                    self.assertEqual(
+                        columns,
+                        {
+                            "project_id", "event_id", "transition_id", "actor_id",
+                            "prior_status", "payload_sha256", "rationale", "created_at",
+                        },
+                    )
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+            finally:
+                migrated.close()
 
     def test_v17_migration_adds_sde_context_and_staging_age_metadata(self) -> None:
         """Keep old proposals readable and add empty staging-age metadata."""

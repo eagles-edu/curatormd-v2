@@ -13,6 +13,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from .api import AuthenticatedCaller, ProjectAction
+from .events import EventInboxReceipt
 from .project_config import ProjectConfig
 from .store import (
     CuratorStore,
@@ -29,6 +30,8 @@ from .store import (
     NotFoundError,
     ProjectControlPlaneStorageUsage,
     ProjectRetirementRecord,
+    TerminalEventDispositionRecord,
+    TerminalEventInventory,
 )
 
 
@@ -44,6 +47,7 @@ class ProjectAdministrationAction(StrEnum):
     DEREGISTER_FINALIZE = "deregister_finalize"
     REENROLL = "reenroll"
     DRAIN = "drain"
+    DISPOSE_EVENT = "dispose_event"
     RETIRE = "retire"
     GRANT = "grant"
     REVOKE = "revoke"
@@ -371,6 +375,47 @@ class ProjectAccessManager:
 
         self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
         return self._store.consumer_drain_inventory(project_id)
+
+    def terminal_event_inventory(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        *,
+        limit: int = 100,
+        after_event_id: str | None = None,
+    ) -> TerminalEventInventory:
+        """Read a bounded content-free exact-event review page."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.terminal_event_inventory(
+            project_id, limit=limit, after_event_id=after_event_id
+        )
+
+    def terminally_dispose_event(
+        self,
+        caller: AuthenticatedCaller,
+        *,
+        project_id: str,
+        event_id: str,
+        transition_id: str,
+        rationale: str,
+        expected_binding_revision: int,
+        expected_source_epoch: int,
+        expected_payload_sha256: str,
+    ) -> tuple[EventInboxReceipt, TerminalEventDispositionRecord]:
+        """Authorize one exact terminal event decision after consumer fencing."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.DISPOSE_EVENT)
+        return self._store.terminally_dispose_event(
+            project_id=project_id,
+            event_id=event_id,
+            transition_id=transition_id,
+            actor_id=caller.subject_id,
+            rationale=rationale,
+            expected_binding_revision=expected_binding_revision,
+            expected_source_epoch=expected_source_epoch,
+            expected_payload_sha256=expected_payload_sha256,
+        )
 
     def get_project_retirement(
         self, caller: AuthenticatedCaller, project_id: str

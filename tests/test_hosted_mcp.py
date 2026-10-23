@@ -92,6 +92,7 @@ class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
                 ProjectAdministrationAction.DEREGISTER,
                 ProjectAdministrationAction.DEREGISTER_FINALIZE,
                 ProjectAdministrationAction.DRAIN,
+                ProjectAdministrationAction.DISPOSE_EVENT,
                 ProjectAdministrationAction.RETIRE,
             }
         )
