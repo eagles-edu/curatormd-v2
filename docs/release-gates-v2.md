@@ -249,6 +249,30 @@ code/test evidence are recorded in the status table above. Where no deployment
 probe has run, the actual result explicitly says so; this ledger does not
 authorize destructive changes.
 
+## Lifecycle deployment evidence catalog
+
+Each lifecycle case is an independent deployment gate. Run cases only against
+disposable project data with the intended service and administrator identity
+paths. Each packet binds the package/config fingerprints, project and consumer
+binding revisions, source epoch, transition ID, approval reference, and
+before/after state digests. Do not merge dispositions across cases.
+
+| Case ID | Gate | Owner | Preconditions | Expected result | Current disposition |
+| --- | --- | --- | --- | --- | --- |
+| `LC-V22-MIGRATION` | C | Curator storage/recovery owner and repository owner | Isolated v22 database, reviewed backup, migration fault points, approved rollback boundary | Preserve registry/grant/audit state; represent legacy epoch/sequence baselines as unknown; injected failure is atomic; restore/rollback follows the approved boundary | Open; local migration coverage does not establish deployment restore approval |
+| `LC-TRANSITION-CAS` | D | Hermes identity owner and Curator access-policy owner | Authenticated admin and project principals; active binding with recorded revisions | Exact retry after lost response returns the same receipt; stale revision or changed-input reuse makes no mutation | Open; synthetic identities only |
+| `LC-SUSPEND-REACTIVATE` | D | Hermes identity owner, project owner, and retention/review owner | Active project/binding, approved review packet and baseline grant/cursor/inventory observations | Suspension fences old sessions; stale review is rejected; reactivation requires a fresh review bound to unchanged complete inputs | Open; no owner-approved review adapter or deployment run |
+| `LC-DEREG-DRAIN` | F | Consumer owner and router operator | Complete pre-cutover event inventory and exact envelope digests; bounded drain window | Only inventoried exact retries are admitted; new IDs are denied; unresolved or ambiguous acknowledgements keep deregistration pending | Open; local implementation currently blocks all unresolved-event finalization and has no authorized drain |
+| `LC-REENROLL-EPOCH` | F | Consumer owner, Hermes identity owner, and router operator | Deregistered binding; reconciled old events; newly reviewed repository/config/grant/cursor/backlog/purge observations | New enrollment increments the source epoch; old-epoch events, grants, sessions, and configs cannot cross the binding; no old envelope is copied, resequenced, replayed, or used to resume purge | Open; source-epoch cutover is not implemented |
+| `LC-RETIRE-FENCE` | E | Router operator and project/repository owner | Disposable project with retained cursor and explicit terminal-disposition approval | Irreversible tombstone fences replay; cursor is unchanged; dropping backlog requires separate contiguous disposition approval | Open; production tombstone and disposition authority are absent |
+| `LC-EFFECT-BOUNDARY` | E | Router, persistence, and purge operators | Concurrent write, source acknowledgement, projection, and unlink attempts around a lifecycle transition | No stale-revision effect crosses cutover; crash/retry state is recoverable and attributable | Open; local event and persistence fences cover only tested paths |
+| `LC-OPERATOR-STATUS` | E | Operations owner and authenticated dashboard owner | Authenticated project status view with bounded complete-state queries and timestamped host observations | Reconciled counts expose completeness and observation times; unknown/failure states never appear as zero or healthy; no event IDs or payloads leak | Open; no deployed dashboard or authenticated operator run |
+
+Scenario procedures and required packet fields are specified in
+[`curator-v2-plan.md`](curator-v2-plan.md), Section 9. The corresponding
+Section 6 lifecycle item and deployment-level integration-test item remain
+open until the owner-reviewed probes and rollback drill have passed.
+
 ## Slice A work record
 
 - Problem: contract material existed across several documents and typed code,

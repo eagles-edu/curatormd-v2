@@ -4674,6 +4674,13 @@ production health, or deployment recovery.
       observed results and the separate rollback drill succeeds; the existing
       managed-MCP harness and disposable profile tests remain local composition
       evidence only.
+      Evidence-catalog progress (2026-10-23): `release-gates-v2.md` now maps
+      all eight lifecycle case IDs to exactly one deployment slice and names
+      the owner roles, preconditions, expected outcomes, packet bindings, and
+      current disposition. The local lifecycle and migration evidence remains
+      separate from deployment acceptance; these cases have not been run with
+      owner-authenticated deployment identities, and this checklist item stays
+      open.
 - [x] Add end-to-end acceptance tests for: start -> fact bullets -> evidence
       -> open or complete -> SDE review -> receipt -> complete artifact inventory
       -> purge -> truthful status; the MCP acceptance path is in

@@ -2,6 +2,19 @@
 
 ## 2026-10-23
 
+- **Intent:** Make the required lifecycle deployment evidence cases traceable
+  before running owner-gated acceptance.
+  **Changed fact:** Added an eight-case lifecycle catalog to the V2 release
+  gates. Each case has one gate assignment, owner roles, preconditions,
+  expected result, evidence packet bindings, and an explicit open disposition.
+  **Verification:** Cross-checked each stable case ID against the Section 6
+  lifecycle requirement, its Section 9 scenario, and exactly one release-gate
+  slice. `git diff --check` passes.
+  **Open gate:** No owner-authenticated deployment scenario or rollback drill
+  was run; the lifecycle and deployment integration checklist rows remain open.
+  **Outcome:** Established the acceptance catalog without representing local
+  tests or documentation as deployment evidence.
+
 - **Intent:** Continue the open repository-wide Pylint cleanup without
   suppressing structural findings or changing Curator V2 behavior.
   **Changed fact:** Twelve low-risk diagnostics were removed across the current
