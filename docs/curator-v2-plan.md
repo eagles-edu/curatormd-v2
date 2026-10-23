@@ -6399,7 +6399,16 @@ substitute for evidence at a later integration boundary.
       pass. These are local reference-store results. Keep this checklist item
       open for authenticated deployment identity, owner-approved transition
       roles, external staging-inventory authority, production workflow
-      evidence, and migration/rollback acceptance.
+      evidence, and migration/rollback acceptance. Further local progress
+      (2026-10-24): event-inbox admission now rejects new IDs when a registered
+      project or consumer binding is inactive or retired, while preserving
+      exact idempotent receipt lookup for an event already recorded before
+      cutover. Focused access regressions prove new events cannot enter during
+      a reviewed deregistration drain or after retirement, and that the
+      pre-cutover event remains available for exact retry. Local account
+      attribution remains `local-uid:1000`; the deployed Hermes profile still
+      reports transport auth `none`, so authenticated human identity and
+      deployment lifecycle acceptance remain open.
 - [x] Hermes Core and Host Steward remain separate owners; Host Steward
       cleanup is approved, bounded, verified, and incapable of writing project
       knowledge. Local Hermes Core tests verify the root-account plugin boundary

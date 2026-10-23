@@ -7503,6 +7503,26 @@ class CuratorStore:
                         "event ID was already used with a different payload"
                     )
                 return self._event_receipt(existing), False
+            lifecycle = connection.execute(
+                """SELECT registration.status AS project_status,
+                          binding.status AS binding_status,
+                          tombstone.project_id AS retired_project_id
+                   FROM project_registry AS registration
+                   LEFT JOIN consumer_bindings AS binding
+                     ON binding.project_id = registration.project_id
+                   LEFT JOIN project_retirement_tombstones AS tombstone
+                     ON tombstone.project_id = registration.project_id
+                   WHERE registration.project_id = ?""",
+                (event.project_id,),
+            ).fetchone()
+            if lifecycle is not None and (
+                lifecycle["project_status"] != "active"
+                or lifecycle["binding_status"] != "active"
+                or lifecycle["retired_project_id"] is not None
+            ):
+                raise ConflictError(
+                    "project or consumer lifecycle does not accept new events"
+                )
             retained_count, retained_bytes = self._event_inbox_usage(connection)
             new_row_bytes = sum(
                 len(value.encode("utf-8"))

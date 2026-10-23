@@ -5039,3 +5039,15 @@
 **Open gate:** This addresses response loss after suspension only. Reconciliation after deregistration or retirement, consumer-binding revision races, broader source-acknowledgement/unlink failure injection, authenticated deployment identity, and production lifecycle acceptance remain open.
 
 **Outcome:** A previously committed event can free its Hermes outbox entry after suspension without reopening project writes or accepting changed content.
+
+## 2026-10-24 — Reject new events after consumer cutover
+
+**Intent:** Enforce the deregistration and retirement fence at Curator's durable inbox boundary so a caller that bypasses the hosted API cannot add fresh event IDs after cutover.
+
+**Changed fact:** `CuratorStore.ingest_event` now checks the registered project, consumer binding, and retirement tombstone before inserting a new inbox row. Inactive, deregistration-pending, deregistered, suspended, or retired registrations reject new event IDs. Existing exact IDs still return their durable receipt for safe idempotent retry. A regression covers a new ID during an authorized drain and after retirement, plus the preserved pre-cutover receipt.
+
+**Verification:** `uv run --locked --group test python -m unittest -q tests.test_project_access` passes all 18 tests. Strict Pyright reports zero diagnostics; errors-only Pylint passes for the changed source and test; `git diff --check` passes.
+
+**Open gate:** This closes only the local inbox-admission gap. Expiry/lost-ack and binding-effect races, authenticated Hermes human identity, owner-approved terminal dispositions in deployment, replay-horizon policy, and deployment migration/rollback evidence remain open. The deployed Hermes profile reports transport auth `none`; the approved local OS UID does not establish a human principal.
+
+**Outcome:** The reference store keeps the pre-cutover event receipt available but will not create new event records after a project or consumer binding is fenced.

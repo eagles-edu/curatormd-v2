@@ -879,6 +879,11 @@ class DurableProjectAccessTests(unittest.TestCase):
                 self.operator.subject_id, "alpha", replace(event, event_id="new-event")
             )
         )
+        retry, created = self.store.ingest_event(event)
+        self.assertFalse(created)
+        self.assertEqual(retry.event_id, event.event_id)
+        with self.assertRaisesRegex(ConflictError, "does not accept new events"):
+            self.store.ingest_event(replace(event, event_id="new-event"))
 
     def test_terminal_event_disposition_is_exact_ordered_and_replayable(self) -> None:
         """A fenced source can close one failed event without losing its receipt."""
@@ -964,15 +969,15 @@ class DurableProjectAccessTests(unittest.TestCase):
         """Retirement fences a project but preserves unresolved event records."""
 
         self._register()
-        with self.store.transaction() as connection:
-            connection.execute(
-                """INSERT INTO event_inbox
-                   (project_id, event_id, event_type, payload_sha256, payload_bytes,
-                    status, received_at)
-                   VALUES (?, 'preserved-pending-event', 'test.event', ?, 0,
-                           'received', '2026-10-23T00:00:00Z')""",
-                (self.project_id, "0" * 64),
-            )
+        event = EventEnvelope(
+            "preserved-pending-event",
+            self.project_id,
+            GoalActivityObserved("goal-1", "fact-1", FactKind.CHANGE, "Done."),
+            source_id="retired-source-generation-1",
+            source_sequence=1,
+        )
+        original_receipt, created = self.store.ingest_event(event)
+        self.assertTrue(created)
         self._allow_admin(ProjectAdministrationAction.DEREGISTER)
         self.manager.transition_consumer_binding(
             self.operator,
@@ -997,6 +1002,11 @@ class DurableProjectAccessTests(unittest.TestCase):
                 (self.project_id, "preserved-pending-event"),
             ).fetchone()
         self.assertEqual(preserved_event["status"], "received")
+        self.assertEqual(
+            self.store.ingest_event(event), (original_receipt, False)
+        )
+        with self.assertRaisesRegex(ConflictError, "does not accept new events"):
+            self.store.ingest_event(replace(event, event_id="post-retirement-event"))
         self.assertEqual(
             self.manager.retire_project(
                 self.operator, self.project_id, "Owner retires this project", 1,
