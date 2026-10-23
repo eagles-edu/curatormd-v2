@@ -4967,3 +4967,15 @@
 **Open gate:** The active Vhost project was not deregistered or retired. The local disposition was exercised in reference-store and attended CLI tests, not against real failed production events. A unified time-stamped lifecycle status snapshot, production identity, deployment acceptance, and rollback drills remain open.
 
 **Outcome:** Added an auditable terminal event path that preserves receipts and ordering while permitting the Hermes source outbox to stop retrying only after an exact human-approved Curator receipt.
+
+## 2026-10-23 — Add one-snapshot consumer lifecycle status
+
+**Intent:** Give the local owner one bounded, content-free observation of project retirement state, consumer binding, event backlog, and terminal-disposition candidates.
+
+**Changed fact:** `project_lifecycle_status_snapshot` reads project revision/status, binding/source epoch, retirement tombstone, all event-status counts, active leases, full unresolved-event count/digest, and one paged terminal-event inventory from a single SQLite read transaction. It includes an observation time and marks unknown event states or a truncated candidate page incomplete. The attended local `view` command includes the snapshot; existing grants, audit, storage, and registration details remain separately visible.
+
+**Verification:** The full Curator suite passes 438 tests. Strict Pyright reports zero diagnostics, errors-only Pylint and Bandit pass, and `git diff --check` passes. The updated wheel SHA-256 is `d14df4b3e01fea66363fd98dcb409b42bb3170014702dd4c93ab718610a719d5`; it is installed into the isolated Vhost alpha profile, whose MCP test connects and discovers 48 tools. The attended deployed `view` read reports `complete=true`, one active project/binding, 12 processed events, zero active leases, zero unresolved events, and no retirement tombstone. A mode-0600 package recovery archive is `/home/eaglesvn/.local/share/curatormd-v2-alpha/backups/pre-status-snapshot-package-2026-10-23.tar.gz`.
+
+**Open gate:** This verifies a local alpha operator view and test database behavior. It does not establish Hermes-authenticated human identity, production status sources, production lifecycle evidence, or release/rollback approval.
+
+**Outcome:** Deployed a bounded status snapshot that reports its observation scope and completeness instead of requiring separate reads to infer lifecycle state.

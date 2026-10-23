@@ -386,22 +386,17 @@ def _perform(
         )
         return {"operation": operation, "grant": asdict(record)}
     if operation == "view":
-        registration = manager.get_registration(caller, config.project_id)
-        drain_count, drain_digest = manager.consumer_drain_inventory(
-            caller, config.project_id
-        )
-        terminal_inventory = manager.terminal_event_inventory(
+        lifecycle_status = manager.lifecycle_status_snapshot(
             caller,
             config.project_id,
-            limit=arguments.event_limit,
+            event_limit=arguments.event_limit,
             after_event_id=arguments.event_after,
         )
+        registration = manager.get_registration(caller, config.project_id)
         return {
             "operation": operation,
             "registration": asdict(registration),
-            "consumer_binding": asdict(
-                manager.get_consumer_binding(caller, config.project_id)
-            ),
+            "consumer_binding": asdict(lifecycle_status.consumer_binding),
             "grants": [asdict(item) for item in manager.list_grants(caller, config.project_id)],
             "audit": [
                 asdict(item)
@@ -412,17 +407,18 @@ def _perform(
                 for item in manager.list_consumer_binding_audit(caller, config.project_id)
             ],
             "retirement": (
-                asdict(retirement)
-                if (retirement := manager.get_project_retirement(
-                    caller, config.project_id
-                )) is not None
+                asdict(lifecycle_status.retirement)
+                if lifecycle_status.retirement is not None
                 else None
             ),
             "unprocessed_event_inventory": {
-                "count": drain_count,
-                "sha256": drain_digest,
+                "count": lifecycle_status.unprocessed_event_count,
+                "sha256": lifecycle_status.unprocessed_event_sha256,
             },
-            "terminal_event_inventory": asdict(terminal_inventory),
+            "terminal_event_inventory": asdict(
+                lifecycle_status.terminal_event_inventory
+            ),
+            "lifecycle_status": asdict(lifecycle_status),
             "control_plane_storage_usage": asdict(
                 manager.storage_usage(caller, config.project_id)
             ),

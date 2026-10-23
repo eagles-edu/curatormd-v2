@@ -2422,9 +2422,13 @@ consumer plugin, Hermes integration, or production deployment.
       acknowledgement is receipt-gated: the Hermes hook returns success only
       for a processed or duplicate Curator receipt. A read-only check of the
       deployed profile outbox found 11 acknowledged events, 0 pending, and 22
-      attempts; the Vhost ledger has 12 processed receipts. A unified
-      time-stamped lifecycle status snapshot and authenticated production
-      lifecycle evidence remain open.
+      attempts; the Vhost ledger has 12 processed receipts. The deployed
+      attended `view` now returns one time-stamped SQLite snapshot of project
+      revision/status, binding/source epoch, tombstone, complete event-status
+      counts, active leases, unresolved inventory digest, and a bounded
+      terminal-event page. The current Vhost read reports `complete=true`, 12
+      processed events, and no unresolved events. Authenticated production
+      lifecycle evidence remains open.
       Represent binding state separately from project lifecycle state and expose
       `active`, `deregistration_pending`, or `deregistered` in content-free
       operator status; deregistration must never appear as project retirement.

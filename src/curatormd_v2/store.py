@@ -359,6 +359,25 @@ class TerminalEventInventory:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectLifecycleStatusSnapshot:
+    """One read-transaction view of project, binding, and event lifecycle state."""
+
+    project_id: str
+    observed_at: str
+    complete: bool
+    incomplete_reasons: tuple[str, ...]
+    project_status: str
+    project_revision: int
+    consumer_binding: ConsumerBindingRecord
+    retirement: ProjectRetirementRecord | None
+    event_status_counts: tuple[tuple[str, int], ...]
+    unprocessed_event_count: int
+    unprocessed_event_sha256: str
+    active_event_lease_count: int
+    terminal_event_inventory: TerminalEventInventory
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectRegistryAuditRecord:
     """Append-only evidence of a project registration or lifecycle change."""
 
@@ -2092,6 +2111,100 @@ class CuratorStore:
             complete=complete,
             next_after_event_id=events[-1].event_id if not complete and events else None,
         )
+
+    def project_lifecycle_status_snapshot(
+        self,
+        project_id: str,
+        *,
+        event_limit: int = 100,
+        after_event_id: str | None = None,
+    ) -> ProjectLifecycleStatusSnapshot:
+        """Capture content-free lifecycle state from one SQLite read snapshot."""
+
+        self._validate_access_identity(project_id, "project_id")
+        if not is_exact_int(event_limit) or not 1 <= event_limit <= 100:
+            raise ValueError("event_limit must be between 1 and 100")
+        observed_at = utc_now()
+        with self._lock:
+            self._connection.execute("BEGIN")
+            try:
+                registration = self._connection.execute(
+                    "SELECT status, revision FROM project_registry WHERE project_id = ?",
+                    (project_id,),
+                ).fetchone()
+                binding_row = self._connection.execute(
+                    "SELECT * FROM consumer_bindings WHERE project_id = ?",
+                    (project_id,),
+                ).fetchone()
+                if registration is None or binding_row is None:
+                    raise NotFoundError("project lifecycle registration not found")
+                event_counts = tuple(
+                    (str(row["status"]), int(row["count"]))
+                    for row in self._connection.execute(
+                        "SELECT status, COUNT(*) AS count FROM event_inbox "
+                        "WHERE project_id = ? GROUP BY status ORDER BY status",
+                        (project_id,),
+                    ).fetchall()
+                )
+                unprocessed_rows = self._connection.execute(
+                    """SELECT event_id, payload_sha256, idempotency_sha256,
+                              source_id, source_sequence, status FROM event_inbox
+                       WHERE project_id = ? AND status <> 'processed'
+                       ORDER BY event_id""",
+                    (project_id,),
+                ).fetchall()
+                digest = hashlib.sha256()
+                for row in unprocessed_rows:
+                    encoded = json.dumps(
+                        [row[key] for key in (
+                            "event_id", "payload_sha256", "idempotency_sha256",
+                            "source_id", "source_sequence", "status",
+                        )],
+                        separators=(",", ":"), ensure_ascii=True,
+                    ).encode("ascii")
+                    digest.update(len(encoded).to_bytes(4, "big"))
+                    digest.update(encoded)
+                active_leases = int(self._connection.execute(
+                    """SELECT COUNT(*) FROM event_inbox WHERE project_id = ?
+                       AND lease_owner IS NOT NULL AND lease_expires_at > ?""",
+                    (project_id, observed_at),
+                ).fetchone()[0])
+                retirement_row = self._connection.execute(
+                    "SELECT * FROM project_retirement_tombstones WHERE project_id = ?",
+                    (project_id,),
+                ).fetchone()
+                terminal_inventory = self.terminal_event_inventory(
+                    project_id, limit=event_limit, after_event_id=after_event_id
+                )
+                known_statuses = {status.value for status in EventInboxStatus}
+                reasons: list[str] = []
+                if any(status not in known_statuses for status, _count in event_counts):
+                    reasons.append("unknown_event_status")
+                if not terminal_inventory.complete:
+                    reasons.append("terminal_event_page_truncated")
+                snapshot = ProjectLifecycleStatusSnapshot(
+                    project_id=project_id,
+                    observed_at=observed_at,
+                    complete=not reasons,
+                    incomplete_reasons=tuple(reasons),
+                    project_status=str(registration["status"]),
+                    project_revision=int(registration["revision"]),
+                    consumer_binding=self._consumer_binding_from_row(binding_row),
+                    retirement=(
+                        self._project_retirement_from_row(retirement_row)
+                        if retirement_row is not None else None
+                    ),
+                    event_status_counts=event_counts,
+                    unprocessed_event_count=len(unprocessed_rows),
+                    unprocessed_event_sha256=digest.hexdigest(),
+                    active_event_lease_count=active_leases,
+                    terminal_event_inventory=terminal_inventory,
+                )
+                self._connection.commit()
+                return snapshot
+            except BaseException:
+                self._connection.rollback()
+                raise
 
     def authorize_consumer_drain(
         self,

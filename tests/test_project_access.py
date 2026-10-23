@@ -780,6 +780,15 @@ class DurableProjectAccessTests(unittest.TestCase):
         self.assertEqual(candidates.count_after_cursor, 1)
         self.assertEqual(candidates.events[0].event_id, event.event_id)
         self.assertEqual(candidates.events[0].payload_sha256, received.payload_sha256)
+        observed = self.manager.lifecycle_status_snapshot(
+            self.operator, self.project_id, event_limit=1
+        )
+        self.assertTrue(observed.complete)
+        self.assertTrue(observed.observed_at)
+        self.assertEqual(observed.project_status, "active")
+        self.assertEqual(observed.consumer_binding.status, "deregistration_pending")
+        self.assertEqual(observed.event_status_counts, (("quarantined", 1),))
+        self.assertEqual(observed.unprocessed_event_count, 1)
         self._allow_admin(ProjectAdministrationAction.DISPOSE_EVENT)
         result, disposition = self.manager.terminally_dispose_event(
             self.operator,
@@ -808,6 +817,11 @@ class DurableProjectAccessTests(unittest.TestCase):
         )
         self.assertEqual(replay, result)
         self.assertEqual(replayed_disposition, disposition)
+        finalized_status = self.manager.lifecycle_status_snapshot(
+            self.operator, self.project_id, event_limit=1
+        )
+        self.assertEqual(finalized_status.event_status_counts, (("processed", 1),))
+        self.assertEqual(finalized_status.unprocessed_event_count, 0)
         duplicate, is_new = self.store.ingest_event(event)
         self.assertFalse(is_new)
         self.assertEqual(duplicate.disposition, "terminal_authorized")

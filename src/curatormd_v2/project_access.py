@@ -32,6 +32,7 @@ from .store import (
     ProjectRetirementRecord,
     TerminalEventDispositionRecord,
     TerminalEventInventory,
+    ProjectLifecycleStatusSnapshot,
 )
 
 
@@ -389,6 +390,23 @@ class ProjectAccessManager:
         self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
         return self._store.terminal_event_inventory(
             project_id, limit=limit, after_event_id=after_event_id
+        )
+
+    def lifecycle_status_snapshot(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        *,
+        event_limit: int = 100,
+        after_event_id: str | None = None,
+    ) -> ProjectLifecycleStatusSnapshot:
+        """Read one bounded, authenticated content-free lifecycle snapshot."""
+
+        self._require_admin(caller, project_id, ProjectAdministrationAction.VIEW)
+        return self._store.project_lifecycle_status_snapshot(
+            project_id,
+            event_limit=event_limit,
+            after_event_id=after_event_id,
         )
 
     def terminally_dispose_event(

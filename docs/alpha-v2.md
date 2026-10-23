@@ -99,7 +99,7 @@ workflow or canonical application-target write was exercised, and
 
 Vhost alpha lifecycle deployment (2026-10-23): rebuilt and installed wheel
 `curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
-`6b837eb7b1300a2bd522401cb909d81142cb671c84d36617ffebbd1ad5800b76`) into the
+`d14df4b3e01fea66363fd98dcb409b42bb3170014702dd4c93ab718610a719d5`) into the
 isolated `renew-ssl-coding` profile. The profile is configured for local-alpha
 review and write. The active SQLite ledger was backed up while at schema v35
 before migration to schema v36; both the live DB and a disposable migrated copy
@@ -117,9 +117,10 @@ contiguous source order; it preserves an immutable decision receipt and lets
 the Hermes outbox acknowledge that processed receipt. The full Curator suite
 passes 438 tests; strict Pyright, errors-only Pylint, Bandit, and
 `git diff --check` pass. This verifies only local alpha identity and lifecycle behavior;
-a unified time-stamped lifecycle status snapshot, production identity,
-production acceptance, and rollback drills remain open. The active Vhost
-project was not retired.
+the deployed attended `view` returns a complete, time-stamped snapshot with 12
+processed events and no unresolved events. Production identity, production
+acceptance, and rollback drills remain open. The active Vhost project was not
+retired.
 
 Vhost alpha endpoint check (2026-10-21): `hermes -p renew-ssl-coding gateway
 ensure --json --timeout 45` returned `state=ready` with a profile-scoped
