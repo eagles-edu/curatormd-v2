@@ -1,5 +1,22 @@
 # Curator V2 history
 
+## 2026-10-24 — Share fail-closed timestamp parsing
+
+- **Intent:** Remove duplicated timestamp parsing while preserving exact
+  evidence and project-reactivation validation behavior.
+- **Changed fact:** Evidence receipt freshness and staging-observation checks
+  now share the bounded timezone-aware ISO parser from `record_validation.py`.
+  Both paths still return no parsed timestamp for malformed, naive, oversized,
+  or out-of-range values; valid timestamps normalize to UTC.
+- **Verification:** The focused evidence and project-access suites pass 36
+  tests. Full warning-level Pylint falls from 131 to 130 findings, with
+  duplicate-code findings falling from 22 to 21; no warning/error categories
+  are reported. `git diff --check` passes.
+- **Open gate:** Whole-tree Pylint still has 130 findings. The broad cleanup
+  item remains open.
+- **Outcome:** Preserve the evidence-freshness and reactivation behavior while
+  removing one duplicate block.
+
 ## 2026-10-24 — Consolidate repeated consumer test configuration
 
 - **Intent:** Reduce actual repository-wide Pylint duplication without

@@ -26,3 +26,12 @@ def parse_aware_timestamp(name: str, value: object) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError(f"{name} must include a timezone")
     return parsed.astimezone(UTC)
+
+
+def parse_optional_aware_timestamp(value: object) -> datetime | None:
+    """Parse a bounded timezone-aware timestamp, returning None on invalid input."""
+
+    try:
+        return parse_aware_timestamp("timestamp", value)
+    except (OverflowError, ValueError):
+        return None

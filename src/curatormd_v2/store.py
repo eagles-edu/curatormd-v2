@@ -92,6 +92,7 @@ from .models import (
     new_id,
     utc_now,
 )
+from .record_validation import parse_optional_aware_timestamp
 from .reporting import GoalReportContext
 from .schema_migrations import (
     SQLITE_SCHEMA_VERSION,
@@ -524,18 +525,6 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REACTIVATION_STAGING_MAX_AGE_SECONDS = 60
 
 
-def _parse_access_observation_time(value: object) -> datetime | None:
-    """Parse one bounded timezone-aware staging observation timestamp."""
-
-    if not isinstance(value, str) or not 1 <= len(value) <= 64:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (OverflowError, ValueError):
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(UTC)
 _ACCESS_RATIONALE_LIMIT = 1000
 _PROJECT_ACCESS_ACTIONS = frozenset(
     {"read", "write", "review", "purge_retry", "retention_hold_release", "event_retry"}
@@ -1741,7 +1730,7 @@ class CuratorStore:
         ).fetchone()
         if registration is None:
             raise NotFoundError("project registration not found")
-        staging_observed = _parse_access_observation_time(
+        staging_observed = parse_optional_aware_timestamp(
             staging_inventory_observed_at
         )
         complete = (
@@ -1932,7 +1921,7 @@ class CuratorStore:
             or request.staging_inventory_count < 0
             or not is_exact_int(request.staging_inventory_bytes)
             or request.staging_inventory_bytes < 0
-            or _parse_access_observation_time(request.staging_inventory_observed_at)
+            or parse_optional_aware_timestamp(request.staging_inventory_observed_at)
             is None
         ):
             raise ValueError("reactivation requires a complete staging observation")

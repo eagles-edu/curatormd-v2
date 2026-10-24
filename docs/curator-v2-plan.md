@@ -4920,6 +4920,14 @@ production health, or deployment recovery.
       117 refactor, including 22 duplicate-code findings); no warning/error
       categories are reported. `git diff --check` passes. Repository-wide
       warning cleanup remains open.
+      Further progress (2026-10-24): unified the bounded timezone-aware ISO
+      timestamp parser used by evidence receipts and project reactivation
+      observations. Both callers preserve fail-closed `None` behavior for
+      invalid input. The focused evidence and project-access suites pass 36
+      tests. A fresh full Pylint scan falls to 130 findings (14 convention,
+      116 refactor, including 21 duplicate-code findings); no warning/error
+      categories are reported. `git diff --check` passes. The whole-tree
+      cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

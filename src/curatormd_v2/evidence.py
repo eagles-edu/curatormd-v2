@@ -15,6 +15,7 @@ from typing import Protocol
 
 from .content_safety import validate_safe_text
 from .models import EvidenceAttestation, EvidenceOutcome, EvidenceRef
+from .record_validation import parse_optional_aware_timestamp
 from .validation import is_exact_bool, is_exact_int
 
 
@@ -237,16 +238,7 @@ class RejectUnverifiedEvidence:
 
 def _parse_time(value: object) -> datetime | None:
     """Parse an ISO-8601 timestamp only when it carries an explicit timezone."""
-
-    if not isinstance(value, str) or not 1 <= len(value) <= 64:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (OverflowError, ValueError):
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(UTC)
+    return parse_optional_aware_timestamp(value)
 
 
 class ReceiptEvidenceAdapter:
