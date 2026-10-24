@@ -1492,6 +1492,19 @@ consumer plugin, Hermes integration, or production deployment.
       base after 120 seconds, so the repository-wide check is not verified.
       Production scheduler/alert services and the active installed Hermes
       build remain unverified, so this item remains open.
+      Hermes Core source-checkout follow-up (2026-10-24): the health bridge now
+      probes the six-hour timer's latest successful run and journal-only failure
+      route; profile-authenticated session subjects are propagated only when
+      the live session belongs to the same profile home. Nine health-probe
+      tests, 25 MCP trust tests, three focused session-identity tests, Ruff, and
+      `git diff --check` pass. The broader gateway file had 638 passes and one
+      unrelated quick-command test failure because it read the real Hermes
+      manifest under the test I/O guard. `scripts/check` ran all 12 checks but
+      could not run its blob-size and health base comparisons because this
+      shallow branch has no merge base with `main` or `origin/main`; its Ruff
+      check passes separately. These are checkout-source results, not evidence
+      that the modified Core is installed or that the next six-hour timer pass
+      has run. Slice G and deployment/runtime gates remain open.
       Proposed owner-gated production acceptance: enumerate every required
       observation (event router, purge scheduler, database/storage adapter,
       staging inventory, identity/review services, and alert delivery), name its

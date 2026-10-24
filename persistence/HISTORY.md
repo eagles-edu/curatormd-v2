@@ -1,5 +1,27 @@
 # Curator V2 history
 
+## 2026-10-24 — Verify Hermes source health probes and session context
+
+- **Intent:** Continue the V2 Hermes Core integration and validate the
+  local-alpha readiness bridge against Hermes' profile and session boundaries.
+- **Changed fact:** The Hermes source checkout reads the six-hour maintenance
+  timer's recent successful run, checks the journal output route without
+  reading records, and attaches a verified session subject only when the
+  session profile home matches the active request profile. No active Hermes
+  install or Vhost project file was changed.
+- **Verification:** Nine readiness tests, 25 MCP trust tests, and three focused
+  session-identity tests pass; targeted Ruff and Hermes `git diff --check`
+  pass. The broader gateway file had 638 passes and one unrelated quick-command
+  test failure caused by a real-home manifest read under the test I/O guard.
+  `scripts/check` ran 12 checks; blob-size and health checks could not find a
+  merge base in this shallow branch, while `scripts/check --only ruff` passes.
+- **Open gate:** The modified Hermes checkout is not the active install; the
+  first six-hour run after cadence change remains pending; Slice G and live
+  consumer workflow are open. No checklist marker changes from this supporting
+  integration work.
+- **Outcome:** Keep the source-level readiness result and its runtime limits
+  explicit; continue toward a verified local Hermes-to-Curator workflow.
+
 ## 2026-10-24 — Share checklist snapshot validation
 
 - **Intent:** Keep event-ingress and persisted goal records under one checklist
