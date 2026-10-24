@@ -1,5 +1,23 @@
 # Curator V2 history
 
+## 2026-10-24 — Reuse exact test project provisioning
+
+- **Intent:** Remove repeated hosted-MCP and host-service test registration
+  logic while preserving each test's exact grants and audit rationale.
+- **Changed fact:** Both fixture paths now use `register_test_project_access`
+  from `tests/project_fixtures.py`; the shared helper takes an explicit
+  immutable grant specification and retains each caller's administrator,
+  action set, and rationales.
+- **Verification:** The affected suites pass 17 tests and strict Pyright reports
+  zero diagnostics. Whole-tree Pylint reports 127 findings (14 convention,
+  113 refactor, including 18 duplicate-code findings), with no warning/error
+  categories. The focused lint scan shows only the hosted-MCP module's existing
+  module-size/local-complexity messages. `git diff --check` passes.
+- **Open gate:** Repository-wide lint cleanup remains open; no delivery item is
+  closed by this fixture refactor.
+- **Outcome:** Keep the least-privilege test grants caller-specific and share
+  only their common registration mechanics.
+
 ## 2026-10-24 — Refresh the local Hermes profile package
 
 - **Intent:** Verify the current Curator V2 package and consumer integration in

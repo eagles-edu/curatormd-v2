@@ -10,10 +10,14 @@ import sys
 import tempfile
 import unittest
 
-from project_fixtures import create_consumer_repo, write_consumer_config
+from project_fixtures import (
+    TestProjectAccess,
+    create_consumer_repo,
+    register_test_project_access,
+    write_consumer_config,
+)
 
 from curatormd_v2 import (
-    AuthenticatedCaller,
     CuratorStore,
     EvidenceOutcome,
     EvidenceRef,
@@ -21,33 +25,11 @@ from curatormd_v2 import (
     FactKind,
     FactRecorded,
     GoalStarted,
-    ProjectAccessManager,
     ProjectAction,
-    ProjectAdministrationAction,
-    ProjectConfig,
-    ProjectRegistrationRequest,
     SuccessCriterion,
     hosted_mcp,
 )
 from curatormd_v2.models import CriterionStatus
-
-
-class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
-    """Provision only the disposable project and grants used by this test."""
-
-    def authorize_project_administration(
-        self,
-        caller: AuthenticatedCaller,
-        project_id: str,
-        action: ProjectAdministrationAction,
-    ) -> bool:
-        """Allow registration and grants only for the disposable test actor."""
-
-        del project_id
-        return caller.subject_id == "test-operator" and action in {
-            ProjectAdministrationAction.REGISTER,
-            ProjectAdministrationAction.GRANT,
-        }
 
 
 class HostedServiceEvidenceTests(
@@ -66,25 +48,21 @@ class HostedServiceEvidenceTests(
             (root / "persistence" / "HISTORY.md").write_text("# History\n")
             write_consumer_config(root, "probe-project")
             database = Path(temporary) / "global.sqlite3"
-            config = ProjectConfig.load(root)
             store = CuratorStore(database)
             try:
-                manager = ProjectAccessManager(store, _TestProjectAdmin())
-                operator = AuthenticatedCaller("test-operator")
-                manager.register_project(
-                    operator,
-                    ProjectRegistrationRequest.from_project_config(
-                        config, "Register the disposable test project"
+                register_test_project_access(
+                    store,
+                    root,
+                    f"local-uid:{os.geteuid()}",
+                    TestProjectAccess(
+                        actions=(ProjectAction.READ, ProjectAction.WRITE),
+                        admin_subject="test-operator",
+                        registration_rationale="Register the disposable test project",
+                        grant_rationale=(
+                            "Grant exact disposable integration-test access"
+                        ),
                     ),
                 )
-                for action in (ProjectAction.READ, ProjectAction.WRITE):
-                    manager.grant(
-                        operator,
-                        config.project_id,
-                        f"local-uid:{os.geteuid()}",
-                        action,
-                        "Grant exact disposable integration-test access",
-                    )
             finally:
                 store.close()
 

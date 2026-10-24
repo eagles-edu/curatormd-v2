@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 import sys
 
@@ -81,8 +82,11 @@ class _TestProjectAdministrator:  # pylint: disable=too-few-public-methods
     # Implements the one-operation host administrator protocol for isolated tests.
     """Authorize only fixture registration and grants for one project."""
 
-    def __init__(self, project_id: str) -> None:
+    def __init__(
+        self, project_id: str, subject_id: str = "test-project-admin"
+    ) -> None:
         self.project_id = project_id
+        self.subject_id = subject_id
 
     def authorize_project_administration(
         self,
@@ -93,11 +97,21 @@ class _TestProjectAdministrator:  # pylint: disable=too-few-public-methods
         """Allow the test administrator's exact registration/grant actions."""
 
         return (
-            caller.subject_id == "test-project-admin"
+            caller.subject_id == self.subject_id
             and project_id == self.project_id
             and action
             in (ProjectAdministrationAction.REGISTER, ProjectAdministrationAction.GRANT)
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TestProjectAccess:
+    """Exact test-only administrator and grants for one consumer fixture."""
+
+    actions: tuple[ProjectAction, ...]
+    admin_subject: str = "test-project-admin"
+    registration_rationale: str = "Register an isolated test consumer"
+    grant_rationale: str = "Grant the test identity its exact project action"
 
 
 def bind_test_project(
@@ -110,26 +124,48 @@ def bind_test_project(
 ) -> ProjectPlugin:
     """Bind a test plugin after seeding its exact registration and grants."""
 
+    config = register_test_project_access(
+        store,
+        root,
+        subject_id,
+        TestProjectAccess(
+            actions=(
+                ProjectAction.READ,
+                ProjectAction.WRITE,
+                ProjectAction.REVIEW,
+                ProjectAction.RETENTION_HOLD_RELEASE,
+            )
+        ),
+    )
+    return ProjectPlugin.bind(config, store, evidence_verifier, review_authorizer)
+
+
+def register_test_project_access(
+    store: CuratorStore,
+    root: Path,
+    subject_id: str,
+    access: TestProjectAccess,
+) -> ProjectConfig:
+    """Register one fixture project and seed only its exact requested grants."""
+
     config = ProjectConfig.load(root)
-    manager = ProjectAccessManager(store, _TestProjectAdministrator(config.project_id))
-    administrator = AuthenticatedCaller("test-project-admin")
+    manager = ProjectAccessManager(
+        store,
+        _TestProjectAdministrator(config.project_id, access.admin_subject),
+    )
+    administrator = AuthenticatedCaller(access.admin_subject)
     manager.register_project(
         administrator,
         ProjectRegistrationRequest.from_project_config(
-            config, "Register an isolated test consumer"
+            config, access.registration_rationale
         ),
     )
-    for action in (
-        ProjectAction.READ,
-        ProjectAction.WRITE,
-        ProjectAction.REVIEW,
-        ProjectAction.RETENTION_HOLD_RELEASE,
-    ):
+    for action in access.actions:
         manager.grant(
             administrator,
             config.project_id,
             subject_id,
             action,
-            "Grant the test identity its exact project action",
+            access.grant_rationale,
         )
-    return ProjectPlugin.bind(config, store, evidence_verifier, review_authorizer)
+    return config

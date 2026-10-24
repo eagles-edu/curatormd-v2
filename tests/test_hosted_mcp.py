@@ -16,7 +16,12 @@ from typing import Callable, cast
 import unittest
 from unittest.mock import patch
 
-from project_fixtures import create_consumer_repo, write_consumer_config
+from project_fixtures import (
+    TestProjectAccess,
+    create_consumer_repo,
+    register_test_project_access,
+    write_consumer_config,
+)
 
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
@@ -35,7 +40,6 @@ from curatormd_v2 import (
     ProjectAction,
     ProjectAdministrationAction,
     ProjectConfig,
-    ProjectRegistrationRequest,
     ProjectPlugin,
     ProjectStatusChangeRequest,
     SQLiteTokenBucket,
@@ -120,34 +124,28 @@ class HostedMcpTests(unittest.TestCase):
     ) -> None:
         """Seed durable access using the host-only project administration API."""
 
-        config = ProjectConfig.load(root)
         store = CuratorStore(database)
         try:
-            manager = ProjectAccessManager(store, _TestProjectAdmin())
-            operator = AuthenticatedCaller("test-operator")
-            manager.register_project(
-                operator,
-                ProjectRegistrationRequest.from_project_config(
-                    config,
-                    "Approve the disposable integration-test project binding",
+            actions = [ProjectAction.READ]
+            if allow_write:
+                actions.append(ProjectAction.WRITE)
+            if allow_review:
+                actions.append(ProjectAction.REVIEW)
+            register_test_project_access(
+                store,
+                root,
+                _local_subject(),
+                TestProjectAccess(
+                    actions=tuple(actions),
+                    admin_subject="test-operator",
+                    registration_rationale=(
+                        "Approve the disposable integration-test project binding"
+                    ),
+                    grant_rationale=(
+                        "Grant the disposable integration-test profile exact access"
+                    ),
                 ),
             )
-            for action in (
-                ProjectAction.READ,
-                ProjectAction.WRITE,
-                ProjectAction.REVIEW,
-            ):
-                if action is ProjectAction.WRITE and not allow_write:
-                    continue
-                if action is ProjectAction.REVIEW and not allow_review:
-                    continue
-                manager.grant(
-                    operator,
-                    config.project_id,
-                    _local_subject(),
-                    action,
-                    "Grant the disposable integration-test profile exact access",
-                )
         finally:
             store.close()
 

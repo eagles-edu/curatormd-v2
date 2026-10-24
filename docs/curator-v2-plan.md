@@ -4940,7 +4940,15 @@ production health, or deployment recovery.
       diagnostics. A fresh whole-tree scan reports 128 findings (14 convention,
       114 refactor, including 19 duplicate-code findings), with no warning/error
       categories. `git diff --check` passes. Repository-wide cleanup remains
-      open and no checklist checkbox changed.
+      open and no checklist checkbox changed. Further progress (2026-10-24):
+      consolidated exact project registration/grant setup for the hosted-MCP
+      and host-service-evidence test fixtures in `tests/project_fixtures.py`.
+      The two affected suites pass 17 tests and strict Pyright reports zero
+      diagnostics. Whole-tree Pylint now reports 127 findings (14 convention,
+      113 refactor, including 18 duplicate-code findings), with no warning/error
+      categories. The changed test modules retain only their existing module-size
+      and local-variable complexity messages. `git diff --check` passes. The
+      broad lint item remains open; no checklist checkbox changed.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
