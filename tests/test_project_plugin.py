@@ -22,7 +22,7 @@ from typing import BinaryIO, cast
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
-from project_fixtures import create_consumer_repo
+from project_fixtures import create_consumer_repo, write_consumer_config
 from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import (
@@ -372,28 +372,11 @@ class ProjectPluginTests(unittest.TestCase):
     def write_config(self, content: str | None = None) -> None:
         """Write a minimal, valid repository-local config fixture."""
 
-        config = content or """\
-            schema_version = 1
-            backend_api_version = 1
-            project_id = "consumer-a"
-
-            [scope]
-            read_paths = ["src", "docs"]
-
-            [checklists]
-            tasks = "docs/tasks.md"
-
-            [evidence]
-            adapters = []
-
-            [staging]
-            root = ".curatormd-v2/staging"
-
-            [persistence]
-            targets = ["persistence/HISTORY.md"]
-            """
-        (self.root / CONFIG_FILENAME).write_text(config)
-        (self.root / CONFIG_FILENAME).chmod(0o600)
+        if not content:
+            write_consumer_config(self.root, "consumer-a")
+        else:
+            (self.root / CONFIG_FILENAME).write_text(content)
+            (self.root / CONFIG_FILENAME).chmod(0o600)
 
     @staticmethod
     def _goal(plugin: ProjectPlugin, goal_id: str):

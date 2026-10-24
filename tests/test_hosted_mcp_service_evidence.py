@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from project_fixtures import create_consumer_repo
+from project_fixtures import create_consumer_repo, write_consumer_config
 
 from curatormd_v2 import (
     AuthenticatedCaller,
@@ -64,29 +64,7 @@ class HostedServiceEvidenceTests(
             create_consumer_repo(root)
             (root / "docs" / "tasks.md").write_text("- [ ] Verify readiness\n")
             (root / "persistence" / "HISTORY.md").write_text("# History\n")
-            (root / ".curatormd-v2.toml").write_text(
-                """\
-                schema_version = 1
-                backend_api_version = 1
-                project_id = "probe-project"
-
-                [scope]
-                read_paths = ["src", "docs"]
-
-                [checklists]
-                tasks = "docs/tasks.md"
-
-                [evidence]
-                adapters = []
-
-                [staging]
-                root = ".curatormd-v2/staging"
-
-                [persistence]
-                targets = ["persistence/HISTORY.md"]
-                """
-            )
-            (root / ".curatormd-v2.toml").chmod(0o600)
+            write_consumer_config(root, "probe-project")
             database = Path(temporary) / "global.sqlite3"
             config = ProjectConfig.load(root)
             store = CuratorStore(database)

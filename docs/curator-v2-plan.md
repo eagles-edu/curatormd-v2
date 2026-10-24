@@ -4908,11 +4908,18 @@ production health, or deployment recovery.
       Pyright reports zero diagnostics, and targeted warning-level Pylint is
       clean for `tests/test_events.py`. The whole-tree inventory was not rerun;
       this checklist row remains open.
-      Whole-tree verification (2026-10-24): the current JSON scan reports 132
+      Whole-tree verification (2026-10-24): the JSON scan reported 132
       findings (14 convention, 118 refactor; no warning/error findings). A
       typed drain-event context reduced the revision-fence API's argument
       count. The access, plugin, and hosted-MCP drain regressions pass; strict
       Pyright and `git diff --check` pass. Repository-wide Pylint remains open.
+      Further progress (2026-10-24): centralized repeated consumer TOML fixture
+      creation in `tests/project_fixtures.py` and reused it across hosted-MCP,
+      service-evidence, and project-plugin suites. The focused suites pass 70
+      tests. A fresh full Pylint JSON scan falls to 131 findings (14 convention,
+      117 refactor, including 22 duplicate-code findings); no warning/error
+      categories are reported. `git diff --check` passes. Repository-wide
+      warning cleanup remains open.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

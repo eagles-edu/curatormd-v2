@@ -1,5 +1,22 @@
 # Curator V2 history
 
+## 2026-10-24 — Consolidate repeated consumer test configuration
+
+- **Intent:** Reduce actual repository-wide Pylint duplication without
+  weakening the test suite or changing consumer fixtures.
+- **Changed fact:** Added one shared writer for the minimal consumer TOML
+  config and reused it in hosted-MCP, hosted service-evidence, stdio, and
+  project-plugin fixtures. Task text, project IDs, config permissions, and
+  setup side effects remain owned by each caller.
+- **Verification:** The three affected suites pass 70 tests. A fresh full
+  warning-level Pylint JSON scan falls from 132 to 131 findings; duplicate-code
+  findings fall from 23 to 22. The scan reports 14 convention and 117 refactor
+  findings, with no warning/error categories. `git diff --check` passes.
+- **Open gate:** Whole-tree Pylint still has 131 structural/convention
+  findings. No checklist row is closed by this supporting cleanup.
+- **Outcome:** Keep the repository-wide Pylint item open and continue reducing
+  concrete findings.
+
 ## 2026-10-24 — Refresh whole-tree Pylint inventory
 
 - **Intent:** Reconcile the repository quality ledger against a fresh scan.

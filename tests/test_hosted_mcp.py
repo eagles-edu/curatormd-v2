@@ -16,7 +16,7 @@ from typing import Callable, cast
 import unittest
 from unittest.mock import patch
 
-from project_fixtures import create_consumer_repo
+from project_fixtures import create_consumer_repo, write_consumer_config
 
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
@@ -107,29 +107,7 @@ class HostedMcpTests(unittest.TestCase):
         create_consumer_repo(root)
         (root / "docs" / "tasks.md").write_text("- [ ] Bounded task\n")
         (root / "persistence" / "HISTORY.md").write_text("# History\n")
-        (root / ".curatormd-v2.toml").write_text(
-            f"""\
-            schema_version = 1
-            backend_api_version = 1
-            project_id = "{project_id}"
-
-            [scope]
-            read_paths = ["src", "docs"]
-
-            [checklists]
-            tasks = "docs/tasks.md"
-
-            [evidence]
-            adapters = []
-
-            [staging]
-            root = ".curatormd-v2/staging"
-
-            [persistence]
-            targets = ["persistence/HISTORY.md"]
-            """
-        )
-        (root / ".curatormd-v2.toml").chmod(0o600)
+        write_consumer_config(root, project_id)
 
     def _provision(
         self,

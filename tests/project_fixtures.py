@@ -32,12 +32,9 @@ def create_consumer_repo(root: Path) -> Path:
     return root
 
 
-def configure_stdio_consumer(root: Path, project_id: str) -> StdioServerParameters:
-    """Prepare an isolated consumer and its test-only stdio server command."""
+def write_consumer_config(root: Path, project_id: str) -> Path:
+    """Write the shared minimal config for one test consumer repository."""
 
-    create_consumer_repo(root)
-    (root / "docs" / "tasks.md").write_text("- [ ] stdio task\n")
-    (root / "persistence" / "HISTORY.md").write_text("# History\n")
     config_path = root / ".curatormd-v2.toml"
     config_path.write_text(
         f"""\
@@ -62,6 +59,16 @@ def configure_stdio_consumer(root: Path, project_id: str) -> StdioServerParamete
         """
     )
     config_path.chmod(0o600)
+    return config_path
+
+
+def configure_stdio_consumer(root: Path, project_id: str) -> StdioServerParameters:
+    """Prepare an isolated consumer and its test-only stdio server command."""
+
+    create_consumer_repo(root)
+    (root / "docs" / "tasks.md").write_text("- [ ] stdio task\n")
+    (root / "persistence" / "HISTORY.md").write_text("# History\n")
+    write_consumer_config(root, project_id)
     return StdioServerParameters(
         command=sys.executable,
         args=[str(Path(__file__).with_name("mcp_stdio_fixture.py"))],
