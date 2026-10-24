@@ -6251,3 +6251,29 @@ wheel through the shared Hermes host gateway, real Vhost application workflow,
 and production/release controls remain open.
 
 **Outcome:** Commit `c653257` is hosted-CI verified. No checklist count changed.
+
+## 2026-10-24 — Activate the installed Curator alpha through Hermes Core
+
+**Intent:** Reload the validated Curator wheel in the configured local Vhost
+alpha profile and check its Hermes-managed integration path.
+
+**Changed fact:** The Hermes system gateway restarted successfully. It serves
+the five configured profiles, including `renew-ssl-coding`, and the Vhost
+profile remains pointed at the dedicated Curator V2 virtualenv. The installed
+package's 49 Python module hashes match the current Curator source. GPTMD source
+and configuration were not changed.
+
+**Verification:** `hermes --profile renew-ssl-coding mcp test curator_v2`
+connects and discovers 48 tools; its `Auth: none` display does not establish
+human identity. The Vhost-owned Hermes-managed integration harness passes
+against the installed profile interpreter with five processed events, exact
+replay, failed-delivery retry, source-epoch re-enrollment, projection
+reconciliation, and privacy canaries.
+
+**Open gate:** The harness is a disposable integration run. No real Vhost
+application request or human-authenticated action was exercised. Live
+application workflow, person identity, and production/release gates remain
+open; no corresponding plan item is checked off.
+
+**Outcome:** The installed package is now active for new processes launched
+through the shared Hermes gateway. Delivery progress remains 145/178.

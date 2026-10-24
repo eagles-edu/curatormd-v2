@@ -6468,6 +6468,19 @@ substitute for evidence at a later integration boundary.
       until the real route, authorization, privacy, and recovery evidence is
       independently reviewable. This acceptance sequence is proposed, not an
       authorization to enable capture.
+      Post-restart installed-alpha probe (2026-10-24): the system Hermes gateway
+      restarted successfully and serves `default`, `curatormd-coding`,
+      `gptmd-coding`, `redis-stack-7-4-1-coding`, and `renew-ssl-coding`.
+      `hermes --profile renew-ssl-coding mcp test curator_v2` connects and
+      discovers 48 tools; it reports transport `Auth: none`, which is not a
+      human-authentication result. The profile virtualenv has all 49 Python
+      module hashes equal to current source. The Vhost-owned Hermes-managed
+      integration harness passes against that installed interpreter, processing
+      five events and verifying exact replay, failed-delivery retry, source-epoch
+      re-enrollment, projection reconciliation, and privacy canaries. This is
+      disposable end-to-end integration evidence after the shared gateway
+      restart; it does not exercise a real Vhost application request or human
+      identity. Slice G remains open for those live workflow and identity gates.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
