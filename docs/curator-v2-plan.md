@@ -4948,7 +4948,15 @@ production health, or deployment recovery.
       113 refactor, including 18 duplicate-code findings), with no warning/error
       categories. The changed test modules retain only their existing module-size
       and local-variable complexity messages. `git diff --check` passes. The
-      broad lint item remains open; no checklist checkbox changed.
+      broad lint item remains open; no checklist checkbox changed. Further
+      progress (2026-10-24): the event and goal-record checklist-snapshot
+      validators now share one exact validator in `validation.py`, keeping the
+      same optional-field, SHA-256 revision, 4,000-character, and single-line
+      rules. The event-contract and lifecycle suites pass 66 tests; strict
+      Pyright reports zero diagnostics. Whole-tree Pylint reports 126 findings
+      (14 convention, 112 refactor, including 17 duplicate-code findings), with
+      no warning/error categories. `git diff --check` passes. Repository-wide
+      lint remains open and no checklist checkbox changed.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

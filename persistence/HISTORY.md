@@ -1,5 +1,21 @@
 # Curator V2 history
 
+## 2026-10-24 — Share checklist snapshot validation
+
+- **Intent:** Keep event-ingress and persisted goal records under one checklist
+  snapshot validation rule.
+- **Changed fact:** Both `GoalStarted` events and `GoalCard` records call the
+  same validator for optional metadata, exact SHA-256 revision syntax, bounded
+  nonempty source text, and single-line form.
+- **Verification:** Event-contract and lifecycle suites pass 66 tests. Strict
+  Pyright reports zero diagnostics. Whole-tree Pylint reports 126 findings
+  (14 convention, 112 refactor, including 17 duplicate-code findings), with no
+  warning/error categories. `git diff --check` passes.
+- **Open gate:** Repository-wide lint cleanup remains open; no delivery item is
+  closed by this validation refactor.
+- **Outcome:** Preserve both ingress and record validation semantics through
+  one shared rule.
+
 ## 2026-10-24 — Reuse exact test project provisioning
 
 - **Intent:** Remove repeated hosted-MCP and host-service test registration

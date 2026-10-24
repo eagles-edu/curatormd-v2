@@ -16,7 +16,7 @@ from .record_validation import (
     SHA256_RE as _SHA256_RE,
     parse_aware_timestamp as _parse_aware_timestamp,
 )
-from .validation import is_exact_int
+from .validation import is_exact_int, validate_checklist_snapshot
 
 
 MAX_SUCCESS_CRITERIA = 32
@@ -560,19 +560,11 @@ def _validate_goal_revisions_and_relations(goal: GoalCard) -> None:
 def _validate_goal_checklist_snapshot(goal: GoalCard) -> None:
     """Require checklist source text and revision metadata as one tuple."""
 
-    snapshot = (goal.checklist_version, goal.checklist_source_text)
-    if any(value is not None for value in snapshot):
-        if goal.checklist_id is None or any(value is None for value in snapshot):
-            raise ValueError(
-                "checklist snapshot requires checklist_id, version, and source text"
-            )
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", goal.checklist_version or ""):
-            raise ValueError("checklist_version must be a SHA-256 source revision")
-        source_text = goal.checklist_source_text or ""
-        if not source_text.strip() or len(source_text) > 4000:
-            raise ValueError("checklist source text must contain 1-4000 characters")
-        if "\n" in source_text or "\r" in source_text:
-            raise ValueError("checklist source text must be one exact item line")
+    validate_checklist_snapshot(
+        goal.checklist_id,
+        goal.checklist_version,
+        goal.checklist_source_text,
+    )
 
 
 @dataclass(frozen=True, slots=True)

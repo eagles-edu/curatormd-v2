@@ -33,7 +33,7 @@ from .event_validation import (
     require_event_object,
     validate_lifecycle_revision,
 )
-from .validation import is_exact_int
+from .validation import is_exact_int, validate_checklist_snapshot
 
 
 EVENT_SCHEMA_VERSION = 1
@@ -196,19 +196,11 @@ def _validate_goal_started_relations(event: GoalStarted) -> None:
 def _validate_goal_started_checklist_snapshot(event: GoalStarted) -> None:
     """Require checklist source text and revision metadata as one tuple."""
 
-    snapshot = (event.checklist_version, event.checklist_source_text)
-    if any(value is not None for value in snapshot):
-        if event.checklist_id is None or any(value is None for value in snapshot):
-            raise ValueError(
-                "checklist snapshot requires checklist_id, version, and source text"
-            )
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", event.checklist_version or ""):
-            raise ValueError("checklist_version must be a SHA-256 source revision")
-        source_text = event.checklist_source_text or ""
-        if not source_text.strip() or len(source_text) > 4000:
-            raise ValueError("checklist source text must contain 1-4000 characters")
-        if "\n" in source_text or "\r" in source_text:
-            raise ValueError("checklist source text must be one exact item line")
+    validate_checklist_snapshot(
+        event.checklist_id,
+        event.checklist_version,
+        event.checklist_source_text,
+    )
 
 
 @dataclass(frozen=True, slots=True)
