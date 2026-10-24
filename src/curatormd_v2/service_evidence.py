@@ -11,12 +11,12 @@ from pathlib import Path
 import re
 import selectors
 import shutil
-import signal
 import subprocess  # nosec B404
 import time
 
 from .evidence import EvidenceSourceReceipt, EvidenceVerificationContext
 from .models import EvidenceRef
+from .process_control import kill_process_group
 from .validation import is_exact_int
 
 MAX_SERVICE_PROBE_OUTPUT_BYTES = 64 * 1024
@@ -197,13 +197,7 @@ class LocalServiceProbeResolver:  # pylint: disable=too-few-public-methods
                 raise RuntimeError("configured service probe returned no evidence")
             return digest.hexdigest()
         except Exception:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except OSError:
-                try:
-                    process.kill()
-                except OSError:
-                    pass
+            kill_process_group(process)
             process.wait()
             raise
         finally:

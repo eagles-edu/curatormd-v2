@@ -176,8 +176,8 @@ Its 32 Python module hashes matched the source tree at that checkpoint; MCP
 discovery saw 45 tools and all seven Vhost consumer contracts passed against
 that wheel. This is local alpha
 deployment evidence, not authenticated identity or production readiness.
-Fresh repository-wide Pylint inventory (2026-10-24): 130 findings remain
-(14 convention, 116 refactor, including 21 duplicate-code findings; no
+Fresh repository-wide Pylint inventory (2026-10-24): 129 findings remain
+(14 convention, 115 refactor, including 20 duplicate-code findings; no
 warning/error categories). The Hermes hook, attended access CLI, and review CLI
 test files are clean; broad repository structure and interfaces remain open.
 

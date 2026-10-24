@@ -4927,7 +4927,14 @@ production health, or deployment recovery.
       tests. A fresh full Pylint scan falls to 130 findings (14 convention,
       116 refactor, including 21 duplicate-code findings); no warning/error
       categories are reported. `git diff --check` passes. The whole-tree
-      cleanup remains open.
+      cleanup remains open. Further progress (2026-10-24): shared the
+      process-group termination fallback between the Git and service evidence
+      runners. All 15 evidence tests pass; strict Pyright reports zero
+      diagnostics; focused Pylint on the three affected modules is clean. A
+      fresh whole-tree scan reports 129 findings (14 convention, 115 refactor,
+      including 20 duplicate-code findings), with no warning/error categories.
+      `git diff --check` passes. Repository-wide cleanup remains open and no
+      checklist checkbox changed.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

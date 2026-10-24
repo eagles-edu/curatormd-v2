@@ -1,5 +1,23 @@
 # Curator V2 history
 
+## 2026-10-24 — Share evidence-runner process cleanup
+
+- **Intent:** Remove duplicated subprocess cleanup without changing timeout or
+  failure handling for evidence collection.
+- **Changed fact:** Git test runners and service probes now use the same
+  process-group kill helper, including the direct-process fallback when group
+  termination fails. Both runners still wait for termination before returning
+  failure.
+- **Verification:** The focused evidence suite passes 15 tests. Strict Pyright
+  reports zero diagnostics; targeted Pylint for the changed modules is clean.
+  A fresh whole-tree Pylint JSON scan reports 129 findings (14 convention,
+  115 refactor, including 20 duplicate-code findings), with no warning/error
+  categories. `git diff --check` passes.
+- **Open gate:** Repository-wide Pylint cleanup remains open; this supporting
+  cleanup does not close a delivery checklist item.
+- **Outcome:** Preserve timeout cleanup behavior while removing one repeated
+  process-control block.
+
 ## 2026-10-24 — Share fail-closed timestamp parsing
 
 - **Intent:** Remove duplicated timestamp parsing while preserving exact

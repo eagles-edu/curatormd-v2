@@ -13,7 +13,6 @@ import hashlib
 import os
 from pathlib import Path
 import re
-import signal
 import shutil
 import subprocess  # nosec B404
 import tempfile
@@ -25,6 +24,7 @@ from .evidence import (
     EvidenceSourceResolver,
 )
 from .models import EvidenceRef
+from .process_control import kill_process_group
 
 MAX_GIT_DIFF_BYTES = 32 * 1024 * 1024
 MAX_TEST_OUTPUT_BYTES = 4 * 1024 * 1024
@@ -58,18 +58,6 @@ class LocalGitTestRunnerConfig:
     command: tuple[str, ...]
     max_output_bytes: int = MAX_TEST_OUTPUT_BYTES
     timeout_seconds: int = TEST_RUN_TIMEOUT_SECONDS
-
-
-def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
-    """Stop a runner and its children so inherited pipes cannot evade bounds."""
-
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except OSError:
-        try:
-            process.kill()
-        except OSError:
-            pass
 
 
 class GitCommitDiffResolver(EvidenceSourceResolver):
@@ -475,7 +463,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
 
         def terminate() -> None:
             expired.set()
-            _kill_process_group(process)
+            kill_process_group(process)
 
         timer = Timer(self.config.timeout_seconds, terminate)
         digest = hashlib.sha256()
@@ -493,7 +481,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
                 total += len(chunk)
                 if total > self.config.max_output_bytes:
                     too_large = True
-                    _kill_process_group(process)
+                    kill_process_group(process)
                     break
                 digest.update(chunk)
         finally:
@@ -502,7 +490,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
         try:
             return_code = process.wait(timeout=1)
         except subprocess.TimeoutExpired:
-            _kill_process_group(process)
+            kill_process_group(process)
             process.wait()
             raise RuntimeError("configured local test runner did not stop") from None
         if expired.is_set():
