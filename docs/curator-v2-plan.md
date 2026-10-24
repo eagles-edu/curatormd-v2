@@ -4973,6 +4973,13 @@ production health, or deployment recovery.
       (14 convention, 112 refactor, including 17 duplicate-code findings), with
       no warning/error categories. `git diff --check` passes. Repository-wide
       lint remains open and no checklist checkbox changed.
+      Blocking quality-command recheck (2026-10-24): the exact CI commands
+      `uv run --locked --group quality pyright`,
+      `uv run --locked --group quality pylint --errors-only src/curatormd_v2 tests`,
+      `uv run --locked --group quality bandit -q -r src/curatormd_v2`, and
+      `git diff --check` all pass. Pyright reports zero diagnostics. This does
+      not clear the 126 non-blocking full-Pylint findings or close this row;
+      no tests were rerun because this verification changed no source code.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.

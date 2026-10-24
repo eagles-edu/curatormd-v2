@@ -1,5 +1,20 @@
 # Curator V2 history
 
+## 2026-10-24 — Verify the Curator V2 CI quality commands
+
+- **Intent:** Complete the pending verification of Curator V2's current
+  blocking quality checks without rerunning the unit suite.
+- **Changed fact:** The exact commands declared in `.github/workflows/ci.yml`
+  pass against the current source: strict Pyright, errors-only Pylint, Bandit,
+  and `git diff --check`.
+- **Verification:** Pyright reports zero diagnostics; the Pylint, Bandit, and
+  diff commands exit successfully. No tests ran because no source code changed.
+- **Open gate:** The last full Pylint inventory remains at 126
+  convention/refactor findings; this verification does not close its checklist
+  row or any deployment gate.
+- **Outcome:** Keep blocking CI quality status separate from open whole-tree
+  lint cleanup.
+
 ## 2026-10-24 — Verify current Hermes profile health
 
 - **Intent:** Confirm the updated Hermes source checkout can read the current
