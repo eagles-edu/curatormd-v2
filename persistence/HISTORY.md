@@ -1,5 +1,22 @@
 # Curator V2 history
 
+## 2026-10-24 — Refresh whole-tree Pylint inventory
+
+- **Intent:** Reconcile the repository quality ledger against a fresh scan.
+- **Changed fact:** The current warning-level scan reports 132 findings: 14
+  convention and 118 refactor/duplicate-code findings, with no warning/error
+  categories. `tests/test_review_cli.py` remains clean after the packet
+  assertion was added.
+- **Verification:** Ran
+  `uv run --locked --group quality pylint --output-format=json src/curatormd_v2 tests`
+  and parsed its complete JSON result. The command exits 24 because these
+  non-blocking findings remain. The focused review CLI suite passes nine tests;
+  targeted Pylint rates that module 10.00/10; `git diff --check` passes.
+- **Open gate:** Repository-wide warning-level Pylint cleanup remains open;
+  this inventory does not change delivery progress.
+- **Outcome:** Correct the stale 161-finding release-ledger snapshot; keep the
+  132-finding work item open.
+
 ## 2026-10-24 — Verify attended local SDE review packet
 
 - **Intent:** Close the local-alpha requirement to show review evidence and the
