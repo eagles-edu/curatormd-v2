@@ -1,5 +1,20 @@
 # Curator V2 history
 
+## 2026-10-24 — Share compact CLI JSON output
+
+- **Intent:** Remove repeated JSON-lines formatting while preserving each
+  command's output shape and failure behavior.
+- **Changed fact:** Producer and storage commands now use the shared
+  `write_json_line` formatter, which emits the same compact, key-sorted JSON
+  followed by one newline.
+- **Verification:** The producer and storage CLI suites pass six tests. Strict
+  Pyright reports zero diagnostics. A fresh whole-tree Pylint JSON scan reports
+  128 findings (14 convention, 114 refactor, including 19 duplicate-code
+  findings), with no warning/error categories. `git diff --check` passes.
+- **Open gate:** Repository-wide Pylint cleanup remains open; no delivery
+  checklist item is closed by this supporting cleanup.
+- **Outcome:** Keep the existing CLI contracts while sharing their formatter.
+
 ## 2026-10-24 — Share evidence-runner process cleanup
 
 - **Intent:** Remove duplicated subprocess cleanup without changing timeout or

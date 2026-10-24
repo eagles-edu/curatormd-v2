@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 from typing import BinaryIO, TextIO
 
+from .cli_output import write_json_line
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .store import CuratorStore
@@ -61,14 +61,7 @@ def main(
             arguments.artifact_id,
             stdin or sys.stdin.buffer,
         )
-        output.write(
-            json.dumps(
-                {"path": artifact.path, "sha256": artifact.sha256},
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            + "\n"
-        )
+        write_json_line(output, {"path": artifact.path, "sha256": artifact.sha256})
         return 0
     # The producer boundary must sanitize arbitrary adapter and input failures.
     except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught

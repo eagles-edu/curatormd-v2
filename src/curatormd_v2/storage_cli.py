@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 from typing import TextIO
 
 from .backup import backup_database, restore_database
+from .cli_output import write_json_line
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -67,13 +67,9 @@ def main(
             backup_database(source, arguments.destination)
         else:
             restore_database(source, arguments.destination)
-        output.write(
-            json.dumps(
-                {"operation": arguments.operation, "status": "verified"},
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            + "\n"
+        write_json_line(
+            output,
+            {"operation": arguments.operation, "status": "verified"},
         )
         return 0
     except Exception:  # pylint: disable=broad-exception-caught

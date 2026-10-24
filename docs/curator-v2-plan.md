@@ -4934,7 +4934,13 @@ production health, or deployment recovery.
       fresh whole-tree scan reports 129 findings (14 convention, 115 refactor,
       including 20 duplicate-code findings), with no warning/error categories.
       `git diff --check` passes. Repository-wide cleanup remains open and no
-      checklist checkbox changed.
+      checklist checkbox changed. Further progress (2026-10-24): producer and
+      storage CLI adapters now share compact, sorted JSON-line formatting. The
+      two focused CLI suites pass six tests; strict Pyright reports zero
+      diagnostics. A fresh whole-tree scan reports 128 findings (14 convention,
+      114 refactor, including 19 duplicate-code findings), with no warning/error
+      categories. `git diff --check` passes. Repository-wide cleanup remains
+      open and no checklist checkbox changed.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
