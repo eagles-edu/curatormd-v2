@@ -84,6 +84,7 @@ from .reporting import GoalReportPage
 from .reviews import ReviewAuthorizer
 from .service import CuratorService, PurgeTargetStatus, SDEAssessmentRequest
 from .store import ConflictError, CuratorStore, NotFoundError
+from .store_requests import ProjectDrainEffectContext
 
 MAX_STAGING_HASH_BYTES = 8 * 1024**3
 MAX_STAGED_ARTIFACT_BYTES = 64 * 1024**2
@@ -206,6 +207,12 @@ class ProjectPlugin:
             raise ProjectConfigError("service project does not match repository config")
         self.config = config
         self.service = service
+        try:
+            binding = service.store.get_consumer_binding(config.project_id)
+        except NotFoundError:
+            self._consumer_binding_revision: int | None = None
+        else:
+            self._consumer_binding_revision = binding.revision
         self._staging_thread_lock = RLock()
         self._staging_lock_state = local()
 
@@ -282,9 +289,19 @@ class ProjectPlugin:
             self.config.backend_api_version,
         ):
             raise ConflictError("maintenance project binding changed")
+        if self._consumer_binding_revision is None:
+            raise ConflictError("consumer binding was not active when plugin bound")
         if registration.status != "active":
             raise ConflictError("project lifecycle changed before the effect")
         return registration.revision
+
+    def refresh_consumer_binding_revision(self, expected_revision: int) -> None:
+        """Refresh a re-enrolled binding after the API authorizes its writer."""
+
+        binding = self.service.store.get_consumer_binding(self.config.project_id)
+        if binding.status != "active" or binding.revision != expected_revision:
+            raise ConflictError("consumer binding changed before the effect")
+        self._consumer_binding_revision = binding.revision
 
     @contextmanager
     def _project_revision_fence(
@@ -294,6 +311,7 @@ class ProjectPlugin:
         drain_event: EventEnvelope | None = None,
         caller_subject: str | None = None,
         caller_profile: str | None = None,
+        expected_binding_revision: int | None = None,
     ) -> Generator[None, None, None]:
         """Fence an effect to a previously captured project revision."""
 
@@ -304,9 +322,18 @@ class ProjectPlugin:
         with self.service.store.project_revision_fence(
             self.config.project_id,
             expected_revision,
-            drain_event=drain_event,
-            caller_subject=caller_subject,
-            caller_profile=caller_profile,
+            drain=(
+                ProjectDrainEffectContext(
+                    drain_event, caller_subject, caller_profile
+                )
+                if drain_event is not None and caller_subject is not None
+                else None
+            ),
+            expected_binding_revision=(
+                self._consumer_binding_revision
+                if expected_binding_revision is None
+                else expected_binding_revision
+            ),
         ):
             yield
 
@@ -457,6 +484,7 @@ class ProjectPlugin:
         event: EventEnvelope,
         *,
         drain_caller: tuple[str, str | None] | None = None,
+        expected_binding_revision: int | None = None,
     ) -> EventInboxReceipt:
         """Apply an event only inside this plugin's project binding.
 
@@ -478,7 +506,12 @@ class ProjectPlugin:
                 else None
             )
             try:
-                return self._process_event_locked(event, expected_revision, drain_caller)
+                return self._process_event_locked(
+                    event,
+                    expected_revision,
+                    drain_caller,
+                    expected_binding_revision,
+                )
             finally:
                 if token is not None:
                     _DRAIN_EFFECT_CONTEXT.reset(token)
@@ -488,6 +521,7 @@ class ProjectPlugin:
         event: EventEnvelope,
         expected_revision: int,
         drain_caller: tuple[str, str | None] | None = None,
+        expected_binding_revision: int | None = None,
     ) -> EventInboxReceipt:
         """Validate repository-bound fields, then fence durable event effects."""
 
@@ -520,6 +554,7 @@ class ProjectPlugin:
                 drain_event=event if drain_caller is not None else None,
                 caller_subject=drain_caller[0] if drain_caller is not None else None,
                 caller_profile=drain_caller[1] if drain_caller is not None else None,
+                expected_binding_revision=expected_binding_revision,
             )
 
         return self.service.process_event(

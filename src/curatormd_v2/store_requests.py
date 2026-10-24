@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .events import EventEnvelope
 from .models import Fact, GoalStatus, SuccessCriterion
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectDrainEffectContext:
+    """Bind one admitted drain event to its trusted caller context."""
+
+    event: EventEnvelope
+    caller_subject: str
+    caller_profile: str | None
 
 
 @dataclass(frozen=True, slots=True)

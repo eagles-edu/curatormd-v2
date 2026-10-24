@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 from mcp import Client
@@ -46,6 +48,12 @@ from curatormd_v2 import (
     codex_hook_to_event,
 )
 from curatormd_v2.mcp_server import safe_tool_handler
+from curatormd_v2.mcp_server import (
+    _HermesRequestCaller,  # pyright: ignore[reportPrivateUsage]
+    _hermes_identity_middleware,  # pyright: ignore[reportPrivateUsage]
+    HermesContextOptions,
+    hermes_subject_context,
+)
 
 
 class AllowProject:  # pylint: disable=too-few-public-methods
@@ -69,6 +77,21 @@ class AllowProject:  # pylint: disable=too-few-public-methods
                 ProjectAction.RETENTION_HOLD_RELEASE,
             )
         )
+
+
+class DenyProject:  # pylint: disable=too-few-public-methods
+    """Deny every project action for negative authorization regressions."""
+
+    def authorize(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        action: ProjectAction,
+    ) -> bool:
+        """Return false for every caller and scope."""
+
+        del caller, project_id, action
+        return False
 
 
 class TestVerifier:  # pylint: disable=too-few-public-methods
@@ -169,6 +192,72 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
 
 class McpServerTests(unittest.TestCase):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""
+
+    def test_mcp_identity_subject_is_request_scoped_and_required(self) -> None:
+        """Bind the host subject to one request and deny calls without it."""
+
+        middleware = cast(
+            Any,
+            _hermes_identity_middleware(
+                HermesContextOptions("renew-ssl-coding", require_authenticated_subject=True)
+            ),
+        )
+        metadata = {
+            "hermes/profile_id": "renew-ssl-coding",
+            "hermes/session_id": "session-1",
+            "hermes/authenticated_subject": (
+                'auth:v1:["oidc","https://issuer.example","user-42"]'
+            ),
+        }
+        observed: list[str | None] = []
+
+        async def accepted_call(_ctx: object) -> str:
+            observed.append(hermes_subject_context.get())
+            return "accepted"
+
+        result = asyncio.run(
+            middleware(SimpleNamespace(method="tools/call", meta=metadata), accepted_call)
+        )
+        expected_subject = "hermes-auth:" + hashlib.sha256(
+            str(metadata["hermes/authenticated_subject"]).encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(result, "accepted")
+        self.assertEqual(observed, [expected_subject])
+        self.assertIsNone(hermes_subject_context.get())
+
+        caller = _HermesRequestCaller("service-fallback", "renew-ssl-coding")
+        caller_token = hermes_subject_context.set(expected_subject)
+        try:
+            self.assertEqual(caller.subject_id, expected_subject)
+        finally:
+            hermes_subject_context.reset(caller_token)
+
+        denied = asyncio.run(
+            middleware(
+                SimpleNamespace(
+                    method="tools/call",
+                    meta={
+                        "hermes/profile_id": "renew-ssl-coding",
+                        "hermes/session_id": "session-1",
+                    },
+                ),
+                accepted_call,
+            )
+        )
+        self.assertTrue(denied.is_error)
+        self.assertEqual(json.loads(denied.content[0].text)["code"], "unauthenticated")
+
+        invalid = asyncio.run(
+            middleware(
+                SimpleNamespace(
+                    method="tools/call",
+                    meta={**metadata, "hermes/authenticated_subject": "auth:v1:not-json"},
+                ),
+                accepted_call,
+            )
+        )
+        self.assertTrue(invalid.is_error)
+        self.assertEqual(json.loads(invalid.content[0].text)["code"], "unauthenticated")
 
     def _assert_sde_instruction_contract(self, instructions: str) -> None:
         """Check safety guidance exposed alongside the MCP SDE tools."""
@@ -405,6 +494,7 @@ class McpServerTests(unittest.TestCase):
                                 "event_type": "codex:turn:start",
                                 "goal_id": "bind-goal",
                                 "event_id": lifecycle_event.event_id,
+                                "source_id": lifecycle_event.source_id,
                                 "source_sequence": 1,
                                 "occurred_at": "2026-10-19T00:00:00+00:00",
                                 "context": lifecycle_context,
@@ -426,6 +516,7 @@ class McpServerTests(unittest.TestCase):
                                 "event_type": "codex:turn:start",
                                 "goal_id": "bind-goal",
                                 "event_id": lifecycle_event.event_id,
+                                "source_id": lifecycle_event.source_id,
                                 "source_sequence": 1,
                                 "occurred_at": "2026-10-19T00:00:00+00:00",
                                 "context": lifecycle_context,
@@ -478,6 +569,7 @@ class McpServerTests(unittest.TestCase):
                                 "event_type": "codex:turn:start",
                                 "goal_id": "bind-goal",
                                 "event_id": lifecycle_event.event_id,
+                                "source_id": lifecycle_event.source_id,
                                 "source_sequence": 1,
                                 "occurred_at": "2026-10-19T00:00:00+00:00",
                                 "context": lifecycle_context,
@@ -488,7 +580,42 @@ class McpServerTests(unittest.TestCase):
                                 "hermes/durable_event": True,
                             },
                         )
-                        self.assertTrue(stale.is_error)
+                        self.assertFalse(stale.is_error)
+                        assert isinstance(stale.content[0], TextContent)
+                        self.assertEqual(
+                            json.loads(stale.content[0].text)["status"],
+                            "processed",
+                        )
+                        changed_replay = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "different-goal",
+                                "event_id": lifecycle_event.event_id,
+                                "source_id": lifecycle_event.source_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:00:00+00:00",
+                                "context": lifecycle_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-1",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertTrue(changed_replay.is_error)
+                        denied_api = AuthenticatedCuratorAPI(
+                            {"mcp-project": plugin},
+                            DenyProject(),
+                            InMemoryTokenBucket(),
+                        )
+                        with self.assertRaises(PermissionError):
+                            denied_api.process_event_json(
+                                caller,
+                                "mcp-project",
+                                lifecycle_event.to_json(),
+                                replay_only=True,
+                            )
 
                         fresh_context = {
                             "attempt_id": "attempt-after-reenrollment",
@@ -525,7 +652,7 @@ class McpServerTests(unittest.TestCase):
                                 "hermes/durable_event": True,
                             },
                         )
-                        self.assertFalse(fresh.is_error)
+                        self.assertFalse(fresh.is_error, fresh.content)
                         assert isinstance(fresh.content[0], TextContent)
                         self.assertEqual(
                             json.loads(fresh.content[0].text)["status"], "processed"

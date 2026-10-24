@@ -28,6 +28,7 @@ from curatormd_v2 import (
 )
 from curatormd_v2.git_evidence import (
     GitCommitDiffResolver,
+    LocalGitTestRunnerConfig,
     LocalGitTestRunnerResolver,
 )
 
@@ -91,6 +92,36 @@ class EvidenceAdapterTests(unittest.TestCase):
                 allowed_subjects=frozenset({"host-probe:gptmd"}),
             ),
         )
+
+    @staticmethod
+    def _local_git_diff_fixture(directory: Path) -> tuple[
+        Path, Path, str, str
+    ]:
+        root = directory / "repository"
+        root.mkdir()
+
+        def git(*arguments: str) -> str:
+            result = subprocess.run(
+                ["git", "-C", str(root), *arguments],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            return result.stdout.strip()
+
+        git("init", "--quiet")
+        git("config", "user.name", "Curator test")
+        git("config", "user.email", "curator-test@example.invalid")
+        source = root / "task.txt"
+        source.write_text("before\n", encoding="utf-8")
+        git("add", "task.txt")
+        git("commit", "--quiet", "-m", "base")
+        base_revision = git("rev-parse", "HEAD")
+        source.write_text("private diff contents\n", encoding="utf-8")
+        git("add", "task.txt")
+        git("commit", "--quiet", "-m", "change")
+        return root, source, base_revision, git("rev-parse", "HEAD")
 
     def test_service_receipt_creates_exact_compact_attestation(self) -> None:
         attestation = self.adapter.attest(self.evidence, self.context)
@@ -274,32 +305,9 @@ class EvidenceAdapterTests(unittest.TestCase):
         """Attest exact Git diff bytes without returning or retaining patch text."""
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "repository"
-            root.mkdir()
-
-            def git(*arguments: str) -> str:
-                result = subprocess.run(
-                    ["git", "-C", str(root), *arguments],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-                return result.stdout.strip()
-
-            git("init", "--quiet")
-            git("config", "user.name", "Curator test")
-            git("config", "user.email", "curator-test@example.invalid")
-            source = root / "task.txt"
-            source.write_text("before\n", encoding="utf-8")
-            git("add", "task.txt")
-            git("commit", "--quiet", "-m", "base")
-            base_revision = git("rev-parse", "HEAD")
-
-            source.write_text("private diff contents\n", encoding="utf-8")
-            git("add", "task.txt")
-            git("commit", "--quiet", "-m", "change")
-            head_revision = git("rev-parse", "HEAD")
+            root, source, base_revision, head_revision = self._local_git_diff_fixture(
+                Path(temporary)
+            )
 
             resolver = GitCommitDiffResolver(
                 root,
@@ -340,6 +348,30 @@ class EvidenceAdapterTests(unittest.TestCase):
             )
             self.assertNotIn(b"uncommitted private content", repr(replayed_receipt).encode())
 
+    def test_local_git_diff_adapter_enforces_scope_and_byte_limit(self) -> None:
+        """Enforce project binding and byte ceiling on repository diff receipts."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, base_revision, head_revision = self._local_git_diff_fixture(
+                Path(temporary)
+            )
+            resolver = GitCommitDiffResolver(
+                root,
+                project_id="project-a",
+                source_subject="local-git-runner",
+            )
+            evidence = EvidenceRef(
+                "repository_diff",
+                f"git-diff:{base_revision}..{head_revision}",
+                "a" * 64,
+                EvidenceOutcome.PASSED,
+            )
+            context = EvidenceVerificationContext(
+                "project-a", "goal-a", "criterion-a", datetime.now(UTC)
+            )
+            receipt = resolver.resolve(evidence, context)
+            self.assertIsNotNone(receipt)
+            assert receipt is not None
             adapter = RepositoryEvidenceAdapter(
                 adapter_id="local-git-project-a",
                 scope_id=resolver.scope_id,
@@ -369,7 +401,6 @@ class EvidenceAdapterTests(unittest.TestCase):
                     wrong_project,
                 )
             )
-
             limited_resolver = GitCommitDiffResolver(
                 root,
                 project_id="project-a",
@@ -423,10 +454,12 @@ class EvidenceAdapterTests(unittest.TestCase):
             )
             resolver = LocalGitTestRunnerResolver(
                 root,
-                project_id="project-a",
-                runner_id="unit-tests",
-                source_subject="local-test-runner",
-                command=command,
+                config=LocalGitTestRunnerConfig(
+                    project_id="project-a",
+                    runner_id="unit-tests",
+                    source_subject="local-test-runner",
+                    command=command,
+                ),
             )
             context = EvidenceVerificationContext(
                 "project-a", "goal-a", "criterion-a", datetime.now(UTC)
@@ -500,10 +533,12 @@ class EvidenceAdapterTests(unittest.TestCase):
             )
             resolver = LocalGitTestRunnerResolver(
                 root,
-                project_id="project-a",
-                runner_id="unit-tests",
-                source_subject="local-test-runner",
-                command=command,
+                config=LocalGitTestRunnerConfig(
+                    project_id="project-a",
+                    runner_id="unit-tests",
+                    source_subject="local-test-runner",
+                    command=command,
+                ),
             )
             context = EvidenceVerificationContext(
                 "project-a", "goal-a", "criterion-a", datetime.now(UTC)
@@ -522,28 +557,32 @@ class EvidenceAdapterTests(unittest.TestCase):
 
             limited = LocalGitTestRunnerResolver(
                 root,
-                project_id="project-a",
-                runner_id="unit-tests",
-                source_subject="local-test-runner",
-                command=(sys.executable, "-c", "print('output too long')"),
-                max_output_bytes=8,
+                config=LocalGitTestRunnerConfig(
+                    project_id="project-a",
+                    runner_id="unit-tests",
+                    source_subject="local-test-runner",
+                    command=(sys.executable, "-c", "print('output too long')"),
+                    max_output_bytes=8,
+                ),
             )
             with self.assertRaisesRegex(RuntimeError, "output exceeds"):
                 limited.resolve(failed_run, context)
 
             timed = LocalGitTestRunnerResolver(
                 root,
-                project_id="project-a",
-                runner_id="unit-tests",
-                source_subject="local-test-runner",
-                command=(
-                    sys.executable,
-                    "-c",
-                    "import subprocess,sys,time; "
-                    "subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); "
-                    "time.sleep(10)",
+                config=LocalGitTestRunnerConfig(
+                    project_id="project-a",
+                    runner_id="unit-tests",
+                    source_subject="local-test-runner",
+                    command=(
+                        sys.executable,
+                        "-c",
+                        "import subprocess,sys,time; "
+                        "subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); "
+                        "time.sleep(10)",
+                    ),
+                    timeout_seconds=1,
                 ),
-                timeout_seconds=1,
             )
             with self.assertRaisesRegex(RuntimeError, "timed out"):
                 timed.resolve(failed_run, context)

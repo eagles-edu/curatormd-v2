@@ -35,7 +35,7 @@ def _build_payload(
     }
     if context.get("session_id") != hook_context.get("session_id"):
         raise ValueError("event session binding is inconsistent")
-    return {
+    payload = {
         "event_type": event_type,
         "goal_id": hook_context["goal_id"],
         "event_id": hook_context["event_id"],
@@ -43,6 +43,10 @@ def _build_payload(
         "occurred_at": hook_context["occurred_at"],
         "context": context,
     }
+    source_id = hook_context.get("source_id")
+    if isinstance(source_id, str):
+        payload["source_id"] = source_id
+    return payload
 
 
 async def _call_curator(

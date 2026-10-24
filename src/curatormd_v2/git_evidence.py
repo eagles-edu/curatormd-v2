@@ -7,6 +7,7 @@ deployment identity or a signed repository-provider receipt.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import hashlib
 import os
@@ -37,6 +38,26 @@ _TEST_LOCATOR_RE = re.compile(
 )
 _PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SUBJECT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+@dataclass(frozen=True, slots=True)
+class _GitRuntime:
+    """Resolved host executable and isolated environment for Git operations."""
+
+    executable: str
+    environment: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class LocalGitTestRunnerConfig:
+    """Host-owned identity, command, and bounds for one local test runner."""
+
+    project_id: str
+    runner_id: str
+    source_subject: str
+    command: tuple[str, ...]
+    max_output_bytes: int = MAX_TEST_OUTPUT_BYTES
+    timeout_seconds: int = TEST_RUN_TIMEOUT_SECONDS
 
 
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
@@ -86,7 +107,7 @@ class GitCommitDiffResolver(EvidenceSourceResolver):
         self.scope_id = f"git-repository:{project_id}"
         self.max_diff_bytes = max_diff_bytes
         self.timeout_seconds = timeout_seconds
-        self._environment = {
+        environment = {
             "PATH": os.environ.get("PATH", ""),
             "LC_ALL": "C",
             "GIT_CONFIG_GLOBAL": os.devnull,
@@ -96,10 +117,10 @@ class GitCommitDiffResolver(EvidenceSourceResolver):
             "GIT_PAGER": "cat",
             "GIT_TERMINAL_PROMPT": "0",
         }
-        git_executable = shutil.which("git", path=self._environment["PATH"])
+        git_executable = shutil.which("git", path=environment["PATH"])
         if git_executable is None:
             raise ValueError("local Git executable is unavailable")
-        self._git_executable = git_executable
+        self._runtime = _GitRuntime(git_executable, environment)
         self._verify_repository_root()
 
     def resolve(
@@ -151,11 +172,16 @@ class GitCommitDiffResolver(EvidenceSourceResolver):
             # The executable is resolved from the host PATH; arguments are
             # fixed options or validated full commit IDs.
             return subprocess.run(
-                [self._git_executable, "-C", str(self.repository_root), *arguments],  # nosec B603
+                [
+                    self._runtime.executable,
+                    "-C",
+                    str(self.repository_root),
+                    *arguments,
+                ],  # nosec B603
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                env=self._environment,
+                env=self._runtime.environment,
                 check=False,
                 timeout=self.timeout_seconds,
             )
@@ -181,7 +207,7 @@ class GitCommitDiffResolver(EvidenceSourceResolver):
 
     def _hash_diff(self, base_revision: str, head_revision: str) -> str:
         command = [
-            self._git_executable,
+            self._runtime.executable,
             "-C",
             str(self.repository_root),
             "diff",
@@ -204,7 +230,7 @@ class GitCommitDiffResolver(EvidenceSourceResolver):
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                env=self._environment,
+                env=self._runtime.environment,
             )
         except OSError:
             raise RuntimeError("local Git evidence source is unavailable") from None
@@ -267,28 +293,23 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
         self,
         repository_root: str | Path,
         *,
-        project_id: str,
-        runner_id: str,
-        source_subject: str,
-        command: tuple[str, ...],
-        max_output_bytes: int = MAX_TEST_OUTPUT_BYTES,
-        timeout_seconds: int = TEST_RUN_TIMEOUT_SECONDS,
+        config: LocalGitTestRunnerConfig,
     ) -> None:
-        if not _PROJECT_ID_RE.fullmatch(project_id):
+        if not _PROJECT_ID_RE.fullmatch(config.project_id):
             raise ValueError("project_id must be a bounded opaque identifier")
-        if not _SUBJECT_RE.fullmatch(runner_id):
+        if not _SUBJECT_RE.fullmatch(config.runner_id):
             raise ValueError("runner_id must be a bounded opaque identifier")
-        if not _SUBJECT_RE.fullmatch(source_subject):
+        if not _SUBJECT_RE.fullmatch(config.source_subject):
             raise ValueError("source_subject must be a bounded opaque identifier")
-        if not command or len(command) > 64:
+        if not config.command or len(config.command) > 64:
             raise ValueError("test command must contain 1-64 arguments")
-        if any(not item or len(item) > 1024 or "\x00" in item for item in command):
+        if any(not item or len(item) > 1024 or "\x00" in item for item in config.command):
             raise ValueError("test command arguments must be nonempty and bounded")
-        if sum(len(item.encode("utf-8")) for item in command) > 8192:
+        if sum(len(item.encode("utf-8")) for item in config.command) > 8192:
             raise ValueError("test command exceeds the local argument ceiling")
-        if not 1 <= max_output_bytes <= MAX_TEST_OUTPUT_BYTES:
+        if not 1 <= config.max_output_bytes <= MAX_TEST_OUTPUT_BYTES:
             raise ValueError("max_output_bytes exceeds the local output ceiling")
-        if not 1 <= timeout_seconds <= TEST_RUN_TIMEOUT_SECONDS:
+        if not 1 <= config.timeout_seconds <= TEST_RUN_TIMEOUT_SECONDS:
             raise ValueError("timeout_seconds exceeds the test-run ceiling")
         try:
             root = Path(repository_root).resolve(strict=True)
@@ -298,24 +319,31 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
             raise ValueError("repository root is not a directory")
 
         self.repository_root = root
-        self.project_id = project_id
-        self.runner_id = runner_id
-        self.source_subject = source_subject
-        self.command = command
-        self.scope_id = f"git-test-runner:{runner_id}"
-        self.max_output_bytes = max_output_bytes
-        self.timeout_seconds = timeout_seconds
         path = os.environ.get("PATH", "")
         git_executable = shutil.which("git", path=path)
-        command_executable = shutil.which(command[0], path=path)
+        command_executable = shutil.which(config.command[0], path=path)
         if git_executable is None or command_executable is None:
             raise ValueError("configured Git or test executable is unavailable")
-        self._git_executable = git_executable
-        self.command = (command_executable, *command[1:])
-        self._environment = {"PATH": path, "LC_ALL": "C", "GIT_CONFIG_GLOBAL": os.devnull,
-                             "GIT_CONFIG_NOSYSTEM": "1", "GIT_NO_REPLACE_OBJECTS": "1",
-                             "GIT_TERMINAL_PROMPT": "0"}
+        self.config = replace(
+            config,
+            command=(command_executable, *config.command[1:]),
+        )
+        environment = {
+            "PATH": path,
+            "LC_ALL": "C",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+        self._runtime = _GitRuntime(git_executable, environment)
         self._verify_repository_root()
+
+    @property
+    def scope_id(self) -> str:
+        """Return this runner's stable evidence scope."""
+
+        return f"git-test-runner:{self.config.runner_id}"
 
     def resolve(
         self,
@@ -325,7 +353,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
         """Run the configured command for one exact commit and emit its digest."""
 
         if (
-            context.project_id != self.project_id
+            context.project_id != self.config.project_id
             or evidence.evidence_kind != "repository_test"
         ):
             return None
@@ -333,7 +361,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
         if match is None:
             return None
         runner_id, revision = match.groups()
-        if runner_id != self.runner_id or not self._commit_exists(revision):
+        if runner_id != self.config.runner_id or not self._commit_exists(revision):
             return None
 
         digest = self._run_commit(revision)
@@ -344,12 +372,12 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
             evidence_kind="repository_test",
             locator=evidence.locator,
             evidence_sha256=digest,
-            project_id=self.project_id,
+            project_id=self.config.project_id,
             goal_id=context.goal_id,
             criterion_id=context.criterion_id,
             scope_id=self.scope_id,
             source_revision=f"git-test:{runner_id}:{revision}",
-            authenticated_subject=self.source_subject,
+            authenticated_subject=self.config.source_subject,
             observed_at=now.isoformat(timespec="microseconds"),
             valid_until=datetime.max.replace(tzinfo=UTC).isoformat(),
             revocation_checked_at=now.isoformat(timespec="microseconds"),
@@ -359,11 +387,16 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
     def _git(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         try:
             return subprocess.run(
-                [self._git_executable, "-C", str(self.repository_root), *arguments],  # nosec B603
+                [
+                    self._runtime.executable,
+                    "-C",
+                    str(self.repository_root),
+                    *arguments,
+                ],  # nosec B603
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                env=self._environment,
+                env=self._runtime.environment,
                 check=False,
                 timeout=GIT_COMMAND_TIMEOUT_SECONDS,
             )
@@ -388,24 +421,24 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
         with tempfile.TemporaryDirectory(prefix="curator-v2-test-") as temporary:
             clone = Path(temporary) / "checkout"
             cloned = subprocess.run(
-                [self._git_executable, "clone", "--quiet", "--no-hardlinks",
+                [self._runtime.executable, "clone", "--quiet", "--no-hardlinks",
                  "--no-checkout", "--", str(self.repository_root), str(clone)],  # nosec B603
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                env=self._environment,
+                env=self._runtime.environment,
                 check=False,
                 timeout=GIT_COMMAND_TIMEOUT_SECONDS,
             )
             if cloned.returncode != 0:
                 raise RuntimeError("local Git test checkout is unavailable") from None
             checked_out = subprocess.run(
-                [self._git_executable, "-C", str(clone), "checkout", "--quiet",
+                [self._runtime.executable, "-C", str(clone), "checkout", "--quiet",
                  "--detach", revision],  # nosec B603
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                env=self._environment,
+                env=self._runtime.environment,
                 check=False,
                 timeout=GIT_COMMAND_TIMEOUT_SECONDS,
             )
@@ -415,7 +448,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
 
     def _execute(self, cwd: Path, revision: str) -> str | None:
         environment = {
-            **self._environment,
+            **self._runtime.environment,
             "HOME": str(cwd),
             "TMPDIR": str(cwd),
             "PYTHONDONTWRITEBYTECODE": "1",
@@ -423,7 +456,7 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
         try:
             # Keep timeout-triggered process-group termination and bounded wait.
             process = subprocess.Popen(  # nosec B603  # pylint: disable=consider-using-with
-                list(self.command),
+                list(self.config.command),
                 cwd=cwd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -444,21 +477,21 @@ class LocalGitTestRunnerResolver(EvidenceSourceResolver):
             expired.set()
             _kill_process_group(process)
 
-        timer = Timer(self.timeout_seconds, terminate)
+        timer = Timer(self.config.timeout_seconds, terminate)
         digest = hashlib.sha256()
         digest.update(b"curator-v2-local-git-test-v1\0")
-        digest.update(self.runner_id.encode("ascii"))
+        digest.update(self.config.runner_id.encode("ascii"))
         digest.update(b"\0")
         digest.update(revision.encode("ascii"))
         digest.update(b"\0")
-        digest.update("\0".join(self.command).encode("utf-8"))
+        digest.update("\0".join(self.config.command).encode("utf-8"))
         total = 0
         too_large = False
         timer.start()
         try:
             while chunk := process.stdout.read(64 * 1024):
                 total += len(chunk)
-                if total > self.max_output_bytes:
+                if total > self.config.max_output_bytes:
                     too_large = True
                     _kill_process_group(process)
                     break

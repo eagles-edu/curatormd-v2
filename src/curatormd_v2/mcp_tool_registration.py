@@ -6,8 +6,6 @@ from __future__ import annotations
 # Keep them as named parameters so MCP hosts can validate calls before dispatch.
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
-import hashlib
-import re
 from dataclasses import asdict
 from typing import Any
 
@@ -30,6 +28,7 @@ from .events import (
     GoalSuperseded,
 )
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
+from .hermes_context import hermes_source_id, require_durable_hermes_context
 from .models import (
     FactKind,
     GoalStatus,
@@ -46,17 +45,6 @@ from .mcp_tool_support import (
     parse_evidence,
     safe_tool_handler,
 )
-
-_HERMES_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$")
-
-
-def _hermes_source_id(profile_id: str, project_id: str, source_epoch: int) -> str:
-    """Keep existing source IDs at epoch one and separate later enrollments."""
-
-    identity = f"{profile_id}\0{project_id}"
-    if source_epoch > 1:
-        identity += f"\0{source_epoch}"
-    return "hermes-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 class _McpToolRegistrar:
     """Capture trusted project context and share safe registration helpers."""
@@ -280,24 +268,31 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         occurred_at: str,
         context: dict[str, str],
         ctx: MCPContext,
+        source_id: str | None = None,
     ) -> str:
         """Translate one exact host-outbox event for the active session goal."""
-        metadata = ctx.request_context.meta
-        profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
-        session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
-        durable_event = metadata.get("hermes/durable_event") if isinstance(metadata, dict) else None
-        if not isinstance(profile_id, str) or profile_id != (
-            caller.profile_id or caller.subject_id
-        ):
-            raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
-        if durable_event is not True:
-            raise PermissionError(
-                "Codex lifecycle ingestion requires a host-dispatched durable event"
+        profile_id, session_id = require_durable_hermes_context(
+            ctx.request_context.meta,
+            caller.profile_id or caller.subject_id,
+        )
+        replay_only = False
+        source_epoch: int | None = None
+        try:
+            source_epoch = api.consumer_source_epoch(caller, project_id, event_id)
+        except PermissionError:
+            if source_id is None:
+                raise
+            replay_only = True
+        if source_epoch is not None:
+            current_source_id = hermes_source_id(
+                profile_id, project_id, source_epoch
             )
-        if not isinstance(session_id, str) or not _HERMES_SESSION_ID_RE.fullmatch(session_id):
-            raise PermissionError("trusted Hermes session context is unavailable")
-        source_epoch = api.consumer_source_epoch(caller, project_id, event_id)
-        source_id = _hermes_source_id(profile_id, project_id, source_epoch)
+            if source_id is None:
+                source_id = current_source_id
+            elif source_id != current_source_id:
+                replay_only = True
+        if source_id is None:
+            raise PermissionError("trusted Hermes source identity is unavailable")
         binding = CodexGoalBinding(
             profile_id=profile_id,
             project_id=project_id,
@@ -315,7 +310,9 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         if event.event_id != event_id or event.source_id != source_id:
             raise ValueError("durable Hermes event identity does not match its bound source")
         return json_result(
-            api.process_event_json(caller, project_id, event.to_json())
+            api.process_event_json(
+                caller, project_id, event.to_json(), replay_only=replay_only
+            )
         )
 
     @_safe_tool()

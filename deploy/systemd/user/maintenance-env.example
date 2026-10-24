@@ -1,0 +1,6 @@
+# Copy to ~/.config/curatormd-v2/maintenance-<project-id>.env and chmod 0600.
+# Use absolute paths from the reviewed deployment manifest.
+CURATORMD_V2_MAINTENANCE_BIN=/absolute/path/to/curator-venv/bin/curatormd-v2-maintenance
+CURATORMD_V2_PROJECT_ROOT=/absolute/path/to/consumer-repository
+CURATORMD_V2_DATABASE=/home/your-user/.local/state/curatormd-v2/<project-id>/curator.sqlite3
+CURATORMD_V2_BATCH_LIMIT=100

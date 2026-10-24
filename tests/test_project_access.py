@@ -5,16 +5,19 @@ from __future__ import annotations
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 import json
 import tempfile
 from threading import Barrier
 import unittest
+from unittest.mock import patch
 
 from curatormd_v2 import (
     AuthenticatedCaller,
+    ArtifactRef,
     ConflictError,
     CuratorStore,
+    ConsumerDrainAuthorizationRequest,
     ConsumerBindingTransitionRequest,
     NotFoundError,
     ProjectAccessManager,
@@ -25,6 +28,7 @@ from curatormd_v2 import (
     SQLiteProjectGrantAuthorizer,
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAuthorizationBinding,
+    TerminalEventDispositionRequest,
 )
 from curatormd_v2.events import EventEnvelope, GoalActivityObserved
 from curatormd_v2.models import FactKind
@@ -49,8 +53,20 @@ class TestProjectAdministrator:  # pylint: disable=too-few-public-methods
         return (caller.subject_id, project_id, action) in self.allowed
 
 
+class _ExpiredObservationDatetime(datetime):
+    """Advance the store clock beyond a reviewed staging snapshot's TTL."""
+
+    @classmethod
+    def now(cls, tz: tzinfo | None = None) -> datetime:
+        return super().now(tz) + timedelta(seconds=61)
+
+
 class DurableProjectAccessTests(unittest.TestCase):
     """Prove persistent grants, auditability, revocation, and default denial."""
+
+    project_id = "project-a"
+    repository_fingerprint = hashlib.sha256(b"repo-a").hexdigest()
+    config_sha256 = hashlib.sha256(b"config-v1").hexdigest()
 
     def setUp(self) -> None:
         # unittest keeps the directory and store alive until teardown.
@@ -65,9 +81,6 @@ class DurableProjectAccessTests(unittest.TestCase):
         self.manager = ProjectAccessManager(self.store, self.admin)
         self.operator = AuthenticatedCaller("operator-1")
         self.reader = AuthenticatedCaller("consumer-1")
-        self.project_id = "project-a"
-        self.repository_fingerprint = hashlib.sha256(b"repo-a").hexdigest()
-        self.config_sha256 = hashlib.sha256(b"config-v1").hexdigest()
 
     def _allow_admin(self, action: ProjectAdministrationAction) -> None:
         self.admin.allowed.add((self.operator.subject_id, self.project_id, action))
@@ -240,6 +253,38 @@ class DurableProjectAccessTests(unittest.TestCase):
         self.assertEqual(
             self.store.project_registry_audit(self.project_id)[-1], suspended.receipt
         )
+        self._assert_reactivation_review_rejects_changed_purge_inventory()
+
+        cursor_packet = self.manager.project_reactivation_review_packet(
+            self.operator, self.project_id, inventory
+        )
+        self.assertTrue(cursor_packet.complete)
+        with self.store.transaction() as connection:
+            connection.execute(
+                "INSERT INTO event_cursors VALUES (?, ?, ?, ?)",
+                (
+                    self.project_id,
+                    "source-after-review",
+                    1,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+        stale_cursor_request = replace(
+            stale_request,
+            rationale="Reject a cursor change after review",
+            transition_id="reactivate-stale-cursor-review-1",
+            review_packet_sha256=cursor_packet.packet_sha256,
+            staging_inventory_sha256=inventory.manifest_sha256,
+        )
+        with self.assertRaisesRegex(ConflictError, "review packet is incomplete or stale"):
+            self.manager.set_project_status(self.operator, stale_cursor_request)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status,
+            "suspended",
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1], suspended.receipt
+        )
 
         current = self._change_status(
             "active",
@@ -258,6 +303,199 @@ class DurableProjectAccessTests(unittest.TestCase):
             review_receipt["packet_sha256"], current.receipt.review_packet_sha256
         )
         self.assertEqual(review_receipt["unresolved_event_count"], 1)
+        self._assert_reactivation_review_invalidated_by_grant_revocation()
+
+    def _assert_reactivation_review_rejects_changed_purge_inventory(self) -> None:
+        """Reject reactivation when an approved purge target changed after review."""
+
+        artifact = ArtifactRef(
+            "/staging/project-a/transient.json",
+            hashlib.sha256(b"artifact").hexdigest(),
+        )
+        manifest = hashlib.sha256(
+            json.dumps(
+                [(artifact.path, artifact.sha256, artifact.occurrence_id)],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        receipt = self.store.create_expiry_purge_receipt(
+            self.project_id, "reviewer-1", manifest, (artifact,)
+        )
+        registration = self.store.get_project_registration(self.project_id)
+        suspended = self.store.project_registry_audit(self.project_id)[-1]
+        self._allow_admin(ProjectAdministrationAction.REACTIVATE)
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        inventory = self._empty_staging_inventory()
+        packet = self.manager.project_reactivation_review_packet(
+            self.operator, self.project_id, inventory
+        )
+        self.assertTrue(packet.complete)
+        self.assertEqual(packet.pending_purge_work_count, 1)
+
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE expiry_purge_targets SET status = 'failed', attempts = 1 "
+                "WHERE receipt_id = ? AND path = ?",
+                (receipt.receipt_id, artifact.path),
+            )
+        changed_packet = self.manager.project_reactivation_review_packet(
+            self.operator, self.project_id, inventory
+        )
+        self.assertNotEqual(changed_packet.packet_sha256, packet.packet_sha256)
+
+        stale_request = ProjectStatusChangeRequest(
+            project_id=self.project_id,
+            status="active",
+            rationale="Reject purge-target changes after reactivation review",
+            expected_revision=registration.revision,
+            transition_id="reactivate-stale-purge-review-1",
+            review_packet_sha256=packet.packet_sha256,
+            suspension_transition_id=packet.suspension_transition_id,
+            staging_inventory_sha256=inventory.manifest_sha256,
+            staging_inventory_count=inventory.usage.regular_file_count,
+            staging_inventory_bytes=inventory.usage.observed_file_bytes,
+            staging_inventory_observed_at=inventory.usage.observed_at,
+        )
+        with self.assertRaisesRegex(ConflictError, "review packet is incomplete or stale"):
+            self.manager.set_project_status(self.operator, stale_request)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status, "suspended"
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1], suspended
+        )
+
+    def _assert_reactivation_review_invalidated_by_grant_revocation(self) -> None:
+        """A changed grant history requires a new review before reactivation."""
+
+        grant = self._grant()
+        self._allow_admin(ProjectAdministrationAction.SUSPEND)
+        registration = self.store.get_project_registration(self.project_id)
+        suspended = self._change_status(
+            "suspended",
+            "Pause before grant review",
+            registration.revision,
+            "suspend-grant-review-1",
+        )
+        self._allow_admin(ProjectAdministrationAction.REACTIVATE)
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        self._allow_admin(ProjectAdministrationAction.REVOKE)
+        inventory = self._empty_staging_inventory()
+        packet = self.manager.project_reactivation_review_packet(
+            self.operator, self.project_id, inventory
+        )
+        self.assertTrue(packet.complete)
+        self.assertEqual(packet.active_grant_count, 1)
+
+        self.manager.revoke(
+            self.operator,
+            self.project_id,
+            self.reader.subject_id,
+            ProjectAction.READ,
+            "Revoke the reviewed read grant",
+        )
+        stale_request = ProjectStatusChangeRequest(
+            project_id=self.project_id,
+            status="active",
+            rationale="Reject the review after grant revocation",
+            expected_revision=suspended.registration.revision,
+            transition_id="reactivate-stale-grant-review-1",
+            review_packet_sha256=packet.packet_sha256,
+            suspension_transition_id=packet.suspension_transition_id,
+            staging_inventory_sha256=inventory.manifest_sha256,
+            staging_inventory_count=inventory.usage.regular_file_count,
+            staging_inventory_bytes=inventory.usage.observed_file_bytes,
+            staging_inventory_observed_at=inventory.usage.observed_at,
+        )
+
+        with self.assertRaisesRegex(ConflictError, "review packet is incomplete or stale"):
+            self.manager.set_project_status(self.operator, stale_request)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status,
+            "suspended",
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1], suspended.receipt
+        )
+        self.assertEqual(
+            self.store.project_grants(self.project_id)[-1].grant_id, grant.grant_id
+        )
+
+        current = self._change_status(
+            "active",
+            "Reactivate after fresh grant review",
+            suspended.registration.revision,
+            "reactivate-fresh-grant-review-1",
+        )
+        self.assertEqual(current.registration.status, "active")
+        self.assertNotEqual(current.receipt.review_packet_sha256, packet.packet_sha256)
+        self._assert_reactivation_review_rejects_changed_inventory()
+
+    def _assert_reactivation_review_rejects_changed_inventory(self) -> None:
+        """Reject a staging scan digest changed after the operator reviewed it."""
+
+        registration = self.store.get_project_registration(self.project_id)
+        suspended = self._change_status(
+            "suspended",
+            "Pause before staging inventory review",
+            registration.revision,
+            "suspend-staging-review-1",
+        )
+        self._allow_admin(ProjectAdministrationAction.REACTIVATE)
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        inventory = self._empty_staging_inventory()
+        packet = self.manager.project_reactivation_review_packet(
+            self.operator, self.project_id, inventory
+        )
+        changed_inventory = replace(
+            inventory,
+            manifest_sha256=hashlib.sha256(b"changed staging inventory").hexdigest(),
+        )
+        stale_request = ProjectStatusChangeRequest(
+            project_id=self.project_id,
+            status="active",
+            rationale="Reject a staging change after review",
+            expected_revision=suspended.registration.revision,
+            transition_id="reactivate-stale-staging-review-1",
+            review_packet_sha256=packet.packet_sha256,
+            suspension_transition_id=packet.suspension_transition_id,
+            staging_inventory_sha256=changed_inventory.manifest_sha256,
+            staging_inventory_count=changed_inventory.usage.regular_file_count,
+            staging_inventory_bytes=changed_inventory.usage.observed_file_bytes,
+            staging_inventory_observed_at=changed_inventory.usage.observed_at,
+        )
+
+        with self.assertRaisesRegex(ConflictError, "review packet is incomplete or stale"):
+            self.manager.set_project_status(self.operator, stale_request)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status,
+            "suspended",
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1], suspended.receipt
+        )
+
+        expired_observation_request = replace(
+            stale_request,
+            rationale="Reject the expired staging observation",
+            transition_id="reactivate-expired-staging-review-1",
+            staging_inventory_sha256=inventory.manifest_sha256,
+        )
+        with patch("curatormd_v2.store.datetime", _ExpiredObservationDatetime):
+            with self.assertRaisesRegex(
+                ConflictError, "review packet is incomplete or stale"
+            ):
+                self.manager.set_project_status(
+                    self.operator, expired_observation_request
+                )
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status,
+            "suspended",
+        )
+        self.assertEqual(
+            self.store.project_registry_audit(self.project_id)[-1], suspended.receipt
+        )
 
     def test_registration_denial_is_atomic_and_records_no_project(self) -> None:
         with self.assertRaisesRegex(PermissionError, "not authorized"):
@@ -533,6 +771,30 @@ class DurableProjectAccessTests(unittest.TestCase):
         )
         self.assertEqual(
             [entry.actor_id for entry in audit], [self.operator.subject_id] * 4
+        )
+
+    def test_status_transition_id_cannot_be_reused_with_changed_input(self) -> None:
+        """An idempotent retry must match every persisted transition field."""
+
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.SUSPEND)
+        self._change_status(
+            "suspended",
+            "Suspend for a reviewed pause",
+            1,
+            "suspend-same-id",
+        )
+
+        with self.assertRaisesRegex(ConflictError, "transition ID"):
+            self._change_status(
+                "suspended",
+                "Changed rationale under the same transition ID",
+                1,
+                "suspend-same-id",
+            )
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).revision,
+            2,
         )
 
     def test_boolean_revision_is_rejected_for_registration_transitions(self) -> None:
@@ -939,12 +1201,14 @@ class DurableProjectAccessTests(unittest.TestCase):
         self._allow_admin(ProjectAdministrationAction.DRAIN)
         authorized_count, expires_at = self.manager.authorize_consumer_drain(
             self.operator,
-            self.project_id,
-            pending.receipt.transition_id,
-            pending.binding.revision,
-            inventory_digest,
-            60,
-            "alpha",
+            ConsumerDrainAuthorizationRequest(
+                project_id=self.project_id,
+                transition_id=pending.receipt.transition_id,
+                expected_revision=pending.binding.revision,
+                expected_inventory_sha256=inventory_digest,
+                lifetime_seconds=60,
+                consumer_profile="alpha",
+            ),
         )
         self.assertEqual(authorized_count, 1)
         self.assertTrue(expires_at)
@@ -1011,13 +1275,15 @@ class DurableProjectAccessTests(unittest.TestCase):
         self._allow_admin(ProjectAdministrationAction.DISPOSE_EVENT)
         result, disposition = self.manager.terminally_dispose_event(
             self.operator,
-            project_id=self.project_id,
-            event_id=event.event_id,
-            transition_id="terminal-disposition-1",
-            rationale="Owner approves terminal disposition of this exact failed event",
-            expected_binding_revision=pending.binding.revision,
-            expected_source_epoch=pending.binding.source_epoch,
-            expected_payload_sha256=received.payload_sha256,
+            TerminalEventDispositionRequest(
+                project_id=self.project_id,
+                event_id=event.event_id,
+                transition_id="terminal-disposition-1",
+                rationale="Owner approves terminal disposition of this exact failed event",
+                expected_binding_revision=pending.binding.revision,
+                expected_source_epoch=pending.binding.source_epoch,
+                expected_payload_sha256=received.payload_sha256,
+            ),
         )
         self.assertEqual(result.status.value, "processed")
         self.assertEqual(result.disposition, "terminal_authorized")
@@ -1026,13 +1292,15 @@ class DurableProjectAccessTests(unittest.TestCase):
         self.assertEqual(self.store.consumer_drain_inventory(self.project_id)[0], 0)
         replay, replayed_disposition = self.manager.terminally_dispose_event(
             self.operator,
-            project_id=self.project_id,
-            event_id=event.event_id,
-            transition_id="terminal-disposition-1",
-            rationale="Owner approves terminal disposition of this exact failed event",
-            expected_binding_revision=pending.binding.revision,
-            expected_source_epoch=pending.binding.source_epoch,
-            expected_payload_sha256=received.payload_sha256,
+            TerminalEventDispositionRequest(
+                project_id=self.project_id,
+                event_id=event.event_id,
+                transition_id="terminal-disposition-1",
+                rationale="Owner approves terminal disposition of this exact failed event",
+                expected_binding_revision=pending.binding.revision,
+                expected_source_epoch=pending.binding.source_epoch,
+                expected_payload_sha256=received.payload_sha256,
+            ),
         )
         self.assertEqual(replay, result)
         self.assertEqual(replayed_disposition, disposition)

@@ -25,6 +25,7 @@ from mcp.types import RequestParamsMeta, TextContent
 from curatormd_v2 import (
     AuthenticatedCaller,
     CuratorStore,
+    ConsumerDrainAuthorizationRequest,
     ConsumerBindingTransitionRequest,
     EventEnvelope,
     EventInboxReceipt,
@@ -134,7 +135,7 @@ class HostedMcpTests(unittest.TestCase):
         self,
         root: Path,
         database: Path,
-        profile_id: str,
+        _profile_id: str,
         *,
         allow_write: bool = False,
         allow_review: bool = False,
@@ -431,12 +432,14 @@ class HostedMcpTests(unittest.TestCase):
                 local_operator = AuthenticatedCaller(_local_subject())
                 manager.authorize_consumer_drain(
                     local_operator,
-                    config.project_id,
-                    "drain-api-transition-1",
-                    2,
-                    inventory_digest,
-                    60,
-                    "drain-profile",
+                    ConsumerDrainAuthorizationRequest(
+                        project_id=config.project_id,
+                        transition_id="drain-api-transition-1",
+                        expected_revision=2,
+                        expected_inventory_sha256=inventory_digest,
+                        lifetime_seconds=60,
+                        consumer_profile="drain-profile",
+                    ),
                 )
                 self.assertEqual(
                     runtime.api.consumer_source_epoch(
@@ -504,6 +507,53 @@ class HostedMcpTests(unittest.TestCase):
                             meta=_hermes_meta("gptmd-coding"),
                         )
                         self.assertFalse(valid.is_error)
+
+                asyncio.run(exercise())
+            finally:
+                runtime.close()
+
+    def test_strict_profile_denies_a_missing_authenticated_person_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "gptmd-coding")
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="gptmd-coding",
+                require_authenticated_subject=True,
+            )
+            try:
+                async def exercise() -> None:
+                    async with Client(runtime.server, raise_exceptions=False) as client:
+                        result = await client.call_tool(
+                            "project_activity_status",
+                            {},
+                            meta=_hermes_meta("gptmd-coding"),
+                        )
+                        self.assertTrue(result.is_error)
+                        content = result.content[0]
+                        assert isinstance(content, TextContent)
+                        self.assertEqual(
+                            json.loads(content.text)["code"], "unauthenticated"
+                        )
+                        ungranted_subject = await client.call_tool(
+                            "project_activity_status",
+                            {},
+                            meta={
+                                **_hermes_meta("gptmd-coding"),
+                                "hermes/authenticated_subject": (
+                                    'auth:v1:["oidc","https://issuer.example","user-42"]'
+                                ),
+                            },
+                        )
+                        self.assertTrue(ungranted_subject.is_error)
+                        denied_content = ungranted_subject.content[0]
+                        assert isinstance(denied_content, TextContent)
+                        self.assertEqual(
+                            json.loads(denied_content.text)["code"], "forbidden"
+                        )
 
                 asyncio.run(exercise())
             finally:

@@ -494,6 +494,13 @@ class ContractSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact ordered inventory"):
             replace(review_packet, artifact_dependencies=())
 
+        self._assert_failed_purge_target_contract(purge_target)
+
+    def _assert_failed_purge_target_contract(
+        self, purge_target: PurgeTargetStatus
+    ) -> None:
+        """Validate a redacted failed purge status and reject leaked details."""
+
         failed_target = replace(
             purge_target,
             status=ArtifactStatus.FAILED,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextvars import ContextVar
+from dataclasses import dataclass
 import json
 import re
 from typing import Any, cast
@@ -17,10 +18,14 @@ from .health_evaluation import REQUIRED_HEALTH_DEPENDENCIES
 from .models import DependencyProbeObservation
 from .mcp_tool_registration import register_mcp_tools
 from .mcp_tool_support import ArtifactInput, safe_tool_handler
+from .hermes_context import hermes_subject_grant_id
 
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 host_readiness_context: ContextVar[Mapping[str, object]] = ContextVar(
     "curator_v2_host_readiness", default={}
+)
+hermes_subject_context: ContextVar[str | None] = ContextVar(
+    "curator_v2_hermes_subject", default=None
 )
 __all__ = ["ArtifactInput", "build_mcp_server", "safe_tool_handler"]
 SERVER_INSTRUCTIONS = """\
@@ -51,7 +56,28 @@ Curator V2 work protocol:
 
 
 
-def _hermes_identity_middleware(expected_profile_id: str):
+class _HermesRequestCaller(AuthenticatedCaller):  # pylint: disable=too-few-public-methods
+    """Bind the captured local account to the authenticated subject per request."""
+
+    __slots__ = ()
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "subject_id":
+            subject_id = hermes_subject_context.get()
+            if subject_id is not None:
+                return subject_id
+        return object.__getattribute__(self, name)
+
+
+@dataclass(frozen=True, slots=True)
+class HermesContextOptions:
+    """Host-owned identity requirements for one profile-bound local server."""
+
+    profile_id: str
+    require_authenticated_subject: bool = False
+
+
+def _hermes_identity_middleware(options: HermesContextOptions):
     """Require the local Hermes host context on every tool call.
 
     The profile is pinned by the local launcher and must match the identity
@@ -82,7 +108,7 @@ def _hermes_identity_middleware(expected_profile_id: str):
             and "\n" not in session_id
             and "\r" not in session_id
         )
-        if profile_id != expected_profile_id or not valid_session:
+        if profile_id != options.profile_id or not valid_session:
             return CallToolResult(
                 content=[
                     TextContent(
@@ -99,11 +125,58 @@ def _hermes_identity_middleware(expected_profile_id: str):
                 ],
                 is_error=True,
             )
-        token = host_readiness_context.set(validate_host_readiness(metadata))
+        raw_subject = (
+            metadata.get("hermes/authenticated_subject")
+            if isinstance(metadata, Mapping)
+            else None
+        )
+        if raw_subject is None:
+            if options.require_authenticated_subject:
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "schema_version": 1,
+                                    "code": "unauthenticated",
+                                    "message": "An authenticated Hermes subject is required.",
+                                },
+                                sort_keys=True,
+                            ),
+                        )
+                    ],
+                    is_error=True,
+                )
+            subject_id = None
+        else:
+            subject_id = hermes_subject_grant_id(raw_subject)
+            if subject_id is None:
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "schema_version": 1,
+                                    "code": "unauthenticated",
+                                    "message": "The Hermes authenticated subject is invalid.",
+                                },
+                                sort_keys=True,
+                            ),
+                        )
+                    ],
+                    is_error=True,
+                )
+        readiness_token = host_readiness_context.set(
+            validate_host_readiness(metadata)
+        )
+        subject_token = hermes_subject_context.set(subject_id)
         try:
             return await call_next(ctx)
         finally:
-            host_readiness_context.reset(token)
+            hermes_subject_context.reset(subject_token)
+            host_readiness_context.reset(readiness_token)
 
     return enforce_profile
 
@@ -159,8 +232,7 @@ def build_mcp_server(
     project_id: str,
     source_id: str,
     *,
-    require_hermes_context: bool = False,
-    hermes_profile_id: str | None = None,
+    hermes_context: HermesContextOptions | None = None,
 ) -> MCPServer:
     """Build tools with trusted caller/project captured outside tool arguments.
 
@@ -171,13 +243,7 @@ def build_mcp_server(
 
     if not _SOURCE_ID_RE.fullmatch(source_id):
         raise ValueError("source_id must be a bounded opaque producer identifier")
-    middleware = (
-        [_hermes_identity_middleware(
-            hermes_profile_id or caller.profile_id or caller.subject_id
-        )]
-        if require_hermes_context
-        else None
-    )
+    middleware = [_hermes_identity_middleware(hermes_context)] if hermes_context else None
     server = MCPServer(
         "CuratorMD V2",
         version="0.1.0",
@@ -185,5 +251,10 @@ def build_mcp_server(
         middleware=middleware,
     )
 
-    register_mcp_tools(server, api, caller, project_id, source_id)
+    registered_caller: AuthenticatedCaller = (
+        _HermesRequestCaller(caller.subject_id, caller.profile_id)
+        if hermes_context
+        else caller
+    )
+    register_mcp_tools(server, api, registered_caller, project_id, source_id)
     return server

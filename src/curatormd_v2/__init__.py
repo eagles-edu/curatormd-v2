@@ -158,12 +158,14 @@ from .project_config import (
 from .project_plugin import ProjectPlugin
 from .rate_limiter import MAX_TRACKED_BUCKETS, SQLiteTokenBucket
 from .project_access import (
+    ConsumerDrainAuthorizationRequest,
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAccessManager,
     ProjectAdministrationAction,
     ProjectAdministrationAuthorizer,
     ProjectAuthorizationBinding,
     SQLiteProjectGrantAuthorizer,
+    TerminalEventDispositionRequest,
 )
 from .reviews import (
     RejectUnauthenticatedReview,
@@ -223,6 +225,7 @@ __all__ = [
     "ConsumerBindingRecord",
     "ConsumerBindingTransitionRequest",
     "ConsumerBindingTransitionResult",
+    "ConsumerDrainAuthorizationRequest",
     "CONFIG_FILENAME",
     "PROJECT_PLUGIN_API_VERSION",
     "CriterionProgress",
@@ -340,6 +343,7 @@ __all__ = [
     "ProjectRegistrationTransitionResult",
     "ProjectRegistryAuditRecord",
     "SQLiteProjectGrantAuthorizer",
+    "TerminalEventDispositionRequest",
     "ProjectDependencyReadiness",
     "REQUIRED_HEALTH_DEPENDENCIES",
     "MAX_DEPENDENCY_PROBE_AGE_SECONDS",

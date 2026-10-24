@@ -64,6 +64,7 @@ from .project_plugin import ProjectPlugin
 from .reporting import GoalReportPage
 from .service import PurgeTargetStatus
 from .store import NotFoundError
+from .store_requests import ProjectDrainEffectContext
 
 
 _SUBJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
@@ -341,7 +342,12 @@ class AuthenticatedCuratorAPI:
         return decorate
 
     def process_event_json(
-        self, caller: AuthenticatedCaller, project_id: str, serialized: str
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        serialized: str,
+        *,
+        replay_only: bool = False,
     ) -> EventInboxReceipt:
         """Validate bounded event JSON, authorize scope, then process atomically."""
 
@@ -363,6 +369,7 @@ class AuthenticatedCuratorAPI:
         if plugin is None:
             raise PermissionError("project is not authorized")
         registration = plugin.service.store.get_project_registration(project_id)
+        binding = plugin.service.store.get_consumer_binding(project_id)
         if registration.status == "suspended":
             replay_receipt = (
                 plugin.service.store.reconcile_suspended_processed_event(
@@ -377,6 +384,22 @@ class AuthenticatedCuratorAPI:
                 if not self.limiter.allow(caller.subject_id, project_id):
                     raise RateLimitExceeded("project request budget exceeded")
                 return replay_receipt
+        if (
+            registration.status == "active"
+            and binding.status in {"deregistered", "active"}
+            and self.authorizer.authorize(caller, project_id, ProjectAction.WRITE)
+        ):
+            replay_receipt = (
+                plugin.service.store.reconcile_deregistered_processed_event(
+                    event
+                )
+            )
+            if replay_receipt is not None:
+                if not self.limiter.allow(caller.subject_id, project_id):
+                    raise RateLimitExceeded("project request budget exceeded")
+                return replay_receipt
+        if replay_only:
+            raise PermissionError("only an exact processed receipt may be reconciled")
         normally_authorized = self.authorizer.authorize(
             caller, project_id, ProjectAction.WRITE
         )
@@ -391,18 +414,27 @@ class AuthenticatedCuratorAPI:
             ):
                 raise PermissionError("project is not authorized")
         with plugin.project_effect_lock():
+            if normally_authorized and binding.status == "active":
+                plugin.refresh_consumer_binding_revision(binding.revision)
             with plugin.service.store.project_revision_fence(
                 project_id,
                 registration.revision,
-                drain_event=None if normally_authorized else event,
-                caller_subject=caller.subject_id,
-                caller_profile=caller.profile_id,
+                drain=(
+                    ProjectDrainEffectContext(
+                        event, caller.subject_id, caller.profile_id
+                    )
+                    if not normally_authorized
+                    else None
+                ),
             ):
                 return plugin.process_event(
                     event,
                     drain_caller=(caller.subject_id, caller.profile_id)
                     if not normally_authorized
                     else None,
+                    expected_binding_revision=(
+                        binding.revision if binding.status == "active" else None
+                    ),
                 )
 
     def event_queue_status(

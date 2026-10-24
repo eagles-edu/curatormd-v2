@@ -102,6 +102,7 @@ from .store_requests import (
     GoalCriteriaAmendmentRequest,
     GoalRetirementRequest,
     GoalTransitionRequest,
+    ProjectDrainEffectContext,
 )
 from .validation import is_exact_int
 
@@ -458,6 +459,23 @@ def _project_registration_update_retry_matches(
         request.config_sha256,
         request.backend_api_version,
         request.rationale,
+    )
+
+
+def _project_registration_is_unchanged(
+    row: sqlite3.Row,
+    request: ProjectRegistrationRequest,
+) -> bool:
+    """Compare all mutable consumer registration fingerprints."""
+
+    return (
+        row["repository_fingerprint"],
+        row["config_sha256"],
+        row["backend_api_version"],
+    ) == (
+        request.repository_fingerprint,
+        request.config_sha256,
+        request.backend_api_version,
     )
 
 
@@ -1191,9 +1209,8 @@ class CuratorStore:
     @contextmanager
     def project_revision_fence(
         self, project_id: str, expected_revision: int,
-        *, drain_event: EventEnvelope | None = None,
-        caller_subject: str | None = None,
-        caller_profile: str | None = None,
+        *, drain: ProjectDrainEffectContext | None = None,
+        expected_binding_revision: int | None = None,
     ) -> Generator[sqlite3.Connection, None, None]:
         """Serialize one project effect against its reviewed lifecycle revision.
 
@@ -1218,11 +1235,10 @@ class CuratorStore:
             if (
                 binding is not None
                 and binding["status"] == "deregistration_pending"
-                and drain_event is not None
-                and caller_subject is not None
+                and drain is not None
             ):
                 drain_allowed = self._consumer_drain_allows_in_connection(
-                    connection, caller_subject, caller_profile, drain_event,
+                    connection, drain,
                     binding["revision"], binding["source_epoch"],
                     registration["config_sha256"] if registration is not None else "",
                 )
@@ -1231,18 +1247,35 @@ class CuratorStore:
             if (
                 registration["status"] != "active"
                 or registration["revision"] != expected_revision
-                or binding is None
-                or (binding["status"] != "active" and not drain_allowed)
+                or not self._effect_binding_matches_revision(
+                    binding, expected_binding_revision, drain_allowed
+                )
             ):
                 raise ConflictError("project or consumer lifecycle changed before the effect")
             yield connection
 
     @staticmethod
+    def _effect_binding_matches_revision(
+        binding: sqlite3.Row | None,
+        expected_binding_revision: int | None,
+        drain_allowed: bool,
+    ) -> bool:
+        """Require the active binding revision unless this exact event is draining."""
+
+        if binding is None:
+            return False
+        if binding["status"] != "active" and not drain_allowed:
+            return False
+        return (
+            expected_binding_revision is None
+            or binding["revision"] == expected_binding_revision
+            or drain_allowed
+        )
+
+    @staticmethod
     def _consumer_drain_allows_in_connection(
         connection: sqlite3.Connection,
-        caller_subject: str,
-        caller_profile: str | None,
-        event: EventEnvelope,
+        drain: ProjectDrainEffectContext,
         binding_revision: int,
         source_epoch: int,
         config_sha256: str,
@@ -1263,22 +1296,24 @@ class CuratorStore:
                  AND session.binding_revision = ? AND session.source_epoch = ?
                  AND session.config_sha256 = ?
                ORDER BY session.created_at DESC LIMIT 1""",
-            (event.project_id, event.event_id, caller_subject, caller_profile,
+            (
+             drain.event.project_id, drain.event.event_id,
+             drain.caller_subject, drain.caller_profile,
              now, binding_revision, source_epoch, config_sha256),
         ).fetchone()
         if row is None:
             return False
-        serialized = event.to_json()
+        serialized = drain.event.to_json()
         identity_matches = (
-            row["idempotency_sha256"] == event.idempotency_sha256
+            row["idempotency_sha256"] == drain.event.idempotency_sha256
             if row["idempotency_sha256"] is not None
             else row["payload_sha256"]
             == hashlib.sha256(serialized.encode("utf-8")).hexdigest()
         )
         result = (
             identity_matches
-            and row["source_id"] == event.source_id
-            and row["source_sequence"] == event.source_sequence
+            and row["source_id"] == drain.event.source_id
+            and row["source_sequence"] == drain.event.source_sequence
         )
         return result
 
@@ -1589,17 +1624,7 @@ class CuratorStore:
                     "repository fingerprint changes require deregistration "
                     "and fresh enrollment"
                 )
-            replacement = (
-                request.repository_fingerprint,
-                request.config_sha256,
-                request.backend_api_version,
-            )
-            previous = (
-                current["repository_fingerprint"],
-                current["config_sha256"],
-                current["backend_api_version"],
-            )
-            if replacement == previous:
+            if _project_registration_is_unchanged(current, request):
                 raise ConflictError("project registration is unchanged")
             collision = connection.execute(
                 "SELECT project_id FROM project_registry "
@@ -1929,22 +1954,8 @@ class CuratorStore:
             or request.expected_revision < 1
         ):
             raise ValueError("expected_revision must be a positive integer")
-        if status == "suspended" and any(
-            value is not None
-            for value in (
-                request.review_packet_sha256,
-                request.suspension_transition_id,
-                request.staging_inventory_sha256,
-            )
-        ):
-            raise ValueError("suspension does not accept a reactivation review packet")
-        if status == "active":
-            self._validate_access_digest(
-                request.review_packet_sha256, "review_packet_sha256"
-            )
-            self._validate_access_identity(
-                request.suspension_transition_id, "suspension_transition_id"
-            )
+        self._validate_project_status_request_fields(request, status)
+
         now = utc_now()
         with self._transaction() as connection:
             action = "suspended" if status == "suspended" else "reactivated"
@@ -1955,15 +1966,22 @@ class CuratorStore:
             ).fetchone()
             if previous_transition is not None:
                 if (
-                    previous_transition["action"] != action
-                    or previous_transition["actor_id"] != actor_id
-                    or previous_transition["revision"]
-                    != request.expected_revision + 1
-                    or previous_transition["rationale"] != request.rationale
-                    or previous_transition["review_packet_sha256"]
-                    != request.review_packet_sha256
-                    or previous_transition["suspension_transition_id"]
-                    != request.suspension_transition_id
+                    (
+                        previous_transition["action"],
+                        previous_transition["actor_id"],
+                        previous_transition["revision"],
+                        previous_transition["rationale"],
+                        previous_transition["review_packet_sha256"],
+                        previous_transition["suspension_transition_id"],
+                    )
+                    != (
+                        action,
+                        actor_id,
+                        request.expected_revision + 1,
+                        request.rationale,
+                        request.review_packet_sha256,
+                        request.suspension_transition_id,
+                    )
                 ):
                     raise ConflictError(
                         "project transition ID was already used with different input"
@@ -2058,6 +2076,30 @@ class CuratorStore:
                 raise RuntimeError("project transition receipt insert returned no row")
             return self._project_registration_transition_result(
                 connection, receipt_row, replayed=False
+            )
+
+    @staticmethod
+    def _validate_project_status_request_fields(
+        request: ProjectStatusChangeRequest,
+        status: str,
+    ) -> None:
+        """Validate fields exclusive to suspension or reactivation requests."""
+
+        if status == "suspended" and any(
+            value is not None
+            for value in (
+                request.review_packet_sha256,
+                request.suspension_transition_id,
+                request.staging_inventory_sha256,
+            )
+        ):
+            raise ValueError("suspension does not accept a reactivation review packet")
+        if status == "active":
+            CuratorStore._validate_access_digest(
+                request.review_packet_sha256, "review_packet_sha256"
+            )
+            CuratorStore._validate_access_identity(
+                request.suspension_transition_id, "suspension_transition_id"
             )
 
     def get_project_registration(
@@ -2369,8 +2411,16 @@ class CuratorStore:
                 """UPDATE consumer_bindings SET status = ?, revision = ?,
                    source_epoch = ?, updated_by = ?, updated_at = ?
                    WHERE project_id = ? AND revision = ? AND status = ?""",
-                (request.status, next_revision, next_source_epoch, actor_id, now, request.project_id,
-                 request.expected_revision, expected_from),
+                (
+                    request.status,
+                    next_revision,
+                    next_source_epoch,
+                    actor_id,
+                    now,
+                    request.project_id,
+                    request.expected_revision,
+                    expected_from,
+                ),
             )
             if cursor.rowcount != 1:
                 raise ConflictError("consumer binding revision is stale")
@@ -2622,10 +2672,15 @@ class CuratorStore:
                      AND action = 'deregistration_pending'""",
                 (project_id, transition_id),
             ).fetchone()
+            if binding is None:
+                raise ConflictError("consumer is not at the reviewed drain transition")
             if (
-                binding is None or binding["status"] != "deregistration_pending"
-                or binding["revision"] != expected_revision
-                or registration is None or registration["status"] != "active"
+                binding["status"], binding["revision"]
+            ) != ("deregistration_pending", expected_revision):
+                raise ConflictError("consumer is not at the reviewed drain transition")
+            if (
+                registration is None
+                or registration["status"] != "active"
                 or transition is None
             ):
                 raise ConflictError("consumer is not at the reviewed drain transition")
@@ -7478,6 +7533,19 @@ class CuratorStore:
             open_gate=gate,
         )
 
+    @staticmethod
+    def _event_replay_payload_matches(
+        existing: sqlite3.Row,
+        event: EventEnvelope,
+        payload_digest: str,
+    ) -> bool:
+        """Match a replay to the stored canonical or idempotency digest."""
+
+        stored_idempotency_digest = existing["idempotency_sha256"]
+        if stored_idempotency_digest is None:
+            return existing["payload_sha256"] == payload_digest
+        return stored_idempotency_digest == event.idempotency_sha256
+
     def ingest_event(self, event: EventEnvelope) -> tuple[EventInboxReceipt, bool]:
         """Durably accept one event; repeated identical IDs are idempotent."""
 
@@ -7491,14 +7559,9 @@ class CuratorStore:
                 (event.project_id, event.event_id),
             ).fetchone()
             if existing is not None:
-                idempotency_digest = event.idempotency_sha256
-                stored_idempotency_digest = existing["idempotency_sha256"]
-                identity_changed = (
-                    existing["payload_sha256"] != payload_digest
-                    if stored_idempotency_digest is None
-                    else stored_idempotency_digest != idempotency_digest
-                )
-                if identity_changed:
+                if not self._event_replay_payload_matches(
+                    existing, event, payload_digest
+                ):
                     raise ConflictError(
                         "event ID was already used with a different payload"
                     )
@@ -8023,14 +8086,19 @@ class CuratorStore:
                 if tuple(prior[key] for key in (
                     "event_id", "transition_id", "actor_id", "payload_sha256", "rationale"
                 )) != (event_id, transition_id, actor_id, expected_payload_sha256, rationale):
-                    raise ConflictError("terminal disposition ID was reused with changed input")
+                    raise ConflictError(
+                        "terminal disposition ID was reused with changed input"
+                    )
                 receipt_row = connection.execute(
                     "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
                     (project_id, event_id),
                 ).fetchone()
                 if receipt_row is None:
                     raise RuntimeError("terminal disposition lost its inbox receipt")
-                return self._event_receipt(receipt_row), self._terminal_event_disposition_from_row(prior)
+                return (
+                    self._event_receipt(receipt_row),
+                    self._terminal_event_disposition_from_row(prior),
+                )
             binding = connection.execute(
                 "SELECT status, revision, source_epoch FROM consumer_bindings "
                 "WHERE project_id = ?", (project_id,),
@@ -8178,6 +8246,50 @@ class CuratorStore:
         ):
             return None
         return self._event_receipt(row)
+
+    def reconcile_deregistered_processed_event(
+        self,
+        event: EventEnvelope,
+    ) -> EventInboxReceipt | None:
+        """Return an exact processed drain receipt after binding cutover.
+
+        This read-only path lets a trusted source clear its durable outbox after
+        the original response was lost. It cannot admit or process an event.
+        """
+
+        payload_digest = hashlib.sha256(event.to_json().encode("utf-8")).hexdigest()
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT inbox.* FROM event_inbox AS inbox
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = inbox.project_id
+                   JOIN project_registry AS project
+                     ON project.project_id = inbox.project_id
+                   JOIN consumer_binding_audit AS cutover
+                     ON cutover.project_id = binding.project_id
+                    AND cutover.revision = binding.revision
+                   LEFT JOIN project_retirement_tombstones AS retirement
+                     ON retirement.project_id = inbox.project_id
+                   WHERE inbox.project_id = ? AND inbox.event_id = ?
+                     AND inbox.status = 'processed'
+                     AND project.status = 'active'
+                     AND retirement.project_id IS NULL
+                     AND binding.status IN ('deregistered', 'active')
+                     AND cutover.action IN ('deregistered', 'reenrolled')
+                     AND inbox.received_at <= cutover.created_at
+                   LIMIT 1""",
+                (event.project_id, event.event_id),
+            ).fetchone()
+        if row is None or row["source_id"] != event.source_id or row[
+            "source_sequence"
+        ] != event.source_sequence:
+            return None
+        identity_matches = (
+            row["idempotency_sha256"] == event.idempotency_sha256
+            if row["idempotency_sha256"] is not None
+            else row["payload_sha256"] == payload_digest
+        )
+        return self._event_receipt(row) if identity_matches else None
 
     def suspended_processed_event_source_epoch(
         self,

@@ -44,6 +44,18 @@ class _StagedFile:
     artifact: ArtifactRef
 
 
+@dataclass(frozen=True, slots=True)
+class _StagingFileMetadata:
+    """Stable identities collected for one temporary file before publication."""
+
+    temporary_name: str
+    final_name: str
+    digest: str
+    device_id: int
+    inode_id: int
+    occurrence_id: str
+
+
 def write_staged_artifact(
     config: ProjectConfig,
     record_staged_time: Callable[[str, ArtifactRef], object],
@@ -74,12 +86,14 @@ def write_staged_artifact(
         staged = _staged_file(
             config,
             request,
-            temporary_name,
-            final_name,
-            digest,
-            device_id,
-            inode_id,
-            occurrence_id,
+            _StagingFileMetadata(
+                temporary_name,
+                final_name,
+                digest,
+                device_id,
+                inode_id,
+                occurrence_id,
+            ),
         )
         _publish_staged_file(class_fd, config.project_id, staged, record_staged_time)
         return staged.artifact
@@ -184,26 +198,21 @@ def _check_chunk_limits(
 def _staged_file(
     config: ProjectConfig,
     request: StagingArtifactWriteRequest,
-    temporary_name: str,
-    final_name: str,
-    digest: str,
-    device_id: int,
-    inode_id: int,
-    occurrence_id: str,
+    metadata: _StagingFileMetadata,
 ) -> _StagedFile:
     artifact = ArtifactRef(
         str(
             config.staging_root
             / request.goal_id
             / request.artifact_class
-            / final_name
+            / metadata.final_name
         ),
-        digest,
-        device_id=device_id,
-        inode_id=inode_id,
-        occurrence_id=occurrence_id,
+        metadata.digest,
+        device_id=metadata.device_id,
+        inode_id=metadata.inode_id,
+        occurrence_id=metadata.occurrence_id,
     )
-    return _StagedFile(temporary_name, final_name, artifact)
+    return _StagedFile(metadata.temporary_name, metadata.final_name, artifact)
 
 
 def _publish_staged_file(

@@ -1,0 +1,25 @@
+[Unit]
+Description=Curator V2 reviewed purge retry pass (%i)
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/curatormd-v2/maintenance-%i.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/env ${CURATORMD_V2_MAINTENANCE_BIN} --project-root=${CURATORMD_V2_PROJECT_ROOT} --database=${CURATORMD_V2_DATABASE} --batch-limit=${CURATORMD_V2_BATCH_LIMIT} --execute-due-purges
+TimeoutStartSec=5min
+UMask=0077
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=curatormd-v2-maintenance-%i
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=%h/.local/state/curatormd-v2/%i %h/.local/share/curatormd-v2/%i

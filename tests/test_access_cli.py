@@ -85,6 +85,22 @@ class AccessCliTests(unittest.TestCase):
         )
         return code, stdout.getvalue(), stderr.getvalue()
 
+    def _run_success(
+        self,
+        operation: str,
+        root: Path,
+        database: Path,
+        phrase: str,
+        *extra: str,
+    ) -> str:
+        """Run an attended CLI operation and return its successful output."""
+
+        code, output, errors = self._run(
+            operation, root, database, phrase, *extra
+        )
+        self.assertEqual(code, 0, errors)
+        return output
+
     def test_attended_registration_and_exact_grants_activate_the_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
@@ -242,9 +258,9 @@ class AccessCliTests(unittest.TestCase):
         )
 
     def _suspend_reactivate_and_revoke(self, root: Path, database: Path) -> None:
-        subject_id = f"local-uid:{os.geteuid()}"
         """Verify suspension fencing, explicit reactivation, and exact revoke."""
-        suspended, _, errors = self._run(
+        subject_id = f"local-uid:{os.geteuid()}"
+        self._run_success(
             "suspend",
             root,
             database,
@@ -256,7 +272,6 @@ class AccessCliTests(unittest.TestCase):
             "--transition-id",
             "cli-suspend-1",
         )
-        self.assertEqual(suspended, 0, errors)
         with self.assertRaisesRegex(ValueError, "registration fingerprint"):
             build_local_profile_mcp(
                 project_root=root,
@@ -264,10 +279,9 @@ class AccessCliTests(unittest.TestCase):
                 profile_id="gptmd-coding",
                 allow_write=True,
             )
-        viewed, view_output, errors = self._run(
+        view_output = self._run_success(
             "view", root, database, "VIEW cli-project ACCESS"
         )
-        self.assertEqual(viewed, 0, errors)
         review = json.loads(view_output)["reactivation_review"]
         self.assertTrue(review["complete"])
         stale_review_hash = review["packet_sha256"]
@@ -296,17 +310,16 @@ class AccessCliTests(unittest.TestCase):
             "--review-packet-sha256",
             stale_review_hash,
         )
-        self.assertEqual(stale_reactivation, 2)
+        self.assertEqual(stale_reactivation, 2, errors)
         self.assertEqual(
             sqlite3.connect(database).execute(
                 "SELECT status FROM project_registry WHERE project_id='cli-project'"
             ).fetchone()[0],
             "suspended",
         )
-        viewed, view_output, errors = self._run(
+        view_output = self._run_success(
             "view", root, database, "VIEW cli-project ACCESS"
         )
-        self.assertEqual(viewed, 0, errors)
         review = json.loads(view_output)["reactivation_review"]
         review_hash = review["packet_sha256"]
         suspension_id = review["suspension_transition_id"]
@@ -314,7 +327,7 @@ class AccessCliTests(unittest.TestCase):
             "REACTIVATE cli-project AT REVISION 3 AFTER SUSPENSION "
             f"{suspension_id} REVIEW {review_hash} TRANSITION cli-reactivate-1"
         )
-        reactivated, _, errors = self._run(
+        self._run_success(
             "reactivate",
             root,
             database,
@@ -330,8 +343,7 @@ class AccessCliTests(unittest.TestCase):
             "--review-packet-sha256",
             review_hash,
         )
-        self.assertEqual(reactivated, 0, errors)
-        replayed, replay_output, errors = self._run(
+        replay_output = self._run_success(
             "reactivate",
             root,
             database,
@@ -347,9 +359,8 @@ class AccessCliTests(unittest.TestCase):
             "--review-packet-sha256",
             review_hash,
         )
-        self.assertEqual(replayed, 0, errors)
         self.assertTrue(json.loads(replay_output)["replayed"])
-        revoked, _, errors = self._run(
+        self._run_success(
             "revoke",
             root,
             database,
@@ -361,7 +372,6 @@ class AccessCliTests(unittest.TestCase):
             "--rationale",
             "Remove write access after the positive launcher check",
         )
-        self.assertEqual(revoked, 0, errors)
 
     def _assert_access_audit(self, root: Path, database: Path) -> None:
         """Check the durable exact grant, revocation, and registration audit."""
@@ -401,29 +411,26 @@ class AccessCliTests(unittest.TestCase):
             root = Path(temporary) / "consumer"
             self._project(root)
             database = Path(temporary) / "curator.sqlite3"
-            registered, _, errors = self._run(
+            self._run_success(
                 "register", root, database, "REGISTER cli-project",
                 "--rationale", "Enroll the consumer fixture",
             )
-            self.assertEqual(registered, 0, errors)
-            granted, _, errors = self._run(
+            self._run_success(
                 "grant", root, database, "GRANT read cli-project cli-reader",
                 "--subject-id", "cli-reader", "--action", "read",
                 "--rationale", "Grant one read scope",
             )
-            self.assertEqual(granted, 0, errors)
-            pending, pending_output, errors = self._run(
+            pending_output = self._run_success(
                 "deregister", root, database,
                 "DEREGISTER cli-project AT BINDING REVISION 1 TRANSITION cli-deregister-1",
                 "--rationale", "Stop consumer access",
                 "--expected-revision", "1", "--transition-id", "cli-deregister-1",
             )
-            self.assertEqual(pending, 0, errors)
             self.assertEqual(
                 json.loads(pending_output)["binding"]["status"],
                 "deregistration_pending",
             )
-            finalized, final_output, errors = self._run(
+            final_output = self._run_success(
                 "deregister_finalize",
                 root,
                 database,
@@ -432,14 +439,12 @@ class AccessCliTests(unittest.TestCase):
                 "--rationale", "Finalize after local event reconciliation",
                 "--expected-revision", "2", "--transition-id", "cli-deregister-final-1",
             )
-            self.assertEqual(finalized, 0, errors)
             self.assertEqual(
                 json.loads(final_output)["binding"]["status"], "deregistered"
             )
-            viewed, view_output, errors = self._run(
+            view_output = self._run_success(
                 "view", root, database, "VIEW cli-project ACCESS"
             )
-            self.assertEqual(viewed, 0, errors)
             state = json.loads(view_output)
             self.assertEqual(state["registration"]["status"], "active")
             self.assertEqual(state["consumer_binding"]["status"], "deregistered")
@@ -451,7 +456,7 @@ class AccessCliTests(unittest.TestCase):
                 "PROJECT REVISION 1 TRANSITION cli-reenroll-1 REPOSITORY "
                 f"{config.repository_fingerprint} CONFIG {config.config_sha256} API 1"
             )
-            reenrolled, reenrolled_output, errors = self._run(
+            reenrolled_output = self._run_success(
                 "reenroll",
                 root,
                 database,
@@ -467,7 +472,6 @@ class AccessCliTests(unittest.TestCase):
                 "--transition-id",
                 "cli-reenroll-1",
             )
-            self.assertEqual(reenrolled, 0, errors)
             reenrolled_state = json.loads(reenrolled_output)
             self.assertEqual(reenrolled_state["binding"]["status"], "active")
             self.assertEqual(reenrolled_state["binding"]["revision"], 4)

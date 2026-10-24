@@ -141,6 +141,31 @@ class ProjectAuthorizationBinding:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ConsumerDrainAuthorizationRequest:
+    """Exact event inventory and lifetime presented for a supervised drain."""
+
+    project_id: str
+    transition_id: str
+    expected_revision: int
+    expected_inventory_sha256: str
+    lifetime_seconds: int
+    consumer_profile: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalEventDispositionRequest:
+    """One human-reviewed terminal decision bound to an exact event payload."""
+
+    project_id: str
+    event_id: str
+    transition_id: str
+    rationale: str
+    expected_binding_revision: int
+    expected_source_epoch: int
+    expected_payload_sha256: str
+
+
 class SQLiteProjectGrantAuthorizer:
     """Resolve exact grants from SQLite and fail closed for suspended projects."""
 
@@ -371,25 +396,22 @@ class ProjectAccessManager:
     def authorize_consumer_drain(
         self,
         caller: AuthenticatedCaller,
-        project_id: str,
-        transition_id: str,
-        expected_revision: int,
-        expected_inventory_sha256: str,
-        lifetime_seconds: int,
-        consumer_profile: str | None,
+        request: ConsumerDrainAuthorizationRequest,
     ) -> tuple[int, str]:
         """Authorize exact retries from a reviewed inventory for one profile."""
 
-        self._require_admin(caller, project_id, ProjectAdministrationAction.DRAIN)
+        self._require_admin(
+            caller, request.project_id, ProjectAdministrationAction.DRAIN
+        )
         return self._store.authorize_consumer_drain(
-            project_id=project_id,
-            transition_id=transition_id,
+            project_id=request.project_id,
+            transition_id=request.transition_id,
             actor_id=caller.subject_id,
             caller_subject=caller.subject_id,
-            caller_profile=consumer_profile,
-            expected_revision=expected_revision,
-            expected_inventory_sha256=expected_inventory_sha256,
-            lifetime_seconds=lifetime_seconds,
+            caller_profile=request.consumer_profile,
+            expected_revision=request.expected_revision,
+            expected_inventory_sha256=request.expected_inventory_sha256,
+            lifetime_seconds=request.lifetime_seconds,
         )
 
     def consumer_drain_inventory(
@@ -435,27 +457,22 @@ class ProjectAccessManager:
     def terminally_dispose_event(
         self,
         caller: AuthenticatedCaller,
-        *,
-        project_id: str,
-        event_id: str,
-        transition_id: str,
-        rationale: str,
-        expected_binding_revision: int,
-        expected_source_epoch: int,
-        expected_payload_sha256: str,
+        request: TerminalEventDispositionRequest,
     ) -> tuple[EventInboxReceipt, TerminalEventDispositionRecord]:
         """Authorize one exact terminal event decision after consumer fencing."""
 
-        self._require_admin(caller, project_id, ProjectAdministrationAction.DISPOSE_EVENT)
+        self._require_admin(
+            caller, request.project_id, ProjectAdministrationAction.DISPOSE_EVENT
+        )
         return self._store.terminally_dispose_event(
-            project_id=project_id,
-            event_id=event_id,
-            transition_id=transition_id,
+            project_id=request.project_id,
+            event_id=request.event_id,
+            transition_id=request.transition_id,
             actor_id=caller.subject_id,
-            rationale=rationale,
-            expected_binding_revision=expected_binding_revision,
-            expected_source_epoch=expected_source_epoch,
-            expected_payload_sha256=expected_payload_sha256,
+            rationale=request.rationale,
+            expected_binding_revision=request.expected_binding_revision,
+            expected_source_epoch=request.expected_source_epoch,
+            expected_payload_sha256=request.expected_payload_sha256,
         )
 
     def get_project_retirement(

@@ -49,8 +49,8 @@ from curatormd_v2.models import (
 )
 
 
-class EventInboxTests(unittest.TestCase):
-    """Check durable event acceptance and compact replay receipts."""
+class _EventInboxTestCase(unittest.TestCase):  # pylint: disable=too-few-public-methods
+    """Provide a fresh local event fixture for the focused test groups."""
 
     def setUp(self) -> None:
         self.temp_dir = self.enterContext(
@@ -76,6 +76,9 @@ class EventInboxTests(unittest.TestCase):
                 checklist_source_text="- [ ] Record project task",
             ),
         )
+
+class EventInboxTests(_EventInboxTestCase):
+    """Check event acceptance, capacity, replay, and event ordering."""
 
     def test_acceptance_is_durable_and_same_event_id_is_idempotent(self) -> None:
         """Persist one acceptance and reuse it after store restart."""
@@ -448,6 +451,9 @@ class EventInboxTests(unittest.TestCase):
         self.assertEqual(len(self.store.pending_events(limit=1)), 1)
         with self.assertRaises(ValueError):
             self.store.pending_events(limit=1001)
+
+class EventProcessingTests(_EventInboxTestCase):
+    """Check event application, migration, status, and usage projections."""
 
     def test_service_applies_project_event_atomically_and_replay_is_safe(self) -> None:
         """Apply a start and finish event once while preserving open truth."""

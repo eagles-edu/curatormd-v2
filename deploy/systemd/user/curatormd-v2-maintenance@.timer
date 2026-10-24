@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule Curator V2 reviewed purge retries (%i)
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00
+AccuracySec=1s
+RandomizedDelaySec=15s
+Persistent=true
+Unit=curatormd-v2-maintenance@%i.service
+
+[Install]
+WantedBy=timers.target

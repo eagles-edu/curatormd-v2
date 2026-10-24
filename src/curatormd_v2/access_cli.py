@@ -8,7 +8,7 @@ Every operation requires a TTY and an exact confirmation phrase.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
@@ -19,14 +19,17 @@ from typing import TextIO
 from .api import AuthenticatedCaller, ProjectAction
 from .cli_interaction import confirm_exact_phrase
 from .project_access import (
+    ConsumerDrainAuthorizationRequest,
     ProjectAccessManager,
     ProjectAdministrationAction,
+    TerminalEventDispositionRequest,
 )
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .store import (
     ConsumerBindingTransitionRequest,
     CuratorStore,
+    ProjectReactivationReviewPacket,
     ProjectRegistrationRequest,
     ProjectStatusChangeRequest,
 )
@@ -186,41 +189,41 @@ def _confirmation_phrase(
     """Return the exact confirmation text for the selected operation."""
 
     if operation in {"grant", "revoke"}:
-        return (
+        phrase = (
             f"{operation.upper()} {arguments.action} {config.project_id} "
             f"{arguments.subject_id}"
         )
-    if operation == "view":
-        return f"VIEW {config.project_id} ACCESS"
-    if operation == "update":
-        return (
+    elif operation == "view":
+        phrase = f"VIEW {config.project_id} ACCESS"
+    elif operation == "update":
+        phrase = (
             f"UPDATE {config.project_id} TRANSITION {arguments.transition_id} "
             f"AT REVISION {arguments.expected_revision} "
             f"TO REPOSITORY {config.repository_fingerprint} CONFIG "
             f"{config.config_sha256} API {config.backend_api_version}"
         )
-    if operation == "suspend":
-        return (
+    elif operation == "suspend":
+        phrase = (
             f"{operation.upper()} {config.project_id} "
             f"AT REVISION {arguments.expected_revision} "
             f"TRANSITION {arguments.transition_id}"
         )
-    if operation == "reactivate":
-        return (
+    elif operation == "reactivate":
+        phrase = (
             f"REACTIVATE {config.project_id} AT REVISION "
             f"{arguments.expected_revision} AFTER SUSPENSION "
             f"{arguments.suspension_transition_id} REVIEW "
             f"{arguments.review_packet_sha256} TRANSITION "
             f"{arguments.transition_id}"
         )
-    if operation in {"deregister", "deregister_finalize"}:
-        return (
+    elif operation in {"deregister", "deregister_finalize"}:
+        phrase = (
             f"{operation.upper()} {config.project_id} "
             f"AT BINDING REVISION {arguments.expected_revision} "
             f"TRANSITION {arguments.transition_id}"
         )
-    if operation == "reenroll":
-        return (
+    elif operation == "reenroll":
+        phrase = (
             f"REENROLL {config.project_id} FROM SOURCE EPOCH "
             f"{arguments.expected_source_epoch} AT BINDING REVISION "
             f"{arguments.expected_revision} PROJECT REVISION "
@@ -229,27 +232,29 @@ def _confirmation_phrase(
             f"{config.repository_fingerprint} CONFIG {config.config_sha256} "
             f"API {config.backend_api_version}"
         )
-    if operation == "drain":
-        return (
+    elif operation == "drain":
+        phrase = (
             f"DRAIN {config.project_id} TRANSITION {arguments.transition_id} "
             f"AT BINDING REVISION {arguments.expected_revision} "
             f"INVENTORY {arguments.inventory_sha256} FOR "
             f"{arguments.lifetime_seconds} SECONDS PROFILE "
             f"{arguments.consumer_profile}"
         )
-    if operation == "dispose_event":
-        return (
+    elif operation == "dispose_event":
+        phrase = (
             f"DISPOSE EVENT {config.project_id} {arguments.event_id} AT BINDING "
             f"REVISION {arguments.expected_revision} SOURCE EPOCH "
             f"{arguments.expected_source_epoch} TRANSITION "
             f"{arguments.transition_id} PAYLOAD {arguments.payload_sha256}"
         )
-    if operation == "retire":
-        return (
+    elif operation == "retire":
+        phrase = (
             f"RETIRE PROJECT {config.project_id} AT REVISION "
             f"{arguments.expected_revision} TRANSITION {arguments.transition_id}"
         )
-    return f"{operation.upper()} {config.project_id}"
+    else:
+        phrase = f"{operation.upper()} {config.project_id}"
+    return phrase
 
 
 def _confirmed_caller(
@@ -272,6 +277,299 @@ def _confirmed_caller(
     return AuthenticatedCaller(actor_id)
 
 
+@dataclass(frozen=True, slots=True)
+class _OperationContext:
+    """All values trusted or collected once for a single attended operation."""
+
+    arguments: argparse.Namespace
+    config: ProjectConfig
+    manager: ProjectAccessManager
+    caller: AuthenticatedCaller
+    rationale: str
+    plugin: ProjectPlugin | None
+
+
+def _registration_result(context: _OperationContext) -> dict[str, object]:
+    """Register or update one project and return its receipt."""
+
+    arguments = context.arguments
+    if arguments.operation == "register":
+        record = context.manager.register_project(
+            context.caller,
+            ProjectRegistrationRequest.from_project_config(
+                context.config, context.rationale
+            ),
+        )
+        return {"operation": "register", "registration": asdict(record)}
+    result = context.manager.update_project_registration(
+        context.caller,
+        ProjectRegistrationRequest.from_project_config(
+            context.config, context.rationale, arguments.expected_revision
+        ),
+        arguments.transition_id,
+    )
+    return {
+        "operation": "update",
+        "registration": asdict(result.registration),
+        "transition_receipt": asdict(result.receipt),
+        "replayed": result.replayed,
+    }
+
+
+def _reactivation_request(context: _OperationContext) -> ProjectStatusChangeRequest:
+    """Re-scan staging and bind reactivation to the packet shown to the operator."""
+
+    if context.plugin is None:
+        raise ValueError("reactivation requires a repository staging scan")
+    arguments = context.arguments
+    with context.plugin.project_effect_lock():
+        inventory = context.plugin.review_staging_inventory()
+        packet = context.manager.project_reactivation_review_packet(
+            context.caller,
+            context.config.project_id,
+            inventory,
+            for_reactivation=True,
+        )
+        request = ProjectStatusChangeRequest(
+            project_id=context.config.project_id,
+            status="active",
+            rationale=context.rationale,
+            expected_revision=arguments.expected_revision,
+            transition_id=arguments.transition_id,
+            review_packet_sha256=arguments.review_packet_sha256,
+            suspension_transition_id=arguments.suspension_transition_id,
+            staging_inventory_sha256=(
+                packet.staging_inventory_sha256 if packet.complete else None
+            ),
+            staging_inventory_count=(
+                packet.staging_inventory_count if packet.complete else None
+            ),
+            staging_inventory_bytes=(
+                packet.staging_inventory_bytes if packet.complete else None
+            ),
+            staging_inventory_observed_at=(
+                packet.staging_inventory_observed_at if packet.complete else None
+            ),
+        )
+        if packet.complete and not _reactivation_packet_matches(packet, context):
+            raise ValueError("reactivation review changed; obtain a fresh view")
+        return request
+
+
+def _reactivation_packet_matches(
+    packet: ProjectReactivationReviewPacket,
+    context: _OperationContext,
+) -> bool:
+    """Compare the fresh scan with every fingerprint in the reviewed packet."""
+
+    return all(
+        (
+            packet.packet_sha256 == context.arguments.review_packet_sha256,
+            packet.suspension_transition_id
+            == context.arguments.suspension_transition_id,
+            packet.repository_fingerprint
+            == context.config.repository_fingerprint,
+            packet.config_sha256 == context.config.config_sha256,
+            packet.backend_api_version == context.config.backend_api_version,
+        )
+    )
+
+
+def _status_result(context: _OperationContext) -> dict[str, object]:
+    """Suspend a project or reactivate it against a fresh reviewed inventory."""
+
+    arguments = context.arguments
+    request = (
+        _reactivation_request(context)
+        if arguments.operation == "reactivate"
+        else ProjectStatusChangeRequest(
+            project_id=context.config.project_id,
+            status="suspended",
+            rationale=context.rationale,
+            expected_revision=arguments.expected_revision,
+            transition_id=arguments.transition_id,
+        )
+    )
+    result = context.manager.set_project_status(context.caller, request)
+    return {
+        "operation": arguments.operation,
+        "registration": asdict(result.registration),
+        "transition_receipt": asdict(result.receipt),
+        "replayed": result.replayed,
+    }
+
+
+def _binding_result(context: _OperationContext) -> dict[str, object]:
+    """Transition the consumer binding through drain or enrollment state."""
+
+    arguments = context.arguments
+    operation = arguments.operation
+    reenrolling = operation == "reenroll"
+    status = {
+        "deregister": "deregistration_pending",
+        "deregister_finalize": "deregistered",
+        "reenroll": "active",
+    }[operation]
+    result = context.manager.transition_consumer_binding(
+        context.caller,
+        ConsumerBindingTransitionRequest(
+            project_id=context.config.project_id,
+            status=status,
+            rationale=context.rationale,
+            expected_revision=arguments.expected_revision,
+            transition_id=arguments.transition_id,
+            expected_source_epoch=arguments.expected_source_epoch if reenrolling else None,
+            expected_project_revision=(
+                arguments.expected_project_revision if reenrolling else None
+            ),
+            repository_fingerprint=(
+                context.config.repository_fingerprint if reenrolling else None
+            ),
+            config_sha256=context.config.config_sha256 if reenrolling else None,
+            backend_api_version=(
+                context.config.backend_api_version if reenrolling else None
+            ),
+        ),
+    )
+    return {
+        "operation": operation,
+        "binding": asdict(result.binding),
+        "transition_receipt": asdict(result.receipt),
+        "replayed": result.replayed,
+    }
+
+
+def _drain_result(context: _OperationContext) -> dict[str, object]:
+    """Authorize retries for one exact consumer event inventory."""
+
+    arguments = context.arguments
+    count, expires_at = context.manager.authorize_consumer_drain(
+        context.caller,
+        ConsumerDrainAuthorizationRequest(
+            project_id=context.config.project_id,
+            transition_id=arguments.transition_id,
+            expected_revision=arguments.expected_revision,
+            expected_inventory_sha256=arguments.inventory_sha256,
+            lifetime_seconds=arguments.lifetime_seconds,
+            consumer_profile=arguments.consumer_profile,
+        ),
+    )
+    return {
+        "operation": arguments.operation,
+        "authorized_event_count": count,
+        "expires_at": expires_at,
+    }
+
+
+def _event_disposition_result(context: _OperationContext) -> dict[str, object]:
+    """Record a terminal disposition for one exact event payload."""
+
+    arguments = context.arguments
+    receipt, disposition = context.manager.terminally_dispose_event(
+        context.caller,
+        TerminalEventDispositionRequest(
+            project_id=context.config.project_id,
+            event_id=arguments.event_id,
+            transition_id=arguments.transition_id,
+            rationale=context.rationale,
+            expected_binding_revision=arguments.expected_revision,
+            expected_source_epoch=arguments.expected_source_epoch,
+            expected_payload_sha256=arguments.payload_sha256,
+        ),
+    )
+    return {
+        "operation": arguments.operation,
+        "receipt": asdict(receipt),
+        "terminal_disposition": asdict(disposition),
+    }
+
+
+def _retirement_result(context: _OperationContext) -> dict[str, object]:
+    """Retire one project at its reviewed lifecycle revision."""
+
+    arguments = context.arguments
+    receipt = context.manager.retire_project(
+        context.caller,
+        context.config.project_id,
+        context.rationale,
+        arguments.expected_revision,
+        arguments.transition_id,
+    )
+    return {"operation": arguments.operation, "retirement": asdict(receipt)}
+
+
+def _grant_result(context: _OperationContext) -> dict[str, object]:
+    """Grant or revoke one exact subject/action pair."""
+
+    arguments = context.arguments
+    operation = arguments.operation
+    method = (
+        context.manager.grant if operation == "grant" else context.manager.revoke
+    )
+    record = method(
+        context.caller,
+        context.config.project_id,
+        arguments.subject_id,
+        ProjectAction(arguments.action),
+        context.rationale,
+    )
+    return {"operation": operation, "grant": asdict(record)}
+
+
+def _view_result(context: _OperationContext) -> dict[str, object]:
+    """Return bounded registration, binding, grant, event, and storage status."""
+
+    arguments = context.arguments
+    manager = context.manager
+    caller = context.caller
+    project_id = context.config.project_id
+    status = manager.lifecycle_status_snapshot(
+        caller,
+        project_id,
+        event_limit=arguments.event_limit,
+        after_event_id=arguments.event_after,
+    )
+    registration = manager.get_registration(caller, project_id)
+    review = _reactivation_review(context, registration.status)
+    return {
+        "operation": arguments.operation,
+        "registration": asdict(registration),
+        "reactivation_review": review,
+        "consumer_binding": asdict(status.consumer_binding),
+        "grants": [asdict(item) for item in manager.list_grants(caller, project_id)],
+        "audit": [
+            asdict(item) for item in manager.list_registration_audit(caller, project_id)
+        ],
+        "consumer_binding_audit": [
+            asdict(item)
+            for item in manager.list_consumer_binding_audit(caller, project_id)
+        ],
+        "retirement": asdict(status.retirement) if status.retirement is not None else None,
+        "unprocessed_event_inventory": {
+            "count": status.unprocessed_event_count,
+            "sha256": status.unprocessed_event_sha256,
+        },
+        "terminal_event_inventory": asdict(status.terminal_event_inventory),
+        "lifecycle_status": asdict(status),
+        "control_plane_storage_usage": asdict(manager.storage_usage(caller, project_id)),
+    }
+
+
+def _reactivation_review(
+    context: _OperationContext,
+    registration_status: str,
+) -> dict[str, object] | None:
+    """Show a fresh review packet only for a suspended project with a plugin."""
+
+    if registration_status != "suspended" or context.plugin is None:
+        return None
+    inventory = context.plugin.review_staging_inventory()
+    packet = context.manager.project_reactivation_review_packet(
+        context.caller, context.config.project_id, inventory
+    )
+    return asdict(packet)
+
+
 def _perform(
     arguments: argparse.Namespace,
     config: ProjectConfig,
@@ -279,235 +577,31 @@ def _perform(
     caller: AuthenticatedCaller,
     plugin: ProjectPlugin | None = None,
 ) -> dict[str, object]:
-    operation = arguments.operation
+    """Dispatch one attended operation to its narrow implementation."""
+
     rationale = getattr(arguments, "rationale", "")
     if not isinstance(rationale, str):
         raise ValueError("rationale must be text")
-    if operation == "register":
-        record = manager.register_project(
-            caller,
-            ProjectRegistrationRequest.from_project_config(config, rationale),
-        )
-        return {"operation": operation, "registration": asdict(record)}
-    if operation == "update":
-        result = manager.update_project_registration(
-            caller,
-            ProjectRegistrationRequest.from_project_config(
-                config, rationale, arguments.expected_revision
-            ),
-            arguments.transition_id,
-        )
-        return {
-            "operation": operation,
-            "registration": asdict(result.registration),
-            "transition_receipt": asdict(result.receipt),
-            "replayed": result.replayed,
-        }
-    if operation in {"suspend", "reactivate"}:
-        review_packet_sha256: str | None = None
-        suspension_transition_id: str | None = None
-        staging_inventory_sha256: str | None = None
-        staging_inventory_count: int | None = None
-        staging_inventory_bytes: int | None = None
-        staging_inventory_observed_at: str | None = None
-        if operation == "reactivate":
-            if plugin is None:
-                raise ValueError("reactivation requires a repository staging scan")
-            with plugin.project_effect_lock():
-                inventory = plugin.review_staging_inventory()
-                packet = manager.project_reactivation_review_packet(
-                    caller,
-                    config.project_id,
-                    inventory,
-                    for_reactivation=True,
-                )
-                if packet.complete and (
-                    packet.packet_sha256 != arguments.review_packet_sha256
-                    or packet.suspension_transition_id
-                    != arguments.suspension_transition_id
-                    or packet.repository_fingerprint
-                    != config.repository_fingerprint
-                    or packet.config_sha256 != config.config_sha256
-                    or packet.backend_api_version != config.backend_api_version
-                ):
-                    raise ValueError(
-                        "reactivation review changed; obtain a fresh view"
-                    )
-                review_packet_sha256 = arguments.review_packet_sha256
-                suspension_transition_id = arguments.suspension_transition_id
-                if packet.complete:
-                    staging_inventory_sha256 = packet.staging_inventory_sha256
-                    staging_inventory_count = packet.staging_inventory_count
-                    staging_inventory_bytes = packet.staging_inventory_bytes
-                    staging_inventory_observed_at = (
-                        packet.staging_inventory_observed_at
-                    )
-                request = ProjectStatusChangeRequest(
-                    project_id=config.project_id,
-                    status="active",
-                    rationale=rationale,
-                    expected_revision=arguments.expected_revision,
-                    transition_id=arguments.transition_id,
-                    review_packet_sha256=review_packet_sha256,
-                    suspension_transition_id=suspension_transition_id,
-                    staging_inventory_sha256=staging_inventory_sha256,
-                    staging_inventory_count=staging_inventory_count,
-                    staging_inventory_bytes=staging_inventory_bytes,
-                    staging_inventory_observed_at=staging_inventory_observed_at,
-                )
-                result = manager.set_project_status(caller, request)
-        else:
-            result = manager.set_project_status(
-                caller,
-                ProjectStatusChangeRequest(
-                    project_id=config.project_id,
-                    status="suspended",
-                    rationale=rationale,
-                    expected_revision=arguments.expected_revision,
-                    transition_id=arguments.transition_id,
-                ),
-            )
-        return {
-            "operation": operation,
-            "registration": asdict(result.registration),
-            "transition_receipt": asdict(result.receipt),
-            "replayed": result.replayed,
-        }
-    if operation in {"deregister", "deregister_finalize", "reenroll"}:
-        is_reenroll = operation == "reenroll"
-        result = manager.transition_consumer_binding(
-            caller,
-            ConsumerBindingTransitionRequest(
-                project_id=config.project_id,
-                status=(
-                    "deregistration_pending"
-                    if operation == "deregister"
-                    else "deregistered"
-                    if operation == "deregister_finalize"
-                    else "active"
-                ),
-                rationale=rationale,
-                expected_revision=arguments.expected_revision,
-                transition_id=arguments.transition_id,
-                expected_source_epoch=(
-                    arguments.expected_source_epoch if is_reenroll else None
-                ),
-                expected_project_revision=(
-                    arguments.expected_project_revision if is_reenroll else None
-                ),
-                repository_fingerprint=(
-                    config.repository_fingerprint if is_reenroll else None
-                ),
-                config_sha256=config.config_sha256 if is_reenroll else None,
-                backend_api_version=(
-                    config.backend_api_version if is_reenroll else None
-                ),
-            ),
-        )
-        return {
-            "operation": operation,
-            "binding": asdict(result.binding),
-            "transition_receipt": asdict(result.receipt),
-            "replayed": result.replayed,
-        }
-    if operation == "drain":
-        count, expires_at = manager.authorize_consumer_drain(
-            caller,
-            config.project_id,
-            arguments.transition_id,
-            arguments.expected_revision,
-            arguments.inventory_sha256,
-            arguments.lifetime_seconds,
-            arguments.consumer_profile,
-        )
-        return {
-            "operation": operation,
-            "authorized_event_count": count,
-            "expires_at": expires_at,
-        }
-    if operation == "dispose_event":
-        receipt, disposition = manager.terminally_dispose_event(
-            caller,
-            project_id=config.project_id,
-            event_id=arguments.event_id,
-            transition_id=arguments.transition_id,
-            rationale=rationale,
-            expected_binding_revision=arguments.expected_revision,
-            expected_source_epoch=arguments.expected_source_epoch,
-            expected_payload_sha256=arguments.payload_sha256,
-        )
-        return {
-            "operation": operation,
-            "receipt": asdict(receipt),
-            "terminal_disposition": asdict(disposition),
-        }
-    if operation == "retire":
-        receipt = manager.retire_project(
-            caller,
-            config.project_id,
-            rationale,
-            arguments.expected_revision,
-            arguments.transition_id,
-        )
-        return {"operation": operation, "retirement": asdict(receipt)}
-    if operation in {"grant", "revoke"}:
-        action = ProjectAction(arguments.action)
-        method = manager.grant if operation == "grant" else manager.revoke
-        record = method(
-            caller,
-            config.project_id,
-            arguments.subject_id,
-            action,
-            rationale,
-        )
-        return {"operation": operation, "grant": asdict(record)}
-    if operation == "view":
-        lifecycle_status = manager.lifecycle_status_snapshot(
-            caller,
-            config.project_id,
-            event_limit=arguments.event_limit,
-            after_event_id=arguments.event_after,
-        )
-        registration = manager.get_registration(caller, config.project_id)
-        reactivation_review: dict[str, object] | None = None
-        if registration.status == "suspended" and plugin is not None:
-            inventory = plugin.review_staging_inventory()
-            packet = manager.project_reactivation_review_packet(
-                caller, config.project_id, inventory
-            )
-            reactivation_review = asdict(packet)
-        return {
-            "operation": operation,
-            "registration": asdict(registration),
-            "reactivation_review": reactivation_review,
-            "consumer_binding": asdict(lifecycle_status.consumer_binding),
-            "grants": [asdict(item) for item in manager.list_grants(caller, config.project_id)],
-            "audit": [
-                asdict(item)
-                for item in manager.list_registration_audit(caller, config.project_id)
-            ],
-            "consumer_binding_audit": [
-                asdict(item)
-                for item in manager.list_consumer_binding_audit(caller, config.project_id)
-            ],
-            "retirement": (
-                asdict(lifecycle_status.retirement)
-                if lifecycle_status.retirement is not None
-                else None
-            ),
-            "unprocessed_event_inventory": {
-                "count": lifecycle_status.unprocessed_event_count,
-                "sha256": lifecycle_status.unprocessed_event_sha256,
-            },
-            "terminal_event_inventory": asdict(
-                lifecycle_status.terminal_event_inventory
-            ),
-            "lifecycle_status": asdict(lifecycle_status),
-            "control_plane_storage_usage": asdict(
-                manager.storage_usage(caller, config.project_id)
-            ),
-        }
-    raise ValueError("unsupported operation")
+    context = _OperationContext(arguments, config, manager, caller, rationale, plugin)
+    handlers = {
+        "register": _registration_result,
+        "update": _registration_result,
+        "suspend": _status_result,
+        "reactivate": _status_result,
+        "deregister": _binding_result,
+        "deregister_finalize": _binding_result,
+        "reenroll": _binding_result,
+        "drain": _drain_result,
+        "dispose_event": _event_disposition_result,
+        "retire": _retirement_result,
+        "grant": _grant_result,
+        "revoke": _grant_result,
+        "view": _view_result,
+    }
+    handler = handlers.get(arguments.operation)
+    if handler is None:
+        raise ValueError("unsupported operation")
+    return handler(context)
 
 
 def main(

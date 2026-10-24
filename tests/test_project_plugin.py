@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 import fcntl
@@ -29,6 +30,7 @@ from curatormd_v2 import (
     ChecklistGoalStartRequest,
     CuratorService,
     CuratorStore,
+    ConsumerBindingTransitionRequest,
     EvidenceOutcome,
     EvidenceRef,
     EvidenceVerificationContext,
@@ -37,7 +39,12 @@ from curatormd_v2 import (
     ProjectStatusChangeRequest,
     SuccessCriterion,
 )
-from curatormd_v2.events import EventEnvelope, FactRecorded, GoalStarted
+from curatormd_v2.events import (
+    EventEnvelope,
+    FactRecorded,
+    GoalActivityObserved,
+    GoalStarted,
+)
 from curatormd_v2.models import (
     FactKind,
     Materiality,
@@ -46,6 +53,7 @@ from curatormd_v2.models import (
     SDEQualityFeedbackLabel,
     SDEStatus,
 )
+from curatormd_v2.read_models import ExpiryPurgeReceipt
 from curatormd_v2.project_config import (
     CONFIG_FILENAME,
     PROJECT_PLUGIN_API_VERSION,
@@ -54,8 +62,90 @@ from curatormd_v2.project_config import (
     _sensitive_config_category,  # pyright: ignore[reportPrivateUsage]  # Direct traversal regression.
 )
 from curatormd_v2.project_plugin import ProjectPlugin
-from curatormd_v2.store import ConflictError, NotFoundError
+from curatormd_v2.store import (
+    ConflictError,
+    NotFoundError,
+    ProjectRegistrationTransitionResult,
+)
 from curatormd_v2.testing import assert_goal_started_event_contract
+
+
+class PausingPurge:  # pylint: disable=too-few-public-methods
+    """Pause one purge before unlink to make the lifecycle race deterministic."""
+
+    def __init__(
+        self,
+        purge: Callable[[ArtifactRef], bool],
+        entered: Event,
+        release: Event,
+    ) -> None:
+        self.purge = purge
+        self.entered = entered
+        self.release = release
+
+    def __call__(self, target: ArtifactRef) -> bool:
+        self.entered.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("test did not release the paused purge")
+        return self.purge(target)
+
+
+class PausingStream(io.BytesIO):  # pylint: disable=too-few-public-methods
+    """Hold a staged write open while a competing inventory requests a lock."""
+
+    def __init__(self, contents: bytes, entered: Event, release: Event) -> None:
+        super().__init__(contents)
+        self.entered = entered
+        self.release = release
+
+    def read(self, size: int | None = -1) -> bytes:
+        self.entered.set()
+        if not self.release.wait(timeout=5):
+            raise TimeoutError("test did not release the producer stream")
+        return super().read(size)
+
+
+class CountingStagingLock:  # pylint: disable=too-few-public-methods
+    """Signal when a competing writer reaches the already-held staging lock."""
+
+    def __init__(
+        self,
+        acquire: Callable[[], Generator[int, None, None]],
+        contending_attempted: Event,
+    ) -> None:
+        self.acquire = acquire
+        self.contending_attempted = contending_attempted
+        self.guard = Lock()
+        self.calls = 0
+
+    def __call__(self) -> Generator[int, None, None]:
+        with self.guard:
+            self.calls += 1
+            if self.calls == 2:
+                self.contending_attempted.set()
+        return self.acquire()
+
+
+def _suspend_project_after_start(
+    store: CuratorStore,
+    project_id: str,
+    transition_id: str,
+    started: Event,
+) -> ProjectRegistrationTransitionResult:
+    """Start a project suspension after a concurrent purge is admitted."""
+
+    started.set()
+    registration = store.get_project_registration(project_id)
+    return store.set_project_status(
+        ProjectStatusChangeRequest(
+            project_id=project_id,
+            status="suspended",
+            rationale="Suspend only after admitted expiry unlink commits",
+            expected_revision=registration.revision,
+            transition_id=transition_id,
+        ),
+        "test-admin",
+    )
 
 
 class PausingEvidenceVerifier:  # pylint: disable=too-few-public-methods
@@ -95,6 +185,148 @@ class ProjectPluginTests(unittest.TestCase):
         self.store = CuratorStore(Path(self.temporary) / "global.sqlite3")
         self.addCleanup(self.store.close)
         self._register_project("Register the reference-plugin test project")
+
+    def _assert_expiry_unlink_holds_suspension_fence(
+        self,
+        config: ProjectConfig,
+        plugin: ProjectPlugin,
+        receipt: ExpiryPurgeReceipt,
+        artifact_path: Path,
+    ) -> None:
+        """Hold an admitted unlink and prove suspension waits for its receipt."""
+
+        unlink_entered = Event()
+        release_unlink = Event()
+        suspension_started = Event()
+        pausing_purge = PausingPurge(
+            plugin.service.purger.purge,
+            unlink_entered,
+            release_unlink,
+        )
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                with patch.object(plugin.service.purger, "purge", pausing_purge):
+                    purge_future = workers.submit(
+                        plugin.retry_expiry_purge, receipt.receipt_id
+                    )
+                    self.assertTrue(unlink_entered.wait(timeout=5))
+                    suspend_future = workers.submit(
+                        _suspend_project_after_start,
+                        self.store,
+                        config.project_id,
+                        "suspend-after-expiry-unlink-1",
+                        suspension_started,
+                    )
+                    self.assertTrue(suspension_started.wait(timeout=5))
+                    self.assertFalse(
+                        suspend_future.done(),
+                        "suspension must wait for the fenced unlink and receipt",
+                    )
+                    release_unlink.set()
+                    completed_purge = purge_future.result(timeout=10)
+                    transition = suspend_future.result(timeout=10)
+            self.assertEqual(completed_purge.status.value, "complete")
+            self.assertFalse(artifact_path.exists())
+            self.assertEqual(transition.registration.status, "suspended")
+            self.assertEqual(transition.receipt.revision, 2)
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.retry_expiry_purge(receipt.receipt_id)
+        finally:
+            release_unlink.set()
+
+    def _assert_suspended_start_event_and_stage_denied(
+        self,
+        plugin: ProjectPlugin,
+        goal_id: str,
+        event: EventEnvelope,
+    ) -> None:
+        """Reject goal, event, activation, and staging writes after suspension."""
+
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.goal_start_from_request(
+                "A direct plugin start must honor project suspension",
+                (SuccessCriterion("denied", "No new goal is created"),),
+            )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.service.goal_start(
+                "A direct service start must honor project suspension",
+                (SuccessCriterion("denied", "No new goal is created"),),
+            )
+        standalone_service = CuratorService(
+            self.store, plugin.service.purger, project_id=plugin.config.project_id
+        )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            standalone_service.goal_start(
+                "A standalone registered service start must be denied",
+                (SuccessCriterion("denied", "No new goal is created"),),
+            )
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.goal_activate(goal_id, "Must remain planned", 1)
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.process_event(event)
+        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+            plugin.stage_artifact(
+                goal_id, "cue", "suspended-stage", io.BytesIO(b"must not write")
+            )
+
+    def _assert_suspended_service_effects_denied(
+        self, plugin: ProjectPlugin, goal_id: str
+    ) -> None:
+        """Verify review and cleanup effects are rejected before service calls."""
+
+        with (
+            patch.object(plugin.service, "fact_compaction_approve") as archive,
+            patch.object(plugin.service, "sde_assess") as assess,
+            patch.object(plugin.service, "sde_correction_record") as correction,
+            patch.object(plugin.service, "sde_quality_feedback_record") as feedback,
+            patch.object(plugin.service, "sde_confirm") as confirm,
+            patch.object(plugin.service, "artifact_inventory_complete") as inventory,
+            patch.object(plugin.service, "authorize_artifact_cleanup") as authorize,
+            patch.object(plugin.service, "release_artifact_hold") as release_hold,
+            patch.object(plugin.service.store, "retry_quarantined_event") as retry_event,
+        ):
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.fact_compaction_approve(
+                    "compaction", goal_id, (), "0" * 64, "reviewer", "reason"
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_assess(goal_id, Materiality.ROUTINE, "reason", ())
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_correction_record("correction", "candidate", "fix", "why")
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_quality_feedback_record(
+                    "feedback", "candidate", SDEQualityFeedbackLabel.USEFUL
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.sde_confirm(
+                    "candidate",
+                    ReviewDecision.REJECTED,
+                    (),
+                    artifact_inventory_complete=False,
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.artifact_inventory_complete("receipt", (), "0" * 64)
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.authorize_artifact_cleanup(
+                    "receipt", (), "0" * 64, "0" * 64, "persistence/HISTORY.md"
+                )
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.release_artifact_hold("receipt", "goal/cue/file", "reason")
+            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
+                plugin.retry_quarantined_event("event", "test-operator")
+            for service_write in (
+                archive,
+                assess,
+                correction,
+                feedback,
+                confirm,
+                inventory,
+                authorize,
+                release_hold,
+                retry_event,
+            ):
+                service_write.assert_not_called()
 
     def test_due_purge_scheduler_uses_exclusive_staging_lock(self) -> None:
         """Serialize scheduled deletes against project plugin staging writes."""
@@ -535,84 +767,8 @@ class ProjectPluginTests(unittest.TestCase):
             ),
         )
 
-        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-            plugin.goal_start_from_request(
-                "A direct plugin start must honor project suspension",
-                (SuccessCriterion("denied", "No new goal is created"),),
-            )
-        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-            plugin.service.goal_start(
-                "A direct service start must honor project suspension",
-                (SuccessCriterion("denied", "No new goal is created"),),
-            )
-        standalone_service = CuratorService(
-            self.store, plugin.service.purger, project_id=config.project_id
-        )
-        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-            standalone_service.goal_start(
-                "A standalone registered service start must be denied",
-                (SuccessCriterion("denied", "No new goal is created"),),
-            )
-        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-            plugin.goal_activate(goal_id, "Must remain planned", 1)
-        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-            plugin.process_event(event)
-        with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-            plugin.stage_artifact(
-                goal_id, "cue", "suspended-stage", io.BytesIO(b"must not write")
-            )
-        with (
-            patch.object(plugin.service, "fact_compaction_approve") as archive,
-            patch.object(plugin.service, "sde_assess") as assess,
-            patch.object(plugin.service, "sde_correction_record") as correction,
-            patch.object(plugin.service, "sde_quality_feedback_record") as feedback,
-            patch.object(plugin.service, "sde_confirm") as confirm,
-            patch.object(plugin.service, "artifact_inventory_complete") as inventory,
-            patch.object(plugin.service, "authorize_artifact_cleanup") as authorize,
-            patch.object(plugin.service, "release_artifact_hold") as release_hold,
-            patch.object(plugin.service.store, "retry_quarantined_event") as retry_event,
-        ):
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.fact_compaction_approve(
-                    "compaction", goal_id, (), "0" * 64, "reviewer", "reason"
-                )
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.sde_assess(goal_id, Materiality.ROUTINE, "reason", ())
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.sde_correction_record("correction", "candidate", "fix", "why")
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.sde_quality_feedback_record(
-                    "feedback", "candidate", SDEQualityFeedbackLabel.USEFUL
-                )
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.sde_confirm(
-                    "candidate",
-                    ReviewDecision.REJECTED,
-                    (),
-                    artifact_inventory_complete=False,
-                )
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.artifact_inventory_complete("receipt", (), "0" * 64)
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.authorize_artifact_cleanup(
-                    "receipt", (), "0" * 64, "0" * 64, "persistence/HISTORY.md"
-                )
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.release_artifact_hold("receipt", "goal/cue/file", "reason")
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.retry_quarantined_event("event", "test-operator")
-            for service_write in (
-                archive,
-                assess,
-                correction,
-                feedback,
-                confirm,
-                inventory,
-                authorize,
-                release_hold,
-                retry_event,
-            ):
-                service_write.assert_not_called()
+        self._assert_suspended_start_event_and_stage_denied(plugin, goal_id, event)
+        self._assert_suspended_service_effects_denied(plugin, goal_id)
         with self.assertRaises(NotFoundError):
             self.store.event_receipt(config.project_id, event.event_id)
         self.assertEqual(
@@ -693,6 +849,129 @@ class ProjectPluginTests(unittest.TestCase):
             self.store.event_receipt(config.project_id, event.event_id).status.value,
             "received",
         )
+
+    def test_reenrollment_fences_old_plugin_and_bound_service_writes(self) -> None:
+        """Old plugin objects cannot write through a fresh consumer epoch."""
+
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
+        binding = self.store.get_consumer_binding(config.project_id)
+        pending = self.store.transition_consumer_binding(
+            ConsumerBindingTransitionRequest(
+                project_id=config.project_id,
+                status="deregistration_pending",
+                rationale="Fence the old consumer instance",
+                expected_revision=binding.revision,
+                transition_id="plugin-stale-pending",
+            ),
+            "test-admin",
+        )
+        deregistered = self.store.transition_consumer_binding(
+            ConsumerBindingTransitionRequest(
+                project_id=config.project_id,
+                status="deregistered",
+                rationale="Finish the empty consumer drain",
+                expected_revision=pending.binding.revision,
+                transition_id="plugin-stale-deregistered",
+            ),
+            "test-admin",
+        )
+        self.store.transition_consumer_binding(
+            ConsumerBindingTransitionRequest(
+                project_id=config.project_id,
+                status="active",
+                rationale="Enroll the reviewed source epoch",
+                expected_revision=deregistered.binding.revision,
+                transition_id="plugin-stale-reenrolled",
+                expected_source_epoch=deregistered.binding.source_epoch,
+                expected_project_revision=1,
+                repository_fingerprint=config.repository_fingerprint,
+                config_sha256=config.config_sha256,
+                backend_api_version=config.backend_api_version,
+            ),
+            "test-admin",
+        )
+
+        criterion = SuccessCriterion("fenced", "No old binding can write")
+        with self.assertRaisesRegex(ConflictError, "consumer lifecycle changed"):
+            plugin.goal_start_from_request(
+                "Reject writes from the old plugin instance", (criterion,)
+            )
+        with self.assertRaisesRegex(ConflictError, "consumer lifecycle changed"):
+            plugin.service.goal_start(
+                "Reject direct writes from the old service instance", (criterion,)
+            )
+        self.assertEqual(plugin.goal_list(), ())
+
+    def test_old_plugin_allows_only_an_exact_attended_drain_event(self) -> None:
+        """A stale binding may finish its reviewed event, but admit no new ID."""
+
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal = self._goal(plugin, "drain-goal")
+        event = EventEnvelope(
+            event_id="drain-event-1",
+            project_id=config.project_id,
+            source_id="consumer-generation-1",
+            source_sequence=1,
+            payload=GoalActivityObserved(
+                goal.goal_id, "drain-fact-1", FactKind.CHANGE, "Drained once."
+            ),
+        )
+        self.store.ingest_event(event)
+        binding = self.store.get_consumer_binding(config.project_id)
+        pending = self.store.transition_consumer_binding(
+            ConsumerBindingTransitionRequest(
+                project_id=config.project_id,
+                status="deregistration_pending",
+                rationale="Drain only the reviewed queued event",
+                expected_revision=binding.revision,
+                transition_id="plugin-drain-pending",
+            ),
+            "test-admin",
+        )
+        count, inventory_sha256 = self.store.consumer_drain_inventory(
+            config.project_id
+        )
+        self.assertEqual(count, 1)
+        self.store.authorize_consumer_drain(
+            project_id=config.project_id,
+            transition_id=pending.receipt.transition_id,
+            actor_id="test-admin",
+            caller_subject="test-consumer",
+            caller_profile="test-profile",
+            expected_revision=pending.binding.revision,
+            expected_inventory_sha256=inventory_sha256,
+            lifetime_seconds=60,
+        )
+
+        receipt = plugin.process_event(
+            event, drain_caller=("test-consumer", "test-profile")
+        )
+
+        self.assertEqual(receipt.status.value, "processed")
+        self.assertEqual(
+            self.store.get_fact("drain-fact-1", config.project_id).bullet,
+            "Drained once.",
+        )
+        new_event = EventEnvelope(
+            event_id="drain-event-not-in-inventory",
+            project_id=config.project_id,
+            source_id=event.source_id,
+            source_sequence=2,
+            payload=GoalActivityObserved(
+                goal.goal_id,
+                "drain-fact-2",
+                FactKind.CHANGE,
+                "Must not be applied.",
+            ),
+        )
+        with self.assertRaisesRegex(ConflictError, "consumer lifecycle changed"):
+            plugin.process_event(
+                new_event, drain_caller=("test-consumer", "test-profile")
+            )
+        with self.assertRaises(NotFoundError):
+            self.store.event_receipt(config.project_id, new_event.event_id)
 
     def test_reusable_producer_backend_contract_assertions(self) -> None:
         """Exercise the importable contract helper against the reference plugin."""
@@ -1128,55 +1407,9 @@ class ProjectPluginTests(unittest.TestCase):
             config.project_id, "test-admin", manifest, snapshot.eligible_artifacts
         )
 
-        unlink_entered = Event()
-        release_unlink = Event()
-        suspension_started = Event()
-        original_purge = plugin.service.purger.purge
-
-        def pause_before_unlink(target: ArtifactRef) -> bool:
-            unlink_entered.set()
-            if not release_unlink.wait(timeout=5):
-                raise TimeoutError("test did not release the paused purge")
-            return original_purge(target)
-
-        def suspend_project():
-            suspension_started.set()
-            registration = self.store.get_project_registration(config.project_id)
-            return self.store.set_project_status(
-                ProjectStatusChangeRequest(
-                    project_id=config.project_id,
-                    status="suspended",
-                    rationale="Suspend only after admitted expiry unlink commits",
-                    expected_revision=registration.revision,
-                    transition_id="suspend-after-expiry-unlink-1",
-                ),
-                "test-admin",
-            )
-
-        try:
-            with ThreadPoolExecutor(max_workers=2) as workers:
-                with patch.object(plugin.service.purger, "purge", pause_before_unlink):
-                    purge_future = workers.submit(
-                        plugin.retry_expiry_purge, receipt.receipt_id
-                    )
-                    self.assertTrue(unlink_entered.wait(timeout=5))
-                    suspend_future = workers.submit(suspend_project)
-                    self.assertTrue(suspension_started.wait(timeout=5))
-                    self.assertFalse(
-                        suspend_future.done(),
-                        "suspension must wait for the fenced unlink and receipt",
-                    )
-                    release_unlink.set()
-                    completed_purge = purge_future.result(timeout=10)
-                    transition = suspend_future.result(timeout=10)
-            self.assertEqual(completed_purge.status.value, "complete")
-            self.assertFalse(Path(artifact.path).exists())
-            self.assertEqual(transition.registration.status, "suspended")
-            self.assertEqual(transition.receipt.revision, 2)
-            with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.retry_expiry_purge(receipt.receipt_id)
-        finally:
-            release_unlink.set()
+        self._assert_expiry_unlink_holds_suspension_fence(
+            config, plugin, receipt, Path(artifact.path)
+        )
 
     def test_pending_sde_cannot_extend_the_72_hour_retention_ceiling(self) -> None:
         """Pending review delays prompt expiry but not the absolute age cap."""
@@ -1465,28 +1698,10 @@ class ProjectPluginTests(unittest.TestCase):
         read_entered = Event()
         allow_read = Event()
         contending_lock_attempted = Event()
-        lock_call_guard = Lock()
-        lock_calls = 0
-        original_staging_lock = getattr(plugin, "_locked_staging_root")
-
-        class PausingStream(io.BytesIO):
-            """Hold a staged write open while another operation requests a lock."""
-
-            def read(self, size: int | None = -1) -> bytes:
-                read_entered.set()
-                if not allow_read.wait(timeout=5):
-                    raise TimeoutError("test did not release the producer stream")
-                return super().read(size)
-
-        stream = PausingStream(b"complete artifact bytes")
-
-        def tracked_staging_lock():
-            nonlocal lock_calls
-            with lock_call_guard:
-                lock_calls += 1
-                if lock_calls == 2:
-                    contending_lock_attempted.set()
-            return original_staging_lock()
+        stream = PausingStream(b"complete artifact bytes", read_entered, allow_read)
+        tracked_staging_lock = CountingStagingLock(
+            getattr(plugin, "_locked_staging_root"), contending_lock_attempted
+        )
 
         def discover():
             return plugin.discover_staging_artifacts(goal_id)

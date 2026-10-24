@@ -23,7 +23,7 @@ from mcp.server import MCPServer
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .evidence import EvidenceVerifier
 from .local_evidence_config import load_local_service_probe_verifier
-from .mcp_server import RequestHostReadiness, build_mcp_server
+from .mcp_server import HermesContextOptions, RequestHostReadiness, build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .project_access import (
@@ -94,6 +94,7 @@ def build_local_profile_mcp(
     source_id: str | None = None,
     allow_write: bool = False,
     allow_review: bool = False,
+    require_authenticated_subject: bool = False,
     evidence_verifier: EvidenceVerifier | None = None,
     evidence_config: str | Path | None = None,
 ) -> LocalProfileMCP:
@@ -173,8 +174,10 @@ def build_local_profile_mcp(
             caller,
             config.project_id,
             selected_source_id,
-            require_hermes_context=True,
-            hermes_profile_id=profile_id,
+            hermes_context=HermesContextOptions(
+                profile_id=profile_id,
+                require_authenticated_subject=require_authenticated_subject,
+            ),
         )
     except BaseException:
         store.close()
@@ -210,6 +213,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow review tools only when this profile has an exact durable review grant",
     )
+    parser.add_argument(
+        "--require-authenticated-subject",
+        action="store_true",
+        help="deny every Hermes MCP call without a host-authenticated human subject",
+    )
     return parser
 
 
@@ -225,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             source_id=args.source_id,
             allow_write=args.allow_write,
             allow_review=args.allow_review,
+            require_authenticated_subject=args.require_authenticated_subject,
             evidence_config=args.evidence_config,
         )
     except Exception:  # pylint: disable=broad-exception-caught  # Keep startup errors private.
