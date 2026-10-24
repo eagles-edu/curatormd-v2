@@ -38,15 +38,18 @@
 
 - **Intent:** Verify the current Curator V2 package and consumer integration in
   the approved single-user Vhost alpha profile.
-- **Changed fact:** Built source commit `5bea417` as wheel SHA-256
-  `f4dc540ca354fe44141692b2cc2ec20af2aab7f329c88786e157dd4aea14a633` and
+- **Changed fact:** Synchronized the profile to source commit `1e10df2` as wheel
+  SHA-256 `4118c2cd1aeaf323bd88c8c0bdcd5d11173ac50769d0bceb4b1b747b82b660d2` and
   installed it only in the `renew-ssl-coding` Curator virtualenv after backing
   up the previous package, metadata, and CLI entry points. The archive and
-  sidecar file-hash manifest were verified. All 51 installed Python modules
-  match source byte for byte.
+  sidecar file-hash manifest at
+  `backups/curator-v2-package-before-alpha-refresh-20261024T2255/` were
+  verified; archive SHA-256 is
+  `f471d4e7c6dd43ac295c3c0e925d0dca678e2e4ac2291d2bfabe9e14ead5e0f8`. All 51
+  installed Python modules match source byte for byte.
 - **Verification:** `pip check` reports no broken requirements. Seven Vhost
-  contract tests pass against the installed package; the Hermes-managed
-  disposable recovery harness passes five events including replay/retry,
+  contract tests and the Hermes-managed disposable recovery harness pass
+  against this package. The harness processes five events with replay/retry,
   re-enrollment, projection reconciliation, and privacy checks. The read-only
   Hermes profile probe returns 48 tools, 12 processed receipts, one goal, two
   facts, and healthy project status with no gates.
@@ -157,8 +160,9 @@
 - **Open gate:** Hermes-person authentication and production reviewer UX are
   deferred beyond the approved single-user development alpha. Live Vhost
   application review/purge remains unverified.
-- **Outcome:** Close the local reviewer-packet delivery row only. Progress is
-  146/178 delivery items complete; 32 remain open.
+- **Outcome:** Close the local reviewer-packet delivery row only. The earlier
+  progress note recorded 146/178; the current direct count of plan row markers
+  is 145/178 complete and 33 open, now reflected in the plan and release gate.
 
 ## 2026-10-24 — Close local-alpha truthful health aggregation
 

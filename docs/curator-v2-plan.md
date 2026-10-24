@@ -193,21 +193,16 @@ Checkboxes describe verified repository state, not architectural intent:
 
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
-delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-24 direct recount): 146 of 178 delivery rows are complete; 32 are
-open. Counting checklist rows plus the reusable rows in section 11 yields
-160/214 (including 36 reusable rows: 14 checked, 22 open); this raw count is
-not delivery progress. Two `- [ ]` lines inside the per-request record-shape
-example are placeholders, not checklist rows, and are excluded from both
-counts. The 177-row
+delivery items and are excluded from the numerator and denominator. Current
+direct recount (2026-10-24): **145 of 178 delivery rows are complete; 33 are
+open**. Count checkbox rows in sections 0–10, 12, and Definition of done only;
+section 11's reusable templates and example placeholders do not count. The
+177-row
 baseline includes the owner's separately requested V2-owned VS Code status-bar
 integration, the open real-consumer producer/source-coverage row, and the
 lifecycle row in the Definition of done. One added regression row covers
-terminal parent/dependency reopen relationships in Section 1 and is now complete.
-The count
-includes implementation rows in sections 0–10, 12, and Definition of done. It
-excludes section 11's reusable execution templates; their per-task checkboxes
-are not delivery progress. Historical narrative counts below are not current.
+terminal parent/dependency reopen relationships in Section 1 and is now
+complete. Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -6529,23 +6524,27 @@ substitute for evidence at a later integration boundary.
       disposable end-to-end integration evidence after the shared gateway
       restart; it does not exercise a real Vhost application request or human
       identity. Slice G remains open for those live workflow and identity gates.
-      Current-source profile refresh (2026-10-24): built commit `5bea417` as
+      Current-source profile refresh (2026-10-24): built commit `1e10df2` as
       wheel SHA-256
-      `f4dc540ca354fe44141692b2cc2ec20af2aab7f329c88786e157dd4aea14a633` and
+      `4118c2cd1aeaf323bd88c8c0bdcd5d11173ac50769d0bceb4b1b747b82b660d2` and
       installed it only in the dedicated `renew-ssl-coding` Curator V2
       virtualenv after creating and verifying a rollback archive and file-hash
-      manifest. All 51 installed Python modules match source byte for byte and
-      `pip check` reports no broken requirements. The seven Vhost consumer
-      contracts pass against the installed package; the current dirty Vhost
-      checkout's Hermes-managed recovery harness passes five events, exact
-      replay, failed-delivery retry, re-enrollment, projection reconciliation,
-      and privacy canaries. A read-only Hermes profile probe discovers 48 tools
-      and reports 12 processed receipts, one goal, two facts, and project health
-      `healthy` with no gates. The local timer is enabled at the approved
-      six-hour cadence; its first run on that cadence is pending. No live Vhost
-      application request was run, and no Vhost source or project data was
-      changed. This refresh updates package/runtime evidence only; Slice G and
-      the live Vhost workflow item remain open.
+      manifest at
+      `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-package-before-alpha-refresh-20261024T2255/`;
+      archive SHA-256 is
+      `f471d4e7c6dd43ac295c3c0e925d0dca678e2e4ac2291d2bfabe9e14ead5e0f8`.
+      All 51 installed Python modules match source byte for byte and `pip check`
+      reports no broken requirements. The seven Vhost consumer contracts and
+      the current dirty Vhost checkout's Hermes-managed recovery harness pass
+      against this package. The harness processes five events and verifies
+      exact replay, failed-delivery retry, re-enrollment, projection
+      reconciliation, and privacy canaries. A read-only Hermes profile probe
+      discovers 48 tools and reports 12 processed receipts, one goal, two facts,
+      and project health `healthy` with no gates. The local timer is enabled at
+      the approved six-hour cadence; its first run on that cadence is pending.
+      No live Vhost application request was run, and no Vhost source or project
+      data was changed. This refresh updates package/runtime evidence only;
+      Slice G and the live Vhost workflow item remain open.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the

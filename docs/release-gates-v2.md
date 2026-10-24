@@ -5,7 +5,8 @@ claim. Statuses describe the strongest evidence currently present in this
 checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
-Current delivery checklist snapshot (2026-10-24): 146/178 complete, 32 open,
+Current delivery checklist snapshot (2026-10-24 direct row-marker recount):
+145/178 complete, 33 open,
 using the counting rule in [`curator-v2-plan.md`](curator-v2-plan.md).
 
 Local-alpha recheck (2026-10-24): the `eaglesvn` user timer for
@@ -13,32 +14,32 @@ Local-alpha recheck (2026-10-24): the `eaglesvn` user timer for
 systemd reports its next run at 00:00. The last recorded run at 20:55 preceded
 the cadence change, so the first scheduled run on the new cadence remains to be
 verified. The timer's output is journal-only. The updated Hermes development-
-checkout probe at 2026-10-24 15:48 UTC reports the local project healthy with no
+checkout probe at 2026-10-24 15:56 UTC reports the local project healthy with no
 gates (12 processed event receipts, one goal, two facts). `/usr/local/lib/hermes-agent`
 was not modified. Curator is development-only, one repository at a time;
 multi-user identity and production controls are deferred, not alpha blockers.
 
 Current local-alpha package verification (2026-10-24): built from Curator
-commit `5bea417` and installed the `0.1.0a1` wheel only in the dedicated
+commit `1e10df2` and installed the `0.1.0a1` wheel only in the dedicated
 `renew-ssl-coding` profile environment. Wheel SHA-256:
-`f4dc540ca354fe44141692b2cc2ec20af2aab7f329c88786e157dd4aea14a633`. Before
+`4118c2cd1aeaf323bd88c8c0bdcd5d11173ac50769d0bceb4b1b747b82b660d2`. Before
 installation, archived the previous package, distribution metadata, and CLI
 entry points at
-`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-package-before-alpha-refresh-20261024T2247/`;
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-package-before-alpha-refresh-20261024T2255/`;
 the archive SHA-256 is
-`8549498907a4496beedaec9a230af5ddaa00b7e8d9b4f17c896f72946dc53461`, and its
+`f471d4e7c6dd43ac295c3c0e925d0dca678e2e4ac2291d2bfabe9e14ead5e0f8`, and its
 sidecar file manifest was verified. All 51 installed Python modules match the
 wheel and source byte for byte; `pip check` reports no broken requirements.
-The seven Vhost consumer contracts pass against the installed package, and the
-Hermes-managed disposable recovery harness passes with five processed events,
+The seven Vhost consumer contracts and Hermes-managed disposable recovery
+harness pass against this package. The harness processes five events and checks
 exact replay, retry, re-enrollment, projection reconciliation, and privacy
-canaries. A read-only Hermes profile probe discovers 48 tools and reads 12/12
-processed receipts, one goal, two facts, and `healthy` project health with no
-gates. This is profile and disposable-consumer evidence, not a live Vhost
+canaries. A read-only Hermes profile probe at 15:56 UTC discovers 48 tools and
+reads 12/12 processed receipts, one goal, two facts, and `healthy` project
+health with no gates. This is profile and disposable-consumer evidence, not a live Vhost
 application request. The first scheduled pass after the six-hour cadence change
 is still pending; no Vhost application source or project data was changed.
-The current checklist remains 146/178; no row was closed by this package
-refresh.
+The current checklist remains 145/178, with 33 open; no row was closed by this
+package refresh.
 
 Historical Hermes profile recheck (2026-10-24 12:04 UTC): the older installed
 package returned `degraded` health because the local timer had not yet been
