@@ -13,33 +13,39 @@ Local-alpha recheck (2026-10-24): the `eaglesvn` user timer for
 systemd reports its next run at 00:00. The last recorded run at 20:55 preceded
 the cadence change, so the first scheduled run on the new cadence remains to be
 verified. The timer's output is journal-only. The updated Hermes development-
-checkout probe reports the local project healthy, but `/usr/local/lib/hermes-agent`
+checkout probe at 2026-10-24 15:48 UTC reports the local project healthy with no
+gates (12 processed event receipts, one goal, two facts). `/usr/local/lib/hermes-agent`
 was not modified. Curator is development-only, one repository at a time;
 multi-user identity and production controls are deferred, not alpha blockers.
 
-Latest local-alpha verification (2026-10-24): rebuilt and installed the
-Curator V2 `0.1.0a1` wheel only in the dedicated `renew-ssl-coding` profile
-environment. Wheel SHA-256:
-`98ce0e1bd0ce45ba81b8f6b874ec9cc99023ef2582c9090b43a696fa7cb191e8`. The
-previous installed package has a verified backup archive and sidecar manifest
-in that profile's `backups/curator-v2-package-before-20261024T112719Z/`.
-All 48 installed Python modules match the wheel; seven consumer contracts and
-the managed Hermes/Vhost disposable lifecycle test pass, including five-event
-re-enrollment and lost-ack recovery. The read-only profile probe reports 12
-processed receipts, one goal, two facts, and `degraded` health because the
-recurring purge scheduler and alert delivery are not installed. The profile
-read uses its trusted local Hermes profile/session context and the single-host
-`eaglesvn` OS UID grant; Hermes still reports transport `Auth: none`,
-so no person-authenticated production subject is established. No live Vhost
-application request was exercised. The checklist remains 139/178; no row was
-closed by these local package and integration checks.
+Current local-alpha package verification (2026-10-24): built from Curator
+commit `5bea417` and installed the `0.1.0a1` wheel only in the dedicated
+`renew-ssl-coding` profile environment. Wheel SHA-256:
+`f4dc540ca354fe44141692b2cc2ec20af2aab7f329c88786e157dd4aea14a633`. Before
+installation, archived the previous package, distribution metadata, and CLI
+entry points at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-package-before-alpha-refresh-20261024T2247/`;
+the archive SHA-256 is
+`8549498907a4496beedaec9a230af5ddaa00b7e8d9b4f17c896f72946dc53461`, and its
+sidecar file manifest was verified. All 51 installed Python modules match the
+wheel and source byte for byte; `pip check` reports no broken requirements.
+The seven Vhost consumer contracts pass against the installed package, and the
+Hermes-managed disposable recovery harness passes with five processed events,
+exact replay, retry, re-enrollment, projection reconciliation, and privacy
+canaries. A read-only Hermes profile probe discovers 48 tools and reads 12/12
+processed receipts, one goal, two facts, and `healthy` project health with no
+gates. This is profile and disposable-consumer evidence, not a live Vhost
+application request. The first scheduled pass after the six-hour cadence change
+is still pending; no Vhost application source or project data was changed.
+The current checklist remains 146/178; no row was closed by this package
+refresh.
 
-Recheck through the Hermes development CLI on 2026-10-24 12:04 UTC succeeded
-with host-injected profile/session context: 48 Curator tools discovered, all 12
-stored event receipts are processed, the project contains one goal and two
-facts, and health remains `degraded` only for the missing recurring purge
-scheduler and alert delivery. A direct Codex MCP call without that context
-still returns `unauthenticated`; it does not contradict the profile-scoped read.
+Historical Hermes profile recheck (2026-10-24 12:04 UTC): the older installed
+package returned `degraded` health because the local timer had not yet been
+enabled. This was superseded by the 15:48 UTC healthy profile probe above. A
+direct Codex MCP call without host-injected Hermes profile context remains
+`unauthenticated`; the approved single-user alpha uses the local `eaglesvn` OS
+UID grant and does not require multi-user person authentication.
 
 ## Open gates in plain language
 

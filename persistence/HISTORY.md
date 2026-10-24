@@ -1,5 +1,27 @@
 # Curator V2 history
 
+## 2026-10-24 — Refresh the local Hermes profile package
+
+- **Intent:** Verify the current Curator V2 package and consumer integration in
+  the approved single-user Vhost alpha profile.
+- **Changed fact:** Built source commit `5bea417` as wheel SHA-256
+  `f4dc540ca354fe44141692b2cc2ec20af2aab7f329c88786e157dd4aea14a633` and
+  installed it only in the `renew-ssl-coding` Curator virtualenv after backing
+  up the previous package, metadata, and CLI entry points. The archive and
+  sidecar file-hash manifest were verified. All 51 installed Python modules
+  match source byte for byte.
+- **Verification:** `pip check` reports no broken requirements. Seven Vhost
+  contract tests pass against the installed package; the Hermes-managed
+  disposable recovery harness passes five events including replay/retry,
+  re-enrollment, projection reconciliation, and privacy checks. The read-only
+  Hermes profile probe returns 48 tools, 12 processed receipts, one goal, two
+  facts, and healthy project status with no gates.
+- **Open gate:** The first scheduled six-hour timer pass remains pending. No
+  live Vhost application request or production workflow was exercised; no
+  checklist row is closed by this package refresh.
+- **Outcome:** Current-source local package and disposable consumer evidence is
+  refreshed with a verified rollback point.
+
 ## 2026-10-24 — Share compact CLI JSON output
 
 - **Intent:** Remove repeated JSON-lines formatting while preserving each

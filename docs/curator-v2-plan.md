@@ -6513,6 +6513,23 @@ substitute for evidence at a later integration boundary.
       disposable end-to-end integration evidence after the shared gateway
       restart; it does not exercise a real Vhost application request or human
       identity. Slice G remains open for those live workflow and identity gates.
+      Current-source profile refresh (2026-10-24): built commit `5bea417` as
+      wheel SHA-256
+      `f4dc540ca354fe44141692b2cc2ec20af2aab7f329c88786e157dd4aea14a633` and
+      installed it only in the dedicated `renew-ssl-coding` Curator V2
+      virtualenv after creating and verifying a rollback archive and file-hash
+      manifest. All 51 installed Python modules match source byte for byte and
+      `pip check` reports no broken requirements. The seven Vhost consumer
+      contracts pass against the installed package; the current dirty Vhost
+      checkout's Hermes-managed recovery harness passes five events, exact
+      replay, failed-delivery retry, re-enrollment, projection reconciliation,
+      and privacy canaries. A read-only Hermes profile probe discovers 48 tools
+      and reports 12 processed receipts, one goal, two facts, and project health
+      `healthy` with no gates. The local timer is enabled at the approved
+      six-hour cadence; its first run on that cadence is pending. No live Vhost
+      application request was run, and no Vhost source or project data was
+      changed. This refresh updates package/runtime evidence only; Slice G and
+      the live Vhost workflow item remain open.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
