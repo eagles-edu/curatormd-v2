@@ -1,5 +1,25 @@
 # Curator V2 history
 
+## 2026-10-24 — Verify attended local SDE review packet
+
+- **Intent:** Close the local-alpha requirement to show review evidence and the
+  exact purge inventory to the authorized reviewer before disposition.
+- **Changed fact:** The attended V2 review CLI displays candidate facts,
+  evidence provenance, complete staged paths and manifest hash, and the
+  canonical target before approve/reject. Its confirmation is bound to the
+  displayed dependency-map and inventory hashes; review authorization uses
+  the current local UID and an owned project database.
+- **Verification:** The focused review CLI suite passes nine tests. The
+  integration regression asserts that the rendered packet includes the
+  candidate, verification evidence, exact inventory hash and staged path
+  before the decision prompt, then confirms the exact-inventory review/purge
+  path.
+- **Open gate:** Hermes-person authentication and production reviewer UX are
+  deferred beyond the approved single-user development alpha. Live Vhost
+  application review/purge remains unverified.
+- **Outcome:** Close the local reviewer-packet delivery row only. Progress is
+  146/178 delivery items complete; 32 remain open.
+
 ## 2026-10-24 — Close local-alpha truthful health aggregation
 
 - **Intent:** Verify that the local single-user alpha health view reflects

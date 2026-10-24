@@ -5,7 +5,7 @@ claim. Statuses describe the strongest evidence currently present in this
 checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
-Current delivery checklist snapshot (2026-10-24): 145/178 complete, 33 open,
+Current delivery checklist snapshot (2026-10-24): 146/178 complete, 32 open,
 using the counting rule in [`curator-v2-plan.md`](curator-v2-plan.md).
 
 Local-alpha recheck (2026-10-24): the `eaglesvn` user timer for
@@ -242,8 +242,13 @@ evidence, not live Hermes identity, hook delivery, or deployment verification.
 The reviewer-authorized `sde_review_packet` composes selected candidate
 facts/evidence with a point-in-time hashed staging manifest; MCP acceptance
 proves read-only callers are denied and the packet manifest matches the separate
-inventory read. The latest full suite supersedes earlier per-slice counts in
-this ledger.
+inventory read. The attended local review CLI now prints that packet, including
+candidate facts, verification evidence, exact staged paths and manifest hash,
+before soliciting approve/reject. Its second confirmation binds the dependency
+map and inventory hashes; the local-UID/database-owner and full review/purge
+flow pass in the focused nine-test suite. Local single-user reviewer UX is
+verified; Hermes-person identity and production review UX remain outside alpha
+scope. The latest full suite supersedes earlier per-slice counts in this ledger.
 
 | Slice | Status | Owner, probe, expected/actual | Evidence and remaining exit condition |
 | --- | --- | --- | --- |

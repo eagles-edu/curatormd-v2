@@ -180,6 +180,34 @@ class _CliInvocation:
     stderr: str
 
 
+def _assert_review_packet_displayed(
+    test: unittest.TestCase,
+    invocation: _CliInvocation,
+    prepared: _PreparedCliReview,
+) -> None:
+    """Check the first CLI output is the exact evidence packet for review."""
+
+    displayed_packet = json.loads(invocation.stdout.splitlines()[0])["review_packet"]
+    test.assertEqual(
+        displayed_packet["artifact_inventory"]["manifest_sha256"],
+        prepared.manifest_hash,
+    )
+    test.assertEqual(
+        displayed_packet["artifact_inventory"]["artifacts"][0]["path"],
+        prepared.staged_artifact.path,
+    )
+    displayed_facts = displayed_packet["detail"]["facts"]
+    test.assertEqual(len(displayed_facts), 2)
+    test.assertEqual(
+        displayed_facts[1]["evidence"][0]["sha256"],
+        hashlib.sha256(b"disposable proof").hexdigest(),
+    )
+    test.assertEqual(
+        displayed_packet["detail"]["candidate"]["candidate_id"],
+        prepared.candidate_id,
+    )
+
+
 def _approve_local_review(
     root: Path, database: Path, prepared: _PreparedCliReview
 ) -> _CliInvocation:
@@ -641,6 +669,7 @@ class ReviewCliTests(unittest.TestCase):
             invocation = _approve_local_review(root, database, prepared)
 
             self.assertEqual(invocation.result, 0, invocation.stderr)
+            _assert_review_packet_displayed(self, invocation, prepared)
             self.assertFalse(staged.exists())
             reopened = CuratorStore(database)
             final_result = json.loads(invocation.stdout.splitlines()[-1])

@@ -194,9 +194,9 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Snapshot
-(2026-10-24 direct recount): 145 of 178 delivery rows are complete; 33 are
+(2026-10-24 direct recount): 146 of 178 delivery rows are complete; 32 are
 open. Counting checklist rows plus the reusable rows in section 11 yields
-159/214 (including 36 reusable rows: 14 checked, 22 open); this raw count is
+160/214 (including 36 reusable rows: 14 checked, 22 open); this raw count is
 not delivery progress. Two `- [ ]` lines inside the per-request record-shape
 example are placeholders, not checklist rows, and are excluded from both
 counts. The 177-row
@@ -5837,15 +5837,19 @@ Final report: completed facts, open items, recovery path, next action
       persist them immutably, and remain pending human review. The v17-to-v18
       migration preserves existing candidates with null context. Focused
       API/MCP/lifecycle/migration tests cover these boundaries.
-- [ ] Before a review decision, show the candidate bullets, provenance,
+- [x] Before a review decision, show the candidate bullets, provenance,
       evidence, and exact temporary-artifact inventory to the authorized reviewer.
-      Progress (2026-10-19): a new `sde_review_packet` MCP read under project
-      `review` authorization combines selected candidate facts/evidence with a
-      fresh bounded, streaming-hash staging manifest. Tests verify the candidate
-      and exact manifest match the existing inventory endpoint; read-only callers
-      are denied before details are fetched. Inventory is point-in-time and
-      decision-time manifest checks remain required; live authenticated reviewer
-      UX is still open.
+      The attended V2 review CLI emits the bounded candidate packet, proof
+      references, complete hashed inventory, and canonical target before asking
+      approve/reject. It then binds the second confirmation phrase to the exact
+      dependency-map and inventory hashes; the backend rescans before recording
+      the decision. The local-alpha policy authorizes `eaglesvn` through the
+      current Linux UID and an owned project database. Nine focused review CLI
+      tests pass, including an assertion that the rendered packet contains the
+      candidate, verification evidence, exact manifest, and staged path before
+      the decision prompt. This closes the local single-user reviewer flow;
+      inventory freshness is still enforced at decision time. Hermes-person
+      identity and production reviewer UX are outside the approved alpha scope.
 - [x] Require a durable cleanup-authorization receipt bound to the complete
       exact manifest before any SDE-triggered purge. The same explicit human
       review action records SDE disposition and cleanup authorization. Initial
