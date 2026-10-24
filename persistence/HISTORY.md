@@ -6228,3 +6228,24 @@ gate is closed by these tests.
 
 **Outcome:** Local-alpha durable operations are closed at 145/178 delivery
 items complete, with 33 open. No code changed in this slice.
+
+## 2026-10-24 — Verify the pushed alpha candidate in hosted CI
+
+**Intent:** Verify the just-pushed Curator V2 commit against the repository CI
+workflow and preserve the result in the release ledger.
+
+**Changed fact:** Hosted CI run
+`https://github.com/eagles-edu/curatormd-v2/actions/runs/40105937812` passed
+for commit `c653257e50df8472f921002512111f6cf0f8dda1` on `main`.
+
+**Verification:** All workflow jobs passed: full test matrices on Python 3.12,
+3.13, and 3.14; clean-wheel build/install and consumer-bound launcher/command
+acceptance; strict Pyright; blocking Pylint errors; Bandit; and locked
+dependency audit.
+
+**Open gate:** Warning-level whole-tree Pylint still reports 132 findings
+(14 convention, 118 refactor). Live activation of the installed Vhost alpha
+wheel through the shared Hermes host gateway, real Vhost application workflow,
+and production/release controls remain open.
+
+**Outcome:** Commit `c653257` is hosted-CI verified. No checklist count changed.
