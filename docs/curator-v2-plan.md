@@ -1352,6 +1352,14 @@ consumer plugin, Hermes integration, or production deployment.
       The next scheduled run has not occurred since the cadence change; verify
       that run separately. The active `/usr/local` Hermes install is unchanged.
       Production alert delivery and restart/reconciliation remain open.
+      Fresh source-checkout/profile read (2026-10-24T16:14:47Z): the Hermes
+      `renew-ssl-coding` probe connects through the configured V2 stdio server,
+      discovers 48 tools, and returns 12 processed receipts, one goal, two
+      facts, and `project_health=healthy` with no gates. The active timer remains
+      scheduled every six hours, next at 2026-10-25 00:00:04 +07; its last run
+      at 20:55 preceded the cadence change, so the first scheduled six-hour
+      execution is still unverified. No Vhost application workflow was run,
+      and the system Hermes install remains unchanged.
       Also verify approval binding for a replacement occurrence at the same
       path: after review, replace a target with a newly published file whose
       bytes and SHA-256 are identical to the approved file. The old receipt must

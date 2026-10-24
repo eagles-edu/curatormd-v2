@@ -1,5 +1,23 @@
 # Curator V2 history
 
+## 2026-10-24 — Verify current Hermes profile health
+
+- **Intent:** Confirm the updated Hermes source checkout can read the current
+  local-alpha ledger and health through the actual profile-bound V2 route.
+- **Changed fact:** The read-only `renew-ssl-coding` probe connected to the
+  configured stdio server, discovered 48 tools, and returned 12 processed
+  receipts, one goal, two facts, and `project_health=healthy` with no gates.
+- **Verification:** The active six-hour timer is scheduled for 00:00, 06:00,
+  12:00, and 18:00 with a 15-second spread; its last run at 20:55 preceded the
+  cadence change. Therefore health is currently clear, but the first scheduled
+  six-hour execution remains unverified. No Vhost application workflow or
+  project-data mutation was performed.
+- **Open gate:** Hermes Core source changes are not installed in
+  `/usr/local/lib/hermes-agent`; real Vhost application production, first
+  six-hour retry pass, and production/release gates remain open.
+- **Outcome:** Record current local profile health without overstating the
+  timer cadence or consumer-workflow evidence.
+
 ## 2026-10-24 — Verify Hermes source health probes and session context
 
 - **Intent:** Continue the V2 Hermes Core integration and validate the
