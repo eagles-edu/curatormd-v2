@@ -6241,7 +6241,9 @@ for commit `c653257e50df8472f921002512111f6cf0f8dda1` on `main`.
 **Verification:** All workflow jobs passed: full test matrices on Python 3.12,
 3.13, and 3.14; clean-wheel build/install and consumer-bound launcher/command
 acceptance; strict Pyright; blocking Pylint errors; Bandit; and locked
-dependency audit.
+dependency audit. The follow-up docs-only commit
+`4ebca4d406b7a12eb3a1c535d1d49edf5dbf6c58` also passed all jobs in run
+`40106053196`.
 
 **Open gate:** Warning-level whole-tree Pylint still reports 132 findings
 (14 convention, 118 refactor). Live activation of the installed Vhost alpha
