@@ -7683,7 +7683,7 @@ while preserving explicit criteria and same-project parent validation.
 ## 2026-10-26 — Close standalone-script coverage for local alpha
 
 - **Intent:** Close the owner-approved standalone-script coverage item for the single-user Vhost development alpha.
-- **Changed fact:** Refreshed the Vhost source/config/adapter/test binding to 24 sorted files with manifest SHA-256 `390823695cf388aa91dda1003ae3d5b18f131f42990f0a09bc38b4e31f7d51f2`. The Vhost checkout is still dirty at `7d2b10f5433cfe566fc560741bbc9401265176f4`; its Curator config hash is unchanged. The existing standalone coverage checkbox was already checked, so no marker changed.
+- **Changed fact:** Refreshed the Vhost source/config/adapter/test binding to 24 sorted files with manifest SHA-256 `390823695cf388aa91dda1003ae3d5b18f131f42990f0a09bc38b4e31f7d51f2`. The reviewed V2 files are now committed at Vhost HEAD `1924fa2` and pushed to `origin/main`; unrelated work remains dirty. Its Curator config hash is unchanged. The existing standalone coverage checkbox was already checked, so no marker changed.
 - **Verification:** All six current focused consumer tests pass (standalone batch, inventory, Nginx setup, manual-DNS failure/restore, bounded queue, and log redaction). `strace -f -yy` captured these disposable test process groups. Curator `git diff --check` passes after this record.
 - **Open gate:** Persistent-log retention, real certificate renewal, unclassified host/test/provider observations, production behavior, and release approval remain open. No consumer files, runtime state, or live certificates were changed.
 - **Outcome:** Standalone-script coverage is closed for the approved local development scope; broader release gates remain separate.
@@ -7760,3 +7760,12 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Re-ran the six focused disposable Vhost tests for those workflows; all passed. The evidence is bound to the current dirty Vhost checkout by the 24-file manifest digest in `docs/vhost-producer-coverage-v2.md`.
 - **Open gate:** Persistent-log retention, actual certificate renewal, production identity/runtime, and release approval remain open. Shared multi-consumer support reopens only if the owner expands scope.
 - **Outcome:** Closed local standalone coverage and clarified that multi-consumer runtime is not an alpha requirement; no checklist marker changed.
+
+
+## 2026-10-26 — Bind standalone closure to pushed Vhost sources
+
+- **Intent:** Keep the checked V2 standalone audit tied to the source that was actually pushed.
+- **Changed fact:** Vhost commit `1924fa2` pushed the reviewed Curator adapters, four utility bridges, consumer route, tests, and scoped UI receipt/retry changes to `origin/main`. Unrelated Vhost security/UI and generated state remain uncommitted.
+- **Verification:** The six disposable standalone/queue/redaction tests pass; the Vhost UI production build passes. The 24-file source/config/adapter/test manifest remains `390823695cf388aa91dda1003ae3d5b18f131f42990f0a09bc38b4e31f7d51f2`; the config digest is unchanged.
+- **Open gate:** Persistent-log expiry, real certificate renewal, production identity/scheduling, and release approval remain open.
+- **Outcome:** Updated the current V2 evidence binding without changing checklist markers.

@@ -60,8 +60,8 @@ remains documented in `release-gates-v2.md`.
 
 ## Freshness binding
 
-Consumer checkout HEAD: `7d2b10f5433cfe566fc560741bbc9401265176f4` (dirty
-working tree). `.curatormd-v2.toml` SHA-256:
+Consumer checkout HEAD: `1924fa2` (the reviewed V2 files are committed; unrelated
+working-tree changes remain). `.curatormd-v2.toml` SHA-256:
 `4f3a34e84832b7e8ccfe4e91a68b0664c6aa603409318197f0b44e6454ece44a`.
 The configured Curator adapter API version is `1`.
 The 23-file sorted source/config/adapter/test manifest SHA-256 is
@@ -76,7 +76,7 @@ revision.
 
 The owner directed closure of the standalone-script coverage item. The current
 dirty checkout remains at HEAD
-`7d2b10f5433cfe566fc560741bbc9401265176f4`; the Curator config SHA-256 remains
+`1924fa2`; the Curator config SHA-256 remains
 `4f3a34e84832b7e8ccfe4e91a68b0664c6aa603409318197f0b44e6454ece44a`. A fresh
 24-file sorted source/config/adapter/test manifest SHA-256 is
 `390823695cf388aa91dda1003ae3d5b18f131f42990f0a09bc38b4e31f7d51f2`.

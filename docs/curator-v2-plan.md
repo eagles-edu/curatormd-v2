@@ -3201,7 +3201,7 @@ consumer plugin, Hermes integration, or production deployment.
       checkout (6 tests). Current reviewed path/content manifest SHA-256:
       `390823695cf388aa91dda1003ae3d5b18f131f42990f0a09bc38b4e31f7d51f2`
       over 24 sorted source/config/adapter/test files; the checkout remains at
-      `7d2b10f5433cfe566fc560741bbc9401265176f4`, and the V2 config hash is
+      `1924fa2`, and the V2 config hash is
       unchanged. The standalone coverage row was already checked by the prior
       owner-reviewed closure, so no checkbox count changed. This does not close
       persistent-log retention, actual certificate renewal, host/provider
