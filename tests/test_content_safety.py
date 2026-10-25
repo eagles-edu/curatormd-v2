@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import unittest
 
 from curatormd_v2.content_safety import SensitiveContentError, validate_safe_text
@@ -60,6 +62,23 @@ class ContentSafetyTests(unittest.TestCase):
             )
         )
         self.assertEqual(original, "Verified: unit checks pass; production impact remains unknown")
+
+    def test_versioned_local_alpha_synthetic_corpus(self) -> None:
+        corpus_path = Path(__file__).parent / "fixtures" / "content-safety-v2-local-alpha.json"
+        corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
+        self.assertEqual(corpus["version"], "local-alpha-v1")
+        self.assertEqual(corpus["scope"], "synthetic examples for current reject-only patterns")
+
+        for case in corpus["reject"]:
+            with self.subTest(case=case["id"]):
+                with self.assertRaises(SensitiveContentError) as caught:
+                    validate_safe_text(case["text"], "corpus.synthetic")
+                self.assertEqual(caught.exception.category, case["category"])
+                self.assertNotIn(case["text"], str(caught.exception))
+
+        for case in corpus["accept"]:
+            with self.subTest(case=case["id"]):
+                self.assertIsNone(validate_safe_text(case["text"], "corpus.synthetic"))
 
     def test_direct_event_payloads_are_checked_not_only_json_ingress(self) -> None:
         with self.assertRaisesRegex(SensitiveContentError, "fact_recorded.bullet"):

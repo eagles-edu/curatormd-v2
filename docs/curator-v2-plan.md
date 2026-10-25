@@ -194,7 +194,7 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer to rows in this **Delivery checklist** section only.
 Reusable work-cycle and request templates and later acceptance prompts are not
 delivery items and are excluded from the numerator and denominator. Current
-direct recount (2026-10-25): **146 of 178 delivery rows are complete; 32 are
+direct recount (2026-10-25): **147 of 178 delivery rows are complete; 31 are
 open**. Count checkbox rows in sections 0–10, 12, and Definition of done only;
 section 11's reusable templates and example placeholders do not count. The
 177-row
@@ -902,9 +902,10 @@ consumer plugin, Hermes integration, or production deployment.
       pattern checks before lifecycle/domain writes; never auto-redact evidence.
       Regressions prove rejected event content is not written to the inbox or
       goal ledger. See `docs/content-safety-v1.md`.
-- [ ] Threat-model scanner false negatives/positives, formats and jurisdictions
-      beyond the current high-confidence patterns; expand based on deployment
-      policy without claiming a clean scan is privacy certification.
+- [x] Document the scanner's false negatives/positives, supported formats, and
+      jurisdiction limits for the approved local-alpha collection boundary;
+      require owner policy before expanding and never claim a clean scan is
+      privacy certification.
       Local progress (2026-10-22): the detector now rejects unlabelled Stripe
       secret (`sk_live_`, `sk_test_`) and restricted (`rk_live_`, `rk_test_`)
       key forms in addition to existing high-confidence prefixes. Regressions
@@ -957,9 +958,8 @@ consumer plugin, Hermes integration, or production deployment.
       name. This prevents those labeled values from entering validated durable
       text fields. API and MCP canaries verify those values are absent from
       errors, logs, metrics, SQLite/WAL, canonical history, and backups.
-      Unlabeled values and broader producer paths remain outside this detector;
-      the wider scanner threat-model item remains open.
-      Proposed owner-gated evaluation: product/privacy and deployment owners
+      Unlabeled values and broader producer paths remain outside this detector.
+      Scope-expansion gate: product/privacy and deployment owners
       inventory sensitive-data categories, jurisdictions, supported source
       formats, and every scanner boundary; explicitly record unsupported and
       unobservable categories rather than calling them covered. Build a versioned,
@@ -976,9 +976,23 @@ consumer plugin, Hermes integration, or production deployment.
       reference without altering evidence text. Record corpus and detector
       versions, category-level results, known gaps, owner decisions, and review
       date; require renewed review when formats, jurisdictions, or upstream
-      sources change. Keep this row open while any in-scope category lacks
-      approved coverage/evaluation or privacy/legal review; do not infer
-      comprehensive detection or regulatory compliance from passing tests.
+      sources change. Keep expanded collection and jurisdiction-specific
+      evaluation open until owners approve the categories and review measured
+      coverage; do not infer comprehensive detection or regulatory compliance
+      from passing tests.
+      Local-alpha closure (2026-10-25): the owner clarified Curator is a
+      documentation system, not a security product, and directed that manual
+      DNS codes, passwords, keys, and raw command output must not be recorded
+      verbatim. The consumer bridge sends only bounded operation summaries; the
+      local reject-only detector blocks recognized labeled password and DNS
+      challenge values before durable writes. `content-safety-v2.md` records
+      supported patterns, benign lookalikes, unsupported formats, and the limit
+      that a clean scan is not a privacy or security certification. A versioned
+      synthetic corpus exercises ten rejected examples and three benign
+      neighbors. The focused four-test suite passes. This closes the documented
+      single-user local-alpha scanner boundary only; broader collection,
+      standalone producer coverage, and jurisdiction-specific evaluation stay
+      open.
 - [x] Write a preliminary threat register for the local implementation boundary,
       explicitly separating implemented controls from deployment assumptions and
       residual risks; see [`threat-model-v1.md`](threat-model-v1.md). Owner review,

@@ -7417,3 +7417,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** The recorded root-service apply/rollback and scheduled-result runs have exact processed receipts and reconciled Vhost history records. A read-only ledger query reports the five operation goals as `planned`, matching their pending human disposition. The plan and release-gate snapshot now count 146/178 delivery rows complete and 32 open.
 - **Open gate:** Full consumer producer/artifact coverage, including standalone-script scope, remains open as requested. Production status/dashboard evidence also remains open.
 - **Outcome:** One local-alpha delivery row was checked off; no production or full producer-coverage claim was made.
+
+## 2026-10-25 — Bound the local-alpha content-safety scope
+
+- **Intent:** Close the scanner threat-model row for the owner-approved local development boundary without treating Curator as a security product.
+- **Changed fact:** Added a versioned synthetic corpus for the current reject-only detector examples; documented supported patterns, benign neighbors, and unsupported inputs in the V2 policy.
+- **Verification:** The corpus contains ten rejected and three accepted synthetic cases. All four `tests.test_content_safety` tests pass, including corpus/category checks and non-echo assertions. The direct delivery-row count is now 147/178 complete and 31 open.
+- **Open gate:** This closes only the documented single-user local-alpha boundary. Expanded collection, transformed/unlabeled inputs, jurisdiction-specific evaluation, and standalone producer coverage remain open.
+- **Outcome:** One local-scope checklist row was checked off; no general secret-scanning or security-certification claim is made.

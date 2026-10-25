@@ -1,0 +1,70 @@
+{
+  "version": "local-alpha-v1",
+  "scope": "synthetic examples for current reject-only patterns",
+  "reject": [
+    {
+      "id": "credential-assignment",
+      "text": "password=EXAMPLE_NOT_A_SECRET",
+      "category": "credential_assignment"
+    },
+    {
+      "id": "manual-dns-password-assignment",
+      "text": "pwd=EXAMPLE_NOT_A_SECRET",
+      "category": "credential_assignment"
+    },
+    {
+      "id": "labeled-acme-txt-value",
+      "text": "TXT value: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "category": "dns_challenge"
+    },
+    {
+      "id": "labeled-acme-dns-challenge",
+      "text": "DNS challenge: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "category": "dns_challenge"
+    },
+    {
+      "id": "credential-url",
+      "text": "https://EXAMPLE_USER:EXAMPLE_PASSWORD@example.invalid/",
+      "category": "credential_url"
+    },
+    {
+      "id": "private-key-marker",
+      "text": "-----BEGIN PRIVATE KEY-----",
+      "category": "private_key"
+    },
+    {
+      "id": "provider-token-shape",
+      "text": "ghp_EXAMPLE000000000000000000000000",
+      "category": "provider_token"
+    },
+    {
+      "id": "email-address",
+      "text": "owner@example.invalid",
+      "category": "email_address"
+    },
+    {
+      "id": "us-ssn-shape",
+      "text": "123-45-6789",
+      "category": "us_ssn"
+    },
+    {
+      "id": "labeled-phone",
+      "text": "phone: +1 555 010 0199",
+      "category": "labeled_phone"
+    }
+  ],
+  "accept": [
+    {
+      "id": "acme-record-name",
+      "text": "Create TXT record _acme-challenge.example.invalid"
+    },
+    {
+      "id": "credential-policy-prose",
+      "text": "Credential fields are documented without values."
+    },
+    {
+      "id": "password-policy-prose",
+      "text": "The operator enters the password directly into the service."
+    }
+  ]
+}

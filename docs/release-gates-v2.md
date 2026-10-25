@@ -6,7 +6,7 @@ checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
 Current delivery checklist snapshot (2026-10-25 direct delivery-row recount):
-146/178 complete, 32 open,
+147/178 complete, 31 open,
 using the counting rule in [`curator-v2-plan.md`](curator-v2-plan.md). This
 excludes reusable work-cycle and request templates and later acceptance prompts;
 the earlier 160/216 ledger figure counted markers outside the delivery rows.

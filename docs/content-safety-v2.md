@@ -33,6 +33,11 @@ The implementation in `src/curatormd_v2/content_safety.py` rejects:
 
 The exact expression set is code-defined and may change. A passing scan means
 only that none of those current expressions matched the validated strings.
+The versioned synthetic local-alpha regression corpus is
+[`tests/fixtures/content-safety-v2-local-alpha.json`](../tests/fixtures/content-safety-v2-local-alpha.json):
+ten rejected examples across the current patterns and three benign neighbors.
+The corpus measures only those examples; it does not estimate coverage of
+unknown or transformed inputs.
 
 ## False negatives and unsupported formats
 
