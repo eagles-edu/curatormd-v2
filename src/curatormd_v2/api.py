@@ -16,26 +16,29 @@ from .events import (
     EventEnvelope,
     EventInboxReceipt,
     EventQueueStatus,
+    GoalCriteriaAmended,
     MAX_EVENT_BYTES,
 )
 from .errors import RateLimitExceeded
 from . import health_evaluation as _health_evaluation
+from .hermes_context import hermes_source_id
 from .health_evaluation import (
     ProjectDependencyReadiness,
     evaluate_dependencies,
     evaluate_local_health,
 )
 from .models import (
+    ArtifactCleanupAuthorizationRequest,
     ArtifactRef,
     AuditReceipt,
     CleanupAuthorizationReceipt,
     FactArchiveReceipt,
     FactCompactionProposal,
     GoalListPage,
+    GoalChildrenPageRequest,
     GoalSnapshot,
     GoalBulletProjection,
     GoalStatus,
-    Materiality,
     ProjectActivitySnapshot,
     ProjectStorageUsage,
     ProjectHealthSnapshot,
@@ -44,15 +47,15 @@ from .models import (
     StagingArtifactInventory,
     StagingExpirySnapshot,
     ExpiryPurgeReceipt,
-    ReviewDecision,
     SDECandidate,
+    SDEConfirmationRequest,
     SDECorrection,
+    SDECorrectionRequest,
     SDEQualityFeedback,
-    SDEQualityFeedbackLabel,
+    SDEQualityFeedbackRequest,
     SDEQualityFeedbackSummary,
     SDEReviewDetail,
     SDEReviewPacket,
-    SuccessCriterion,
 )
 from .markdown_persistence import (
     MarkdownProjectReconciliation,
@@ -62,9 +65,16 @@ from .markdown_persistence import (
 from .observability import render_project_metrics
 from .project_plugin import ProjectPlugin
 from .reporting import GoalReportPage
-from .service import PurgeTargetStatus
-from .store import NotFoundError
-from .store_requests import ProjectDrainEffectContext
+from .service import PurgeTargetStatus, SDEAssessmentRequest
+from .store import (
+    FactCompactionApprovalRequest,
+    NotFoundError,
+    ProjectRegistrationRecord,
+)
+from .store_requests import (
+    ProjectDrainEffectContext,
+    SuspendedProcessedEventEpochRequest,
+)
 
 
 _SUBJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
@@ -351,68 +361,53 @@ class AuthenticatedCuratorAPI:
     ) -> EventInboxReceipt:
         """Validate bounded event JSON, authorize scope, then process atomically."""
 
-        invalid_utf8 = False
-        try:
-            encoded_size = len(serialized.encode("utf-8"))
-        except UnicodeEncodeError:
-            # UnicodeEncodeError retains the complete request in its ``object`` field.
-            invalid_utf8 = True
-            encoded_size = 0
-        if invalid_utf8:
-            raise ValueError("event must be valid UTF-8")
-        if encoded_size > MAX_EVENT_BYTES:
-            raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
-        event = EventEnvelope.from_json(serialized)
-        if event.project_id != project_id:
-            raise PermissionError("event project does not match authorized project")
+        event = self._decode_authorized_event(project_id, serialized)
         plugin = self._plugins.get(project_id)
         if plugin is None:
             raise PermissionError("project is not authorized")
         registration = plugin.service.store.get_project_registration(project_id)
         binding = plugin.service.store.get_consumer_binding(project_id)
-        if registration.status == "suspended":
-            replay_receipt = (
-                plugin.service.store.reconcile_suspended_processed_event(
-                    event,
-                    caller.subject_id,
-                    plugin.config.repository_fingerprint,
-                    plugin.config.config_sha256,
-                    plugin.config.backend_api_version,
+        retirement = plugin.service.store.get_project_retirement(project_id)
+        if retirement is not None:
+            if caller.profile_id is not None:
+                retired_source_id = hermes_source_id(
+                    caller.profile_id, project_id, retirement.source_epoch
                 )
-            )
-            if replay_receipt is not None:
-                if not self.limiter.allow(caller.subject_id, project_id):
-                    raise RateLimitExceeded("project request budget exceeded")
-                return replay_receipt
+                retired_receipt = (
+                    plugin.service.store.reconcile_retired_processed_event(
+                        event,
+                        retired_source_id,
+                        plugin.config.repository_fingerprint,
+                        plugin.config.config_sha256,
+                        plugin.config.backend_api_version,
+                    )
+                )
+                replay_receipt = self._rate_limited_replay(
+                    caller, project_id, retired_receipt
+                )
+                if replay_receipt is not None:
+                    return replay_receipt
+            raise PermissionError("retired project accepts no new event writes")
+        replay_receipt = self._reconcile_suspended_event(
+            caller, event, plugin, registration
+        )
+        if replay_receipt is not None:
+            return replay_receipt
         if (
             registration.status == "active"
             and binding.status in {"deregistered", "active"}
             and self.authorizer.authorize(caller, project_id, ProjectAction.WRITE)
         ):
-            replay_receipt = (
-                plugin.service.store.reconcile_deregistered_processed_event(
-                    event
-                )
+            replay_receipt = self._rate_limited_replay(
+                caller,
+                project_id,
+                plugin.service.store.reconcile_deregistered_processed_event(event),
             )
             if replay_receipt is not None:
-                if not self.limiter.allow(caller.subject_id, project_id):
-                    raise RateLimitExceeded("project request budget exceeded")
                 return replay_receipt
-        if replay_only:
-            raise PermissionError("only an exact processed receipt may be reconciled")
-        normally_authorized = self.authorizer.authorize(
-            caller, project_id, ProjectAction.WRITE
+        normally_authorized = self._authorize_event_write(
+            caller, project_id, event, plugin, replay_only
         )
-        if normally_authorized:
-            if not self.limiter.allow(caller.subject_id, project_id):
-                raise RateLimitExceeded("project request budget exceeded")
-        else:
-            if not self.limiter.allow(caller.subject_id, project_id):
-                raise RateLimitExceeded("project request budget exceeded")
-            if not plugin.service.store.consumer_drain_allows(
-                caller.subject_id, caller.profile_id, event
-            ):
-                raise PermissionError("project is not authorized")
         with plugin.project_effect_lock():
             if normally_authorized and binding.status == "active":
                 plugin.refresh_consumer_binding_revision(binding.revision)
@@ -436,6 +431,85 @@ class AuthenticatedCuratorAPI:
                         binding.revision if binding.status == "active" else None
                     ),
                 )
+
+    @staticmethod
+    def _decode_authorized_event(
+        project_id: str, serialized: str
+    ) -> EventEnvelope:
+        """Bound and parse an event before checking its project scope."""
+
+        invalid_utf8 = False
+        try:
+            encoded_size = len(serialized.encode("utf-8"))
+        except UnicodeEncodeError:
+            # Raising after the except keeps raw input out of exception context.
+            invalid_utf8 = True
+            encoded_size = 0
+        if invalid_utf8:
+            raise ValueError("event must be valid UTF-8")
+        if encoded_size > MAX_EVENT_BYTES:
+            raise ValueError(f"event exceeds {MAX_EVENT_BYTES} byte limit")
+        event = EventEnvelope.from_json(serialized)
+        if event.project_id != project_id:
+            raise PermissionError("event project does not match authorized project")
+        return event
+
+    def _reconcile_suspended_event(
+        self,
+        caller: AuthenticatedCaller,
+        event: EventEnvelope,
+        plugin: ProjectPlugin,
+        registration: ProjectRegistrationRecord,
+    ) -> EventInboxReceipt | None:
+        """Allow only an exact processed receipt after project suspension."""
+
+        if registration.status != "suspended":
+            return None
+        receipt = plugin.service.store.reconcile_suspended_processed_event(
+            event,
+            caller.subject_id,
+            plugin.config.repository_fingerprint,
+            plugin.config.config_sha256,
+            plugin.config.backend_api_version,
+        )
+        return self._rate_limited_replay(caller, event.project_id, receipt)
+
+    def _rate_limited_replay(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        receipt: EventInboxReceipt | None,
+    ) -> EventInboxReceipt | None:
+        """Apply the same project request budget to each exact event replay."""
+
+        if receipt is None:
+            return None
+        if not self.limiter.allow(caller.subject_id, project_id):
+            raise RateLimitExceeded("project request budget exceeded")
+        return receipt
+
+    def _authorize_event_write(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        event: EventEnvelope,
+        plugin: ProjectPlugin,
+        replay_only: bool,
+    ) -> bool:
+        """Authorize a new write or exact event in an active drain."""
+
+        if replay_only:
+            raise PermissionError("only an exact processed receipt may be reconciled")
+        normally_authorized = self.authorizer.authorize(
+            caller, project_id, ProjectAction.WRITE
+        )
+        if not self.limiter.allow(caller.subject_id, project_id):
+            raise RateLimitExceeded("project request budget exceeded")
+        if not normally_authorized and not plugin.service.store.consumer_drain_allows(
+            caller.subject_id, caller.profile_id, event
+        ):
+            raise PermissionError("project is not authorized")
+        return normally_authorized
 
     def event_queue_status(
         self, caller: AuthenticatedCaller, project_id: str
@@ -464,12 +538,16 @@ class AuthenticatedCuratorAPI:
             if event_id is not None:
                 replay_epoch = (
                     plugin.service.store.suspended_processed_event_source_epoch(
-                        caller.subject_id,
-                        project_id,
-                        event_id,
-                        plugin.config.repository_fingerprint,
-                        plugin.config.config_sha256,
-                        plugin.config.backend_api_version,
+                        SuspendedProcessedEventEpochRequest(
+                            subject_id=caller.subject_id,
+                            project_id=project_id,
+                            event_id=event_id,
+                            repository_fingerprint=(
+                                plugin.config.repository_fingerprint
+                            ),
+                            config_sha256=plugin.config.config_sha256,
+                            backend_api_version=plugin.config.backend_api_version,
+                        )
                     )
                 )
                 if replay_epoch is not None:
@@ -661,23 +739,22 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        compaction_id: str,
-        goal_id: str,
-        fact_ids: tuple[str, ...],
-        source_sha256: str,
-        approval_reason: str,
+        approval: FactCompactionApprovalRequest,
     ) -> FactArchiveReceipt:
         """Review-authorized atomic archival bound to the authenticated caller."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).fact_compaction_approve(
-            compaction_id,
-            goal_id,
-            fact_ids,
-            source_sha256,
-            caller.subject_id,
-            approval_reason,
+            FactCompactionApprovalRequest(
+                compaction_id=approval.compaction_id,
+                goal_id=approval.goal_id,
+                project_id=project_id,
+                fact_ids=approval.fact_ids,
+                source_sha256=approval.source_sha256,
+                reviewer_id=caller.subject_id,
+                approval_reason=approval.approval_reason,
+            )
         )
 
     def fact_archive_receipts(
@@ -734,22 +811,13 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        parent_goal_id: str,
-        *,
-        offset: int = 0,
-        limit: int = 50,
-        statuses: tuple[GoalStatus, ...] = (),
+        request: GoalChildrenPageRequest,
     ) -> GoalListPage:
         """Read a bounded child-card page after project authorization."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
-        ).goal_children_page(
-            parent_goal_id,
-            offset=offset,
-            limit=limit,
-            statuses=statuses,
-        )
+        ).goal_children_page(request)
 
     @_project_effect_fenced(ProjectAction.WRITE)
     def goal_reopen(
@@ -771,23 +839,13 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        goal_id: str,
-        expected_revision: int,
-        success_criteria: tuple[SuccessCriterion, ...],
-        reason: str,
-        next_action: str,
+        request: GoalCriteriaAmended,
     ) -> GoalSnapshot:
         """Amend a goal contract under project write authorization."""
 
         plugin = self._authorized_plugin(caller, project_id, ProjectAction.WRITE)
-        plugin.goal_amend_criteria(
-            goal_id,
-            expected_revision,
-            success_criteria,
-            reason,
-            next_action,
-        )
-        return plugin.goal_status(goal_id)
+        plugin.goal_amend_criteria(request)
+        return plugin.goal_status(request.goal_id)
 
     def project_storage_usage(
         self, caller: AuthenticatedCaller, project_id: str
@@ -869,20 +927,13 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        goal_id: str,
-        materiality: Materiality,
-        rationale: str,
-        fact_ids: tuple[str, ...],
-        impact: str | None = None,
-        retrieval_value: str | None = None,
+        request: SDEAssessmentRequest,
     ) -> SDECandidate | None:
         """Assess facts under write scope; proposals still require human review."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.WRITE
-        ).sde_assess(
-            goal_id, materiality, rationale, fact_ids, impact, retrieval_value
-        )
+        ).sde_assess(request)
 
     def sde_review_detail(
         self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
@@ -910,25 +961,14 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        candidate_id: str,
-        decision: ReviewDecision,
-        artifacts: tuple[ArtifactRef, ...],
-        *,
-        artifact_inventory_complete: bool,
-        dependency_map_sha256: str | None = None,
-        rationale: str | None = None,
+        request: SDEConfirmationRequest,
     ) -> AuditReceipt:
         """Submit a review decision; plugin authorizer independently rechecks it."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).sde_confirm(
-            candidate_id,
-            decision,
-            artifacts,
-            artifact_inventory_complete=artifact_inventory_complete,
-            dependency_map_sha256=dependency_map_sha256,
-            rationale=rationale,
+            request,
             authenticated_subject=caller.subject_id,
         )
 
@@ -937,20 +977,17 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        correction_id: str,
-        candidate_id: str,
-        correction: str,
-        rationale: str,
+        request: SDECorrectionRequest,
     ) -> SDECorrection:
         """Append an authenticated correction as a linked follow-up record."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).sde_correction_record(
-            correction_id,
-            candidate_id,
-            correction,
-            rationale,
+            request.correction_id,
+            request.candidate_id,
+            request.correction,
+            request.rationale,
             authenticated_subject=caller.subject_id,
         )
 
@@ -959,20 +996,17 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        feedback_id: str,
-        candidate_id: str,
-        label: SDEQualityFeedbackLabel,
-        rationale: str = "",
+        request: SDEQualityFeedbackRequest,
     ) -> SDEQualityFeedback:
         """Record feedback only from an authenticated project reviewer."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).sde_quality_feedback_record(
-            feedback_id,
-            candidate_id,
-            label,
-            rationale,
+            request.feedback_id,
+            request.candidate_id,
+            request.label,
+            request.rationale,
             authenticated_subject=caller.subject_id,
         )
 
@@ -1061,22 +1095,14 @@ class AuthenticatedCuratorAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        receipt_id: str,
-        artifacts: tuple[ArtifactRef, ...],
-        manifest_sha256: str,
-        dependency_map_sha256: str,
-        target: str,
+        request: ArtifactCleanupAuthorizationRequest,
     ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
         """Record a separate reviewer decision for one exact current manifest."""
 
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).authorize_artifact_cleanup(
-            receipt_id,
-            artifacts,
-            manifest_sha256,
-            dependency_map_sha256,
-            target,
+            request,
             authenticated_subject=caller.subject_id,
         )
 

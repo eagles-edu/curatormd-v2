@@ -30,13 +30,19 @@ from .events import (
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
 from .hermes_context import hermes_source_id, require_durable_hermes_context
 from .models import (
+    ArtifactCleanupAuthorizationRequest,
     FactKind,
+    GoalChildrenPageRequest,
     GoalStatus,
     Materiality,
     ReviewDecision,
+    SDEConfirmationRequest,
+    SDECorrectionRequest,
+    SDEQualityFeedbackRequest,
     SDEQualityFeedbackLabel,
 )
 from .reporting import GoalReportPage
+from .service import SDEAssessmentRequest
 from .mcp_tool_support import (
     ArtifactInput,
     json_result,
@@ -45,6 +51,7 @@ from .mcp_tool_support import (
     parse_evidence,
     safe_tool_handler,
 )
+from .store import FactCompactionApprovalRequest
 
 class _McpToolRegistrar:
     """Capture trusted project context and share safe registration helpers."""
@@ -565,11 +572,15 @@ def _register_goal_reads_tools(registrar: _McpToolRegistrar) -> None:
             api.fact_compaction_approve(
                 caller,
                 project_id,
-                compaction_id,
-                goal_id,
-                tuple(fact_ids),
-                source_sha256,
-                approval_reason,
+                FactCompactionApprovalRequest(
+                    compaction_id=compaction_id,
+                    goal_id=goal_id,
+                    project_id=project_id,
+                    fact_ids=tuple(fact_ids),
+                    source_sha256=source_sha256,
+                    reviewer_id=caller.subject_id,
+                    approval_reason=approval_reason,
+                ),
             )
         )
 
@@ -639,10 +650,12 @@ def _register_goal_lists_tools(registrar: _McpToolRegistrar) -> None:
             api.goal_children_page(
                 caller,
                 project_id,
-                parent_goal_id,
-                offset=offset,
-                limit=limit,
-                statuses=parsed_statuses,
+                GoalChildrenPageRequest(
+                    parent_goal_id=parent_goal_id,
+                    offset=offset,
+                    limit=limit,
+                    statuses=parsed_statuses,
+                ),
             )
         )
 
@@ -714,12 +727,14 @@ def _register_review_discovery_tools(registrar: _McpToolRegistrar) -> None:
         candidate = api.sde_assess(
             caller,
             project_id,
-            goal_id,
-            Materiality(materiality),
-            rationale,
-            tuple(fact_ids),
-            impact,
-            retrieval_value,
+            SDEAssessmentRequest(
+                goal_id=goal_id,
+                materiality=Materiality(materiality),
+                rationale=rationale,
+                fact_ids=tuple(fact_ids),
+                impact=impact,
+                retrieval_value=retrieval_value,
+            ),
         )
         return json_result(candidate)
 
@@ -808,10 +823,12 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
             api.sde_correction_record(
                 caller,
                 project_id,
-                correction_id,
-                candidate_id,
-                correction,
-                rationale,
+                SDECorrectionRequest(
+                    correction_id=correction_id,
+                    candidate_id=candidate_id,
+                    correction=correction,
+                    rationale=rationale,
+                ),
             )
         )
 
@@ -828,10 +845,12 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
             api.sde_quality_feedback_record(
                 caller,
                 project_id,
-                feedback_id,
-                candidate_id,
-                SDEQualityFeedbackLabel(label),
-                rationale,
+                SDEQualityFeedbackRequest(
+                    feedback_id=feedback_id,
+                    candidate_id=candidate_id,
+                    label=SDEQualityFeedbackLabel(label),
+                    rationale=rationale,
+                ),
             )
         )
 
@@ -847,7 +866,6 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
 def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
     api, caller, project_id = registrar.api, registrar.caller, registrar.project_id
     _safe_tool, _read_tool = registrar.safe_tool, registrar.read_tool
-    _event, _process = registrar.event, registrar.process
 
     @_safe_tool(
         annotations=ToolAnnotations(
@@ -868,12 +886,14 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
             api.sde_confirm(
                 caller,
                 project_id,
-                candidate_id,
-                ReviewDecision(decision),
-                parse_artifacts(artifacts),
-                artifact_inventory_complete=artifact_inventory_complete,
-                dependency_map_sha256=dependency_map_sha256,
-                rationale=rationale,
+                SDEConfirmationRequest(
+                    candidate_id=candidate_id,
+                    decision=ReviewDecision(decision),
+                    artifacts=parse_artifacts(artifacts),
+                    artifact_inventory_complete=artifact_inventory_complete,
+                    dependency_map_sha256=dependency_map_sha256,
+                    rationale=rationale,
+                ),
             )
         )
 
@@ -916,15 +936,15 @@ def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
         authorization, receipt = api.authorize_artifact_cleanup(
             caller,
             project_id,
-            receipt_id,
-            parse_artifacts(artifacts),
-            manifest_sha256,
-            dependency_map_sha256,
-            target,
+            ArtifactCleanupAuthorizationRequest(
+                receipt_id=receipt_id,
+                artifacts=parse_artifacts(artifacts),
+                manifest_sha256=manifest_sha256,
+                dependency_map_sha256=dependency_map_sha256,
+                target=target,
+            ),
         )
-        return json_result(
-            {"authorization": authorization, "receipt": receipt}
-        )
+        return json_result({"authorization": authorization, "receipt": receipt})
 
     @_read_tool()
     def artifact_purge_status(receipt_id: str) -> str:

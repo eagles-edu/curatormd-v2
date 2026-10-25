@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import re
 
@@ -25,6 +25,7 @@ from .models import (
     FactCompactionProposal,
     GoalBulletProjection,
     GoalCard,
+    GoalChildrenPageRequest,
     GoalListPage,
     GoalSnapshot,
     GoalStatus,
@@ -35,7 +36,7 @@ from .models import (
     MAX_SUCCESS_CRITERIA,
     Materiality,
     PurgeStatus,
-    ReviewDecision,
+    SDEConfirmationRequest,
     SDECandidate,
     SDECorrection,
     SDEQualityFeedback,
@@ -936,18 +937,16 @@ class CuratorService:
 
     def goal_amend_criteria(
         self,
-        goal_id: str,
-        expected_revision: int,
-        success_criteria: tuple[SuccessCriterion, ...],
-        reason: str,
-        next_action: str,
-        expected_lifecycle_revision: int | None = None,
+        request: GoalCriteriaAmended,
     ) -> GoalCard:
         """Explicitly amend an open goal and require fresh proof afterward."""
 
         expected_effect_revision = self._capture_effect_revision()
-        reason = reason.strip()
-        next_action = next_action.strip()
+        goal_id = request.goal_id
+        expected_revision = request.expected_revision
+        success_criteria = request.success_criteria
+        reason = request.reason.strip()
+        next_action = request.next_action.strip()
         if not is_exact_int(expected_revision) or expected_revision < 1:
             raise ValueError("expected_revision must be a positive integer")
         if expected_revision >= MAX_CRITERIA_REVISIONS:
@@ -969,8 +968,8 @@ class CuratorService:
         fact = Fact(goal_id=goal_id, kind=FactKind.CRITERIA_AMENDED, bullet=bullet)
         expected_state_revision = (
             self.store.get_goal(goal_id, self.project_id).lifecycle_revision
-            if expected_lifecycle_revision is None
-            else expected_lifecycle_revision
+            if request.expected_lifecycle_revision is None
+            else request.expected_lifecycle_revision
         )
         with self._effect_fence(expected_effect_revision):
             return self.store.amend_goal_criteria(
@@ -1196,12 +1195,7 @@ class CuratorService:
 
     def fact_compaction_approve(
         self,
-        compaction_id: str,
-        goal_id: str,
-        fact_ids: tuple[str, ...],
-        source_sha256: str,
-        reviewer_id: str,
-        approval_reason: str,
+        approval: FactCompactionApprovalRequest,
     ) -> FactArchiveReceipt:
         """Archive only the exact preview approved by a scoped reviewer."""
 
@@ -1209,13 +1203,13 @@ class CuratorService:
         with self._effect_fence(expected_effect_revision):
             return self.store.approve_fact_compaction(
                 FactCompactionApprovalRequest(
-                    compaction_id=compaction_id,
-                    goal_id=goal_id,
+                    compaction_id=approval.compaction_id,
+                    goal_id=approval.goal_id,
                     project_id=self.project_id,
-                    fact_ids=fact_ids,
-                    source_sha256=source_sha256,
-                    reviewer_id=reviewer_id,
-                    approval_reason=approval_reason,
+                    fact_ids=approval.fact_ids,
+                    source_sha256=approval.source_sha256,
+                    reviewer_id=approval.reviewer_id,
+                    approval_reason=approval.approval_reason,
                 )
             )
 
@@ -1310,43 +1304,39 @@ class CuratorService:
 
     def goal_children_page(
         self,
-        parent_goal_id: str,
-        *,
-        offset: int = 0,
-        limit: int = 50,
-        statuses: tuple[GoalStatus, ...] = (),
+        request: GoalChildrenPageRequest,
     ) -> GoalListPage:
         """Return compact direct-child cards without loading fact histories."""
 
-        self.store.get_goal(parent_goal_id, self.project_id)
+        self.store.get_goal(request.parent_goal_id, self.project_id)
         total, goals = self.store.list_child_goal_page(
-            parent_goal_id, self.project_id, offset, limit, statuses
+            request.parent_goal_id,
+            self.project_id,
+            request.offset,
+            request.limit,
+            request.statuses,
         )
-        next_offset = offset + len(goals) if offset + len(goals) < total else None
+        next_offset = (
+            request.offset + len(goals)
+            if request.offset + len(goals) < total
+            else None
+        )
         return GoalListPage(
             project_id=self.project_id,
             total=total,
-            offset=offset,
-            limit=limit,
+            offset=request.offset,
+            limit=request.limit,
             goals=goals,
             next_offset=next_offset,
         )
 
     def sde_assess(
         self,
-        goal_id: str,
-        materiality: Materiality,
-        rationale: str,
-        fact_ids: tuple[str, ...],
-        impact: str | None = None,
-        retrieval_value: str | None = None,
+        request: SDEAssessmentRequest,
     ) -> SDECandidate | None:
         """Return routine work directly or stage verified significant facts for review."""
 
         expected_effect_revision = self._capture_effect_revision()
-        request = SDEAssessmentRequest(
-            goal_id, materiality, rationale, fact_ids, impact, retrieval_value
-        )
         return self._sde_assess(
             request, lambda: self._effect_fence(expected_effect_revision)
         )
@@ -1504,33 +1494,32 @@ class CuratorService:
 
     def sde_confirm(
         self,
-        candidate_id: str,
-        decision: ReviewDecision,
-        artifacts: tuple[ArtifactRef, ...],
+        request: SDEConfirmationRequest,
         *,
-        artifact_inventory_complete: bool,
-        rationale: str | None = None,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
         """Record the SDE disposition before the plugin binds this action to cleanup."""
 
         expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize(
-            self.project_id, candidate_id, decision, authenticated_subject
+            self.project_id,
+            request.candidate_id,
+            request.decision,
+            authenticated_subject,
         )
         if authenticated_subject is not None and reviewer_id != authenticated_subject:
             raise PermissionError(
                 "review authorizer returned a different authenticated subject"
             )
-        candidate = self.store.get_sde_candidate(candidate_id, self.project_id)
+        candidate = self.store.get_sde_candidate(request.candidate_id, self.project_id)
         receipt = AuditReceipt(
-            candidate_id=candidate_id,
-            decision=decision,
+            candidate_id=request.candidate_id,
+            decision=request.decision,
             facts_sha256=self.store.facts_digest(candidate.fact_ids, self.project_id),
-            artifacts=artifacts,
-            artifact_inventory_complete=artifact_inventory_complete,
+            artifacts=request.artifacts,
+            artifact_inventory_complete=request.artifact_inventory_complete,
             reviewer_id=reviewer_id,
-            review_rationale=rationale,
+            review_rationale=request.rationale,
         )
         # This commit is the deletion gate: no artifact is touched before it.
         with self._effect_fence(expected_effect_revision):
@@ -1973,12 +1962,12 @@ class CuratorService:
             )
         elif isinstance(payload, GoalCriteriaAmended):
             self.goal_amend_criteria(
-                payload.goal_id,
-                payload.expected_revision,
-                payload.success_criteria,
-                payload.reason,
-                payload.next_action,
-                payload.expected_lifecycle_revision or 1,
+                replace(
+                    payload,
+                    expected_lifecycle_revision=(
+                        payload.expected_lifecycle_revision or 1
+                    ),
+                )
             )
         elif isinstance(payload, GoalCancelled):
             self.goal_cancel(payload.goal_id, payload.reason)

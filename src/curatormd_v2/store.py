@@ -14,7 +14,7 @@ import sqlite3
 import stat
 from threading import RLock
 from types import TracebackType
-from typing import Generator, NoReturn, Protocol, Self, cast
+from typing import Generator, NamedTuple, NoReturn, Protocol, Self, cast
 import zlib
 
 from .events import (
@@ -92,6 +92,8 @@ from .models import (
     new_id,
     utc_now,
 )
+
+
 from .record_validation import parse_optional_aware_timestamp
 from .reporting import GoalReportContext
 from .schema_migrations import (
@@ -100,12 +102,24 @@ from .schema_migrations import (
     finish_unversioned_migrations,
 )
 from .store_requests import (
+    ConsumerDrainStoreRequest,
     GoalCriteriaAmendmentRequest,
     GoalRetirementRequest,
     GoalTransitionRequest,
     ProjectDrainEffectContext,
+    SuspendedProcessedEventEpochRequest,
+    TerminalEventDispositionStoreRequest,
 )
 from .validation import is_exact_int
+
+
+_PURGE_APPROVAL_INVALIDATING_ERRORS = frozenset(
+    {
+        PurgeFailureCode.PATH_CHANGED.value,
+        PurgeFailureCode.HASH_MISMATCH.value,
+        PurgeFailureCode.ARTIFACT_CHANGED.value,
+    }
+)
 
 EVENT_RETRY_BASE_SECONDS = 5
 EVENT_RETRY_MAX_SECONDS = 900
@@ -934,6 +948,50 @@ class _ProjectEventUsageSummary:
     payload_scrub_bytes: int
 
 
+@dataclass(frozen=True, slots=True)
+class _StagingInventorySummary:
+    """Exact content-free staging fields used for reactivation review."""
+
+    sha256: str | None
+    file_count: int | None
+    observed_bytes: int | None
+    observed_at: str | None
+
+
+class _ProjectReactivationInventory(NamedTuple):
+    """Content-free ledger inventory digests bound into a reactivation review."""
+
+    grant_history_count: int
+    grants_sha256: str
+    cursor_count: int
+    cursors_sha256: str
+    event_count: int
+    events_sha256: str
+    unresolved_count: int
+    pending_purge_count: int
+    purge_digest: str
+    active_grant_count: int
+
+
+class _ProjectLifecycleEventSummary(NamedTuple):
+    """Compact event status fields read for one lifecycle snapshot."""
+
+    status_counts: tuple[tuple[str, int], ...]
+    unprocessed_count: int
+    unprocessed_sha256: str
+    active_lease_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ConsumerBindingTransitionPlan:
+    """Validated values for one transactional consumer-binding transition."""
+
+    action: str
+    expected_from: str
+    next_source_epoch: int
+    now: str
+
+
 def _summarize_project_event_usage(
     rows: _ProjectEventUsageRows,
 ) -> _ProjectEventUsageSummary:
@@ -1687,67 +1745,11 @@ class CuratorStore:
                 count += 1
         return count, digest.hexdigest()
 
-    def project_reactivation_review_packet(
-        self,
-        project_id: str,
-        staging_inventory: StagingArtifactInventory,
-    ) -> ProjectReactivationReviewPacket:
-        """Build one bounded-state review packet from DB and staging snapshots."""
+    def _project_reactivation_inventory(
+        self, connection: sqlite3.Connection, project_id: str
+    ) -> _ProjectReactivationInventory:
+        """Collect the content-free ledger inventory bound into reactivation."""
 
-        self._validate_access_identity(project_id, "project_id")
-        with self._transaction() as connection:
-            return self._project_reactivation_review_packet(
-                connection,
-                project_id,
-                staging_inventory.manifest_sha256,
-                staging_inventory.usage.regular_file_count,
-                staging_inventory.usage.observed_file_bytes,
-                staging_inventory.usage.observed_at,
-            )
-
-    def _project_reactivation_review_packet(
-        self,
-        connection: sqlite3.Connection,
-        project_id: str,
-        staging_inventory_sha256: str | None,
-        staging_inventory_count: int | None,
-        staging_inventory_bytes: int | None,
-        staging_inventory_observed_at: str | None,
-    ) -> ProjectReactivationReviewPacket:
-        """Build the packet inside the caller's SQLite read/write snapshot."""
-
-        registration = connection.execute(
-            "SELECT * FROM project_registry WHERE project_id = ?", (project_id,)
-        ).fetchone()
-        binding = connection.execute(
-            "SELECT * FROM consumer_bindings WHERE project_id = ?", (project_id,)
-        ).fetchone()
-        suspension = connection.execute(
-            """SELECT transition_id, revision FROM project_registry_audit
-               WHERE project_id = ? AND action = 'suspended'
-               ORDER BY revision DESC LIMIT 1""",
-            (project_id,),
-        ).fetchone()
-        if registration is None:
-            raise NotFoundError("project registration not found")
-        staging_observed = parse_optional_aware_timestamp(
-            staging_inventory_observed_at
-        )
-        complete = (
-            registration["status"] == "suspended"
-            and binding is not None
-            and binding["status"] == "active"
-            and suspension is not None
-            and isinstance(staging_inventory_sha256, str)
-            and _SHA256_RE.fullmatch(staging_inventory_sha256) is not None
-            and is_exact_int(staging_inventory_count)
-            and staging_inventory_count >= 0
-            and is_exact_int(staging_inventory_bytes)
-            and staging_inventory_bytes >= 0
-            and staging_observed is not None
-            and abs((datetime.now(UTC) - staging_observed).total_seconds())
-            <= _REACTIVATION_STAGING_MAX_AGE_SECONDS
-        )
         grant_history_count, grants_sha256 = self._digest_review_rows(
             connection,
             """SELECT grant_row.grant_id, grant_row.subject_id, grant_row.action,
@@ -1774,13 +1776,32 @@ class CuratorStore:
                FROM event_inbox WHERE project_id = ? ORDER BY event_id""",
             project_id,
         )
-        unresolved_count = int(
-            connection.execute(
-                "SELECT COUNT(*) FROM event_inbox WHERE project_id = ? "
-                "AND status != 'processed'",
-                (project_id,),
-            ).fetchone()[0]
+        unresolved_count = int(connection.execute(
+            "SELECT COUNT(*) FROM event_inbox WHERE project_id = ? "
+            "AND status != 'processed'", (project_id,),
+        ).fetchone()[0])
+        pending_purge_count, purge_digest = self._project_reactivation_purge_inventory(
+            connection, project_id
         )
+        active_grant_count = int(connection.execute(
+            """SELECT COUNT(*) FROM project_grants AS grant_row
+               LEFT JOIN project_grant_revocations AS revocation
+                 ON revocation.grant_id = grant_row.grant_id
+               WHERE grant_row.project_id = ?
+                 AND revocation.grant_id IS NULL""",
+            (project_id,),
+        ).fetchone()[0])
+        return _ProjectReactivationInventory(
+            grant_history_count, grants_sha256, cursor_count, cursors_sha256,
+            event_count, events_sha256, unresolved_count, pending_purge_count,
+            purge_digest, active_grant_count,
+        )
+
+    def _project_reactivation_purge_inventory(
+        self, connection: sqlite3.Connection, project_id: str
+    ) -> tuple[int, str]:
+        """Count pending cleanup and hash the exact SDE and expiry inventories."""
+
         receipt_count, receipt_sha256 = self._digest_review_rows(
             connection,
             """SELECT receipt.receipt_id, receipt.decision, receipt.facts_sha256,
@@ -1810,39 +1831,90 @@ class CuratorStore:
                ORDER BY receipt.receipt_id, target.path""",
             project_id,
         )
-        pending_purge_count = int(
-            connection.execute(
-                """SELECT
-                     (SELECT COUNT(*) FROM purge_targets AS target
-                       JOIN audit_receipts AS receipt
-                         ON receipt.receipt_id = target.receipt_id
-                       JOIN sde_candidates AS candidate
-                         ON candidate.candidate_id = receipt.candidate_id
-                       JOIN goals AS goal ON goal.goal_id = candidate.goal_id
-                       WHERE goal.project_id = ? AND target.status != 'purged')
-                   + (SELECT COUNT(*) FROM expiry_purge_targets AS target
-                       JOIN expiry_purge_receipts AS receipt
-                         ON receipt.receipt_id = target.receipt_id
-                       WHERE receipt.project_id = ? AND target.status != 'purged')""",
-                (project_id, project_id),
-            ).fetchone()[0]
-        )
+        pending_purge_count = int(connection.execute(
+            """SELECT
+                 (SELECT COUNT(*) FROM purge_targets AS target
+                   JOIN audit_receipts AS receipt
+                     ON receipt.receipt_id = target.receipt_id
+                   JOIN sde_candidates AS candidate
+                     ON candidate.candidate_id = receipt.candidate_id
+                   JOIN goals AS goal ON goal.goal_id = candidate.goal_id
+                   WHERE goal.project_id = ? AND target.status != 'purged')
+               + (SELECT COUNT(*) FROM expiry_purge_targets AS target
+                   JOIN expiry_purge_receipts AS receipt
+                     ON receipt.receipt_id = target.receipt_id
+                   WHERE receipt.project_id = ? AND target.status != 'purged')""",
+            (project_id, project_id),
+        ).fetchone()[0])
         purge_digest = hashlib.sha256(
             (
                 f"sde:{receipt_count}:{receipt_sha256}\n"
                 f"expiry:{expiry_count}:{expiry_sha256}"
             ).encode("utf-8")
         ).hexdigest()
-        active_grant_count = int(
-            connection.execute(
-                """SELECT COUNT(*) FROM project_grants AS grant_row
-                   LEFT JOIN project_grant_revocations AS revocation
-                     ON revocation.grant_id = grant_row.grant_id
-                   WHERE grant_row.project_id = ?
-                     AND revocation.grant_id IS NULL""",
-                (project_id,),
-            ).fetchone()[0]
+        return pending_purge_count, purge_digest
+
+    def project_reactivation_review_packet(
+        self,
+        project_id: str,
+        staging_inventory: StagingArtifactInventory,
+    ) -> ProjectReactivationReviewPacket:
+        """Build one bounded-state review packet from DB and staging snapshots."""
+
+        self._validate_access_identity(project_id, "project_id")
+        with self._transaction() as connection:
+            return self._project_reactivation_review_packet(
+                connection,
+                project_id,
+                _StagingInventorySummary(
+                    staging_inventory.manifest_sha256,
+                    staging_inventory.usage.regular_file_count,
+                    staging_inventory.usage.observed_file_bytes,
+                    staging_inventory.usage.observed_at,
+                ),
+            )
+
+    def _project_reactivation_review_packet(
+        self,
+        connection: sqlite3.Connection,
+        project_id: str,
+        staging: _StagingInventorySummary,
+    ) -> ProjectReactivationReviewPacket:
+        """Build the packet inside the caller's SQLite read/write snapshot."""
+
+        registration = connection.execute(
+            "SELECT * FROM project_registry WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        binding = connection.execute(
+            "SELECT * FROM consumer_bindings WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        suspension = connection.execute(
+            """SELECT transition_id, revision FROM project_registry_audit
+               WHERE project_id = ? AND action = 'suspended'
+               ORDER BY revision DESC LIMIT 1""",
+            (project_id,),
+        ).fetchone()
+        if registration is None:
+            raise NotFoundError("project registration not found")
+        staging_observed = parse_optional_aware_timestamp(
+            staging.observed_at
         )
+        complete = (
+            registration["status"] == "suspended"
+            and binding is not None
+            and binding["status"] == "active"
+            and suspension is not None
+            and isinstance(staging.sha256, str)
+            and _SHA256_RE.fullmatch(staging.sha256) is not None
+            and is_exact_int(staging.file_count)
+            and staging.file_count >= 0
+            and is_exact_int(staging.observed_bytes)
+            and staging.observed_bytes >= 0
+            and staging_observed is not None
+            and abs((datetime.now(UTC) - staging_observed).total_seconds())
+            <= _REACTIVATION_STAGING_MAX_AGE_SECONDS
+        )
+        inventory = self._project_reactivation_inventory(connection, project_id)
         payload: dict[str, object] = {
             "project_id": project_id,
             "project_revision": registration["revision"],
@@ -1854,19 +1926,19 @@ class CuratorStore:
             "backend_api_version": registration["backend_api_version"],
             "binding_revision": binding["revision"] if binding is not None else 0,
             "source_epoch": binding["source_epoch"] if binding is not None else 0,
-            "active_grant_count": active_grant_count,
-            "grant_history_count": grant_history_count,
-            "grants_sha256": grants_sha256,
-            "source_cursor_count": cursor_count,
-            "source_cursors_sha256": cursors_sha256,
-            "event_count": event_count,
-            "unresolved_event_count": unresolved_count,
-            "events_sha256": events_sha256,
-            "pending_purge_work_count": pending_purge_count,
-            "purge_inventory_sha256": purge_digest,
-            "staging_inventory_sha256": staging_inventory_sha256,
-            "staging_inventory_count": staging_inventory_count or 0,
-            "staging_inventory_bytes": staging_inventory_bytes or 0,
+            "active_grant_count": inventory.active_grant_count,
+            "grant_history_count": inventory.grant_history_count,
+            "grants_sha256": inventory.grants_sha256,
+            "source_cursor_count": inventory.cursor_count,
+            "source_cursors_sha256": inventory.cursors_sha256,
+            "event_count": inventory.event_count,
+            "unresolved_event_count": inventory.unresolved_count,
+            "events_sha256": inventory.events_sha256,
+            "pending_purge_work_count": inventory.pending_purge_count,
+            "purge_inventory_sha256": inventory.purge_digest,
+            "staging_inventory_sha256": staging.sha256,
+            "staging_inventory_count": staging.file_count or 0,
+            "staging_inventory_bytes": staging.observed_bytes or 0,
         }
         packet_sha256 = None
         if complete:
@@ -1883,20 +1955,20 @@ class CuratorStore:
             backend_api_version=int(registration["backend_api_version"]),
             binding_revision=int(binding["revision"]) if binding is not None else 0,
             source_epoch=int(binding["source_epoch"]) if binding is not None else 0,
-            active_grant_count=active_grant_count,
-            grant_history_count=grant_history_count,
-            grants_sha256=grants_sha256,
-            source_cursor_count=cursor_count,
-            source_cursors_sha256=cursors_sha256,
-            event_count=event_count,
-            unresolved_event_count=unresolved_count,
-            events_sha256=events_sha256,
-            pending_purge_work_count=pending_purge_count,
-            purge_inventory_sha256=purge_digest,
-            staging_inventory_sha256=staging_inventory_sha256,
-            staging_inventory_count=staging_inventory_count or 0,
-            staging_inventory_bytes=staging_inventory_bytes or 0,
-            staging_inventory_observed_at=staging_inventory_observed_at or "",
+            active_grant_count=inventory.active_grant_count,
+            grant_history_count=inventory.grant_history_count,
+            grants_sha256=inventory.grants_sha256,
+            source_cursor_count=inventory.cursor_count,
+            source_cursors_sha256=inventory.cursors_sha256,
+            event_count=inventory.event_count,
+            unresolved_event_count=inventory.unresolved_count,
+            events_sha256=inventory.events_sha256,
+            pending_purge_work_count=inventory.pending_purge_count,
+            purge_inventory_sha256=inventory.purge_digest,
+            staging_inventory_sha256=staging.sha256,
+            staging_inventory_count=staging.file_count or 0,
+            staging_inventory_bytes=staging.observed_bytes or 0,
+            staging_inventory_observed_at=staging.observed_at or "",
             complete=complete,
             packet_sha256=packet_sha256,
         )
@@ -2000,10 +2072,12 @@ class CuratorStore:
                 review_packet = self._project_reactivation_review_packet(
                     connection,
                     request.project_id,
-                    request.staging_inventory_sha256,
-                    request.staging_inventory_count,
-                    request.staging_inventory_bytes,
-                    request.staging_inventory_observed_at,
+                    _StagingInventorySummary(
+                        request.staging_inventory_sha256,
+                        request.staging_inventory_count,
+                        request.staging_inventory_bytes,
+                        request.staging_inventory_observed_at,
+                    ),
                 )
                 if (
                     not review_packet.complete
@@ -2280,6 +2354,203 @@ class CuratorStore:
             ).fetchall()
         return tuple(self._consumer_binding_audit_from_row(row) for row in rows)
 
+    @staticmethod
+    def _resolve_consumer_binding_transition(
+        request: ConsumerBindingTransitionRequest,
+    ) -> tuple[str, str]:
+        """Map the requested next state to its audited action and prior state."""
+
+        transitions = {
+            "deregistration_pending": ("deregistration_pending", "active"),
+            "deregistered": ("deregistered", "deregistration_pending"),
+            "active": ("reenrolled", "deregistered"),
+        }
+        transition = transitions.get(request.status)
+        if transition is None:
+            raise ValueError(
+                "consumer binding status must be an explicit supported transition"
+            )
+        if not is_exact_int(request.expected_revision) or request.expected_revision < 1:
+            raise ValueError("expected_revision must be a positive integer")
+        return transition
+
+    def _replay_consumer_binding_transition(
+        self,
+        connection: sqlite3.Connection,
+        request: ConsumerBindingTransitionRequest,
+        actor_id: str,
+        action: str,
+    ) -> ConsumerBindingTransitionResult | None:
+        """Return the prior result for an exact idempotent transition replay."""
+
+        prior = connection.execute(
+            """SELECT * FROM consumer_binding_audit
+               WHERE project_id = ? AND transition_id = ?""",
+            (request.project_id, request.transition_id),
+        ).fetchone()
+        if prior is None:
+            return None
+        if (
+            prior["actor_id"] != actor_id
+            or prior["action"] != action
+            or prior["revision"] != request.expected_revision + 1
+            or prior["rationale"] != request.rationale
+        ):
+            raise ConflictError(
+                "consumer transition ID was already used with different input"
+            )
+        current = connection.execute(
+            "SELECT * FROM consumer_bindings WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        if current is None:
+            raise NotFoundError("consumer binding not found")
+        return ConsumerBindingTransitionResult(
+            self._consumer_binding_from_row(current),
+            self._consumer_binding_audit_from_row(prior),
+            True,
+        )
+
+    def _validate_consumer_binding_transition_state(
+        self,
+        connection: sqlite3.Connection,
+        request: ConsumerBindingTransitionRequest,
+        action: str,
+        expected_from: str,
+    ) -> int:
+        """Check the live binding, pending work, and re-enrollment proof."""
+
+        current = connection.execute(
+            "SELECT * FROM consumer_bindings WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        if current is None:
+            raise NotFoundError("consumer binding not found")
+        retired = connection.execute(
+            "SELECT 1 FROM project_retirement_tombstones WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        if retired is not None:
+            raise ConflictError("retired projects cannot change consumer bindings")
+        if current["revision"] != request.expected_revision:
+            raise ConflictError("consumer binding revision is stale")
+        if current["status"] != expected_from:
+            raise ConflictError("consumer binding is not in the required lifecycle state")
+        if action in {"deregistered", "reenrolled"}:
+            unresolved = connection.execute(
+                """SELECT COUNT(*) FROM event_inbox
+                   WHERE project_id = ? AND status <> 'processed'""",
+                (request.project_id,),
+            ).fetchone()[0]
+            if unresolved:
+                raise ConflictError("consumer binding has unresolved source events")
+        next_epoch = int(current["source_epoch"])
+        if action == "reenrolled":
+            next_epoch = self._validate_consumer_reenrollment(
+                connection, request, next_epoch
+            )
+        return next_epoch
+
+    @staticmethod
+    def _validate_consumer_reenrollment(
+        connection: sqlite3.Connection,
+        request: ConsumerBindingTransitionRequest,
+        current_epoch: int,
+    ) -> int:
+        """Require current project identity before opening a new source epoch."""
+
+        if (
+            not is_exact_int(request.expected_source_epoch)
+            or request.expected_source_epoch != current_epoch
+        ):
+            raise ConflictError("consumer source epoch is stale")
+        if (
+            not is_exact_int(request.expected_project_revision)
+            or request.repository_fingerprint is None
+            or request.config_sha256 is None
+            or not is_exact_int(request.backend_api_version)
+        ):
+            raise ValueError(
+                "re-enrollment requires the reviewed project revision and fingerprints"
+            )
+        registration = connection.execute(
+            "SELECT * FROM project_registry WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        if registration is None or registration["status"] != "active":
+            raise ConflictError("project registration is not active")
+        if registration["revision"] != request.expected_project_revision:
+            raise ConflictError("project registration revision is stale")
+        if (
+            registration["repository_fingerprint"] != request.repository_fingerprint
+            or registration["config_sha256"] != request.config_sha256
+            or registration["backend_api_version"] != request.backend_api_version
+        ):
+            raise ConflictError("project config changed before re-enrollment")
+        return current_epoch + 1
+
+    def _persist_consumer_binding_transition(
+        self,
+        connection: sqlite3.Connection,
+        request: ConsumerBindingTransitionRequest,
+        actor_id: str,
+        plan: _ConsumerBindingTransitionPlan,
+    ) -> ConsumerBindingTransitionResult:
+        """Commit the state revision, revoked grants, and immutable audit row."""
+
+        next_revision = request.expected_revision + 1
+        cursor = connection.execute(
+            """UPDATE consumer_bindings SET status = ?, revision = ?,
+               source_epoch = ?, updated_by = ?, updated_at = ?
+               WHERE project_id = ? AND revision = ? AND status = ?""",
+            (
+                request.status,
+                next_revision,
+                plan.next_source_epoch,
+                actor_id,
+                plan.now,
+                request.project_id,
+                request.expected_revision,
+                plan.expected_from,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ConflictError("consumer binding revision is stale")
+        if plan.action == "deregistration_pending":
+            connection.execute(
+                """INSERT INTO project_grant_revocations
+                       (grant_id, revoked_by, rationale, revoked_at)
+                   SELECT grants.grant_id, ?, ?, ?
+                   FROM project_grants AS grants
+                   LEFT JOIN project_grant_revocations AS revocations
+                     ON revocations.grant_id = grants.grant_id
+                   WHERE grants.project_id = ? AND revocations.grant_id IS NULL""",
+                (actor_id, request.rationale, plan.now, request.project_id),
+            )
+        receipt = ConsumerBindingAuditRecord(
+            audit_id=new_id(),
+            project_id=request.project_id,
+            actor_id=actor_id,
+            action=plan.action,
+            from_status=plan.expected_from,
+            to_status=request.status,
+            source_epoch=plan.next_source_epoch,
+            revision=next_revision,
+            transition_id=request.transition_id,
+            rationale=request.rationale,
+            created_at=plan.now,
+        )
+        self._append_consumer_binding_audit(connection, receipt)
+        updated = connection.execute(
+            "SELECT * FROM consumer_bindings WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        if updated is None:
+            raise RuntimeError("consumer binding transition returned no state")
+        return ConsumerBindingTransitionResult(
+            self._consumer_binding_from_row(updated), receipt, False
+        )
+
     def transition_consumer_binding(
         self, request: ConsumerBindingTransitionRequest, actor_id: str
     ) -> ConsumerBindingTransitionResult:
@@ -2294,158 +2565,24 @@ class CuratorStore:
         self._validate_access_identity(actor_id, "actor_id")
         self._validate_access_identity(request.transition_id, "transition_id")
         self._validate_access_rationale(request.rationale)
-        transition_actions = {
-            "deregistration_pending": ("deregistration_pending", "active"),
-            "deregistered": ("deregistered", "deregistration_pending"),
-            "active": ("reenrolled", "deregistered"),
-        }
-        if request.status not in (
-            "deregistration_pending", "deregistered", "active"
-        ):
-            raise ValueError(
-                "consumer binding status must be an explicit supported transition"
-            )
-        transition = transition_actions.get(request.status)
-        if transition is None:
-            raise ValueError("consumer binding transition is not supported")
-        action, expected_from = transition
-        if not is_exact_int(request.expected_revision) or request.expected_revision < 1:
-            raise ValueError("expected_revision must be a positive integer")
-        now = utc_now()
+        action, expected_from = self._resolve_consumer_binding_transition(request)
+        plan_time = utc_now()
         with self._transaction() as connection:
-            prior = connection.execute(
-                """SELECT * FROM consumer_binding_audit
-                   WHERE project_id = ? AND transition_id = ?""",
-                (request.project_id, request.transition_id),
-            ).fetchone()
-            if prior is not None:
-                if (
-                    prior["actor_id"] != actor_id
-                    or prior["action"] != action
-                    or prior["revision"] != request.expected_revision + 1
-                    or prior["rationale"] != request.rationale
-                ):
-                    raise ConflictError(
-                        "consumer transition ID was already used with different input"
-                    )
-                current = connection.execute(
-                    "SELECT * FROM consumer_bindings WHERE project_id = ?",
-                    (request.project_id,),
-                ).fetchone()
-                if current is None:
-                    raise NotFoundError("consumer binding not found")
-                return ConsumerBindingTransitionResult(
-                    self._consumer_binding_from_row(current),
-                    self._consumer_binding_audit_from_row(prior),
-                    True,
-                )
-            current = connection.execute(
-                "SELECT * FROM consumer_bindings WHERE project_id = ?",
-                (request.project_id,),
-            ).fetchone()
-            if current is None:
-                raise NotFoundError("consumer binding not found")
-            if connection.execute(
-                "SELECT 1 FROM project_retirement_tombstones WHERE project_id = ?",
-                (request.project_id,),
-            ).fetchone() is not None:
-                raise ConflictError("retired projects cannot change consumer bindings")
-            if current["revision"] != request.expected_revision:
-                raise ConflictError("consumer binding revision is stale")
-            if current["status"] != expected_from:
-                raise ConflictError("consumer binding is not in the required lifecycle state")
-            next_source_epoch = current["source_epoch"]
-            if action in {"deregistered", "reenrolled"}:
-                unresolved = connection.execute(
-                    """SELECT COUNT(*) FROM event_inbox
-                       WHERE project_id = ? AND status <> 'processed'""",
-                    (request.project_id,),
-                ).fetchone()[0]
-                if unresolved:
-                    raise ConflictError("consumer binding has unresolved source events")
-            if action == "reenrolled":
-                if (
-                    not is_exact_int(request.expected_source_epoch)
-                    or request.expected_source_epoch != current["source_epoch"]
-                ):
-                    raise ConflictError("consumer source epoch is stale")
-                if (
-                    not is_exact_int(request.expected_project_revision)
-                    or request.repository_fingerprint is None
-                    or request.config_sha256 is None
-                    or not is_exact_int(request.backend_api_version)
-                ):
-                    raise ValueError(
-                        "re-enrollment requires the reviewed project revision and fingerprints"
-                    )
-                registration = connection.execute(
-                    "SELECT * FROM project_registry WHERE project_id = ?",
-                    (request.project_id,),
-                ).fetchone()
-                if registration is None or registration["status"] != "active":
-                    raise ConflictError("project registration is not active")
-                if registration["revision"] != request.expected_project_revision:
-                    raise ConflictError("project registration revision is stale")
-                if (
-                    registration["repository_fingerprint"]
-                    != request.repository_fingerprint
-                    or registration["config_sha256"] != request.config_sha256
-                    or registration["backend_api_version"]
-                    != request.backend_api_version
-                ):
-                    raise ConflictError("project config changed before re-enrollment")
-                next_source_epoch += 1
-            next_revision = request.expected_revision + 1
-            cursor = connection.execute(
-                """UPDATE consumer_bindings SET status = ?, revision = ?,
-                   source_epoch = ?, updated_by = ?, updated_at = ?
-                   WHERE project_id = ? AND revision = ? AND status = ?""",
-                (
-                    request.status,
-                    next_revision,
-                    next_source_epoch,
-                    actor_id,
-                    now,
-                    request.project_id,
-                    request.expected_revision,
-                    expected_from,
+            replay = self._replay_consumer_binding_transition(
+                connection, request, actor_id, action
+            )
+            if replay is not None:
+                return replay
+            next_epoch = self._validate_consumer_binding_transition_state(
+                connection, request, action, expected_from
+            )
+            return self._persist_consumer_binding_transition(
+                connection,
+                request,
+                actor_id,
+                _ConsumerBindingTransitionPlan(
+                    action, expected_from, next_epoch, plan_time
                 ),
-            )
-            if cursor.rowcount != 1:
-                raise ConflictError("consumer binding revision is stale")
-            if action == "deregistration_pending":
-                connection.execute(
-                    """INSERT INTO project_grant_revocations
-                           (grant_id, revoked_by, rationale, revoked_at)
-                       SELECT grants.grant_id, ?, ?, ?
-                       FROM project_grants AS grants
-                       LEFT JOIN project_grant_revocations AS revocations
-                         ON revocations.grant_id = grants.grant_id
-                       WHERE grants.project_id = ? AND revocations.grant_id IS NULL""",
-                    (actor_id, request.rationale, now, request.project_id),
-                )
-            receipt = ConsumerBindingAuditRecord(
-                audit_id=new_id(),
-                project_id=request.project_id,
-                actor_id=actor_id,
-                action=action,
-                from_status=expected_from,
-                to_status=request.status,
-                source_epoch=next_source_epoch,
-                revision=next_revision,
-                transition_id=request.transition_id,
-                rationale=request.rationale,
-                created_at=now,
-            )
-            self._append_consumer_binding_audit(connection, receipt)
-            updated = connection.execute(
-                "SELECT * FROM consumer_bindings WHERE project_id = ?",
-                (request.project_id,),
-            ).fetchone()
-            if updated is None:
-                raise RuntimeError("consumer binding transition returned no state")
-            return ConsumerBindingTransitionResult(
-                self._consumer_binding_from_row(updated), receipt, False
             )
 
     def consumer_drain_inventory(self, project_id: str) -> tuple[int, str]:
@@ -2462,18 +2599,24 @@ class CuratorStore:
                 (project_id,),
             )
             for row in rows:
-                encoded = json.dumps(
-                    [row[key] for key in (
-                        "event_id", "payload_sha256", "idempotency_sha256",
-                        "source_id", "source_sequence", "status",
-                    )],
-                    separators=(",", ":"),
-                    ensure_ascii=True,
-                ).encode("ascii")
+                encoded = self._consumer_drain_inventory_row_bytes(row)
                 digest.update(len(encoded).to_bytes(4, "big"))
                 digest.update(encoded)
                 count += 1
         return count, digest.hexdigest()
+
+    @staticmethod
+    def _consumer_drain_inventory_row_bytes(row: sqlite3.Row) -> bytes:
+        """Encode the exact fixed event identity fields covered by drain review."""
+
+        return json.dumps(
+            [row[key] for key in (
+                "event_id", "payload_sha256", "idempotency_sha256",
+                "source_id", "source_sequence", "status",
+            )],
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
 
     def terminal_event_inventory(
         self,
@@ -2551,37 +2694,9 @@ class CuratorStore:
                 ).fetchone()
                 if registration is None or binding_row is None:
                     raise NotFoundError("project lifecycle registration not found")
-                event_counts = tuple(
-                    (str(row["status"]), int(row["count"]))
-                    for row in self._connection.execute(
-                        "SELECT status, COUNT(*) AS count FROM event_inbox "
-                        "WHERE project_id = ? GROUP BY status ORDER BY status",
-                        (project_id,),
-                    ).fetchall()
+                events = self._project_lifecycle_event_summary(
+                    project_id, observed_at
                 )
-                unprocessed_rows = self._connection.execute(
-                    """SELECT event_id, payload_sha256, idempotency_sha256,
-                              source_id, source_sequence, status FROM event_inbox
-                       WHERE project_id = ? AND status <> 'processed'
-                       ORDER BY event_id""",
-                    (project_id,),
-                ).fetchall()
-                digest = hashlib.sha256()
-                for row in unprocessed_rows:
-                    encoded = json.dumps(
-                        [row[key] for key in (
-                            "event_id", "payload_sha256", "idempotency_sha256",
-                            "source_id", "source_sequence", "status",
-                        )],
-                        separators=(",", ":"), ensure_ascii=True,
-                    ).encode("ascii")
-                    digest.update(len(encoded).to_bytes(4, "big"))
-                    digest.update(encoded)
-                active_leases = int(self._connection.execute(
-                    """SELECT COUNT(*) FROM event_inbox WHERE project_id = ?
-                       AND lease_owner IS NOT NULL AND lease_expires_at > ?""",
-                    (project_id, observed_at),
-                ).fetchone()[0])
                 retirement_row = self._connection.execute(
                     "SELECT * FROM project_retirement_tombstones WHERE project_id = ?",
                     (project_id,),
@@ -2589,12 +2704,9 @@ class CuratorStore:
                 terminal_inventory = self.terminal_event_inventory(
                     project_id, limit=event_limit, after_event_id=after_event_id
                 )
-                known_statuses = {status.value for status in EventInboxStatus}
-                reasons: list[str] = []
-                if any(status not in known_statuses for status, _count in event_counts):
-                    reasons.append("unknown_event_status")
-                if not terminal_inventory.complete:
-                    reasons.append("terminal_event_page_truncated")
+                reasons = self._project_lifecycle_incomplete_reasons(
+                    events.status_counts, terminal_inventory.complete
+                )
                 snapshot = ProjectLifecycleStatusSnapshot(
                     project_id=project_id,
                     observed_at=observed_at,
@@ -2607,10 +2719,10 @@ class CuratorStore:
                         self._project_retirement_from_row(retirement_row)
                         if retirement_row is not None else None
                     ),
-                    event_status_counts=event_counts,
-                    unprocessed_event_count=len(unprocessed_rows),
-                    unprocessed_event_sha256=digest.hexdigest(),
-                    active_event_lease_count=active_leases,
+                    event_status_counts=events.status_counts,
+                    unprocessed_event_count=events.unprocessed_count,
+                    unprocessed_event_sha256=events.unprocessed_sha256,
+                    active_event_lease_count=events.active_lease_count,
                     terminal_event_inventory=terminal_inventory,
                 )
                 self._connection.commit()
@@ -2619,113 +2731,106 @@ class CuratorStore:
                 self._connection.rollback()
                 raise
 
+    def _project_lifecycle_event_summary(
+        self, project_id: str, observed_at: str
+    ) -> _ProjectLifecycleEventSummary:
+        """Read event counts, unresolved digest, and leases in the active snapshot."""
+
+        event_counts = tuple(
+            (str(row["status"]), int(row["count"]))
+            for row in self._connection.execute(
+                "SELECT status, COUNT(*) AS count FROM event_inbox "
+                "WHERE project_id = ? GROUP BY status ORDER BY status",
+                (project_id,),
+            ).fetchall()
+        )
+        unprocessed_rows = self._connection.execute(
+            """SELECT event_id, payload_sha256, idempotency_sha256,
+                      source_id, source_sequence, status FROM event_inbox
+               WHERE project_id = ? AND status <> 'processed'
+               ORDER BY event_id""",
+            (project_id,),
+        ).fetchall()
+        digest = hashlib.sha256()
+        for row in unprocessed_rows:
+            encoded = json.dumps(
+                [row[key] for key in (
+                    "event_id", "payload_sha256", "idempotency_sha256",
+                    "source_id", "source_sequence", "status",
+                )],
+                separators=(",", ":"), ensure_ascii=True,
+            ).encode("ascii")
+            digest.update(len(encoded).to_bytes(4, "big"))
+            digest.update(encoded)
+        active_leases = int(self._connection.execute(
+            """SELECT COUNT(*) FROM event_inbox WHERE project_id = ?
+               AND lease_owner IS NOT NULL AND lease_expires_at > ?""",
+            (project_id, observed_at),
+        ).fetchone()[0])
+        return _ProjectLifecycleEventSummary(
+            event_counts, len(unprocessed_rows), digest.hexdigest(), active_leases
+        )
+
+    @staticmethod
+    def _project_lifecycle_incomplete_reasons(
+        event_counts: tuple[tuple[str, int], ...],
+        terminal_inventory_complete: bool,
+    ) -> list[str]:
+        """Describe fixed conditions that make a lifecycle view incomplete."""
+
+        known_statuses = {status.value for status in EventInboxStatus}
+        reasons: list[str] = []
+        if any(status not in known_statuses for status, _count in event_counts):
+            reasons.append("unknown_event_status")
+        if not terminal_inventory_complete:
+            reasons.append("terminal_event_page_truncated")
+        return reasons
+
     def authorize_consumer_drain(
-        self,
-        *,
-        project_id: str,
-        transition_id: str,
-        actor_id: str,
-        caller_subject: str,
-        caller_profile: str | None,
-        expected_revision: int,
-        expected_inventory_sha256: str,
-        lifetime_seconds: int,
+        self, request: ConsumerDrainStoreRequest
     ) -> tuple[int, str]:
         """Authorize only the inventoried retries during a short attended drain."""
 
-        if not 1 <= lifetime_seconds <= 900:
-            raise ValueError("drain lifetime must be between 1 and 900 seconds")
-        self._validate_access_identity(project_id, "project_id")
-        self._validate_access_identity(transition_id, "transition_id")
-        self._validate_access_identity(actor_id, "actor_id")
-        self._validate_access_identity(caller_subject, "caller_subject")
-        if caller_profile is not None:
-            self._validate_access_identity(caller_profile, "caller_profile")
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_inventory_sha256):
-            raise ValueError("inventory digest must be lowercase SHA-256")
+        self._validate_consumer_drain_request(request)
         now = datetime.now(UTC)
         created_at = now.isoformat()
-        expires_at = (now + timedelta(seconds=lifetime_seconds)).isoformat()
+        expires_at = (now + timedelta(seconds=request.lifetime_seconds)).isoformat()
         with self._transaction() as connection:
-            binding = connection.execute(
-                "SELECT * FROM consumer_bindings WHERE project_id = ?",
-                (project_id,),
-            ).fetchone()
-            registration = connection.execute(
-                "SELECT * FROM project_registry WHERE project_id = ?",
-                (project_id,),
-            ).fetchone()
-            transition = connection.execute(
-                """SELECT 1 FROM consumer_binding_audit
-                   WHERE project_id = ? AND transition_id = ?
-                     AND action = 'deregistration_pending'""",
-                (project_id, transition_id),
-            ).fetchone()
-            if binding is None:
-                raise ConflictError("consumer is not at the reviewed drain transition")
-            if (
-                binding["status"], binding["revision"]
-            ) != ("deregistration_pending", expected_revision):
-                raise ConflictError("consumer is not at the reviewed drain transition")
-            if (
-                registration is None
-                or registration["status"] != "active"
-                or transition is None
-            ):
-                raise ConflictError("consumer is not at the reviewed drain transition")
-            prior = connection.execute(
-                """SELECT * FROM consumer_drain_sessions
-                   WHERE project_id = ? AND transition_id = ?""",
-                (project_id, transition_id),
-            ).fetchone()
-            if prior is not None:
-                if tuple(prior[key] for key in (
-                    "actor_id", "caller_subject", "caller_profile",
-                    "binding_revision", "source_epoch", "config_sha256",
-                    "inventory_sha256",
-                )) != (
-                    actor_id, caller_subject, caller_profile, expected_revision,
-                    binding["source_epoch"], registration["config_sha256"],
-                    expected_inventory_sha256,
-                ):
-                    raise ConflictError("drain transition ID was reused with changed input")
-                event_count = connection.execute(
-                    """SELECT COUNT(*) FROM consumer_drain_events
-                       WHERE project_id = ? AND transition_id = ?""",
-                    (project_id, transition_id),
-                ).fetchone()[0]
-                return int(event_count), prior["expires_at"]
+            binding, registration = self._require_consumer_drain_fence(
+                connection, request
+            )
+            replay = self._consumer_drain_authorization_replay(
+                connection, request, binding, registration
+            )
+            if replay is not None:
+                return replay
             rows = connection.execute(
                 """SELECT event_id, payload_sha256, idempotency_sha256,
                           source_id, source_sequence, status
                    FROM event_inbox WHERE project_id = ? AND status <> 'processed'
                    ORDER BY event_id""",
-                (project_id,),
+                (request.project_id,),
             ).fetchall()
             actual_digest = hashlib.sha256()
             for row in rows:
-                encoded = json.dumps(
-                    [row[key] for key in (
-                        "event_id", "payload_sha256", "idempotency_sha256",
-                        "source_id", "source_sequence", "status",
-                    )], separators=(",", ":"), ensure_ascii=True
-                ).encode("ascii")
+                encoded = self._consumer_drain_inventory_row_bytes(row)
                 actual_digest.update(len(encoded).to_bytes(4, "big"))
                 actual_digest.update(encoded)
-            if actual_digest.hexdigest() != expected_inventory_sha256:
+            if actual_digest.hexdigest() != request.expected_inventory_sha256:
                 raise ConflictError("event inventory changed; review it again")
-            values = (
-                actor_id, caller_subject, caller_profile, expected_revision,
-                binding["source_epoch"], registration["config_sha256"],
-                expected_inventory_sha256,
-            )
             connection.execute(
                 """INSERT INTO consumer_drain_sessions
                    (project_id, transition_id, actor_id, caller_subject,
                     caller_profile, binding_revision, source_epoch, config_sha256,
                     inventory_sha256, created_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (project_id, transition_id, *values, created_at, expires_at),
+                (
+                    request.project_id, request.transition_id, request.actor_id,
+                    request.caller_subject, request.caller_profile,
+                    request.expected_revision, binding["source_epoch"],
+                    registration["config_sha256"],
+                    request.expected_inventory_sha256, created_at, expires_at,
+                ),
             )
             connection.executemany(
                 """INSERT INTO consumer_drain_events
@@ -2733,13 +2838,106 @@ class CuratorStore:
                     idempotency_sha256, source_id, source_sequence)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    (project_id, transition_id, row["event_id"],
-                     row["payload_sha256"], row["idempotency_sha256"],
-                     row["source_id"], row["source_sequence"])
+                    (
+                        request.project_id, request.transition_id, row["event_id"],
+                        row["payload_sha256"], row["idempotency_sha256"],
+                        row["source_id"], row["source_sequence"],
+                    )
                     for row in rows
                 ],
             )
             return len(rows), expires_at
+
+    @classmethod
+    def _validate_consumer_drain_request(
+        cls, request: ConsumerDrainStoreRequest
+    ) -> None:
+        """Validate the short lifetime and stable caller/inventory fields."""
+
+        if not 1 <= request.lifetime_seconds <= 900:
+            raise ValueError("drain lifetime must be between 1 and 900 seconds")
+        for name, value in (
+            ("project_id", request.project_id),
+            ("transition_id", request.transition_id),
+            ("actor_id", request.actor_id),
+            ("caller_subject", request.caller_subject),
+        ):
+            cls._validate_access_identity(value, name)
+        if request.caller_profile is not None:
+            cls._validate_access_identity(request.caller_profile, "caller_profile")
+        if not re.fullmatch(r"[0-9a-f]{64}", request.expected_inventory_sha256):
+            raise ValueError("inventory digest must be lowercase SHA-256")
+
+    @staticmethod
+    def _require_consumer_drain_fence(
+        connection: sqlite3.Connection,
+        request: ConsumerDrainStoreRequest,
+    ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        """Require the active project at the exact reviewed drain transition."""
+
+        binding = connection.execute(
+            "SELECT * FROM consumer_bindings WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        registration = connection.execute(
+            "SELECT * FROM project_registry WHERE project_id = ?",
+            (request.project_id,),
+        ).fetchone()
+        transition = connection.execute(
+            """SELECT 1 FROM consumer_binding_audit
+               WHERE project_id = ? AND transition_id = ?
+                 AND action = 'deregistration_pending'""",
+            (request.project_id, request.transition_id),
+        ).fetchone()
+        message = "consumer is not at the reviewed drain transition"
+        if binding is None:
+            raise ConflictError(message)
+        if (binding["status"], binding["revision"]) != (
+            "deregistration_pending", request.expected_revision
+        ):
+            raise ConflictError(message)
+        if (
+            registration is None
+            or registration["status"] != "active"
+            or transition is None
+        ):
+            raise ConflictError(message)
+        return binding, registration
+
+    @staticmethod
+    def _consumer_drain_authorization_replay(
+        connection: sqlite3.Connection,
+        request: ConsumerDrainStoreRequest,
+        binding: sqlite3.Row,
+        registration: sqlite3.Row,
+    ) -> tuple[int, str] | None:
+        """Return an identical drain receipt or reject transition-ID reuse."""
+
+        prior = connection.execute(
+            """SELECT * FROM consumer_drain_sessions
+               WHERE project_id = ? AND transition_id = ?""",
+            (request.project_id, request.transition_id),
+        ).fetchone()
+        if prior is None:
+            return None
+        existing = tuple(prior[key] for key in (
+            "actor_id", "caller_subject", "caller_profile",
+            "binding_revision", "source_epoch", "config_sha256",
+            "inventory_sha256",
+        ))
+        expected = (
+            request.actor_id, request.caller_subject, request.caller_profile,
+            request.expected_revision, binding["source_epoch"],
+            registration["config_sha256"], request.expected_inventory_sha256,
+        )
+        if existing != expected:
+            raise ConflictError("drain transition ID was reused with changed input")
+        event_count = connection.execute(
+            """SELECT COUNT(*) FROM consumer_drain_events
+               WHERE project_id = ? AND transition_id = ?""",
+            (request.project_id, request.transition_id),
+        ).fetchone()[0]
+        return int(event_count), prior["expires_at"]
 
     def consumer_drain_allows(
         self,
@@ -3444,6 +3642,15 @@ class CuratorStore:
                 )
                 self._record_staging_occurrence(connection, project_id, artifact)
                 return staged_at
+            prior_occurrence = connection.execute(
+                "SELECT 1 FROM staging_artifact_occurrences "
+                "WHERE project_id = ? AND path = ?",
+                (project_id, artifact.path),
+            ).fetchone()
+            if prior_occurrence is not None:
+                raise ConflictError(
+                    "staging artifact path has prior history; use a new artifact ID"
+                )
             staged_at = utc_now()
             connection.execute(
                 "INSERT INTO staging_artifact_times "
@@ -4086,10 +4293,20 @@ class CuratorStore:
                 next_attempt_at = (
                     datetime.now(UTC) + timedelta(seconds=delay)
                 ).isoformat(timespec="microseconds")
+            approval_stale = int(
+                status is ArtifactStatus.FAILED
+                and error in _PURGE_APPROVAL_INVALIDATING_ERRORS
+            )
+            if approval_stale:
+                next_attempt_at = None
             connection.execute(
                 """UPDATE expiry_purge_targets SET status = ?, error = ?,
-                   next_attempt_at = ? WHERE receipt_id = ? AND path = ?""",
-                (status.value, error, next_attempt_at, receipt_id, path),
+                   next_attempt_at = ?, approval_stale = MAX(approval_stale, ?)
+                   WHERE receipt_id = ? AND path = ?""",
+                (
+                    status.value, error, next_attempt_at, approval_stale,
+                    receipt_id, path,
+                ),
             )
             if status is ArtifactStatus.PURGED:
                 connection.execute(
@@ -7182,13 +7399,23 @@ class CuratorStore:
                 and held["hold_released_at"] is None
             ):
                 raise ConflictError("held artifacts cannot record a purge result")
-            next_attempt_at = self._purge_retry_at(
-                status, int(target["attempts"])
+            approval_stale = int(
+                status is ArtifactStatus.FAILED
+                and error in _PURGE_APPROVAL_INVALIDATING_ERRORS
+            )
+            next_attempt_at = (
+                None
+                if approval_stale
+                else self._purge_retry_at(status, int(target["attempts"]))
             )
             cursor = connection.execute(
-                """UPDATE purge_targets SET status = ?, error = ?, next_attempt_at = ?
+                """UPDATE purge_targets SET status = ?, error = ?, next_attempt_at = ?,
+                          approval_stale = MAX(approval_stale, ?)
                    WHERE receipt_id = ? AND path = ?""",
-                (status.value, error, next_attempt_at, receipt_id, path),
+                (
+                    status.value, error, next_attempt_at, approval_stale,
+                    receipt_id, path,
+                ),
             )
             if cursor.rowcount != 1:
                 raise NotFoundError("purge target not found in receipt")
@@ -8037,132 +8264,199 @@ class CuratorStore:
 
     def terminally_dispose_event(
         self,
-        *,
-        project_id: str,
-        event_id: str,
-        transition_id: str,
-        actor_id: str,
-        rationale: str,
-        expected_binding_revision: int,
-        expected_source_epoch: int,
-        expected_payload_sha256: str,
+        request: TerminalEventDispositionStoreRequest,
     ) -> tuple[EventInboxReceipt, TerminalEventDispositionRecord]:
         """Resolve one failed event by exact human-approved terminal disposition."""
 
-        for name, value in (
-            ("project_id", project_id), ("event_id", event_id),
-            ("transition_id", transition_id), ("actor_id", actor_id),
-        ):
-            self._validate_access_identity(value, name)
-        self._validate_access_rationale(rationale)
-        if (
-            not is_exact_int(expected_binding_revision)
-            or expected_binding_revision < 1
-            or not is_exact_int(expected_source_epoch)
-            or expected_source_epoch < 1
-        ):
-            raise ValueError("binding revision and source epoch must be positive integers")
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_payload_sha256):
-            raise ValueError("payload digest must be lowercase SHA-256")
+        self._validate_terminal_event_disposition_request(request)
         now = utc_now()
         with self._transaction() as connection:
-            prior = connection.execute(
-                "SELECT * FROM terminal_event_dispositions "
-                "WHERE project_id = ? AND (event_id = ? OR transition_id = ?)",
-                (project_id, event_id, transition_id),
-            ).fetchone()
-            if prior is not None:
-                if tuple(prior[key] for key in (
-                    "event_id", "transition_id", "actor_id", "payload_sha256", "rationale"
-                )) != (event_id, transition_id, actor_id, expected_payload_sha256, rationale):
-                    raise ConflictError(
-                        "terminal disposition ID was reused with changed input"
-                    )
-                receipt_row = connection.execute(
-                    "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
-                    (project_id, event_id),
-                ).fetchone()
-                if receipt_row is None:
-                    raise RuntimeError("terminal disposition lost its inbox receipt")
-                return (
-                    self._event_receipt(receipt_row),
-                    self._terminal_event_disposition_from_row(prior),
-                )
-            binding = connection.execute(
-                "SELECT status, revision, source_epoch FROM consumer_bindings "
-                "WHERE project_id = ?", (project_id,),
-            ).fetchone()
-            if (
-                binding is None
-                or binding["status"] not in {"deregistration_pending", "deregistered"}
-                or binding["revision"] != expected_binding_revision
-                or binding["source_epoch"] != expected_source_epoch
-            ):
-                raise ConflictError("consumer binding changed or is not fenced")
-            row = connection.execute(
-                "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
-                (project_id, event_id),
-            ).fetchone()
-            if row is None:
-                raise NotFoundError(f"event not found: {project_id}/{event_id}")
-            if row["status"] not in {"failed", "quarantined"} or row[
-                "payload_sha256"
-            ] != expected_payload_sha256:
-                raise ConflictError("event is not the reviewed unresolved payload")
-            if (
-                row["lease_owner"] is not None
-                and row["lease_expires_at"] is not None
-                and row["lease_expires_at"] > now
-            ):
-                raise ConflictError("event has an active processing lease")
-            if row["source_sequence"] is not None:
-                cursor = connection.execute(
-                    "SELECT last_sequence FROM event_cursors "
-                    "WHERE project_id = ? AND source_id = ?",
-                    (project_id, row["source_id"]),
-                ).fetchone()
-                previous = int(cursor["last_sequence"]) if cursor is not None else 0
-                if row["source_sequence"] != previous + 1:
-                    raise ConflictError("earlier source events must be resolved first")
-                connection.execute(
-                    """INSERT INTO event_cursors
-                       (project_id, source_id, last_sequence, updated_at)
-                       VALUES (?, ?, ?, ?) ON CONFLICT(project_id, source_id)
-                       DO UPDATE SET last_sequence = excluded.last_sequence,
-                       updated_at = excluded.updated_at""",
-                    (project_id, row["source_id"], row["source_sequence"], now),
-                )
-            record = TerminalEventDispositionRecord(
-                project_id, event_id, transition_id, actor_id,
-                EventInboxStatus(row["status"]), expected_payload_sha256,
-                rationale, now,
+            replay = self._terminal_event_disposition_replay(connection, request)
+            if replay is not None:
+                return replay
+            self._require_terminal_disposition_binding(connection, request)
+            row = self._require_terminal_disposition_event(connection, request, now)
+            self._advance_terminal_disposition_cursor(connection, request, row, now)
+            record = self._persist_terminal_event_disposition(
+                connection, request, row, now
             )
-            connection.execute(
-                """INSERT INTO terminal_event_dispositions
-                   (project_id, event_id, transition_id, actor_id, prior_status,
-                    payload_sha256, rationale, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (project_id, event_id, transition_id, actor_id,
-                 record.prior_status.value, expected_payload_sha256, rationale, now),
-            )
-            if row["payload_json"] is not None:
-                self._queue_event_payload_scrub(connection, project_id, event_id)
-            connection.execute(
-                """UPDATE event_inbox SET status = ?, payload_json = NULL,
-                   processed_at = ?, last_error = NULL, next_attempt_at = NULL,
-                   disposition = ?, lease_owner = NULL, lease_expires_at = NULL
-                   WHERE project_id = ? AND event_id = ?""",
-                (EventInboxStatus.PROCESSED.value, now,
-                 EventDisposition.TERMINAL_AUTHORIZED.value, project_id, event_id),
-            )
-            receipt_row = connection.execute(
-                "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
-                (project_id, event_id),
-            ).fetchone()
-            if receipt_row is None:
-                raise RuntimeError("terminal disposition lost its inbox receipt")
         self.retry_pending_event_payload_scrubs()
-        return self.event_receipt(project_id, event_id), record
+        return self.event_receipt(request.project_id, request.event_id), record
+
+    @classmethod
+    def _validate_terminal_event_disposition_request(
+        cls, request: TerminalEventDispositionStoreRequest
+    ) -> None:
+        """Validate bounded identity, rationale, fence, and digest fields."""
+
+        for name, value in (
+            ("project_id", request.project_id),
+            ("event_id", request.event_id),
+            ("transition_id", request.transition_id),
+            ("actor_id", request.actor_id),
+        ):
+            cls._validate_access_identity(value, name)
+        cls._validate_access_rationale(request.rationale)
+        if (
+            not is_exact_int(request.expected_binding_revision)
+            or request.expected_binding_revision < 1
+            or not is_exact_int(request.expected_source_epoch)
+            or request.expected_source_epoch < 1
+        ):
+            raise ValueError("binding revision and source epoch must be positive integers")
+        if not re.fullmatch(r"[0-9a-f]{64}", request.expected_payload_sha256):
+            raise ValueError("payload digest must be lowercase SHA-256")
+
+    def _terminal_event_disposition_replay(
+        self,
+        connection: sqlite3.Connection,
+        request: TerminalEventDispositionStoreRequest,
+    ) -> tuple[EventInboxReceipt, TerminalEventDispositionRecord] | None:
+        """Return an exact prior decision or reject a reused decision ID."""
+
+        prior = connection.execute(
+            "SELECT * FROM terminal_event_dispositions "
+            "WHERE project_id = ? AND (event_id = ? OR transition_id = ?)",
+            (request.project_id, request.event_id, request.transition_id),
+        ).fetchone()
+        if prior is None:
+            return None
+        compared = tuple(prior[key] for key in (
+            "event_id", "transition_id", "actor_id", "payload_sha256", "rationale"
+        ))
+        expected = (
+            request.event_id, request.transition_id, request.actor_id,
+            request.expected_payload_sha256, request.rationale,
+        )
+        if compared != expected:
+            raise ConflictError("terminal disposition ID was reused with changed input")
+        receipt_row = connection.execute(
+            "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+            (request.project_id, request.event_id),
+        ).fetchone()
+        if receipt_row is None:
+            raise RuntimeError("terminal disposition lost its inbox receipt")
+        return (
+            self._event_receipt(receipt_row),
+            self._terminal_event_disposition_from_row(prior),
+        )
+
+    @staticmethod
+    def _require_terminal_disposition_binding(
+        connection: sqlite3.Connection,
+        request: TerminalEventDispositionStoreRequest,
+    ) -> None:
+        """Require the same fenced consumer-binding revision and epoch."""
+
+        binding = connection.execute(
+            "SELECT status, revision, source_epoch FROM consumer_bindings "
+            "WHERE project_id = ?", (request.project_id,),
+        ).fetchone()
+        if (
+            binding is None
+            or binding["status"] not in {"deregistration_pending", "deregistered"}
+            or binding["revision"] != request.expected_binding_revision
+            or binding["source_epoch"] != request.expected_source_epoch
+        ):
+            raise ConflictError("consumer binding changed or is not fenced")
+
+    @staticmethod
+    def _require_terminal_disposition_event(
+        connection: sqlite3.Connection,
+        request: TerminalEventDispositionStoreRequest,
+        now: str,
+    ) -> sqlite3.Row:
+        """Require the exact unresolved payload without an active lease."""
+
+        row = connection.execute(
+            "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+            (request.project_id, request.event_id),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError(f"event not found: {request.project_id}/{request.event_id}")
+        if row["status"] not in {"failed", "quarantined"} or row[
+            "payload_sha256"
+        ] != request.expected_payload_sha256:
+            raise ConflictError("event is not the reviewed unresolved payload")
+        if (
+            row["lease_owner"] is not None
+            and row["lease_expires_at"] is not None
+            and row["lease_expires_at"] > now
+        ):
+            raise ConflictError("event has an active processing lease")
+        return row
+
+    @staticmethod
+    def _advance_terminal_disposition_cursor(
+        connection: sqlite3.Connection,
+        request: TerminalEventDispositionStoreRequest,
+        row: sqlite3.Row,
+        now: str,
+    ) -> None:
+        """Advance the source cursor only when this is the next event."""
+
+        if row["source_sequence"] is None:
+            return
+        cursor = connection.execute(
+            "SELECT last_sequence FROM event_cursors "
+            "WHERE project_id = ? AND source_id = ?",
+            (request.project_id, row["source_id"]),
+        ).fetchone()
+        previous = int(cursor["last_sequence"]) if cursor is not None else 0
+        if row["source_sequence"] != previous + 1:
+            raise ConflictError("earlier source events must be resolved first")
+        connection.execute(
+            """INSERT INTO event_cursors
+               (project_id, source_id, last_sequence, updated_at)
+               VALUES (?, ?, ?, ?) ON CONFLICT(project_id, source_id)
+               DO UPDATE SET last_sequence = excluded.last_sequence,
+               updated_at = excluded.updated_at""",
+            (request.project_id, row["source_id"], row["source_sequence"], now),
+        )
+
+    def _persist_terminal_event_disposition(
+        self,
+        connection: sqlite3.Connection,
+        request: TerminalEventDispositionStoreRequest,
+        row: sqlite3.Row,
+        now: str,
+    ) -> TerminalEventDispositionRecord:
+        """Persist the decision, queue payload erasure, and close its receipt."""
+
+        record = TerminalEventDispositionRecord(
+            request.project_id, request.event_id, request.transition_id,
+            request.actor_id, EventInboxStatus(row["status"]),
+            request.expected_payload_sha256, request.rationale, now,
+        )
+        connection.execute(
+            """INSERT INTO terminal_event_dispositions
+               (project_id, event_id, transition_id, actor_id, prior_status,
+                payload_sha256, rationale, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (request.project_id, request.event_id, request.transition_id,
+             request.actor_id, record.prior_status.value,
+             request.expected_payload_sha256, request.rationale, now),
+        )
+        if row["payload_json"] is not None:
+            self._queue_event_payload_scrub(
+                connection, request.project_id, request.event_id
+            )
+        connection.execute(
+            """UPDATE event_inbox SET status = ?, payload_json = NULL,
+               processed_at = ?, last_error = NULL, next_attempt_at = NULL,
+               disposition = ?, lease_owner = NULL, lease_expires_at = NULL
+               WHERE project_id = ? AND event_id = ?""",
+            (EventInboxStatus.PROCESSED.value, now,
+             EventDisposition.TERMINAL_AUTHORIZED.value,
+             request.project_id, request.event_id),
+        )
+        receipt = connection.execute(
+            "SELECT * FROM event_inbox WHERE project_id = ? AND event_id = ?",
+            (request.project_id, request.event_id),
+        ).fetchone()
+        if receipt is None:
+            raise RuntimeError("terminal disposition lost its inbox receipt")
+        return record
 
     @staticmethod
     def _terminal_event_disposition_from_row(
@@ -8280,14 +8574,81 @@ class CuratorStore:
         )
         return self._event_receipt(row) if identity_matches else None
 
-    def suspended_processed_event_source_epoch(
+    def reconcile_retired_processed_event(
         self,
-        subject_id: str,
-        project_id: str,
-        event_id: str,
+        event: EventEnvelope,
+        expected_source_id: str,
         repository_fingerprint: str,
         config_sha256: str,
         backend_api_version: int,
+    ) -> EventInboxReceipt | None:
+        """Return only an exact pre-retirement receipt for outbox recovery.
+
+        Retirement permanently blocks new writes. A trusted source may still
+        need the original acknowledgement when Curator committed an event but
+        its response was lost immediately before retirement. This read-only
+        path is bound to the tombstoned source epoch and current project config.
+        """
+
+        self._validate_access_identity(event.project_id, "project_id")
+        self._validate_access_identity(event.event_id, "event_id")
+        self._validate_access_identity(expected_source_id, "expected_source_id")
+        if not re.fullmatch(r"[0-9a-f]{64}", repository_fingerprint):
+            raise ValueError("repository_fingerprint must be lowercase SHA-256")
+        if not re.fullmatch(r"[0-9a-f]{64}", config_sha256):
+            raise ValueError("config_sha256 must be lowercase SHA-256")
+        if not is_exact_int(backend_api_version) or backend_api_version < 1:
+            raise ValueError("backend_api_version must be a positive integer")
+        payload_digest = hashlib.sha256(event.to_json().encode("utf-8")).hexdigest()
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT inbox.* FROM event_inbox AS inbox
+                   JOIN project_registry AS project
+                     ON project.project_id = inbox.project_id
+                   JOIN consumer_bindings AS binding
+                     ON binding.project_id = inbox.project_id
+                   JOIN project_retirement_tombstones AS retirement
+                     ON retirement.project_id = inbox.project_id
+                   JOIN consumer_binding_audit AS cutover
+                     ON cutover.project_id = binding.project_id
+                    AND cutover.revision = binding.revision
+                   WHERE inbox.project_id = ? AND inbox.event_id = ?
+                     AND inbox.status = 'processed'
+                     AND inbox.source_id = ?
+                     AND inbox.received_at <= retirement.retired_at
+                     AND project.status = 'suspended'
+                     AND project.repository_fingerprint = ?
+                     AND project.config_sha256 = ?
+                     AND project.backend_api_version = ?
+                     AND binding.status IN ('deregistration_pending', 'deregistered')
+                     AND binding.source_epoch = retirement.source_epoch
+                     AND cutover.action IN ('deregistration_pending', 'deregistered')
+                     AND cutover.source_epoch = retirement.source_epoch
+                   LIMIT 1""",
+                (
+                    event.project_id,
+                    event.event_id,
+                    expected_source_id,
+                    repository_fingerprint,
+                    config_sha256,
+                    backend_api_version,
+                ),
+            ).fetchone()
+        if (
+            row is None
+            or row["source_id"] != event.source_id
+            or row["source_sequence"] != event.source_sequence
+        ):
+            return None
+        identity_matches = (
+            row["idempotency_sha256"] == event.idempotency_sha256
+            if row["idempotency_sha256"] is not None
+            else row["payload_sha256"] == payload_digest
+        )
+        return self._event_receipt(row) if identity_matches else None
+
+    def suspended_processed_event_source_epoch(
+        self, request: SuspendedProcessedEventEpochRequest
     ) -> int | None:
         """Return the epoch only for a processed receipt under suspended state."""
 
@@ -8313,12 +8674,12 @@ class CuratorStore:
                      AND revocation.grant_id IS NULL
                    ORDER BY grant_row.granted_at DESC LIMIT 1""",
                 (
-                    subject_id,
-                    project_id,
-                    event_id,
-                    repository_fingerprint,
-                    config_sha256,
-                    backend_api_version,
+                    request.subject_id,
+                    request.project_id,
+                    request.event_id,
+                    request.repository_fingerprint,
+                    request.config_sha256,
+                    request.backend_api_version,
                 ),
             ).fetchone()
         return int(row["source_epoch"]) if row is not None else None

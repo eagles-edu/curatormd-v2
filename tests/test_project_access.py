@@ -1199,19 +1199,25 @@ class DurableProjectAccessTests(unittest.TestCase):
         count, inventory_digest = self.store.consumer_drain_inventory(self.project_id)
         self.assertEqual(count, 1)
         self._allow_admin(ProjectAdministrationAction.DRAIN)
+        drain_request = ConsumerDrainAuthorizationRequest(
+            project_id=self.project_id,
+            transition_id=pending.receipt.transition_id,
+            expected_revision=pending.binding.revision,
+            expected_inventory_sha256=inventory_digest,
+            lifetime_seconds=60,
+            consumer_profile="alpha",
+        )
         authorized_count, expires_at = self.manager.authorize_consumer_drain(
-            self.operator,
-            ConsumerDrainAuthorizationRequest(
-                project_id=self.project_id,
-                transition_id=pending.receipt.transition_id,
-                expected_revision=pending.binding.revision,
-                expected_inventory_sha256=inventory_digest,
-                lifetime_seconds=60,
-                consumer_profile="alpha",
-            ),
+            self.operator, drain_request
         )
         self.assertEqual(authorized_count, 1)
         self.assertTrue(expires_at)
+        replay_count, replay_expires_at = self.manager.authorize_consumer_drain(
+            self.operator, drain_request
+        )
+        self.assertEqual(
+            (replay_count, replay_expires_at), (authorized_count, expires_at)
+        )
         self.assertTrue(
             self.store.consumer_drain_allows(self.operator.subject_id, "alpha", event)
         )

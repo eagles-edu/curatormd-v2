@@ -25,6 +25,9 @@ The implementation in `src/curatormd_v2/content_safety.py` rejects:
 - Recognized token forms for common providers, JWT-shaped strings, and
   credential prefixes including `sk_`, `rk_`, `sk-`, GitHub, AWS, Slack,
   Google API, and default GitLab PAT forms.
+- Password assignments labeled `pwd=` and base64url-like ACME DNS challenge
+  values of at least 32 characters when labeled `TXT value:`, `TXT record:`, or
+  `DNS challenge:`. Ordinary `_acme-challenge` record names are not matched.
 - Email-like values, US SSN-shaped values, and phone-like values when labeled
   `phone`, `mobile`, `cell`, or `telephone`.
 

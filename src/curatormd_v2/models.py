@@ -333,6 +333,19 @@ class ChecklistGoalStartRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class GoalSubtaskStartRequest:
+    """Accepted child-goal criteria and their explicit parent relationship."""
+
+    parent_goal_id: str
+    problem: str
+    success_criteria: tuple[SuccessCriterion, ...]
+    owner: str | None = None
+    next_action: str | None = None
+    depends_on_goal_ids: tuple[str, ...] = ()
+    source_event_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class EvidenceRef:
     """A compact pointer to proof; output/transcript contents are not stored."""
 
@@ -482,6 +495,16 @@ class GoalListPage:
             raise ValueError("goal page next_offset does not match its contents")
         if any(goal.project_id != self.project_id for goal in self.goals):
             raise ValueError("goal page contains a card from another project")
+
+
+@dataclass(frozen=True, slots=True)
+class GoalChildrenPageRequest:
+    """Parent and filters for one bounded direct-child goal page."""
+
+    parent_goal_id: str
+    offset: int = 0
+    limit: int = 50
+    statuses: tuple[GoalStatus, ...] = ()
 
 
 def _validate_goal_text_fields(goal: GoalCard) -> None:
@@ -799,6 +822,49 @@ class ArtifactRef:
         # Exact type rejects runtime values from unrelated enum classes.
         if type(self.reacquisition_action) is not ReacquisitionAction:  # pylint: disable=unidiomatic-typecheck
             raise ValueError("reacquisition_action must be a supported reviewer decision")
+
+
+@dataclass(frozen=True, slots=True)
+class SDEConfirmationRequest:
+    """Human disposition and exact inventory submitted as one review request."""
+
+    candidate_id: str
+    decision: ReviewDecision
+    artifacts: tuple[ArtifactRef, ...]
+    artifact_inventory_complete: bool
+    dependency_map_sha256: str | None = None
+    rationale: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SDECorrectionRequest:
+    """Authenticated correction text linked to one decided SDE candidate."""
+
+    correction_id: str
+    candidate_id: str
+    correction: str
+    rationale: str
+
+
+@dataclass(frozen=True, slots=True)
+class SDEQualityFeedbackRequest:
+    """One authenticated reviewer's quality label for a decided candidate."""
+
+    feedback_id: str
+    candidate_id: str
+    label: SDEQualityFeedbackLabel
+    rationale: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactCleanupAuthorizationRequest:
+    """Exact displayed inventory and projection digests for cleanup approval."""
+
+    receipt_id: str
+    artifacts: tuple[ArtifactRef, ...]
+    manifest_sha256: str
+    dependency_map_sha256: str
+    target: str
 
 
 @dataclass(frozen=True, slots=True)

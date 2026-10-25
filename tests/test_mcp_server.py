@@ -43,6 +43,7 @@ from curatormd_v2 import (
     PurgeFailureCode,
     ArtifactPurger,
     ReviewDecision,
+    SDEConfirmationRequest,
     SuccessCriterion,
     build_mcp_server,
     codex_hook_to_event,
@@ -54,6 +55,7 @@ from curatormd_v2.mcp_server import (
     HermesContextOptions,
     hermes_subject_context,
 )
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 class AllowProject:  # pylint: disable=too-few-public-methods
@@ -408,7 +410,7 @@ class McpServerTests(unittest.TestCase):
             store = CuratorStore(Path(temporary) / "global.sqlite3")
             try:
                 plugin = bind_test_project(store, root, "host-subject")
-                caller = AuthenticatedCaller("host-subject")
+                caller = AuthenticatedCaller("host-subject", "host-subject")
                 api = AuthenticatedCuratorAPI(
                     {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
                 )
@@ -654,9 +656,74 @@ class McpServerTests(unittest.TestCase):
                         )
                         self.assertFalse(fresh.is_error, fresh.content)
                         assert isinstance(fresh.content[0], TextContent)
+                        fresh_receipt = json.loads(fresh.content[0].text)
                         self.assertEqual(
-                            json.loads(fresh.content[0].text)["status"], "processed"
+                            fresh_receipt["status"], "processed"
                         )
+
+                        for revision, status, transition_id in (
+                            (4, "deregistration_pending", "mcp-retire-pending"),
+                            (5, "deregistered", "mcp-retire-deregistered"),
+                        ):
+                            store.transition_consumer_binding(
+                                ConsumerBindingTransitionRequest(
+                                    project_id="mcp-project",
+                                    status=status,
+                                    rationale="Retire the disposable MCP project",
+                                    expected_revision=revision,
+                                    transition_id=transition_id,
+                                ),
+                                actor_id="host-subject",
+                            )
+                        store.retire_project(
+                            "mcp-project",
+                            actor_id="host-subject",
+                            rationale="Retire the disposable MCP project",
+                            expected_revision=1,
+                            transition_id="mcp-retire-project",
+                        )
+
+                        retired_replay = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": fresh_event.event_id,
+                                "source_id": fresh_event.source_id,
+                                "source_sequence": 1,
+                                "occurred_at": "2026-10-19T00:01:00+00:00",
+                                "context": fresh_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-2",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertFalse(retired_replay.is_error, retired_replay.content)
+                        assert isinstance(retired_replay.content[0], TextContent)
+                        self.assertEqual(
+                            json.loads(retired_replay.content[0].text),
+                            fresh_receipt,
+                        )
+
+                        unseen_after_retirement = await client.call_tool(
+                            "hermes_codex_event",
+                            {
+                                "event_type": "codex:turn:start",
+                                "goal_id": "bind-goal",
+                                "event_id": "unseen-event-after-retirement",
+                                "source_sequence": 2,
+                                "occurred_at": "2026-10-19T00:02:00+00:00",
+                                "context": fresh_context,
+                            },
+                            meta={
+                                "hermes/profile_id": "host-subject",
+                                "hermes/session_id": "session-2",
+                                "hermes/durable_event": True,
+                            },
+                        )
+                        self.assertTrue(unseen_after_retirement.is_error)
 
                         self.assertTrue((await client.call_tool(
                             "hermes_codex_event",
@@ -1441,19 +1508,23 @@ class McpServerTests(unittest.TestCase):
                     evidence=(evidence,),
                 )
                 candidate = plugin.service.sde_assess(
-                    reviewed_goal.goal_id,
-                    Materiality.IMPLEMENTATION,
-                    "The implementation is durable and verified",
-                    (change.fact_id, verification.fact_id),
-                    impact="Observed in the bounded test scenario",
-                    retrieval_value="Useful for future maintenance review",
+                    SDEAssessmentRequest(
+                        reviewed_goal.goal_id,
+                        Materiality.IMPLEMENTATION,
+                        "The implementation is durable and verified",
+                        (change.fact_id, verification.fact_id),
+                        impact="Observed in the bounded test scenario",
+                        retrieval_value="Useful for future maintenance review",
+                    )
                 )
                 assert candidate is not None
                 plugin.service.sde_confirm(
-                    candidate.candidate_id,
-                    ReviewDecision.APPROVED,
-                    (),
-                    artifact_inventory_complete=True,
+                    SDEConfirmationRequest(
+                        candidate_id=candidate.candidate_id,
+                        decision=ReviewDecision.APPROVED,
+                        artifacts=(),
+                        artifact_inventory_complete=True,
+                    ),
                     authenticated_subject="host-subject",
                 )
                 caller = AuthenticatedCaller("host-subject")
@@ -2158,18 +2229,18 @@ class McpServerTests(unittest.TestCase):
             database_path = Path(temporary) / "global.sqlite3"
             store = CuratorStore(database_path)
             try:
-                secret = self._assert_sensitive_event_rejected_without_echo(
+                secrets = self._assert_sensitive_event_rejected_without_echo(
                     root, store
                 )
                 self._assert_sensitive_event_absent_from_storage(
-                    secret, database_path, root
+                    secrets, database_path, root
                 )
             finally:
                 store.close()
 
     def _assert_sensitive_event_rejected_without_echo(
         self, root: Path, store: CuratorStore
-    ) -> str:
+    ) -> tuple[str, ...]:
         """Exercise MCP and logs while returning the test-only canary for scans."""
         plugin = bind_test_project(store, root, "host-subject")
         caller = AuthenticatedCaller("host-subject")
@@ -2177,61 +2248,69 @@ class McpServerTests(unittest.TestCase):
             {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
         )
         server = build_mcp_server(api, caller, "mcp-project", "privacy-test")
-        secret = (
-            "ghs_1234567890_"
-            + "A" * 480
-            + ".eyJhbGciOiJIUzI1NiJ9.signature"
-        )
-        payload = json.dumps(
-            {
-                "schema_version": 1,
-                "event_id": "sensitive-mcp-event",
-                "project_id": "mcp-project",
-                "source_id": "privacy-test",
-                "source_sequence": 1,
-                "occurred_at": "2026-10-20T00:00:00Z",
-                "event_type": "goal.started",
-                "payload": {
-                    "goal_id": "sensitive-mcp-goal",
-                    "problem": f"Example token {secret}",
-                    "success_criteria": [
-                        {"criterion_id": "done", "description": "No leak"}
-                    ],
-                },
-            }
+        secrets = (
+            "ghs_1234567890_" + "A" * 480 + ".eyJhbGciOiJIUzI1NiJ9.signature",
+            "TXT value: " + "B" * 43,
         )
 
         async def exercise() -> None:
             async with Client(server, raise_exceptions=True) as client:
-                result = await client.call_tool(
-                    "event_ingest", {"event_json": payload}
-                )
-                self.assertTrue(result.is_error)
-                content = result.content[0]
-                assert isinstance(content, TextContent)
-                self.assertNotIn(secret, content.text)
+                for index, secret in enumerate(secrets):
+                    payload = json.dumps(
+                        {
+                            "schema_version": 1,
+                            "event_id": f"sensitive-mcp-event-{index}",
+                            "project_id": "mcp-project",
+                            "source_id": "privacy-test",
+                            "source_sequence": index + 1,
+                            "occurred_at": "2026-10-20T00:00:00Z",
+                            "event_type": "goal.started",
+                            "payload": {
+                                "goal_id": f"sensitive-mcp-goal-{index}",
+                                "problem": f"Sensitive input {secret}",
+                                "success_criteria": [
+                                    {"criterion_id": "done", "description": "No leak"}
+                                ],
+                            },
+                        }
+                    )
+                    result = await client.call_tool(
+                        "event_ingest", {"event_json": payload}
+                    )
+                    self.assertTrue(result.is_error)
+                    content = result.content[0]
+                    assert isinstance(content, TextContent)
+                    self.assertNotIn(secret, content.text)
 
         with self.assertLogs("curatormd_v2.mcp_server", level="WARNING") as captured:
             asyncio.run(exercise())
         self.assertTrue(captured.output)
-        self.assertNotIn(secret, "\n".join(captured.output))
-        return secret
+        log_output = "\n".join(captured.output)
+        for secret in secrets:
+            self.assertNotIn(secret, log_output)
+        return secrets
 
     def _assert_sensitive_event_absent_from_storage(
-        self, secret: str, database_path: Path, root: Path
+        self, secrets: tuple[str, ...], database_path: Path, root: Path
     ) -> None:
         """Scan SQLite sidecars, canonical Markdown, and staging bytes."""
-        secret_bytes = secret.encode("utf-8")
+        secret_bytes = tuple(secret.encode("utf-8") for secret in secrets)
         for suffix in ("", "-wal", "-shm", "-journal"):
             database_file = Path(f"{database_path}{suffix}")
             if database_file.exists():
-                self.assertNotIn(secret_bytes, database_file.read_bytes())
+                content = database_file.read_bytes()
+                for secret in secret_bytes:
+                    self.assertNotIn(secret, content)
         history = root / "persistence" / "HISTORY.md"
-        self.assertNotIn(secret_bytes, history.read_bytes())
+        history_bytes = history.read_bytes()
+        for secret in secret_bytes:
+            self.assertNotIn(secret, history_bytes)
         staging = root / ".curatormd-v2" / "staging"
         for staged_file in staging.rglob("*"):
             if staged_file.is_file():
-                self.assertNotIn(secret_bytes, staged_file.read_bytes())
+                content = staged_file.read_bytes()
+                for secret in secret_bytes:
+                    self.assertNotIn(secret, content)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,8 @@ class ContentSafetyTests(unittest.TestCase):
                 "api_key=sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
                 "credential_assignment",
             ),
+            ("fact.bullet", "pwd=synthetic-password", "credential_assignment"),
+            ("fact.bullet", "TXT value: " + "A" * 43, "dns_challenge"),
             ("fact.bullet", "Contact analyst@example.invalid for the report", "email_address"),
             ("goal.problem", "SSN 123-45-6789 was copied into the issue", "us_ssn"),
             ("fact.bullet", "phone: +1 (555) 123-4567", "labeled_phone"),
@@ -51,6 +53,12 @@ class ContentSafetyTests(unittest.TestCase):
     def test_safe_text_is_accepted_without_redaction(self) -> None:
         original = "Verified: unit checks pass; production impact remains unknown"
         self.assertIsNone(validate_safe_text(original, "fact.bullet"))
+        self.assertIsNone(
+            validate_safe_text(
+                "Create TXT record _acme-challenge.example.invalid",
+                "fact.bullet",
+            )
+        )
         self.assertEqual(original, "Verified: unit checks pass; production impact remains unknown")
 
     def test_direct_event_payloads_are_checked_not_only_json_ingress(self) -> None:

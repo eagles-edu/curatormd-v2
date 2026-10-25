@@ -33,6 +33,7 @@ from curatormd_v2 import (
     RetentionHoldKind,
     ReviewAuthorizationError,
     ReviewDecision,
+    SDEConfirmationRequest,
     SDEQualityFeedbackLabel,
     SuccessCriterion,
 )
@@ -43,6 +44,7 @@ from curatormd_v2.store import (
     ProjectRegistrationRequest,
     ProjectStatusChangeRequest,
 )
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 class ReceiptCheckingPurger(ArtifactPurger):
@@ -168,12 +170,14 @@ targets = ["persistence/HISTORY.md"]
             evidence=(self.evidence(),),
         )
         candidate = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "The behavior is durable and verified",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The behavior is durable and verified",
+                (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         assert candidate is not None
         return candidate.candidate_id
@@ -196,10 +200,12 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate("same-content replacement")
         path, artifact = self.artifact("same-content-replacement.json")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         replacement = path.with_name("replacement.tmp")
         replacement.write_bytes(b"temporary evidence")
@@ -216,6 +222,100 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(result.purge_status, PurgeStatus.PURGE_PENDING)
         _, targets = self.service.artifact_purge_status(receipt.receipt_id)
         self.assertEqual(targets[0].error, "path_changed")
+        self.assertTrue(targets[0].approval_stale)
+        self.assertIsNone(targets[0].next_attempt_at)
+        self.assertEqual(
+            self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
+        )
+
+        self.service.retry_pending_purges()
+
+        self.assertTrue(path.exists())
+        persisted_target = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )[0]
+        self.assertEqual(persisted_target.attempts, 1)
+        self.assertTrue(persisted_target.approval_stale)
+
+        self.store.close()
+        self.store = CuratorStore(self.root / "curator.sqlite3")
+        self.service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            TestReviewAuthorizer(),
+        )
+        self.assertEqual(
+            self.store.due_pending_purge_receipts("default"), ()
+        )
+        self.service.retry_pending_purges()
+        restarted_target = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )[0]
+        self.assertEqual(restarted_target.attempts, 1)
+        self.assertTrue(restarted_target.approval_stale)
+        self.assertTrue(path.exists())
+
+    def test_partial_purge_replacement_stays_stale_after_restart(self) -> None:
+        """A partial receipt cannot purge a replacement after a process restart."""
+
+        candidate_id = self.candidate("partial purge replacement")
+        first_path, first = self.artifact("a-first.json")
+        second_path, second = self.artifact("b-second.json")
+        receipt = self.service.sde_confirm(
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(first, second),
+                artifact_inventory_complete=True,
+            )
+        )
+        original_purge = self.service.purger.purge
+
+        def replace_second_then_purge(artifact: ArtifactRef) -> bool:
+            if artifact.path == second.path:
+                replacement = second_path.with_name("b-replacement.tmp")
+                replacement.write_bytes(b"temporary evidence")
+                second_path.unlink()
+                replacement.rename(second_path)
+            return original_purge(artifact)
+
+        with patch.object(
+            self.service.purger, "purge", side_effect=replace_second_then_purge
+        ):
+            result = self.persist_canonical(receipt)
+
+        self.assertFalse(first_path.exists())
+        self.assertTrue(second_path.exists())
+        self.assertEqual(result.purge_status, PurgeStatus.PURGE_PENDING)
+        target_records = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )
+        self.assertEqual(target_records[0].status, ArtifactStatus.PURGED)
+        self.assertEqual(target_records[1].status, ArtifactStatus.FAILED)
+        self.assertEqual(target_records[1].error, "path_changed")
+        self.assertTrue(target_records[1].approval_stale)
+
+        self.store.close()
+        self.store = CuratorStore(self.root / "curator.sqlite3")
+        self.service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            TestReviewAuthorizer(),
+        )
+        restarted_receipt = self.service.retry_pending_purges()[0]
+        restarted_targets = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )
+
+        self.assertEqual(restarted_receipt.purge_status, PurgeStatus.PURGE_PENDING)
+        self.assertFalse(first_path.exists())
+        self.assertTrue(second_path.exists())
+        self.assertEqual(restarted_targets[0].status, ArtifactStatus.PURGED)
+        self.assertEqual(restarted_targets[1].attempts, 1)
+        self.assertEqual(restarted_targets[1].error, "path_changed")
+        self.assertTrue(restarted_targets[1].approval_stale)
 
     def persist_canonical(
         self, receipt: AuditReceipt, service: CuratorService | None = None
@@ -265,10 +365,12 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate("separate cleanup authorization")
         artifact_path, artifact = self.artifact("separate-approval.json")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         self.service.mark_canonical_persisted(
             receipt.receipt_id,
@@ -336,10 +438,12 @@ targets = ["persistence/HISTORY.md"]
                     self.store, purger, TestVerifier(), TestReviewAuthorizer()
                 )
                 receipt = service.sde_confirm(
-                    candidate_id,
-                    decision,
-                    (artifact,),
-                    artifact_inventory_complete=True,
+                    SDEConfirmationRequest(
+                        candidate_id=candidate_id,
+                        decision=decision,
+                        artifacts=(artifact,),
+                        artifact_inventory_complete=True,
+                    )
                 )
                 self.assertTrue(artifact_path.exists())
                 self.assertFalse(purger.called)
@@ -364,10 +468,12 @@ targets = ["persistence/HISTORY.md"]
         )
 
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (held_artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(held_artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         with self.store.transaction() as connection:
             connection.execute(
@@ -464,10 +570,12 @@ targets = ["persistence/HISTORY.md"]
         )
 
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (original_hold,),
-            artifact_inventory_complete=False,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(original_hold,),
+                artifact_inventory_complete=False,
+            )
         )
         receipt = self.persist_canonical(receipt)
         receipt = self.service.artifact_inventory_complete(
@@ -490,10 +598,12 @@ targets = ["persistence/HISTORY.md"]
     def test_sde_corrections_and_quality_feedback_survive_store_reopen(self) -> None:
         candidate_id = self.candidate("correction history")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(),
+                artifact_inventory_complete=True,
+            )
         )
         correction = self.service.sde_correction_record(
             "correction-1",
@@ -546,10 +656,12 @@ targets = ["persistence/HISTORY.md"]
     def test_sde_correction_fails_closed_without_reviewer(self) -> None:
         candidate_id = self.candidate("unauthorized correction")
         self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.REJECTED,
-            (),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(),
+                artifact_inventory_complete=True,
+            )
         )
         service = CuratorService(
             self.store, ArtifactPurger(self.stage), TestVerifier()
@@ -570,10 +682,12 @@ targets = ["persistence/HISTORY.md"]
             self.store, flaky, TestVerifier(), TestReviewAuthorizer()
         )
         receipt = service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt, service)
         self.assertTrue(artifact_path.exists())
@@ -617,10 +731,12 @@ targets = ["persistence/HISTORY.md"]
             self.store, flaky, TestVerifier(), TestReviewAuthorizer()
         )
         receipt = service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt, service)
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
@@ -676,10 +792,12 @@ targets = ["persistence/HISTORY.md"]
             self.store, flaky, TestVerifier(), TestReviewAuthorizer()
         )
         receipt = service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt, service)
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
@@ -750,10 +868,12 @@ targets = ["persistence/HISTORY.md"]
             TestReviewAuthorizer(),
         )
         receipt = service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         with self.assertRaisesRegex(RuntimeError, "process loss"):
             self.persist_canonical(receipt, service)
@@ -791,10 +911,12 @@ targets = ["persistence/HISTORY.md"]
         )
         with self.assertRaises(ReviewAuthorizationError):
             untrusted.sde_confirm(
-                candidate_id,
-                ReviewDecision.APPROVED,
-                (),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=(),
+                    artifact_inventory_complete=True,
+                )
             )
         self.assertTrue(path.exists())
         self.assertEqual(self.store.receipts_for_goal(self.goal.goal_id), ())
@@ -804,10 +926,12 @@ targets = ["persistence/HISTORY.md"]
 
         candidate_id = self.candidate()
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(),
+                artifact_inventory_complete=True,
+            )
         )
         self.assertFalse(receipt.canonical_persisted)
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
@@ -888,10 +1012,12 @@ targets = ["persistence/HISTORY.md"]
             held_source.occurrence_id,
         )
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (pending, failed, held, purged),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(pending, failed, held, purged),
+                artifact_inventory_complete=True,
+            )
         )
         self.store.mark_receipt_canonical_persisted(
             receipt.receipt_id,
@@ -988,16 +1114,87 @@ targets = ["persistence/HISTORY.md"]
         self.assertEqual(self.store.due_expiry_purge_receipts("default"), ())
         self.assertEqual(self.store.expiry_purge_targets(expiry.receipt_id, "default"), ())
 
+    def test_v28_migration_rollback_preserves_legacy_retry_state(self) -> None:
+        """A failed stale-approval migration rolls back its DDL and row changes."""
+
+        candidate_id = self.candidate("atomic legacy occurrence migration")
+        path, artifact = self.artifact("legacy-retry-state.json")
+        receipt = self.service.sde_confirm(
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
+        )
+        self.store.close()
+        connection = sqlite3.connect(self.root / "curator.sqlite3")
+        connection.execute(
+            "UPDATE purge_targets SET occurrence_id = NULL, status = 'failed', "
+            "attempts = 1, error = 'path_changed', "
+            "next_attempt_at = '2026-10-24T00:00:00+00:00' WHERE receipt_id = ?",
+            (receipt.receipt_id,),
+        )
+        connection.execute("ALTER TABLE purge_targets DROP COLUMN approval_stale")
+        connection.execute(
+            """CREATE TRIGGER fail_legacy_occurrence_migration
+               BEFORE UPDATE ON purge_targets
+               BEGIN SELECT RAISE(ABORT, 'injected occurrence migration failure'); END"""
+        )
+        connection.execute("PRAGMA user_version = 27")
+        connection.commit()
+        connection.close()
+
+        with self.assertRaisesRegex(
+            sqlite3.IntegrityError, "injected occurrence migration failure"
+        ):
+            CuratorStore(self.root / "curator.sqlite3")
+
+        connection = sqlite3.connect(self.root / "curator.sqlite3")
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(purge_targets)")
+        }
+        failed_target = connection.execute(
+            "SELECT status, attempts, error, next_attempt_at FROM purge_targets "
+            "WHERE receipt_id = ?",
+            (receipt.receipt_id,),
+        ).fetchone()
+        self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 27)
+        self.assertNotIn("approval_stale", columns)
+        self.assertEqual(
+            failed_target,
+            ("failed", 1, "path_changed", "2026-10-24T00:00:00+00:00"),
+        )
+        connection.execute("DROP TRIGGER fail_legacy_occurrence_migration")
+        connection.commit()
+        connection.close()
+
+        self.store = CuratorStore(self.root / "curator.sqlite3")
+        migrated_target = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )[0]
+        self.assertTrue(migrated_target.approval_stale)
+        self.assertEqual(migrated_target.status, ArtifactStatus.FAILED)
+        self.assertEqual(migrated_target.attempts, 1)
+        self.assertEqual(migrated_target.error, "path_changed")
+        self.assertIsNone(migrated_target.next_attempt_at)
+        self.assertEqual(
+            self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
+        )
+        self.assertTrue(path.exists())
+
     def test_v29_migration_stales_cleanup_receipts_without_dependency_maps(self) -> None:
         """A v28 approval without a reviewed map cannot authorize another unlink."""
 
         candidate_id = self.candidate("legacy dependency map")
         artifact_path, artifact = self.artifact("legacy-map-approval.json")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         with self.store.transaction() as connection:
             connection.execute(
@@ -1067,10 +1264,12 @@ targets = ["persistence/HISTORY.md"]
         path, artifact = self.artifact()
         path.write_bytes(b"changed after approval reference")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.REJECTED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt)
         self.assertTrue(path.exists())
@@ -1086,10 +1285,12 @@ targets = ["persistence/HISTORY.md"]
         path, artifact = self.artifact("replacement-race.json")
         original_stat = path.stat()
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.REJECTED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         real_fstat = os.fstat
         matching_fstats = 0
@@ -1127,10 +1328,12 @@ targets = ["persistence/HISTORY.md"]
             reacquisition_action=ReacquisitionAction.REACQUIRE_FROM_SOURCE,
         )
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.REJECTED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt)
         self.assertTrue(outside.exists())
@@ -1174,10 +1377,12 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate("missing purge target")
         _, artifact = self.artifact("existing.json")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt)
         private_path = "/srv/private/customer/not-in-this-receipt.json"
@@ -1239,10 +1444,12 @@ targets = ["persistence/HISTORY.md"]
         path, artifact = self.artifact()
         path.unlink()
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt)
         self.assertEqual(receipt.purge_status, PurgeStatus.COMPLETE)
@@ -1250,10 +1457,12 @@ targets = ["persistence/HISTORY.md"]
     def test_incomplete_empty_inventory_stays_pending_until_explicitly_complete(self) -> None:
         candidate_id = self.candidate()
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (),
-            artifact_inventory_complete=False,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(),
+                artifact_inventory_complete=False,
+            )
         )
         receipt = self.persist_canonical(receipt)
         self.assertEqual(receipt.purge_status, PurgeStatus.PURGE_PENDING)
@@ -1269,10 +1478,12 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate()
         path, artifact = self.artifact()
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=False,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=False,
+            )
         )
         receipt = self.persist_canonical(receipt)
         self.assertTrue(path.exists())
@@ -1295,43 +1506,53 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate()
         _, original = self.artifact("original.json")
         self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.APPROVED,
-            (original,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(original,),
+                artifact_inventory_complete=True,
+            )
         )
         with self.assertRaises(ConflictError):
             self.service.sde_confirm(
-                candidate_id,
-                ReviewDecision.REJECTED,
-                (original,),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate_id,
+                    decision=ReviewDecision.REJECTED,
+                    artifacts=(original,),
+                    artifact_inventory_complete=True,
+                )
             )
         _, replacement = self.artifact("replacement.json")
         with self.assertRaises(ConflictError):
             self.service.sde_confirm(
-                candidate_id,
-                ReviewDecision.APPROVED,
-                (replacement,),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=(replacement,),
+                    artifact_inventory_complete=True,
+                )
             )
 
     def test_rejected_review_decision_cannot_be_changed_to_approved(self) -> None:
         candidate_id = self.candidate("immutable rejection")
         _, artifact = self.artifact("rejected.json")
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.REJECTED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
 
         with self.assertRaises(ConflictError):
             self.service.sde_confirm(
-                candidate_id,
-                ReviewDecision.APPROVED,
-                (artifact,),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=(artifact,),
+                    artifact_inventory_complete=True,
+                )
             )
 
         stored = self.store.get_receipt(receipt.receipt_id)
@@ -1341,10 +1562,12 @@ targets = ["persistence/HISTORY.md"]
         candidate_id = self.candidate()
         _, artifact = self.artifact()
         receipt = self.service.sde_confirm(
-            candidate_id,
-            ReviewDecision.REJECTED,
-            (artifact,),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+            )
         )
         receipt = self.persist_canonical(receipt)
         database = self.root / "curator.sqlite3"

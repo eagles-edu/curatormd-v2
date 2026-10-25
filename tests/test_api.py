@@ -20,6 +20,7 @@ from project_fixtures import create_consumer_repo
 from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
+    ArtifactCleanupAuthorizationRequest,
     backup_database,
     ArtifactRef,
     ConflictError,
@@ -36,6 +37,8 @@ from curatormd_v2 import (
     MAX_FACT_BYTES_PER_PROJECT,
     FactKind,
     FactCompactionProposal,
+    GoalChildrenPageRequest,
+    GoalCriteriaAmended,
     GoalStarted,
     GoalActivated,
     GoalListCapacityError,
@@ -54,11 +57,18 @@ from curatormd_v2 import (
     ReviewDecision,
     RetentionHoldKind,
     SDEQualityFeedbackLabel,
+    SDEConfirmationRequest,
+    SDECorrectionRequest,
+    SDEQualityFeedbackRequest,
     SuccessCriterion,
 )
+from curatormd_v2.service import SDEAssessmentRequest
+from curatormd_v2.store import FactCompactionApprovalRequest
+from curatormd_v2.store import ConsumerBindingTransitionRequest
 from curatormd_v2.content_safety import SensitiveContentError
 from curatormd_v2.project_config import ProjectConfigError
 from curatormd_v2.store import NotFoundError
+from curatormd_v2.hermes_context import hermes_source_id
 
 
 class AllowProject:  # pylint: disable=too-few-public-methods
@@ -257,6 +267,115 @@ class ApiFacadeTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.goal_list(self.caller, "project-a")
 
+    def test_retired_source_can_reconcile_only_its_exact_processed_receipt(self) -> None:
+        """Retirement permits a lost-ack read without reopening source writes."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        profile_id = "renew-ssl-coding"
+        caller = AuthenticatedCaller("hermes-user-1", profile_id)
+        source_id = hermes_source_id(profile_id, "project-a", 1)
+        event = EventEnvelope(
+            "retired-source-processed-1",
+            "project-a",
+            GoalStarted(
+                goal_id="retired-source-goal",
+                problem="Process one event before the source is retired.",
+                success_criteria=(
+                    SuccessCriterion("saved", "The event is processed once."),
+                ),
+            ),
+            source_id=source_id,
+            source_sequence=1,
+        )
+        original = api.process_event_json(caller, "project-a", event.to_json())
+        self.assertEqual(original.status, EventInboxStatus.PROCESSED)
+
+        pending = self.store.transition_consumer_binding(
+            ConsumerBindingTransitionRequest(
+                project_id="project-a",
+                status="deregistration_pending",
+                rationale="Stop the exact source before retirement",
+                expected_revision=1,
+                transition_id="retired-source-pending-1",
+            ),
+            actor_id="test-admin",
+        )
+        deregistered = self.store.transition_consumer_binding(
+            ConsumerBindingTransitionRequest(
+                project_id="project-a",
+                status="deregistered",
+                rationale="Finish source cutover before retirement",
+                expected_revision=pending.binding.revision,
+                transition_id="retired-source-deregistered-1",
+            ),
+            actor_id="test-admin",
+        )
+        self.store.retire_project(
+            "project-a",
+            actor_id="test-admin",
+            rationale="Retire the completed disposable source",
+            expected_revision=1,
+            transition_id="retired-source-project-1",
+        )
+
+        replay = api.process_event_json(
+            caller, "project-a", event.to_json(), replay_only=True
+        )
+        self.assertEqual(replay, original)
+        self.assertEqual(
+            self.store.get_consumer_binding("project-a").revision,
+            deregistered.binding.revision,
+        )
+        self.assertEqual(
+            self.store.event_receipt("project-a", event.event_id), original
+        )
+
+        changed = replace(
+            event,
+            payload=GoalStarted(
+                goal_id="retired-source-goal",
+                problem="Changed content must not receive the prior acknowledgement.",
+                success_criteria=(
+                    SuccessCriterion("saved", "The event is processed once."),
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(PermissionError, "retired project"):
+            api.process_event_json(caller, "project-a", changed.to_json(), replay_only=True)
+        unseen = replace(event, event_id="retired-source-unseen-2", source_sequence=2)
+        with self.assertRaisesRegex(PermissionError, "retired project"):
+            api.process_event_json(caller, "project-a", unseen.to_json())
+        wrong_profile = AuthenticatedCaller("hermes-user-1", "other-profile")
+        with self.assertRaisesRegex(PermissionError, "retired project"):
+            api.process_event_json(
+                wrong_profile, "project-a", event.to_json()
+            )
+
+    def test_goal_criteria_amendment_passes_typed_request_through_write_scope(self) -> None:
+        """The API authorizes and forwards the existing amendment event unchanged."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        goal = self.plugin.service.goal_start(
+            "Keep criteria revision in the authenticated request.",
+            (SuccessCriterion("old", "The original criterion is visible."),),
+        )
+        request = GoalCriteriaAmended(
+            goal_id=goal.goal_id,
+            expected_revision=1,
+            success_criteria=(
+                SuccessCriterion("new", "The amended criterion is visible."),
+            ),
+            reason="Owner clarified the acceptance condition.",
+            next_action="Verify the amended criterion.",
+            expected_lifecycle_revision=goal.lifecycle_revision,
+        )
+
+        result = api.goal_amend_criteria(self.caller, "project-a", request)
+
+        self.assertEqual(result.goal.goal_id, goal.goal_id)
+        self.assertEqual(result.goal.success_criteria, request.success_criteria)
+        self.assertEqual(result.goal.next_action, request.next_action)
+
     def test_invalid_utf8_request_does_not_retain_raw_source_in_exception(self) -> None:
         """The API boundary must not chain an encoder error containing input."""
 
@@ -390,22 +509,28 @@ class ApiFacadeTests(unittest.TestCase):
             )
 
         first = api.goal_children_page(
-            self.caller, "project-a", parent.goal_id, offset=0, limit=1
+            self.caller,
+            "project-a",
+            GoalChildrenPageRequest(parent.goal_id, offset=0, limit=1),
         )
         second = api.goal_children_page(
             self.caller,
             "project-a",
-            parent.goal_id,
-            offset=first.next_offset or 0,
-            limit=1,
+            GoalChildrenPageRequest(
+                parent.goal_id,
+                offset=first.next_offset or 0,
+                limit=1,
+            ),
         )
         planned = api.goal_children_page(
             self.caller,
             "project-a",
-            parent.goal_id,
-            offset=0,
-            limit=10,
-            statuses=(GoalStatus.PLANNED,),
+            GoalChildrenPageRequest(
+                parent.goal_id,
+                offset=0,
+                limit=10,
+                statuses=(GoalStatus.PLANNED,),
+            ),
         )
 
         self.assertEqual(first.total, 3)
@@ -416,7 +541,9 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertFalse(hasattr(first.goals[0], "facts"))
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.goal_children_page(
-                AuthenticatedCaller("other-user"), "project-a", parent.goal_id
+                AuthenticatedCaller("other-user"),
+                "project-a",
+                GoalChildrenPageRequest(parent.goal_id),
             )
 
     def test_canonical_goal_projection_requires_reviewer_scope(self) -> None:
@@ -1507,11 +1634,15 @@ class ApiFacadeTests(unittest.TestCase):
             api.fact_compaction_approve(
                 self.caller,
                 "project-a",
-                proposal.compaction_id,
-                goal.goal_id,
-                (fact.fact_id,),
-                proposal.source_sha256,
-                "Approval is required",
+                FactCompactionApprovalRequest(
+                    compaction_id=proposal.compaction_id,
+                    goal_id=goal.goal_id,
+                    project_id="untrusted-project-value",
+                    fact_ids=(fact.fact_id,),
+                    source_sha256=proposal.source_sha256,
+                    reviewer_id="spoofed-reviewer",
+                    approval_reason="Approval is required",
+                ),
             )
         self.authorizer.grants.add(
             ("hermes-user-1", "project-a", ProjectAction.REVIEW)
@@ -1519,11 +1650,15 @@ class ApiFacadeTests(unittest.TestCase):
         receipt = api.fact_compaction_approve(
             self.caller,
             "project-a",
-            proposal.compaction_id,
-            goal.goal_id,
-            (fact.fact_id,),
-            proposal.source_sha256,
-            "Approved the reviewed routine fact",
+            FactCompactionApprovalRequest(
+                compaction_id=proposal.compaction_id,
+                goal_id=goal.goal_id,
+                project_id="untrusted-project-value",
+                fact_ids=(fact.fact_id,),
+                source_sha256=proposal.source_sha256,
+                reviewer_id="spoofed-reviewer",
+                approval_reason="Approved the reviewed routine fact",
+            ),
         )
         self.assertEqual(receipt.reviewer_id, self.caller.subject_id)
         self.assertEqual(receipt.fact_ids, (fact.fact_id,))
@@ -1536,28 +1671,54 @@ class ApiFacadeTests(unittest.TestCase):
         api = AuthenticatedCuratorAPI(
             {"project-a": self.plugin}, self.authorizer
         )
-        secret = "github_pat_abcdefghijklmnopqrstuvwxyz123456"
-        payload = (
-            '{"schema_version":1,"event_id":"sensitive-event-1",'
-            '"project_id":"project-a","source_id":"api-test",'
-            '"source_sequence":1,"occurred_at":"2026-10-18T00:00:00Z",'
-            '"event_type":"goal.started","payload":{"goal_id":"sensitive-goal",'
-            f'"problem":"Example token {secret}",'
-            '"success_criteria":[{"criterion_id":"done",'
-            '"description":"The task is complete"}]}}'
+        secrets = (
+            (
+                "sensitive-event-1",
+                "sensitive-goal-1",
+                "Example token github_pat_abcdefghijklmnopqrstuvwxyz123456",
+                "provider_token",
+            ),
+            (
+                "sensitive-event-dns",
+                "sensitive-goal-dns",
+                "TXT value: " + "A" * 43,
+                "dns_challenge",
+            ),
         )
-        with self.assertRaises(SensitiveContentError) as caught:
-            api.process_event_json(self.caller, "project-a", payload)
-        self.assertNotIn(secret, str(caught.exception))
-        with self.assertRaises(NotFoundError):
-            self.store.event_receipt("project-a", "sensitive-event-1")
-        with self.assertRaises(NotFoundError):
-            self.store.get_goal("sensitive-goal", "project-a")
+        for event_id, goal_id, sensitive_text, category in secrets:
+            payload = (
+                '{"schema_version":1,"event_id":'
+                f'"{event_id}","project_id":"project-a",'
+                '"source_id":"api-test","source_sequence":1,'
+                '"occurred_at":"2026-10-18T00:00:00Z",'
+                '"event_type":"goal.started","payload":{"goal_id":'
+                f'"{goal_id}","problem":"{sensitive_text}",'
+                '"success_criteria":[{"criterion_id":"done",'
+                '"description":"The task is complete"}]}}'
+            )
+            with self.subTest(category=category):
+                with self.assertRaises(SensitiveContentError) as caught:
+                    api.process_event_json(self.caller, "project-a", payload)
+                self.assertEqual(caught.exception.category, category)
+                self.assertNotIn(sensitive_text, str(caught.exception))
+            with self.assertRaises(NotFoundError):
+                self.store.event_receipt("project-a", event_id)
+            with self.assertRaises(NotFoundError):
+                self.store.get_goal(goal_id, "project-a")
 
+        self._assert_sensitive_content_absent(api, tuple(row[2] for row in secrets))
+
+    def _assert_sensitive_content_absent(
+        self,
+        api: AuthenticatedCuratorAPI,
+        sensitive_texts: tuple[str, ...],
+    ) -> None:
+        """Verify rejected sensitive text is absent from API and storage sinks."""
         metrics = api.project_prometheus_metrics(self.caller, "project-a")
-        self.assertNotIn(secret, metrics)
+        for sensitive_text in sensitive_texts:
+            self.assertNotIn(sensitive_text, metrics)
 
-        secret_bytes = secret.encode("utf-8")
+        secret_bytes = tuple(text.encode("utf-8") for text in sensitive_texts)
         database_path = Path(self.store.database)
         for path in (
             database_path,
@@ -1565,13 +1726,18 @@ class ApiFacadeTests(unittest.TestCase):
             Path(f"{database_path}-shm"),
         ):
             if path.exists():
-                self.assertNotIn(secret_bytes, path.read_bytes(), str(path))
+                content = path.read_bytes()
+                for secret in secret_bytes:
+                    self.assertNotIn(secret, content, str(path))
         history = (self.root / "persistence" / "HISTORY.md").read_bytes()
-        self.assertNotIn(secret_bytes, history)
+        for secret in secret_bytes:
+            self.assertNotIn(secret, history)
 
         backup_path = self.root.parent / "sensitive-rejection-backup.sqlite3"
         backup_database(self.store.database, backup_path)
-        self.assertNotIn(secret_bytes, backup_path.read_bytes())
+        backup = backup_path.read_bytes()
+        for secret in secret_bytes:
+            self.assertNotIn(secret, backup)
 
     def test_event_project_mismatch_and_unknown_projects_are_denied(self) -> None:
         api = AuthenticatedCuratorAPI(
@@ -1635,12 +1801,14 @@ class ApiFacadeTests(unittest.TestCase):
             evidence=(evidence,),
         )
         candidate = plugin.service.sde_assess(
-            goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "A durable change has passing evidence",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "A durable change has passing evidence",
+                (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         assert candidate is not None
         authorizer = AllowProject(
@@ -1688,11 +1856,13 @@ class ApiFacadeTests(unittest.TestCase):
             api.sde_confirm(
                 self.caller,
                 "project-a",
-                candidate.candidate_id,
-                ReviewDecision.APPROVED,
-                displayed_packet.artifact_inventory.artifacts,
-                artifact_inventory_complete=True,
-                dependency_map_sha256=displayed_packet.dependency_map_sha256,
+                SDEConfirmationRequest(
+                    candidate_id=candidate.candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=displayed_packet.artifact_inventory.artifacts,
+                    artifact_inventory_complete=True,
+                    dependency_map_sha256=displayed_packet.dependency_map_sha256,
+                ),
             )
         self.assertTrue(staged.exists())
         unrelated_dir = stage_root / unrelated_goal.goal_id
@@ -1745,19 +1915,23 @@ class ApiFacadeTests(unittest.TestCase):
             api.sde_confirm(
                 self.caller,
                 "project-a",
-                candidate.candidate_id,
-                ReviewDecision.APPROVED,
-                (),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate.candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=(),
+                    artifact_inventory_complete=True,
+                ),
             )
 
         receipt = api.sde_confirm(
             self.caller,
             "project-a",
-            candidate.candidate_id,
-            ReviewDecision.APPROVED,
-            (),
-            artifact_inventory_complete=False,
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(),
+                artifact_inventory_complete=False,
+            ),
         )
         completion_packet = api.sde_review_packet(
             self.caller,
@@ -1784,10 +1958,12 @@ class ApiFacadeTests(unittest.TestCase):
         correction = api.sde_correction_record(
             self.caller,
             "project-a",
-            "api-correction-1",
-            candidate.candidate_id,
-            "Narrow the outcome claim",
-            "The evidence proves a passing test, not a production impact",
+            SDECorrectionRequest(
+                correction_id="api-correction-1",
+                candidate_id=candidate.candidate_id,
+                correction="Narrow the outcome claim",
+                rationale="The evidence proves a passing test, not a production impact",
+            ),
         )
         detail = api.sde_review_detail(
             self.caller, "project-a", candidate.candidate_id
@@ -1840,11 +2016,13 @@ class ApiFacadeTests(unittest.TestCase):
         api.authorize_artifact_cleanup(
             self.caller,
             "project-a",
-            receipt.receipt_id,
-            packet.review_artifacts,
-            cleanup_manifest,
-            packet.dependency_map_sha256,
-            "persistence/HISTORY.md",
+            ArtifactCleanupAuthorizationRequest(
+                receipt_id=receipt.receipt_id,
+                artifacts=packet.review_artifacts,
+                manifest_sha256=cleanup_manifest,
+                dependency_map_sha256=packet.dependency_map_sha256,
+                target="persistence/HISTORY.md",
+            ),
         )
         self.assertFalse(staged.exists())
         self.assertFalse(unmapped_staged.exists())
@@ -1857,18 +2035,22 @@ class ApiFacadeTests(unittest.TestCase):
         feedback = api.sde_quality_feedback_record(
             self.caller,
             "project-a",
-            "quality-feedback-1",
-            candidate.candidate_id,
-            SDEQualityFeedbackLabel.USEFUL,
-            "The proposed event captured the material implementation facts",
+            SDEQualityFeedbackRequest(
+                feedback_id="quality-feedback-1",
+                candidate_id=candidate.candidate_id,
+                label=SDEQualityFeedbackLabel.USEFUL,
+                rationale="The proposed event captured the material implementation facts",
+            ),
         )
         replayed_feedback = api.sde_quality_feedback_record(
             self.caller,
             "project-a",
-            "quality-feedback-1",
-            candidate.candidate_id,
-            SDEQualityFeedbackLabel.USEFUL,
-            "The proposed event captured the material implementation facts",
+            SDEQualityFeedbackRequest(
+                feedback_id="quality-feedback-1",
+                candidate_id=candidate.candidate_id,
+                label=SDEQualityFeedbackLabel.USEFUL,
+                rationale="The proposed event captured the material implementation facts",
+            ),
         )
         feedback_summary = api.sde_quality_feedback_summary(
             self.caller, "project-a"
@@ -1888,9 +2070,11 @@ class ApiFacadeTests(unittest.TestCase):
             api.sde_quality_feedback_record(
                 self.caller,
                 "project-a",
-                "quality-feedback-2",
-                candidate.candidate_id,
-                SDEQualityFeedbackLabel.NOT_USEFUL,
+                SDEQualityFeedbackRequest(
+                    feedback_id="quality-feedback-2",
+                    candidate_id=candidate.candidate_id,
+                    label=SDEQualityFeedbackLabel.NOT_USEFUL,
+                ),
             )
         usage = api.project_storage_usage(self.caller, "project-a")
         self.assertEqual(usage.sde_correction_count, 1)
@@ -1904,18 +2088,22 @@ class ApiFacadeTests(unittest.TestCase):
             api.sde_correction_record(
                 AuthenticatedCaller("other-user"),
                 "project-a",
-                "api-correction-denied",
-                candidate.candidate_id,
-                "Unapproved correction",
-                "The caller has no review grant",
+                SDECorrectionRequest(
+                    correction_id="api-correction-denied",
+                    candidate_id=candidate.candidate_id,
+                    correction="Unapproved correction",
+                    rationale="The caller has no review grant",
+                ),
             )
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.sde_quality_feedback_record(
                 AuthenticatedCaller("other-user"),
                 "project-a",
-                "quality-feedback-denied",
-                candidate.candidate_id,
-                SDEQualityFeedbackLabel.NOT_USEFUL,
+                SDEQualityFeedbackRequest(
+                    feedback_id="quality-feedback-denied",
+                    candidate_id=candidate.candidate_id,
+                    label=SDEQualityFeedbackLabel.NOT_USEFUL,
+                ),
             )
 
     def test_sde_assessment_requires_write_scope_and_verified_goal_facts(self) -> None:
@@ -1950,24 +2138,28 @@ class ApiFacadeTests(unittest.TestCase):
             read_api.sde_assess(
                 self.caller,
                 "project-a",
-                goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "A verified change should be reviewable",
-                (change.fact_id, verification.fact_id),
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "A verified change should be reviewable",
+                    (change.fact_id, verification.fact_id),
+                    "Observed in the bounded test scenario",
+                    "Useful for future maintenance review",
+                ),
             )
 
         api = AuthenticatedCuratorAPI({"project-a": plugin}, self.authorizer)
         candidate = api.sde_assess(
             self.caller,
             "project-a",
-            goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "A verified change should be reviewable",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "A verified change should be reviewable",
+                (change.fact_id, verification.fact_id),
+                "Observed in the bounded test scenario",
+                "Useful for future maintenance review",
+            ),
         )
         assert candidate is not None
         self.assertEqual(candidate.status.value, "pending_review")
@@ -2000,35 +2192,41 @@ class ApiFacadeTests(unittest.TestCase):
             api.sde_assess(
                 self.caller,
                 "project-a",
-                goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "Repeated support is invalid",
-                (verification.fact_id, verification.fact_id),
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "Repeated support is invalid",
+                    (verification.fact_id, verification.fact_id),
+                    "Observed in the bounded test scenario",
+                    "Useful for future maintenance review",
+                ),
             )
         with self.assertRaisesRegex(EvidenceGateError, "supporting fact limit"):
             api.sde_assess(
                 self.caller,
                 "project-a",
-                goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "Oversized support is invalid",
-                (verification.fact_id,) * 33,
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "Oversized support is invalid",
+                    (verification.fact_id,) * 33,
+                    "Observed in the bounded test scenario",
+                    "Useful for future maintenance review",
+                ),
             )
 
         self.assertIsNone(
             api.sde_assess(
                 self.caller,
                 "project-a",
-                goal.goal_id,
-                Materiality.ROUTINE,
-                "Ordinary progress is not an SDE",
-                (),
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    goal.goal_id,
+                    Materiality.ROUTINE,
+                    "Ordinary progress is not an SDE",
+                    (),
+                    "Observed in the bounded test scenario",
+                    "Useful for future maintenance review",
+                ),
             )
         )
 
@@ -2074,12 +2272,14 @@ class ApiFacadeTests(unittest.TestCase):
         candidate = api.sde_assess(
             self.caller,
             "project-a",
-            goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "A verified change should be reviewable",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "A verified change should be reviewable",
+                (change.fact_id, verification.fact_id),
+                "Observed in the bounded test scenario",
+                "Useful for future maintenance review",
+            ),
         )
         assert candidate is not None
         staged = plugin.stage_artifact(
@@ -2100,12 +2300,14 @@ class ApiFacadeTests(unittest.TestCase):
         receipt = api.sde_confirm(
             self.caller,
             "project-a",
-            candidate.candidate_id,
-            ReviewDecision.APPROVED,
-            (held,),
-            artifact_inventory_complete=True,
-            dependency_map_sha256=hold_review_packet.dependency_map_sha256,
-            rationale="Keep the legal hold visible to operations",
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(held,),
+                artifact_inventory_complete=True,
+                dependency_map_sha256=hold_review_packet.dependency_map_sha256,
+                rationale="Keep the legal hold visible to operations",
+            ),
         )
 
         self.assertEqual(receipt.purge_status.value, "purge_pending")

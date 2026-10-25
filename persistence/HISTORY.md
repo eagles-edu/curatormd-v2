@@ -1939,6 +1939,18 @@
 
 <!-- curatormd:record_id=648df7b420e628f2f16cd4ef204e0db5;content_sha256=648df7b420e628f2f16cd4ef204e0db5d61474d1faca48bf1780ea5b52345e99 -->
 
+## 2026-10-25 — Keep manual DNS credentials out of Curator records
+
+**Intent:** Record the owner’s data-handling boundary for the manual DNS renewal workflow.
+
+**Changed fact:** Curator V2 is a documentation system, not a security product. Manual-DNS source code, keys, passwords, challenge values, and raw command output must not be recorded verbatim. The current Vhost bridge builds its event from operation identifiers and bounded outcome metadata; it does not submit source code or command output.
+
+**Verification:** The Vhost filesystem trace contract passed and observed 671 file mutation/write-open calls (567 in the disposable test tree, 2 under `/var/tmp`, 14 device paths, and 88 relative or file-descriptor paths). This covered one renewal-restart test process only; it did not observe the standalone utility. The bridge field inspection confirms its current event shape, not a full source-to-sink audit.
+
+**Open gate:** Standalone-script scope, persistent-log disposition, and full workflow/artifact observations remain open. This record is a documentation boundary, not security certification.
+
+**Outcome:** The no-verbatim-secret rule and limits of current evidence are recorded without retaining any credential or challenge content.
+
 ## 2026-10-20 — Host Steward service-target growth metadata
 
 **Decision:** - 2026-10-20: Hermes Core Host Steward inventory snapshots now retain configured service-unit bindings and report positive allocated-byte growth for stable, complete configured targets; a changed binding suppresses attribution. The README and V2 plan state that this is operator-supplied metadata association, not proof a service caused writes. `scripts/run_tests.sh tests/plugins/test_host_steward_plugin.py` passed 20 tests and `python3 scripts/check` passed 12 checks locally. Actual service-owned growth, unconfigured paths, authenticated identity, live installation/runtime, and deployment remain open.
@@ -6496,3 +6508,912 @@ open; no corresponding plan item is checked off.
 
 **Outcome:** The installed package is now active for new processes launched
 through the shared Hermes gateway. Delivery progress remains 145/178.
+
+## 2026-10-24 — Invalidate purge approval when an artifact occurrence changes
+
+**Intent:** Prevent an approved SDE or expiry receipt from authorizing a retry
+after the reviewed file at a path has changed.
+
+**Changed fact:** `path_changed`, `hash_mismatch`, and `artifact_changed` purge
+failures now mark the affected target's approval stale for both SDE and expiry
+receipts and clear its retry deadline. Stale targets are excluded from due and
+manual retry selection; the replacement remains available for a fresh complete
+inventory and explicit review.
+
+**Verification:** The focused same-content replacement regressions pass for
+both SDE and expiry cleanup. The SDE cases verify stale approval survives a
+SQLite close/reopen after both a first-target replacement and a partial purge;
+the already purged first target remains complete. All 29 purge lifecycle tests
+pass. Strict Pyright, errors-only Pylint, Bandit, and `git diff --check` pass.
+
+**Open gate:** Exact replay and age preservation, copy/restore reconciliation,
+and migration interruption/rollback remain unverified. Existing migration
+tests cover pending, failed, held, purged, and expiry targets with missing
+occurrence IDs.
+The larger occurrence-binding plan item remains open. The active local alpha
+purge timer is enabled every six hours; its next trigger is 2026-10-25
+00:00:04 +07, and its last run preceded the cadence change.
+
+**Outcome:** Changed occurrence approvals fail closed without unlinking the
+replacement or granting a new deletion authorization.
+
+## 2026-10-24 — Preserve staging age on exact occurrence replay
+
+**Intent:** Ensure replaying the durable record for an already staged file
+cannot extend its retention window.
+
+**Changed fact:** `record_staging_artifact_time` recognizes the exact persisted
+occurrence and returns its original `staged_at` without resetting the age.
+
+**Verification:** A regression stages one artifact, replays the same
+`ArtifactRef` 48 hours later, verifies the original timestamp is retained,
+then confirms it reaches expiry eligibility at the existing 72-hour ceiling.
+The combined purge and project-plugin suites pass 83 tests.
+
+**Open gate:** Copy/restore reconciliation and migration interruption/rollback
+remain unverified, as do production recovery and deployment proofs. No plan
+checkbox changes.
+
+**Outcome:** Exact replay preserves retention age; replacement occurrences
+remain distinguishable from the approved occurrence.
+
+## 2026-10-24 — Verify rollback of legacy occurrence-approval migration
+
+**Intent:** Ensure a failed schema-v28 upgrade cannot leave partially added
+columns, stale flags, retry changes, or an advanced schema-version marker.
+
+**Changed fact:** The migration regression injects a failure while schema v28
+marks legacy targets stale. SQLite rolls back the DDL, target updates, and
+version stamp together; a subsequent retry upgrades successfully and leaves the
+legacy failed target visible but non-retriable.
+
+**Verification:** The focused rollback regression passes. It checks the old
+version, unchanged retry receipt, absent partial column, then successful
+upgrade and stale-target exclusion after removing the injected failure.
+
+**Open gate:** Abrupt process interruption, filesystem copy/restore
+reconciliation, and production recovery remain unverified. No plan checkbox
+changes.
+
+**Outcome:** The occurrence-approval schema migration is failure-atomic in the
+tested SQLite error path.
+
+## 2026-10-24 — Prevent a purged staging ID from starting a fresh age
+
+**Intent:** Keep producer retries and duplicate publication from resetting the
+72-hour clock after a prior artifact at the same scoped path has been purged.
+
+**Changed fact:** Staging publication now checks the retained
+`staging_artifact_occurrences` history when no current age row exists. Reuse of
+that project/goal/class artifact ID is rejected and the just-published file is
+rolled back; a new artifact must use a new ID. A new ID with identical bytes is
+still accepted as a distinct producer occurrence.
+
+**Verification:** The focused end-to-end test purges an expired source, rejects
+republishing it under the same ID without leaving a file, and accepts the same
+bytes under a new ID. The focused project-plugin suite and static/security
+checks are pending in this change.
+
+**Open gate:** Filesystem copy/restore that bypasses the producer is not age-
+eligible unless trusted age metadata matches; broader copy/restore provenance,
+abrupt migration interruption, and production recovery remain unverified.
+
+**Outcome:** Reusing a purged producer ID cannot obtain a fresh retention
+interval.
+
+## 2026-10-24 — Verify artifact-ID retry guard
+
+**Intent:** Confirm the fail-closed staging-ID rule in the full focused
+purge/plugin acceptance set.
+
+**Changed fact:** The retained occurrence-history check rejects reuse after
+successful purge, while a distinct ID remains publishable.
+
+**Verification:** The combined purge and project-plugin suites pass 85 tests.
+Strict Pyright reports 0 diagnostics; errors-only Pylint and Bandit pass, and
+`git diff --check` is clean. Bandit emits only existing `nosec` annotation
+warnings.
+
+**Open gate:** Copy/restore reconciliation for external file operations and
+abrupt migration interruption remain unverified. No checklist item is marked
+complete by this supporting regression.
+
+**Outcome:** The tested V2 staging and retry paths preserve age or fail closed;
+the full plan remains open.
+
+## 2026-10-24 — Reduce repository-wide Pylint findings
+
+**Intent:** Continue the open plan item to resolve non-blocking Pylint findings
+without changing lifecycle semantics.
+
+**Changed fact:** Moved the purge failure classification below module imports,
+replaced the suspended-event epoch lookup scalars with a typed request, and
+passed reactivation staging data as a typed summary. This removed five
+import-position and four argument-count findings.
+
+**Verification:** Twenty-three focused project-access and hosted lifecycle
+tests pass. Strict Pyright reports 0 diagnostics, errors-only Pylint passes,
+and `git diff --check` is clean. Fresh full Pylint reports 122 findings: 14
+convention and 108 refactor; it reported 126 in the previously recorded
+inventory.
+
+**Open gate:** Warning-level Pylint remains open. The findings are non-blocking
+module/class size, complexity, argument/local-count, and duplicate-code items.
+No plan checkbox changes.
+
+**Outcome:** The reactivation and replay data flows now use explicit typed
+inputs; the broad lint debt remains under active cleanup.
+
+## 2026-10-24 — Split consumer-binding transition responsibilities
+
+**Intent:** Reduce complexity in the lifecycle transition path while preserving
+its exact replay, drain, revocation, and re-enrollment checks.
+
+**Changed fact:** Request validation, idempotent replay lookup, live-state and
+re-enrollment validation, and transactional persistence are separate helpers.
+The main transition retains the same transaction boundary.
+
+**Verification:** Project-access and hosted-MCP lifecycle suites pass 37 tests.
+Strict Pyright reports 0 diagnostics, errors-only Pylint passes, and
+`git diff --check` is clean. Full Pylint reports 119 non-blocking findings
+(14 convention, 105 refactor), down from 122.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this change
+does not complete the lifecycle/release checklist.
+
+**Outcome:** The transition’s durable effects remain transactional with fewer
+branches and statements in its coordinator.
+
+## 2026-10-24 — Split terminal event disposition responsibilities
+
+**Intent:** Continue the open repository-wide Pylint cleanup while preserving
+the human-reviewed terminal event disposition contract.
+
+**Changed fact:** Store input now carries the actor, reviewed payload digest,
+binding fence, rationale, and event identity in one typed request. Validation,
+exact replay, fenced binding and event checks, source cursor ordering, and
+transactional disposition persistence are separate helpers.
+
+**Verification:** The exact ordered/replayable terminal-disposition regression
+passes. Strict Pyright reports 0 diagnostics, errors-only Pylint and
+`git diff --check` pass. Full warning-level Pylint remains non-clean at 9.94/10.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; the focused
+change does not complete a plan checkbox.
+
+**Outcome:** Terminal disposition coordination has fewer branches and locals
+with its event, cursor, receipt, and scrub updates retained in one transaction.
+
+## 2026-10-24 — Reduce reactivation packet complexity
+
+**Intent:** Continue the open repository-wide Pylint cleanup without changing
+the contents or snapshot boundary of an attended reactivation review.
+
+**Changed fact:** Ordered grant, cursor, event, unresolved-event, SDE purge,
+expiry-purge, and active-grant inventory calculations are now collected by
+focused helpers. They execute inside the same SQLite transaction used to build
+the packet, and the packet continues to bind the same counts and digests.
+
+**Verification:** The backlog/receipt-bound reactivation regression passes.
+Strict Pyright, errors-only Pylint, and `git diff --check` pass. Focused store
+Pylint no longer reports excess argument, branch, or local-count findings for
+the packet builder and inventory helpers.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this change
+does not complete that checklist item.
+
+**Outcome:** Reactivation review inventory retains its existing transaction and
+digest inputs with less coordinator complexity.
+
+## 2026-10-24 — Split lifecycle snapshot event aggregation
+
+**Intent:** Reduce the open store-complexity findings without weakening the
+single-snapshot lifecycle status contract.
+
+**Changed fact:** Event status counts, unresolved event digest, active-lease
+count, and fixed incomplete-reason checks now use focused helpers. The queries
+still execute through the same connection while the snapshot's read
+transaction is active.
+
+**Verification:** The terminal lifecycle regression passes and covers snapshots
+before and after terminal disposition. Strict Pyright, errors-only Pylint, and
+`git diff --check` pass. Focused store Pylint reports no complexity findings
+for the snapshot coordinator or its helpers.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this focused
+change closes no checklist item.
+
+**Outcome:** Snapshot fields and transaction scope are preserved with simpler
+event aggregation.
+
+## 2026-10-24 — Refactor attended consumer-drain authorization
+
+**Intent:** Reduce complexity in the fenced drain-authorization store path while
+preserving exact inventory and replay semantics.
+
+**Changed fact:** The store accepts a typed drain request; validation,
+transition-fence checks, exact prior-session replay, and inventory-row encoding
+are separate helpers. Both reviewed inventory and authorization use the same
+canonical row encoding. The transaction still covers fence validation, replay,
+inventory recheck, and capability/event persistence.
+
+**Verification:** Project-access and reference-plugin drain regressions pass.
+The project-access test now retries the exact authorization and verifies the
+original count and expiry are returned. Strict Pyright, errors-only Pylint, and
+`git diff --check` pass; focused Pylint reports no complexity findings for the
+authorization path.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this change
+closes no checklist item.
+
+**Outcome:** Drain retries stay bound to the same reviewed event inventory,
+profile, transition, and original expiration.
+
+## 2026-10-25 — Reduce API event-ingest complexity
+
+**Intent:** Continue repository-wide Pylint cleanup while preserving bounded
+event parsing, exact replay recovery, and drain authorization behavior.
+
+**Changed fact:** `process_event_json` delegates event decoding, suspended
+replay, replay rate limiting, and new-write/drain authorization to private
+helpers. The API still decodes before project lookup, processes the same two
+exact-replay paths before `replay_only` denial, and keeps the existing effect
+lock and project revision fence around event persistence.
+
+**Verification:** The API and hosted-MCP suites pass 55 tests, covering
+invalid-UTF-8 privacy, normal writes, replays, authorization, and drains. Strict
+Pyright, errors-only Pylint, `git diff --check`, and focused API Pylint pass;
+the parser and its helpers have no remaining complexity findings.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this change
+closes no checklist item.
+
+**Outcome:** Event ingestion has smaller decision helpers with its validation,
+authorization, rate limits, and effect fence preserved.
+
+## 2026-10-25 — Recheck local Vhost Hermes-managed alpha flow
+
+**Intent:** Respond to the owner's clarification that Vhost Manager is a local
+utility; use its disposable local integration harness without requiring a
+public domain or public request target.
+
+**Changed fact:** The Vhost-owned harness runs the installed Curator alpha
+launcher, actual Hermes managed-MCP hook path, temporary consumer config,
+database, repository, and Markdown projection.
+
+**Verification:** The harness exits 0 and reports five processed events,
+explicit goal binding, denial before goal activation, exact replay
+acknowledgment, retry after temporary delivery denial, lost-ack recovery after
+re-enrollment, source-epoch advancement, reconciled projection, unchanged
+out-of-scope target, absent private model/cwd markers, and denied reviewer-only
+`goal_persist`. All test state is temporary.
+
+The documented Vhost consumer contract suite also passes all seven tests
+against the installed alpha launcher. It covers configured goal-event mapping,
+bounded hook receipts, scoped Markdown persistence and review denial, profile-
+bound stdio MCP, project routing, two-consumer isolation, and durable receipt
+acknowledgment. Its databases and targets are disposable.
+
+**Open gate:** This is local disposable integration evidence, not an actual
+Vhost application request or canonical Vhost record. Real producer coverage,
+application workflow, and its expected canonical output remain unverified.
+
+**Outcome:** The local Hermes-to-Curator alpha path passes without exposing
+Vhost Manager publicly; the real application workflow remains open.
+
+## 2026-10-25 — Exercise the local Vhost application route in test mode
+
+**Intent:** Establish whether the Vhost application workflow can be exercised
+locally without a public domain, live site files, or production services.
+
+**Changed fact:** The actual Vhost Manager HTTP server binds to loopback in this
+test and uses `VHOST_MANAGER_TEST_MODE=1` with an isolated temporary fixture
+root. The `curator-smoke.test` site preview and exact-confirmation apply
+complete, create six files and an applied manifest operation in that fixture,
+and simulate service commands. The fixture is deleted after verification.
+
+**Verification:** The request flow passes through `/api/plan/site` and
+`/api/apply`. No public DNS/network target or live site data is used. The
+application route creates no Curator V2 receipt.
+
+**Open gate:** Vhost application-to-Curator source event production and
+canonical V2 persistence remain unimplemented/unverified; the real-consumer
+plan item stays open.
+
+**Outcome:** A local Vhost application request can be tested safely in test
+mode, but the current HTTP workflow does not yet flow into Curator V2.
+
+## 2026-10-25 — Carry fact-archive approval as a typed request
+
+**Intent:** Reduce repository-wide Pylint findings while preserving the
+authenticated reviewer and project bindings on fact-archive approval.
+
+**Changed fact:** The existing `FactCompactionApprovalRequest` now crosses the
+authenticated API, project plugin, and service boundary as one value. The API
+replaces its project and reviewer fields with the authorized project and
+authenticated caller subject; the service independently binds the store request
+to its configured project. The MCP tool's public JSON parameters are unchanged.
+
+**Verification:** The focused API, project-plugin, MCP, and fact-compaction
+suites pass 111 tests, including requests carrying forged project and reviewer
+values. Strict Pyright, errors-only Pylint, and `git diff --check` pass. A fresh
+whole-tree Pylint inventory falls from 112 to 106 findings (14 convention, 92
+refactor; no warning/error categories).
+
+**Open gate:** Repository-wide warning-level Pylint remains open; no plan
+checkbox or deployment gate is closed.
+
+**Outcome:** Archive approval retains authenticated scope with fewer repeated
+service-boundary fields and six fewer whole-tree Pylint findings.
+
+## 2026-10-25 — Group child-goal page inputs
+
+**Intent:** Continue whole-tree Pylint cleanup by making child-page filters one
+typed request across the authenticated API, plugin, and service.
+
+**Changed fact:** Added `GoalChildrenPageRequest` for the parent goal, offset,
+limit, and status filter. The MCP tool retains its existing public JSON
+parameters and creates this request after parsing statuses; query validation
+and project authorization remain in their existing layers.
+
+**Verification:** The API and MCP suites pass 47 tests. Strict Pyright,
+errors-only Pylint, and `git diff --check` pass. The fresh whole-tree Pylint
+inventory falls from 106 to 105 findings (14 convention, 91 refactor; no
+warning/error categories), and reports no child-page argument findings.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; no plan
+checkbox or deployment gate is closed.
+
+**Outcome:** Child-page inputs now cross the API boundary as one typed value
+without changing the MCP JSON contract.
+
+## 2026-10-25 — Pass the typed SDE assessment request through the API
+
+**Intent:** Reduce repeated assessment fields at the authenticated API and
+project-plugin boundaries while preserving project-scoped SDE evaluation.
+
+**Changed fact:** `AuthenticatedCuratorAPI.sde_assess` and
+`ProjectPlugin.sde_assess` now accept the existing `SDEAssessmentRequest`.
+The MCP tool keeps its named JSON fields and constructs the request after
+parsing materiality and fact IDs. Project authorization and the existing
+revision fence still surround the same assessment operation.
+
+**Verification:** The API, project-plugin, Markdown, and MCP suites pass 122
+tests. Strict Pyright, errors-only Pylint, and `git diff --check` pass. The
+fresh whole-tree Pylint inventory falls from 105 to 101 findings (14
+convention, 87 refactor; no warning/error categories).
+
+**Open gate:** The service convenience wrapper still has an argument-count
+finding; repository-wide warning-level Pylint remains open. No plan checkbox
+or deployment gate is closed.
+
+**Outcome:** SDE assessment fields now cross the authenticated plugin route as
+one typed request, with four fewer whole-tree Pylint findings.
+
+## 2026-10-25 — Use the typed SDE request in the service
+
+**Intent:** Complete the typed-request path for SDE assessment through the
+Curator V2 service while retaining its optimistic revision fence.
+
+**Changed fact:** `CuratorService.sde_assess` now accepts
+`SDEAssessmentRequest`; it captures the same expected effect revision and
+applies the same write fence before storing a candidate. Direct service tests
+now construct the typed request. The review-CLI replacement-artifact test uses
+a fresh artifact ID after the prior occurrence has been purged, matching the
+existing no-reuse retention rule.
+
+**Verification:** The API, fact-compaction, lifecycle, Markdown, MCP, migration,
+purge, and review-CLI suites pass 199 tests. Strict Pyright, errors-only
+Pylint, and `git diff --check` pass. A fresh whole-tree Pylint inventory falls
+from 101 to 98 findings (14 convention, 84 refactor; no warning/error
+categories); no `sde_assess` argument finding remains.
+
+**Open gate:** Repository-wide warning-level Pylint remains open; this change
+closes no checklist item or deployment gate.
+
+**Outcome:** SDE assessment now carries one typed request through API, plugin,
+and service without changing assessment or project-fence behavior.
+
+## 2026-10-25 — Verify the six-hour local purge timer
+
+**Intent:** Confirm the first scheduled maintenance execution after changing
+the approved Vhost alpha purge retry cadence to six hours.
+
+**Changed fact:** The `eaglesvn` user timer for `vhost-manager-alpha` is enabled
+and active on the configured 00:00, 06:00, 12:00, and 18:00 schedule with
+15-second spread. Journal records show successful scheduled runs at 00:00,
+06:00, and 12:00 on 2026-10-25. The latest service result is scoped to
+`vhost-manager-alpha` and reports zero pending or processed purge/expiry
+targets.
+
+**Verification:** `systemctl --user status` reports the timer active and its
+last oneshot service exited `0/SUCCESS`; the unit configuration shows the
+six-hour calendar. The journal contains the three successful post-change
+passes. No deletion was due during these passes.
+
+**Open gate:** Production routing/scheduling, external alert delivery, and
+restart/reconciliation drills remain open. The local pass does not verify a
+Vhost application workflow or a live artifact deletion.
+
+**Outcome:** The first scheduled run after the cadence change is verified for
+the approved local development timer; production gates remain separate.
+
+## 2026-10-25 — Refresh blocking quality checks
+
+**Intent:** Recheck the documented blocking quality gates against the current
+Curator V2 working tree.
+
+**Changed fact:** No source or application data changed during this refresh.
+
+**Verification:** `uv run --locked --group quality pyright` reports zero
+diagnostics; errors-only Pylint, Bandit, `uv lock --check`, and
+`git diff --check` pass. Bandit reports informational `nosec` and comment
+parser warnings while exiting successfully. No test suite was rerun because
+this check made no source change.
+
+**Open gate:** Repository-wide warning-level Pylint cleanup and the deployment,
+identity, production-retention, and live Vhost workflow gates remain open.
+
+**Outcome:** Blocking local quality checks are current for this dirty tree;
+this refresh closes no checklist item.
+
+## 2026-10-25 — Pass the goal criteria event through the service
+
+**Intent:** Reduce the service's criteria-amendment argument list while
+preserving the versioned lifecycle request.
+
+**Changed fact:** `CuratorService.goal_amend_criteria` now receives the existing
+validated `GoalCriteriaAmended` event. The project plugin and direct lifecycle
+regressions pass that event without rebuilding its fields. Event processing
+retains the previous default expected lifecycle revision of `1` when omitted.
+
+**Verification:** Lifecycle, property-fuzz, project-plugin, and MCP-server
+suites pass 117 tests. Full Pyright reports zero diagnostics; repository-wide
+errors-only Pylint and `git diff --check` pass. Whole-tree Pylint findings fall
+from 98 to 96 (14 convention, 82 refactor, no warning/error categories).
+
+**Open gate:** Repository-wide warning-level Pylint cleanup remains open; this
+change closes no checklist item.
+
+**Outcome:** The service consumes one validated lifecycle event shape and the
+whole-tree warning inventory decreases by two findings.
+
+## 2026-10-25 — Recheck local-alpha Hermes health
+
+**Intent:** Confirm current profile-bound Curator V2 health after the local
+six-hour maintenance timer change.
+
+**Changed fact:** The Hermes development checkout's `renew-ssl-coding` profile
+probe connects to the installed Curator V2 stdio package, discovers 48 tools,
+and reads 12 processed receipts, one goal, and two facts. `project_health`
+reports `healthy` with no gates. Scheduled timer passes at 00:00, 06:00, and
+12:00 exited successfully with no purge or expiry work due.
+
+**Verification:** Ran
+`./.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status`
+from the Hermes development checkout. The probe completed at 2026-10-25
+06:24 UTC using checkout version `0.22.2+2263`; the global installed CLI is
+`0.22.2+1558` and rejects the probe flag. `/usr/local/lib/hermes-agent` was not
+modified.
+
+**Open gate:** This verifies local profile health and the local timer only. It
+does not verify a request through the Vhost Manager application, a Curator
+receipt from that workflow, production alert delivery, or deployment health.
+
+**Outcome:** The single-user local-alpha health snapshot is current and
+healthy; live Vhost workflow and production gates remain open.
+
+## 2026-10-25 — Bind cleanup approval fields in one request
+
+**Intent:** Keep destructive cleanup approval's reviewed inventory and hashes
+together across the MCP, authenticated API, and project-plugin boundary.
+
+**Changed fact:** Added `ArtifactCleanupAuthorizationRequest` containing the
+receipt ID, exact artifact tuple, manifest digest, dependency-map digest, and
+projection target. The MCP tool keeps its existing named JSON fields and
+constructs the request before calling the authenticated API. API authorization
+still supplies the caller's identity; the project plugin revalidates the exact
+inventory and both digests before persisting approval and projecting it.
+
+**Verification:** Purge, API, project-plugin, and MCP-server suites pass 132
+tests. Changed files pass strict Pyright and errors-only Pylint; `git diff
+--check` is clean. Whole-tree Pylint findings fall from 96 to 93 (14
+convention, 79 refactor; no warning/error categories).
+
+**Open gate:** Repository-wide warning-level Pylint and the live Vhost
+application workflow remain open; this change closes no checklist item.
+
+**Outcome:** The exact inventory approval packet is carried as one typed
+request without changing the MCP JSON contract or the reviewer authorization
+boundary.
+
+## 2026-10-25 — Exercise Vhost apply and rollback receipt producers
+
+**Intent:** Continue the local Vhost consumer workflow without changing Curator
+V2 code to emulate consumer behavior.
+
+**Changed fact:** The Vhost-owned `/api/apply` and `/api/rollback` handlers now
+send compact planned-goal events through the configured Curator V2 stdio MCP
+and retain exact receipt/pending state in the Vhost operation manifest.
+
+**Verification:** A disposable integration drives the actual Vhost HTTP routes
+through apply, an unavailable-MCP retry, rollback, and event replay. Both exact
+project/event receipts and planned goals are present in the temporary SQLite
+store; generated file/database paths are absent from goal text. The root-run
+local Vhost service was restarted with the operator-owned profile settings and
+its read-only status probe reports active valid services.
+
+**Open gate:** No apply was run through the root service or against live site
+files. Canonical Markdown projection, owner-reviewed producer inventory,
+complete artifact inventory, user-facing real-request evidence, and rollback
+recovery remain open. No checklist marker changes from this disposable test.
+
+**Outcome:** Local Vhost apply/rollback receipt production is verified in
+disposable state; keep the real-consumer, release, and live-workflow gates open.
+
+## 2026-10-25 — Pass criteria amendment as one typed request
+
+**Intent:** Reduce the authenticated API boundary's argument list while
+preserving project write authorization and the versioned goal-amendment event.
+
+**Changed fact:** `AuthenticatedCuratorAPI.goal_amend_criteria` and
+`ProjectPlugin.goal_amend_criteria` now accept and forward the existing
+`GoalCriteriaAmended` request. The API still authorizes the exact caller and
+project for `write` before forwarding it.
+
+**Verification:** The focused API regression passes. Strict Pyright,
+errors-only Pylint, and `git diff --check` pass. A fresh repository-wide
+Pylint inventory falls from 93 findings (14 convention, 79 refactor) to 91
+(14 convention, 77 refactor), with both amendment argument-count findings
+removed.
+
+**Open gate:** Repository-wide warning-level Pylint remains open at 91
+findings. Curator V2 goal capture through MCP is also unavailable in this
+session: `goal_list` returned `unauthenticated`, so this update is recorded in
+the repository history only; no live ledger event is claimed.
+
+**Outcome:** The API and plugin carry one validated amendment request without
+changing the MCP event schema or the project authorization boundary.
+
+## 2026-10-25 — Carry SDE disposition as a typed review request
+
+**Intent:** Reduce repeated SDE confirmation arguments across the authenticated
+API and project plugin while keeping the reviewer identity host supplied.
+
+**Changed fact:** Added `SDEConfirmationRequest` for the candidate, decision,
+exact artifacts, inventory-completeness flag, dependency digest, and rationale.
+The API, project plugin, MCP registrar, and attended review CLI now pass this
+request; only the authenticated API supplies the reviewer subject.
+
+**Verification:** Nine focused API, plugin, Markdown projection, review CLI,
+and MCP regressions pass. Strict Pyright reports zero diagnostics; errors-only
+Pylint and `git diff --check` pass. The fresh whole-tree Pylint inventory falls
+from 91 to 90 findings (14 convention, 76 refactor).
+
+**Open gate:** Repository-wide warning-level Pylint remains open at 90
+findings. No checklist marker or deployment gate is closed.
+
+**Outcome:** SDE confirmation fields now cross the review boundary as one
+request, with the caller's authenticated subject kept outside that request.
+
+## 2026-10-25 — Type SDE correction and feedback requests
+
+**Intent:** Remove repeated correction and quality-feedback fields from the
+authenticated API call while preserving caller-derived reviewer identity.
+
+**Changed fact:** Added `SDECorrectionRequest` and
+`SDEQualityFeedbackRequest`. The MCP registrar maps its unchanged named JSON
+arguments into these types; the authenticated API forwards their values to the
+existing project-plugin methods and still supplies the reviewer subject.
+
+**Verification:** The review-authorization API regression and MCP SDE review
+end-to-end test pass. Strict Pyright reports zero diagnostics; errors-only
+Pylint and `git diff --check` pass. Whole-tree Pylint falls from 90 findings
+(14 convention, 76 refactor) to 86 (14 convention, 72 refactor); the MCP
+registration module is also below its 1,000-line limit again.
+
+**Open gate:** Repository-wide warning-level Pylint remains open at 86
+findings. The V2 MCP `goal_list` still returns `unauthenticated`; this delta is
+recorded in repository history only, with no live ledger event claimed. No
+checklist marker or deployment gate is closed.
+
+**Outcome:** Correction and feedback fields cross the authenticated API as
+typed requests without changing the MCP JSON contract or trust boundary.
+
+## 2026-10-25 — Type the accepted-subtask intake request
+
+**Intent:** Reduce the project plugin's child-goal intake arguments without
+deriving criteria or weakening the explicit parent relationship.
+
+**Changed fact:** Added `GoalSubtaskStartRequest` and changed
+`ProjectPlugin.goal_start_subtask` to accept it. Parent, problem, criteria,
+owner, dependencies, next action, and source event are forwarded unchanged to
+the existing planned-goal service path.
+
+**Verification:** The accepted-subtask regression passes, including its
+missing-criteria rejection. Strict Pyright reports zero diagnostics;
+errors-only Pylint and `git diff --check` pass. Whole-tree Pylint falls from
+86 to 85 findings (14 convention, 71 refactor), and the subtask intake method
+no longer has an argument-count finding.
+
+**Open gate:** Repository-wide warning-level Pylint remains open at 85
+findings. No checklist marker or deployment gate is closed.
+
+**Outcome:** Child-goal intake crosses the plugin boundary as one typed request
+while preserving explicit criteria and same-project parent validation.
+
+## 2026-10-25 — Carry SDE confirmation through the service as one request
+
+**Intent:** Finish the typed-request path for SDE disposition through the direct service boundary while keeping host-authenticated reviewer identity separate.
+
+**Changed fact:** `CuratorService.sde_confirm` now accepts `SDEConfirmationRequest`; `ProjectPlugin` forwards its validated request and supplies `authenticated_subject` separately. Direct service callers in purge, migration, MCP, and plugin tests now construct the same request type.
+
+**Verification:** The focused purge, migration, MCP-server, and project-plugin suites pass 131 tests. Strict Pyright reports zero diagnostics; errors-only Pylint and `git diff --check` pass. The full warning-level Pylint inventory reports 86 findings (14 convention, 72 refactor), up from 85 in the preceding inventory.
+
+**Open gate:** Warning-level Pylint cleanup remains open. The actual installed Vhost application route's Curator V2 receipt remains unverified; its producer bridge must be handled in the Vhost consumer repository. No checklist marker changed, and no live ledger event is claimed.
+
+**Outcome:** The SDE confirmation request now reaches the service boundary intact without moving reviewer identity into caller-controlled request data.
+
+## 2026-10-25 — Verify the installed Vhost apply and rollback receipt path
+
+**Intent:** Resolve whether the running local Vhost Manager HTTP routes emit durable Curator V2 receipts for completed application operations.
+
+**Changed fact:** The Vhost-owned apply and rollback routes were exercised through the active root service using a reserved disposable `.test` site. Both route responses and the Vhost operation manifest carried exact `received` receipts for `vhost-manager-alpha`; read-only queries of the installed global ledger confirmed the matching `goal.started` rows as `processed` with `applied` disposition. The Vhost rollback implementation now stops the exact site-owned process set and verifies removal of a newly created site account before marking rollback complete.
+
+**Verification:** Two apply/rollback exercises returned and persisted matching receipts. The focused disposable HTTP/MCP contract passes; the Vhost Node suite passes 22 tests, ESLint passes on the changed server files, Prettier passes, and `git diff --check` is clean. The running service reports active, valid Nginx/OpenLiteSpeed configuration. The smoke account and webroot were removed and the target is absent from Vhost inventory.
+
+**Open gate:** Gate F and Slice I remain open for reviewed canonical Markdown projection, full producer/source/artifact coverage, retention and disposition evidence, and release approval. Repository-wide warning-level Pylint remains open at 86 findings. No checklist marker changed; this records live local-alpha evidence, not production deployment.
+
+**Outcome:** The installed root-service Vhost apply/rollback receipt path is verified for one disposable local site workflow; broader consumer and release gates remain open.
+
+## 2026-10-25 — Extend the local Vhost renewal receipt path
+
+- **Intent:** Continue the local Vhost consumer integration and cover renewal
+  outcomes without modifying a real certificate.
+- **Changed fact:** The Vhost route now durably records completed, failed, and
+  interrupted interactive renewal outcomes and sends a path-free Curator V2
+  receipt; pending delivery is retryable from the operation history. The root
+  crontab also runs a separate `acme.sh --cron` producer four times daily, which
+  bypasses this route and has no Curator receipt.
+- **Verification:** The focused disposable HTTP/MCP contract covers all three
+  renewal outcomes, outage retry, exact receipts, and exclusion of paths and
+  terminal output. All 22 Vhost Node tests pass; JS lint/format, Python syntax,
+  and both repositories' diff checks pass. The root Vhost service restarted and
+  reports active with valid Nginx/OpenLiteSpeed configuration. No real renewal
+  or crontab change was performed.
+- **Open gate:** Scheduled ACME integration, failed apply/rollback receipts,
+  owner-reviewed source/artifact coverage, canonical projection, and Slice I
+  release evidence remain open. The current full Pylint inventory reports 86
+  non-blocking findings; its cleanup checklist remains open.
+- **Outcome:** The interactive local SSL producer is covered in disposable
+  integration; the independent scheduled producer and full pilot gates remain
+  unresolved.
+
+## 2026-10-25 — Close the local scheduled-renewal projection check
+
+- **Intent:** Verify one scheduled-producer result through the root Vhost
+  service, installed Curator alpha profile, canonical Markdown target, and
+  read-only reconciliation.
+- **Changed fact:** The root ACME crontab entry now invokes the installed
+  root-owned Vhost bridge at the existing four daily times. Its result route
+  records a compact planned goal keyed by the operation ID; a mode-0600 spool
+  retains results across Vhost outages and the next scheduled run drains it.
+- **Verification:** The focused disposable route test passed with fake ACME,
+  verified recovery of a queued result, exact retry receipts, processed ledger
+  events, and absence of transient output from goal text. A fake exit-19 run
+  through the installed bridge and active root service produced processed
+  event `vhost-ssl-cron-eeb1cddc-b8c3-4745-99b1-794217a07dbc`. The authorized
+  `eaglesvn` review grant projected that exact goal to the configured Vhost
+  `HISTORY.md`; reconciliation returned `synced` with matching SHA-256
+  `b8317444a8cf24b25122fb09eb38468b763d4670e11ea47094081c2d71d9f131`. The
+  target excludes the transient canary and database path. No real certificate
+  renewal occurred. `bash -n`, Python compilation, Node syntax checks, source
+  and installed bridge hashes, and both repositories' `git diff --check` pass.
+- **Open gate:** The smoke goal remains planned pending human disposition.
+  Canonical projection does not decide the operation, approve purge, establish
+  complete producer/artifact coverage, or close Slice I and release approval.
+- **Outcome:** The scheduled Vhost producer now has a tested outage-recoverable
+  local receipt and canonical projection path; full alpha acceptance remains
+  open.
+
+## 2026-10-25 — Reconcile canonical projections for Vhost apply/rollback
+
+- **Intent:** Complete the canonical Markdown check for the two local Vhost
+  site apply/rollback exercises that were previously verified only at the
+  receipt and SQLite layers.
+- **Changed fact:** The four exact apply/rollback goals were projected through
+  the installed Curator V2 alpha launcher to Vhost's configured canonical
+  `HISTORY.md`, using the authorized `eaglesvn` review grant. Preflight found
+  zero cleanup receipts for these goals.
+- **Verification:** All four `goal_reconcile` calls returned `synced` with
+  matching expected/actual hashes (`fe9828aa…916e069`, `54a1f7d8…44bc062`,
+  `126e4f11…66f775c`, `34c217c4…e2d6ab18`). Bounded document inspection found
+  five goal blocks total, including the earlier fake-ACME smoke goal, and no
+  temporary paths, global database path, or output canary. No application
+  source or live site state changed during projection.
+- **Open gate:** The operation goals remain planned. Human disposition, SDE
+  review and cleanup behavior, full source/artifact inventory, and release
+  approval remain open.
+- **Outcome:** Canonical projection and reconciliation now cover the exercised
+  local Vhost apply/rollback receipts; broader consumer acceptance remains
+  incomplete.
+
+## 2026-10-25 — Record failed Vhost rollback outcomes
+
+- **Intent:** Preserve and report a rollback attempt that fails before restoring
+  its disposable site's snapshot.
+- **Changed fact:** The Vhost rollback route now records a linked failed-attempt
+  entry and sends a compact rollback-failed goal through the existing Curator
+  receipt bridge. Retrying accepts that failed rollback entry by its exact
+  operation ID.
+- **Verification:** The focused disposable HTTP/MCP integration test corrupts
+  only a temporary snapshot manifest, invokes rollback, and confirms the exact
+  receipt is processed. The planned goal says rollback failed and contains no
+  temporary, fixture, database, or backup path. The test passed.
+- **Open gate:** This does not verify restoration from a damaged snapshot,
+  complete Vhost producer/artifact coverage, or reviewer disposition. Gate F
+  remains open.
+- **Outcome:** Failed rollback attempts now have a retryable, path-free Curator
+  receipt in the tested local consumer route.
+
+## 2026-10-25 — Remove manual ACME scratch output on exit
+
+- **Intent:** Stop the local manual-DNS utility from leaving temporary ACME
+  output, which can contain DNS challenge TXT values, after each run.
+- **Changed fact:** The Vhost consumer tracks ACME issue/renew output and served
+  certificate temp files, then removes them on process exit. The persistent
+  log keeps full output on the operator terminal and redacts recognized
+  `TXT value:` and `TXT:` lines; unobserved ACME output formats are unverified.
+- **Verification:** Disposable harnesses verified cleanup for normal and
+  nonzero exits and confirmed recognized challenge values remain visible on
+  operator output but are redacted and flushed in the saved log. `bash -n` and
+  `git diff --check` passed. No ACME command, DNS challenge, or certificate was
+  run.
+- **Open gate:** Persistent-log disposition, standalone utility scope, and
+  complete workflow filesystem observations remain open. The source matrix is
+  bound to the current dirty consumer source manifest recorded in the plan.
+- **Outcome:** The known scratch-file residue is fixed locally; the producer and
+  out-of-root artifact audit remains open.
+
+## 2026-10-25 — Redact ACME challenge values from saved logs
+
+- **Intent:** Preserve the operator's live DNS challenge instructions without
+  retaining recognized challenge tokens in the manual renewal log.
+- **Changed fact:** The manual DNS utility now copies unmodified output to the
+  operator stream and redacts recognized `TXT value:` and `TXT:` line contents
+  from its saved log. The producer source manifest was refreshed to
+  `0cce3a0fad9bac7767d0f9be6cdc8963a4caaab3c46148a8e610cc47d5afd091`.
+- **Verification:** A disposable harness confirmed both token formats stay
+  visible in operator output, are redacted in the saved log, and are flushed
+  before exit. `bash -n` and `git diff --check` passed.
+- **Open gate:** Other ACME output formats and real issuance remain unverified;
+  persistent-log inventory/deletion, standalone utility scope, and complete
+  workflow observation remain open.
+- **Outcome:** Known challenge values are excluded from this saved log path;
+  broader source-to-sink privacy acceptance remains incomplete.
+
+## 2026-10-25 — Recover Vhost renewal state after app restart
+
+- **Intent:** Preserve a truthful outcome if Vhost Manager stops while an SSL
+  renewal is running.
+- **Changed fact:** Vhost persists the operation as `running` before starting
+  the renewal. On app startup, any leftover running record becomes
+  `interrupted` and is submitted through the same Curator bridge; a missing
+  receipt remains retryable by exact operation ID.
+- **Verification:** A disposable HTTP/MCP contract seeded an unfinished
+  operation, confirmed startup recovery while Curator was unavailable, then
+  retried it after Curator returned and verified a processed receipt and
+  path-free planned goal. The focused test passed. The active systemd unit is
+  configured with `KillMode=control-group`; no real certificate was changed.
+- **Open gate:** An actual systemd stop during renewal, failed-apply receipt
+  handling, complete producer coverage, and owner-approved artifact disposition
+  remain open. Current working-tree source-manifest SHA-256:
+  `6b6d43ff52774e8120bf19baeaeb9ad878468de0f5f0a93381f603e1f89ae8d0`.
+- **Outcome:** Interrupted in-progress renewals now survive restart in local app
+  state and can be retried into the V2 ledger.
+
+## 2026-10-25 — Record Vhost apply failures in Curator V2
+
+- **Intent:** Preserve a failed Vhost apply outcome when its application code
+  durably records the failure after restoring fixture or site files.
+- **Changed fact:** Vhost now submits that failed operation to Curator and
+  allows exact-ID receipt retry. The compact goal summary identifies an apply
+  failure and excludes raw error text and generated paths.
+- **Verification:** The disposable HTTP/MCP integration injected a post-write
+  failure, verified snapshot restoration, simulated Curator unavailability,
+  retried the operation, and confirmed the processed path-free goal. The test
+  passed.
+- **Open gate:** This does not exercise rollback recovery failure, a live-site
+  apply failure, complete source/artifact coverage, or owner dispositions.
+  Current Vhost source-manifest SHA-256:
+  `7506ec8b84063b875f04e9524b9a03aca334ad4a1a32824a76a35c4b84cf6d40`.
+- **Outcome:** Durable local apply failures now have retryable Curator outcome
+  records when restoration succeeds.
+
+## 2026-10-25 — Exercise renewal restart from Vhost HTTP route
+
+- **Changed fact:** The renewal restart regression now begins through the actual
+  Vhost test-mode HTTP route, which writes a durable `running` operation, rather
+  than inserting an unfinished record directly into the fixture manifest.
+- **Verification:** The test terminates the first app process, starts a new one,
+  and confirms startup recovery to `interrupted`, a processed exact Curator
+  receipt, and a path-free goal. The focused test passed. It remains a
+  test-mode process restart; no ACME process, systemd restart, or certificate
+  change was involved.
+- **Open gate:** Real active-renewal systemd interruption and complete
+  producer/artifact evidence remain open. Current Vhost source-manifest SHA-256:
+  `76285c00b311000fd5a10282d14f3ab4c26a5965a7fdd7145b3367d78eb379c3`.
+- **Outcome:** Restart recovery coverage now exercises the app's own
+  `running`-record write before recovery.
+
+## 2026-10-25 — Recheck local project and binding lifecycle
+
+- **Intent:** Confirm the current local reference-store lifecycle behavior after the project-access and migration changes.
+- **Changed fact:** The local code covers suspension, binding deregistration/drain, re-enrollment with a fresh source epoch, review-bound reactivation, and irreversible retirement with durable receipts and conflict/retry handling.
+- **Verification:** `tests.test_project_access`, `tests.test_migrations`, `tests.test_lifecycle`, and `tests.test_review_cli` passed together: 114 tests on Python 3.14.7.
+- **Open gate:** This is local reference-store and attended-CLI evidence. It does not prove every transition through the real consumer, a human-approved transition receipt, remaining effect-boundary cases, or deployment/rollback acceptance.
+- **Outcome:** Current local lifecycle regressions pass; the deployment lifecycle gate remains open.
+
+## 2026-10-25 — Recheck the Hermes-bound local Vhost ledger
+
+- **Intent:** Verify the supported local profile-bound path after the direct Curator connector returned an authentication-context error.
+- **Changed fact:** The direct connector lacks Hermes-injected profile context and is denied. The configured `renew-ssl-coding` Hermes CLI path supplies that context and can read the bound `vhost-manager-alpha` ledger.
+- **Verification:** `./hermes -p renew-ssl-coding mcp test curator_v2 --probe-curator-status` connected, discovered 48 tools, and reported 17/17 receipts processed, zero received/failed/quarantined events, six goals, two facts, and `healthy` project health with no gates.
+- **Open gate:** This is a single-user local profile read, not human authentication or production readiness. The direct connector denial remains expected; no transport identity was inferred.
+- **Outcome:** The supported Hermes integration path is verified for the local alpha ledger.
+
+## 2026-10-25 — Recover exact processed receipt after project retirement
+
+- **Intent:** Let a Hermes source clear a durable outbox item when Curator committed it before retirement but the acknowledgement was lost.
+- **Changed fact:** The API now returns only the existing processed receipt when the trusted profile, tombstoned source epoch, current project/config fingerprints, event ID, sequence, and payload identity match. Retired projects reject every new or changed event.
+- **Verification:** A focused regression processes one event, deregisters and retires its project, recovers the same receipt, and confirms changed content, an unseen event, and a different profile are denied. The API and project-access suites pass 62 tests; targeted Pyright reports zero diagnostics and errors-only Pylint is clean.
+- **Open gate:** This verifies local API behavior. Managed-MCP post-retirement delivery, other in-flight effects, and deployment lifecycle evidence remain open.
+- **Outcome:** A lost acknowledgement for an already committed event can be reconciled without reopening retired writes.
+
+## 2026-10-25 — Verify retired-event receipt recovery through the MCP tool
+
+- **Intent:** Confirm Hermes can clear an outbox item whose processed receipt was committed before its project was retired.
+- **Changed fact:** The registered `hermes_codex_event` MCP tool returns the same receipt for an exact event from the tombstoned source epoch; an unseen event after retirement is rejected.
+- **Verification:** Extended the SDK in-memory MCP lifecycle regression to retire a disposable project after processing and re-enrolling a source, then replay the exact newest-epoch event. The focused test passed.
+- **Open gate:** This exercises the registered MCP tool in-process, not Hermes managed-gateway delivery, all in-flight effect boundaries, or deployment lifecycle and rollback.
+- **Outcome:** Local retired-source acknowledgement recovery is covered through both the API and registered MCP tool.
+
+## 2026-10-25 — Reject labeled manual DNS challenge values
+
+- **Intent:** Keep manual DNS challenge codes, passwords, and keys out of durable Curator text fields.
+- **Changed fact:** The V2 reject-only content gate recognizes `pwd=` assignments and labeled ACME TXT challenge values with a 32-character base64url-like payload; it does not redact or store them.
+- **Verification:** Added synthetic positive cases and a benign `_acme-challenge` record-name case. Five focused validator/API/MCP tests pass; both API and MCP regressions confirm the canaries are absent from errors, logs, metrics, ledger/WAL files, canonical history, staging, and backup. Targeted Pyright reports zero diagnostics. Changed content-safety/API files rate 9.96/10 under warning-level Pylint; the whole-tree warning backlog remains open. `git diff --check` passes.
+- **Open gate:** Unlabeled values, raw consumer output, other formats, and full producer/source-sink privacy coverage remain open. The detector is not general secret scanning.
+- **Outcome:** The explicitly labeled local manual-DNS formats are rejected before canonical goal/fact writes.
+
+## 2026-10-25 — Refresh the installed single-user V2 alpha package
+
+- **Intent:** Make the tested V2 source change available through the configured Vhost Hermes profile.
+- **Changed fact:** The current source wheel was installed only in the dedicated `renew-ssl-coding` V2 virtualenv after archiving the previous package and entrypoints.
+- **Verification:** Wheel SHA-256 `38a5d943be64971872ed69a15913ee78d16b81b91e2aa0f41b31968665117531`; rollback archive SHA-256 `6e4079ff5be37d43972e4b7a6bb4b29f5d0289b3745fd4055e1391b33de3e703` with 117 verified manifest entries. All 51 installed module hashes match source, `pip check` passes, the installed DNS-challenge canary is rejected, and Hermes connects to all 48 tools with 17 processed receipts and healthy local-alpha status.
+- **Open gate:** No Vhost application request was made during this refresh. This is single-user local profile evidence, not deployment, production identity, or release approval.
+- **Outcome:** The installed local V2 alpha now includes the tested DNS challenge/password rejection behavior.
+
+## 2026-10-25 — Recheck Hermes-managed integration against the refreshed alpha
+
+- **Intent:** Verify the current installed V2 profile package still composes with Hermes Core and the Vhost consumer hook.
+- **Changed fact:** The disposable integration harness ran against the refreshed `renew-ssl-coding` profile interpreter and installed Curator package.
+- **Verification:** The harness passed five lifecycle events, exact replay, failed-delivery retry, lost-ack recovery after re-enrollment, source-epoch advancement, explicit binding, projection reconciliation, privacy canaries, and reviewer-write denial. All test profile/database/repository state was temporary.
+- **Open gate:** This does not run the Vhost application route, persist a canonical Vhost operation record, or prove production gateway/deployment behavior. Producer coverage and release acceptance remain open.
+- **Outcome:** Current local Hermes-managed profile/plugin composition is verified against the installed alpha wheel.
+
+## 2026-10-25 — Reconcile the delivery checklist count
+
+- **Intent:** Resolve the conflicting progress totals in the plan and release-gate ledger.
+- **Changed fact:** The delivery checklist's declared counting rule includes direct checklist rows in Sections 0–10, 12, and Definition of done; it excludes reusable templates and example prompts in Section 11.
+- **Verification:** A direct row-prefix recount of those sections returns 145 complete and 33 open out of 178 delivery rows. The plan already records this total; the release-gate snapshot was stale at 160/216 and is now aligned to 145/178.
+- **Open gate:** No checklist item was closed by this count correction. Standalone-script producer coverage and the other evidence-gated plan items remain open.
+- **Outcome:** The plan and release-gate ledger now use the same denominator and counting rule.
+
+## 2026-10-25 — Close the local consumer request-to-status workflow
+
+- **Intent:** Close the real-consumer lifecycle checklist row after Vhost Manager began emitting installed Curator receipts for its local operations.
+- **Changed fact:** The checked row now describes the verified local request-to-status path; aggregate dashboard and all-state deployment checks remain separate open criteria.
+- **Verification:** The recorded root-service apply/rollback and scheduled-result runs have exact processed receipts and reconciled Vhost history records. A read-only ledger query reports the five operation goals as `planned`, matching their pending human disposition. The plan and release-gate snapshot now count 146/178 delivery rows complete and 32 open.
+- **Open gate:** Full consumer producer/artifact coverage, including standalone-script scope, remains open as requested. Production status/dashboard evidence also remains open.
+- **Outcome:** One local-alpha delivery row was checked off; no production or full producer-coverage claim was made.

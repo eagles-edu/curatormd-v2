@@ -21,6 +21,7 @@ from curatormd_v2 import (
     EvidenceRef,
     EvidenceVerificationContext,
     Fact,
+    FactArchiveReceipt,
     FactArchiveIntegrityError,
     FactCapacityError,
     FactKind,
@@ -29,6 +30,8 @@ from curatormd_v2 import (
     SuccessCriterion,
     SQLITE_SCHEMA_VERSION,
 )
+from curatormd_v2.store import FactCompactionApprovalRequest
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 # EvidenceVerifier test double intentionally implements only `attest`.
@@ -96,6 +99,28 @@ class FactCompactionTests(unittest.TestCase):
             "a" * 32,
         )
 
+    def approve(
+        self,
+        compaction_id: str,
+        fact_ids: tuple[str, ...],
+        source_sha256: str,
+        approval_reason: str,
+        reviewer_id: str = "reviewer-1",
+    ) -> FactArchiveReceipt:
+        """Submit one exact archive decision through the typed service input."""
+
+        return self.service.fact_compaction_approve(
+            FactCompactionApprovalRequest(
+                compaction_id=compaction_id,
+                goal_id=self.goal.goal_id,
+                project_id="untrusted-project-value",
+                fact_ids=fact_ids,
+                source_sha256=source_sha256,
+                reviewer_id=reviewer_id,
+                approval_reason=approval_reason,
+            )
+        )
+
     def archive_routine_fact(self) -> tuple[Fact, str]:
         """Create one reviewed routine fact and return its archive key."""
 
@@ -104,12 +129,10 @@ class FactCompactionTests(unittest.TestCase):
             "A routine archive fixture with a stable source hash for integrity checks.",
         )
         proposal = self.service.fact_compaction_propose(self.goal.goal_id)
-        receipt = self.service.fact_compaction_approve(
+        receipt = self.approve(
             proposal.compaction_id,
-            self.goal.goal_id,
             (routine.fact_id,),
             proposal.source_sha256,
-            "reviewer-1",
             "Approve archival",
         )
         return routine, receipt.compaction_id
@@ -163,12 +186,10 @@ class FactCompactionTests(unittest.TestCase):
         self.assertEqual(len(self.store.list_facts(self.goal.goal_id)), 4)
 
         usage_before_approval = self.store.project_storage_usage("archive-project")
-        receipt = self.service.fact_compaction_approve(
+        receipt = self.approve(
             proposal.compaction_id,
-            self.goal.goal_id,
             tuple(fact.fact_id for fact in proposal.facts),
             proposal.source_sha256,
-            "reviewer-1",
             "Approved routine research and advice archival",
         )
         self.assertEqual(receipt.reviewer_id, "reviewer-1")
@@ -226,12 +247,10 @@ class FactCompactionTests(unittest.TestCase):
         )
         self.assertGreater(usage.fact_archive_bytes_remaining, 0)
 
-        replay = self.service.fact_compaction_approve(
+        replay = self.approve(
             proposal.compaction_id,
-            self.goal.goal_id,
             tuple(fact.fact_id for fact in proposal.facts),
             proposal.source_sha256,
-            "reviewer-1",
             "Approved routine research and advice archival",
         )
         self.assertEqual(replay, receipt)
@@ -279,21 +298,17 @@ class FactCompactionTests(unittest.TestCase):
         proposal = self.service.fact_compaction_propose(self.goal.goal_id)
 
         with self.assertRaisesRegex(ConflictError, "source changed"):
-            self.service.fact_compaction_approve(
+            self.approve(
                 proposal.compaction_id,
-                self.goal.goal_id,
                 (routine.fact_id,),
                 "0" * 64,
-                "reviewer-1",
                 "Approve archival",
             )
         with self.assertRaisesRegex(ConflictError, "non-routine"):
-            self.service.fact_compaction_approve(
+            self.approve(
                 "compaction-nonroutine",
-                self.goal.goal_id,
                 (verification.fact_id,),
                 proposal.source_sha256,
-                "reviewer-1",
                 "Attempt to archive verification",
             )
         self.assertEqual(len(self.store.list_facts(self.goal.goal_id)), 2)
@@ -314,12 +329,14 @@ class FactCompactionTests(unittest.TestCase):
             criterion_id="done",
         )
         candidate = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "The change is material and has passing direct verification.",
-            (research.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The change is material and has passing direct verification.",
+                (research.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         self.assertIsNotNone(candidate)
         with self.assertRaisesRegex(ConflictError, "no eligible routine facts"):
@@ -335,12 +352,10 @@ class FactCompactionTests(unittest.TestCase):
             "and its immutable source hash detects any later modification.",
         )
         proposal = self.service.fact_compaction_propose(self.goal.goal_id)
-        receipt = self.service.fact_compaction_approve(
+        receipt = self.approve(
             proposal.compaction_id,
-            self.goal.goal_id,
             (routine.fact_id,),
             proposal.source_sha256,
-            "reviewer-1",
             "Approve archival",
         )
         with self.store.transaction() as connection:
@@ -403,12 +418,10 @@ class FactCompactionTests(unittest.TestCase):
             side_effect=RuntimeError("simulated failure before transaction commit"),
         ):
             with self.assertRaisesRegex(RuntimeError, "simulated failure"):
-                self.service.fact_compaction_approve(
+                self.approve(
                     proposal.compaction_id,
-                    self.goal.goal_id,
                     (routine.fact_id,),
                     proposal.source_sha256,
-                    "reviewer-1",
                     "Approve after reviewing the exact source bullet",
                 )
         self.assertEqual(self.store.get_fact(routine.fact_id), routine)
@@ -424,12 +437,10 @@ class FactCompactionTests(unittest.TestCase):
         proposal = self.service.fact_compaction_propose(self.goal.goal_id)
         with patch("curatormd_v2.store.MAX_FACT_ARCHIVE_BYTES_PER_PROJECT", 1):
             with self.assertRaises(FactCapacityError):
-                self.service.fact_compaction_approve(
+                self.approve(
                     proposal.compaction_id,
-                    self.goal.goal_id,
                     (routine.fact_id,),
                     proposal.source_sha256,
-                    "reviewer-1",
                     "Attempt archival without archive capacity",
                 )
         self.assertEqual(self.store.get_fact(routine.fact_id), routine)
@@ -455,12 +466,10 @@ class FactCompactionTests(unittest.TestCase):
             self.assertFalse(blocked_capacity.append_available)
 
             proposal = self.service.fact_compaction_propose(self.goal.goal_id)
-            self.service.fact_compaction_approve(
+            self.approve(
                 proposal.compaction_id,
-                self.goal.goal_id,
                 tuple(fact.fact_id for fact in proposal.facts),
                 proposal.source_sha256,
-                "reviewer-1",
                 "Recover the explicitly reached active-fact limit",
             )
             recovered_capacity = self.service.goal_status(self.goal.goal_id).fact_capacity

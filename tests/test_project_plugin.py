@@ -26,6 +26,7 @@ from project_fixtures import create_consumer_repo, write_consumer_config
 from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import (
+    ArtifactCleanupAuthorizationRequest,
     ArtifactRef,
     ChecklistGoalStartRequest,
     CuratorService,
@@ -35,10 +36,13 @@ from curatormd_v2 import (
     EvidenceRef,
     EvidenceVerificationContext,
     GoalStartOptions,
+    GoalSubtaskStartRequest,
     ProjectRegistrationRequest,
     ProjectStatusChangeRequest,
     SuccessCriterion,
 )
+from curatormd_v2.service import SDEAssessmentRequest
+from curatormd_v2.store import FactCompactionApprovalRequest
 from curatormd_v2.events import (
     EventEnvelope,
     FactRecorded,
@@ -49,6 +53,7 @@ from curatormd_v2.models import (
     FactKind,
     Materiality,
     ReviewDecision,
+    SDEConfirmationRequest,
     SDECandidate,
     SDEQualityFeedbackLabel,
     SDEStatus,
@@ -67,6 +72,7 @@ from curatormd_v2.store import (
     NotFoundError,
     ProjectRegistrationTransitionResult,
 )
+from curatormd_v2.store_requests import ConsumerDrainStoreRequest
 from curatormd_v2.testing import assert_goal_started_event_contract
 
 
@@ -288,10 +294,22 @@ class ProjectPluginTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
                 plugin.fact_compaction_approve(
-                    "compaction", goal_id, (), "0" * 64, "reviewer", "reason"
+                    FactCompactionApprovalRequest(
+                        compaction_id="compaction",
+                        goal_id=goal_id,
+                        project_id="untrusted-project-value",
+                        fact_ids=(),
+                        source_sha256="0" * 64,
+                        reviewer_id="reviewer",
+                        approval_reason="reason",
+                    )
                 )
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
-                plugin.sde_assess(goal_id, Materiality.ROUTINE, "reason", ())
+                plugin.sde_assess(
+                    SDEAssessmentRequest(
+                        goal_id, Materiality.ROUTINE, "reason", (), None, None
+                    )
+                )
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
                 plugin.sde_correction_record("correction", "candidate", "fix", "why")
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
@@ -300,16 +318,24 @@ class ProjectPluginTests(unittest.TestCase):
                 )
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
                 plugin.sde_confirm(
-                    "candidate",
-                    ReviewDecision.REJECTED,
-                    (),
-                    artifact_inventory_complete=False,
+                    SDEConfirmationRequest(
+                        "candidate",
+                        ReviewDecision.REJECTED,
+                        (),
+                        artifact_inventory_complete=False,
+                    ),
                 )
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
                 plugin.artifact_inventory_complete("receipt", (), "0" * 64)
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
                 plugin.authorize_artifact_cleanup(
-                    "receipt", (), "0" * 64, "0" * 64, "persistence/HISTORY.md"
+                    ArtifactCleanupAuthorizationRequest(
+                        receipt_id="receipt",
+                        artifacts=(),
+                        manifest_sha256="0" * 64,
+                        dependency_map_sha256="0" * 64,
+                        target="persistence/HISTORY.md",
+                    )
                 )
             with self.assertRaisesRegex(ConflictError, "lifecycle changed"):
                 plugin.release_artifact_hold("receipt", "goal/cue/file", "reason")
@@ -653,10 +679,12 @@ class ProjectPluginTests(unittest.TestCase):
             SuccessCriterion("child-test", "The isolated child test passes"),
         )
         child = plugin.goal_start_subtask(
-            parent.goal_id,
-            "Add the isolated regression test",
-            child_criteria,
-            owner="agent-1",
+            GoalSubtaskStartRequest(
+                parent_goal_id=parent.goal_id,
+                problem="Add the isolated regression test",
+                success_criteria=child_criteria,
+                owner="agent-1",
+            )
         )
 
         self.assertEqual(parent.success_criteria, parent_criteria)
@@ -670,7 +698,13 @@ class ProjectPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "at least one success criterion"):
             plugin.goal_start_from_request("Criteria must be explicit", ())
         with self.assertRaisesRegex(ValueError, "at least one success criterion"):
-            plugin.goal_start_subtask(parent.goal_id, "No implicit criteria", ())
+            plugin.goal_start_subtask(
+                GoalSubtaskStartRequest(
+                    parent_goal_id=parent.goal_id,
+                    problem="No implicit criteria",
+                    success_criteria=(),
+                )
+            )
 
     def test_checklist_event_intake_rejects_forged_snapshot_and_allows_exact_retry(self) -> None:
         """Bind event-based checklist starts to the configured current source."""
@@ -918,14 +952,16 @@ class ProjectPluginTests(unittest.TestCase):
         )
         self.assertEqual(count, 1)
         self.store.authorize_consumer_drain(
-            project_id=config.project_id,
-            transition_id=pending.receipt.transition_id,
-            actor_id="test-admin",
-            caller_subject="test-consumer",
-            caller_profile="test-profile",
-            expected_revision=pending.binding.revision,
-            expected_inventory_sha256=inventory_sha256,
-            lifetime_seconds=60,
+            ConsumerDrainStoreRequest(
+                project_id=config.project_id,
+                transition_id=pending.receipt.transition_id,
+                actor_id="test-admin",
+                caller_subject="test-consumer",
+                caller_profile="test-profile",
+                expected_revision=pending.binding.revision,
+                expected_inventory_sha256=inventory_sha256,
+                lifetime_seconds=60,
+            )
         )
 
         receipt = plugin.process_event(
@@ -1242,6 +1278,70 @@ class ProjectPluginTests(unittest.TestCase):
             ).hexdigest(),
         )
 
+    def test_replaying_exact_staging_occurrence_does_not_reset_retention_age(self) -> None:
+        """Re-recording one exact occurrence preserves its first staged time."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-replay-age-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        replayed_at = staged_at + timedelta(hours=48)
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "replayed-cue", io.BytesIO(b"same occurrence")
+            )
+
+        with patch("curatormd_v2.store.utc_now", return_value=replayed_at.isoformat()):
+            recorded_at = self.store.record_staging_artifact_time(
+                plugin.config.project_id, artifact
+            )
+
+        self.assertEqual(recorded_at, staged_at.isoformat())
+        at_expiry = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=72)
+        )
+        self.assertEqual(at_expiry.eligible_artifacts, (artifact,))
+
+    def test_reusing_purged_artifact_id_cannot_restart_retention_age(self) -> None:
+        """Require a new producer ID instead of resetting a purged path's age."""
+
+        config = self._register_project("Register the purged artifact replay fixture")
+        plugin = ProjectPlugin.bind(
+            config, self.store, review_authorizer=TestReviewAuthorizer()
+        )
+        goal_id = "purged-artifact-replay-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        payload = b"same source bytes"
+        with patch("curatormd_v2.store.utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "stable-source-id", io.BytesIO(payload)
+            )
+
+        expiry_at = staged_at + timedelta(hours=72)
+        snapshot = plugin.discover_expired_staging_artifacts(expiry_at)
+        manifest_sha256 = snapshot.manifest_sha256
+        if manifest_sha256 is None:
+            self.fail("complete expiry inventory must have a manifest hash")
+        receipt = plugin.approve_expired_staging_inventory(
+            snapshot.eligible_artifacts, manifest_sha256, now=expiry_at
+        )
+        self.assertEqual(receipt.status.value, "complete")
+        self.assertFalse(Path(artifact.path).exists())
+
+        with patch("curatormd_v2.store.utc_now", return_value=expiry_at.isoformat()):
+            with self.assertRaisesRegex(ConflictError, "use a new artifact ID"):
+                plugin.stage_artifact(
+                    goal_id, "cue", "stable-source-id", io.BytesIO(payload)
+                )
+
+        self.assertFalse(Path(artifact.path).exists())
+        fresh = plugin.stage_artifact(
+            goal_id, "cue", "new-source-id", io.BytesIO(payload)
+        )
+        self.assertTrue(Path(fresh.path).is_file())
+        self.assertNotEqual(fresh.occurrence_id, artifact.occurrence_id)
+
     def test_expiry_becomes_eligible_after_post_stage_facts_are_recorded(self) -> None:
         """Do not make reviewers wait 72 hours after facts are already recorded."""
 
@@ -1313,6 +1413,22 @@ class ProjectPluginTests(unittest.TestCase):
         self.assertEqual(retried.status.value, "purge_pending")
         self.assertEqual(retried.artifacts[0].device_id, approved.device_id)
         self.assertEqual(retried.artifacts[0].inode_id, approved.inode_id)
+        self.assertEqual(retried.approval_stale_artifacts, (retried.artifacts[0],))
+        self.assertEqual(
+            self.store.due_expiry_purge_receipts(config.project_id), ()
+        )
+
+        self.assertEqual(
+            self.store.expiry_purge_targets(receipt.receipt_id, config.project_id),
+            (),
+        )
+        retried_again = plugin.retry_expiry_purge(receipt.receipt_id)
+
+        self.assertEqual(
+            retried_again.approval_stale_artifacts, (retried_again.artifacts[0],)
+        )
+        self.assertTrue(original_path.exists())
+        self.assertEqual(original_path.read_bytes(), b"temporary source")
 
     def test_suspended_project_blocks_direct_expiry_purge_paths(self) -> None:
         """Direct expiry approval and retry cannot unlink after suspension."""
@@ -1455,10 +1571,12 @@ class ProjectPluginTests(unittest.TestCase):
         candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
         self.assertEqual(candidate.status, SDEStatus.PENDING_REVIEW)
         plugin.service.sde_confirm(
-            candidate.candidate_id,
-            ReviewDecision.APPROVED,
-            (),
-            artifact_inventory_complete=True,
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(),
+                artifact_inventory_complete=True,
+            )
         )
         reviewed_candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
         self.assertEqual(reviewed_candidate.status, SDEStatus.APPROVED)

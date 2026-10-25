@@ -23,6 +23,7 @@ from curatormd_v2 import (
 from curatormd_v2.events import (
     EventEnvelope,
     FactRecorded,
+    GoalCriteriaAmended,
     GoalFinishRequested,
     GoalStarted,
 )
@@ -414,17 +415,23 @@ class StagingUsagePropertyTests(unittest.TestCase):
                                 f"criterion-{expected_criteria_revision + 1}"
                             )
                             service.goal_amend_criteria(
-                                goal.goal_id,
-                                expected_criteria_revision,
-                                (
-                                    SuccessCriterion(
-                                        next_criterion_id,
-                                        f"Generated amended criterion {index}",
+                                GoalCriteriaAmended(
+                                    goal_id=goal.goal_id,
+                                    expected_revision=expected_criteria_revision,
+                                    success_criteria=(
+                                        SuccessCriterion(
+                                            next_criterion_id,
+                                            f"Generated amended criterion {index}",
+                                        ),
+                                    ),
+                                    reason=f"Generated amendment {index}",
+                                    next_action=(
+                                        f"Verify amended criterion {index}"
+                                    ),
+                                    expected_lifecycle_revision=(
+                                        expected_lifecycle_revision
                                     ),
                                 ),
-                                f"Generated amendment {index}",
-                                f"Verify amended criterion {index}",
-                                expected_lifecycle_revision,
                             )
                         elif action == "reopen":
                             service.goal_reopen(

@@ -22,6 +22,7 @@ from .events import (
     EventInboxReceipt,
     EventInboxStatus,
     EventQueueStatus,
+    GoalCriteriaAmended,
     GoalStarted,
 )
 from .markdown_persistence import (
@@ -31,6 +32,7 @@ from .markdown_persistence import (
     MarkdownReconciliationResult,
 )
 from .models import (
+    ArtifactCleanupAuthorizationRequest,
     MAX_ARTIFACTS_PER_RECEIPT,
     ArtifactRef,
     ArtifactStatus,
@@ -40,19 +42,20 @@ from .models import (
     ExpiryPurgeReceipt,
     FactArchiveReceipt,
     FactCompactionProposal,
+    GoalChildrenPageRequest,
     GoalCard,
     GoalListPage,
     GoalBulletProjection,
     GoalSnapshot,
+    GoalSubtaskStartRequest,
     GoalStatus,
     ProjectActivitySnapshot,
-    Materiality,
     ProjectStorageUsage,
     ProjectOperationalCounts,
     PurgeFailureCode,
     ReacquisitionAction,
-    ReviewDecision,
     SDECandidate,
+    SDEConfirmationRequest,
     SDECorrection,
     SDEQualityFeedback,
     SDEQualityFeedbackLabel,
@@ -82,7 +85,12 @@ from .project_config import ProjectConfig, ProjectConfigError
 from .purge import ArtifactPurger, PurgeError
 from .reporting import GoalReportPage
 from .reviews import ReviewAuthorizer
-from .service import CuratorService, PurgeTargetStatus, SDEAssessmentRequest
+from .service import (
+    CuratorService,
+    PurgeTargetStatus,
+    SDEAssessmentRequest,
+)
+from .store import FactCompactionApprovalRequest
 from .store import ConflictError, CuratorStore, NotFoundError
 from .store_requests import ProjectDrainEffectContext
 
@@ -611,14 +619,7 @@ class ProjectPlugin:
 
     def goal_start_subtask(
         self,
-        parent_goal_id: str,
-        problem: str,
-        success_criteria: tuple[SuccessCriterion, ...],
-        *,
-        owner: str | None = None,
-        next_action: str | None = None,
-        depends_on_goal_ids: tuple[str, ...] = (),
-        source_event_id: str | None = None,
+        request: GoalSubtaskStartRequest,
     ) -> GoalCard:
         """Start an explicitly accepted child task with its own criteria.
 
@@ -630,14 +631,14 @@ class ProjectPlugin:
 
         with self._active_project_revision_fence():
             return self.service.goal_start(
-                problem,
-                success_criteria,
-                owner=owner,
-                parent_goal_id=parent_goal_id,
-                depends_on_goal_ids=depends_on_goal_ids,
+                request.problem,
+                request.success_criteria,
+                owner=request.owner,
+                parent_goal_id=request.parent_goal_id,
+                depends_on_goal_ids=request.depends_on_goal_ids,
                 initial_status=GoalStatus.PLANNED,
-                next_action=next_action,
-                source_event_id=source_event_id,
+                next_action=request.next_action,
+                source_event_id=request.source_event_id,
             )
 
     def goal_start_from_checklist(
@@ -706,23 +707,13 @@ class ProjectPlugin:
 
     def fact_compaction_approve(
         self,
-        compaction_id: str,
-        goal_id: str,
-        fact_ids: tuple[str, ...],
-        source_sha256: str,
-        reviewer_id: str,
-        approval_reason: str,
+        approval: FactCompactionApprovalRequest,
     ) -> FactArchiveReceipt:
         """Apply a hash-matched archive only after host review authorization."""
 
         with self._active_project_revision_fence():
             return self.service.fact_compaction_approve(
-                compaction_id,
-                goal_id,
-                fact_ids,
-                source_sha256,
-                reviewer_id,
-                approval_reason,
+                replace(approval, project_id=self.config.project_id)
             )
 
     def fact_archive_receipts(
@@ -1103,6 +1094,10 @@ class ProjectPlugin:
         tree directly. The API deliberately accepts a binary stream and never
         returns artifact contents. It enforces hard technical ceilings; it does
         not implement an age-based retention policy or delete older artifacts.
+        Artifact IDs are immutable within a project/goal/class path: after a
+        prior occurrence has been observed, reusing its ID fails closed so a
+        replay cannot reset retention age. A genuinely new artifact needs a new
+        ID.
         """
 
         if not _STAGING_SCOPE_ID_RE.fullmatch(goal_id):
@@ -1445,20 +1440,11 @@ class ProjectPlugin:
 
     def goal_children_page(
         self,
-        parent_goal_id: str,
-        *,
-        offset: int = 0,
-        limit: int = 50,
-        statuses: tuple[GoalStatus, ...] = (),
+        request: GoalChildrenPageRequest,
     ) -> GoalListPage:
         """List compact, paginated child cards in this project's boundary."""
 
-        return self.service.goal_children_page(
-            parent_goal_id,
-            offset=offset,
-            limit=limit,
-            statuses=statuses,
-        )
+        return self.service.goal_children_page(request)
 
     def goal_reopen(self, goal_id: str, reason: str, next_action: str) -> GoalCard:
         """Reopen one completed goal within this project's scope."""
@@ -1468,18 +1454,12 @@ class ProjectPlugin:
 
     def goal_amend_criteria(
         self,
-        goal_id: str,
-        expected_revision: int,
-        success_criteria: tuple[SuccessCriterion, ...],
-        reason: str,
-        next_action: str,
+        request: GoalCriteriaAmended,
     ) -> GoalCard:
         """Amend criteria through this repository's project-bound service."""
 
         with self._active_project_revision_fence():
-            return self.service.goal_amend_criteria(
-                goal_id, expected_revision, success_criteria, reason, next_action
-            )
+            return self.service.goal_amend_criteria(request)
 
     def sde_review_queue(self, limit: int = 100) -> tuple[SDEReviewDetail, ...]:
         """List bounded pending SDE review packets in this project only."""
@@ -1488,19 +1468,11 @@ class ProjectPlugin:
 
     def sde_assess(
         self,
-        goal_id: str,
-        materiality: Materiality,
-        rationale: str,
-        fact_ids: tuple[str, ...],
-        impact: str | None = None,
-        retrieval_value: str | None = None,
+        request: SDEAssessmentRequest,
     ) -> SDECandidate | None:
         """Create a review proposal only from verified facts in this project."""
 
         expected_revision = self._capture_active_project_revision()
-        request = SDEAssessmentRequest(
-            goal_id, materiality, rationale, fact_ids, impact, retrieval_value
-        )
 
         def effect_fence():
             """Fence candidate insertion after the external evidence check."""
@@ -1596,13 +1568,8 @@ class ProjectPlugin:
 
     def sde_confirm(
         self,
-        candidate_id: str,
-        decision: ReviewDecision,
-        artifacts: tuple[ArtifactRef, ...],
+        request: SDEConfirmationRequest,
         *,
-        artifact_inventory_complete: bool,
-        dependency_map_sha256: str | None = None,
-        rationale: str | None = None,
         authenticated_subject: str | None = None,
     ) -> AuditReceipt:
         """Record disposition and exact cleanup authorization in one review action."""
@@ -1610,29 +1577,27 @@ class ProjectPlugin:
         with self._locked_staging_root() as root_fd:
             expected_revision = self._capture_active_project_revision()
             validated_dependency_map_sha256: str | None = None
-            if artifact_inventory_complete:
-                candidate = self.sde_review_detail(candidate_id).candidate
+            artifacts = request.artifacts
+            if request.artifact_inventory_complete:
+                candidate = self.sde_review_detail(request.candidate_id).candidate
                 artifacts = self._require_current_artifact_inventory(
-                    candidate.goal_id, artifacts, staging_root_fd=root_fd
+                    candidate.goal_id, request.artifacts, staging_root_fd=root_fd
                 )
-                if dependency_map_sha256 is None:
+                if request.dependency_map_sha256 is None:
                     raise ConflictError(
                         "cleanup review requires the displayed dependency map digest"
                     )
                 self._require_current_dependency_map(
-                    candidate.goal_id, artifacts, dependency_map_sha256
+                    candidate.goal_id, artifacts, request.dependency_map_sha256
                 )
-                validated_dependency_map_sha256 = dependency_map_sha256
+                validated_dependency_map_sha256 = request.dependency_map_sha256
+            validated_request = replace(request, artifacts=artifacts)
             with self._project_revision_fence(expected_revision):
                 receipt = self.service.sde_confirm(
-                    candidate_id,
-                    decision,
-                    artifacts,
-                    artifact_inventory_complete=artifact_inventory_complete,
-                    rationale=rationale,
+                    validated_request,
                     authenticated_subject=authenticated_subject,
                 )
-                if artifact_inventory_complete:
+                if validated_request.artifact_inventory_complete:
                     if validated_dependency_map_sha256 is None:
                         raise ConflictError(
                             "cleanup review did not retain its validated dependency map digest"
@@ -1679,11 +1644,7 @@ class ProjectPlugin:
 
     def authorize_artifact_cleanup(
         self,
-        receipt_id: str,
-        artifacts: tuple[ArtifactRef, ...],
-        manifest_sha256: str,
-        dependency_map_sha256: str,
-        target: str | Path,
+        request: ArtifactCleanupAuthorizationRequest,
         *,
         authenticated_subject: str | None = None,
     ) -> tuple[CleanupAuthorizationReceipt, AuditReceipt]:
@@ -1692,29 +1653,29 @@ class ProjectPlugin:
         with self._locked_staging_root() as root_fd:
             expected_revision = self._capture_active_project_revision()
             receipt = self.service.store.get_receipt(
-                receipt_id, self.config.project_id
+                request.receipt_id, self.config.project_id
             )
             candidate = self.sde_review_detail(receipt.candidate_id).candidate
             artifacts = self._require_current_artifact_inventory(
-                candidate.goal_id, artifacts, staging_root_fd=root_fd
+                candidate.goal_id, request.artifacts, staging_root_fd=root_fd
             )
             self._require_current_dependency_map(
-                candidate.goal_id, artifacts, dependency_map_sha256
+                candidate.goal_id, artifacts, request.dependency_map_sha256
             )
             current_manifest = _artifact_manifest_sha256(artifacts)
-            if current_manifest != manifest_sha256:
+            if current_manifest != request.manifest_sha256:
                 raise ConflictError("cleanup manifest changed before approval")
             with self._project_revision_fence(expected_revision):
                 authorization, _receipt = self.service.authorize_artifact_cleanup(
-                    receipt_id,
-                    manifest_sha256,
-                    dependency_map_sha256,
+                    request.receipt_id,
+                    request.manifest_sha256,
+                    request.dependency_map_sha256,
                     authenticated_subject=authenticated_subject,
                 )
-        self.persist_goal(candidate.goal_id, target)
-        receipt, _targets = self.service.artifact_purge_status(receipt_id)
+        self.persist_goal(candidate.goal_id, request.target)
+        receipt, _targets = self.service.artifact_purge_status(request.receipt_id)
         authorization = self.service.store.cleanup_authorization(
-            receipt_id, self.config.project_id
+            request.receipt_id, self.config.project_id
         )
         if authorization is None:
             raise RuntimeError("cleanup authorization receipt was not persisted")

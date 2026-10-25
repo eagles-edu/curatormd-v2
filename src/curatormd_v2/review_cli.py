@@ -20,7 +20,13 @@ from typing import TextIO
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .cli_interaction import confirm_exact_phrase
-from .models import ArtifactRef, ReacquisitionAction, ReviewDecision, SDEReviewPacket
+from .models import (
+    ArtifactRef,
+    ReacquisitionAction,
+    ReviewDecision,
+    SDEConfirmationRequest,
+    SDEReviewPacket,
+)
 from .project_access import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAuthorizationBinding,
@@ -384,12 +390,14 @@ def _review(
     receipt = api.sde_confirm(
         caller,
         config.project_id,
-        arguments.candidate_id,
-        decision,
-        selected_artifacts,
-        artifact_inventory_complete=True,
-        dependency_map_sha256=selected_packet.dependency_map_sha256,
-        rationale=rationale,
+        SDEConfirmationRequest(
+            candidate_id=arguments.candidate_id,
+            decision=decision,
+            artifacts=selected_artifacts,
+            artifact_inventory_complete=True,
+            dependency_map_sha256=selected_packet.dependency_map_sha256,
+            rationale=rationale,
+        ),
     )
     projection = api.persist_goal(
         caller,

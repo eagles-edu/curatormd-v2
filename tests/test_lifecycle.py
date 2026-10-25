@@ -36,8 +36,14 @@ from curatormd_v2 import (
     SuccessCriterion,
     GoalTransitionRequest,
 )
-from curatormd_v2.events import EventEnvelope, FactRecorded, GoalStarted
+from curatormd_v2.events import (
+    EventEnvelope,
+    FactRecorded,
+    GoalCriteriaAmended,
+    GoalStarted,
+)
 from curatormd_v2.reporting import GoalReportPage
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 # EvidenceVerifier test double intentionally implements only `attest`.
@@ -149,12 +155,16 @@ class CuratorLifecycleTests(unittest.TestCase):
             )
         elif action == "amend":
             result = self.service.goal_amend_criteria(
-                goal.goal_id,
-                1,
-                (SuccessCriterion("revised", "Revised criterion passes"),),
-                "Matrix amendment",
-                "Verify revised criterion",
-                goal.lifecycle_revision,
+                GoalCriteriaAmended(
+                    goal_id=goal.goal_id,
+                    expected_revision=1,
+                    success_criteria=(
+                        SuccessCriterion("revised", "Revised criterion passes"),
+                    ),
+                    reason="Matrix amendment",
+                    next_action="Verify revised criterion",
+                    expected_lifecycle_revision=goal.lifecycle_revision,
+                )
             )
         elif action == "cancel":
             result = self.service.goal_cancel(goal.goal_id, "Matrix cancellation")
@@ -686,12 +696,16 @@ class CuratorLifecycleTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ConflictError, "lifecycle revision changed"):
             self.service.goal_amend_criteria(
-                self.goal.goal_id,
-                1,
-                (SuccessCriterion("updated", "Updated criterion passes"),),
-                "Clarify scope",
-                "Run updated test",
-                expected_lifecycle_revision=1,
+                GoalCriteriaAmended(
+                    goal_id=self.goal.goal_id,
+                    expected_revision=1,
+                    success_criteria=(
+                        SuccessCriterion("updated", "Updated criterion passes"),
+                    ),
+                    reason="Clarify scope",
+                    next_action="Run updated test",
+                    expected_lifecycle_revision=1,
+                )
             )
         self.assertEqual(self.store.get_goal(self.goal.goal_id).criteria_revision, 1)
         self.assertEqual(self.store.get_goal(self.goal.goal_id).lifecycle_revision, 2)
@@ -1505,11 +1519,13 @@ class CuratorLifecycleTests(unittest.TestCase):
         )
 
         amended = self.service.goal_amend_criteria(
-            self.goal.goal_id,
-            expected_revision=1,
-            success_criteria=amended_criteria,
-            reason="The owner added an explicit release smoke criterion",
-            next_action="Run all three updated checks",
+            GoalCriteriaAmended(
+                goal_id=self.goal.goal_id,
+                expected_revision=1,
+                success_criteria=amended_criteria,
+                reason="The owner added an explicit release smoke criterion",
+                next_action="Run all three updated checks",
+            )
         )
 
         snapshot = self.service.goal_status(self.goal.goal_id)
@@ -1534,11 +1550,13 @@ class CuratorLifecycleTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ConflictError, "revision changed"):
             self.service.goal_amend_criteria(
-                self.goal.goal_id,
-                expected_revision=1,
-                success_criteria=amended_criteria,
-                reason="Stale concurrent edit",
-                next_action="Reload the goal first",
+                GoalCriteriaAmended(
+                    goal_id=self.goal.goal_id,
+                    expected_revision=1,
+                    success_criteria=amended_criteria,
+                    reason="Stale concurrent edit",
+                    next_action="Reload the goal first",
+                )
             )
 
         self.assertEqual(
@@ -1724,12 +1742,14 @@ class CuratorLifecycleTests(unittest.TestCase):
     def test_routine_progress_does_not_create_sde(self) -> None:
         self.verify("unit", "unit test suite passed")
         candidate = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.ROUTINE,
-            "Routine progress update",
-            tuple(f.fact_id for f in self.store.list_facts(self.goal.goal_id)),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.ROUTINE,
+                "Routine progress update",
+                tuple(f.fact_id for f in self.store.list_facts(self.goal.goal_id)),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         self.assertIsNone(candidate)
         self.assertEqual(self.store.list_sde_candidates(self.goal.goal_id), ())
@@ -1740,12 +1760,14 @@ class CuratorLifecycleTests(unittest.TestCase):
         )
         with self.assertRaises(EvidenceGateError):
             self.service.sde_assess(
-                self.goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "Durable change",
-                (change.fact_id,),
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "Durable change",
+                    (change.fact_id,),
+                    impact="Observed in the bounded test scenario",
+                    retrieval_value="Useful for future maintenance review",
+                )
             )
 
     def test_sde_rationale_is_a_compact_line_linked_to_verified_bullets(self) -> None:
@@ -1755,20 +1777,24 @@ class CuratorLifecycleTests(unittest.TestCase):
         verification = self.verify("unit", "Unit test passed")
         with self.assertRaisesRegex(ValueError, "single compact line"):
             self.service.sde_assess(
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "First paragraph.\nSecond paragraph.",
+                    (change.fact_id, verification.fact_id),
+                    impact="Observed in the bounded test scenario",
+                    retrieval_value="Useful for future maintenance review",
+                )
+            )
+        candidate = self.service.sde_assess(
+            SDEAssessmentRequest(
                 self.goal.goal_id,
                 Materiality.IMPLEMENTATION,
-                "First paragraph.\nSecond paragraph.",
+                "The durable health check is supported by a passing test",
                 (change.fact_id, verification.fact_id),
                 impact="Observed in the bounded test scenario",
                 retrieval_value="Useful for future maintenance review",
             )
-        candidate = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "The durable health check is supported by a passing test",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
         )
         self.assertIsNotNone(candidate)
         assert candidate is not None
@@ -1787,20 +1813,24 @@ class CuratorLifecycleTests(unittest.TestCase):
         verification = self.verify("unit", "unit tests passed")
         selected = (change.fact_id, verification.fact_id)
         first = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "Durable and tested implementation",
-            selected,
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "Durable and tested implementation",
+                selected,
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         repeated = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "Durable and tested implementation",
-            selected,
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "Durable and tested implementation",
+                selected,
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         self.assertIsNotNone(first)
         self.assertIsNotNone(repeated)
@@ -1815,21 +1845,25 @@ class CuratorLifecycleTests(unittest.TestCase):
         verification = self.verify("unit", "Readiness regression passed")
         selected = (change.fact_id, verification.fact_id)
         self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "The readiness check is durable and verified",
-            selected,
-            impact="Observed behavior is covered by a passing test",
-            retrieval_value="Helps maintainers trace the readiness contract",
-        )
-        with self.assertRaisesRegex(ConflictError, "changed its proposal context"):
-            self.service.sde_assess(
+            SDEAssessmentRequest(
                 self.goal.goal_id,
                 Materiality.IMPLEMENTATION,
                 "The readiness check is durable and verified",
                 selected,
-                impact="Expected production impact is unmeasured",
+                impact="Observed behavior is covered by a passing test",
                 retrieval_value="Helps maintainers trace the readiness contract",
+            )
+        )
+        with self.assertRaisesRegex(ConflictError, "changed its proposal context"):
+            self.service.sde_assess(
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "The readiness check is durable and verified",
+                    selected,
+                    impact="Expected production impact is unmeasured",
+                    retrieval_value="Helps maintainers trace the readiness contract",
+                )
             )
 
     def test_sde_assessment_requires_compact_impact_and_retrieval_value(self) -> None:
@@ -1839,12 +1873,14 @@ class CuratorLifecycleTests(unittest.TestCase):
         verification = self.verify("unit", "Readiness regression passed")
         with self.assertRaisesRegex(ValueError, "SDE impact must contain"):
             self.service.sde_assess(
-                self.goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "The readiness change is durable",
-                (change.fact_id, verification.fact_id),
-                impact=" ",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "The readiness change is durable",
+                    (change.fact_id, verification.fact_id),
+                    impact=" ",
+                    retrieval_value="Useful for future maintenance review",
+                )
             )
 
     def test_review_queue_detail_is_bounded_and_project_scoped(self) -> None:
@@ -1855,12 +1891,14 @@ class CuratorLifecycleTests(unittest.TestCase):
         )
         verification = self.verify("unit", "unit tests passed")
         candidate = self.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "The implementation is durable and directly verified",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The implementation is durable and directly verified",
+                (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         assert candidate is not None
 
@@ -1885,12 +1923,14 @@ class CuratorLifecycleTests(unittest.TestCase):
             evidence=(self.proof("other-project-check"),),
         )
         other_candidate = other_service.sde_assess(
-            other_goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "Other project change has direct evidence",
-            (other_change.fact_id, other_verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                other_goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "Other project change has direct evidence",
+                (other_change.fact_id, other_verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         assert other_candidate is not None
 

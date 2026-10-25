@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Any, TypedDict, Unpack
+from typing import Any
 import unittest
 from unittest.mock import patch
 
@@ -30,6 +30,7 @@ from curatormd_v2.models import (
     Materiality,
     ReacquisitionAction,
     ReviewDecision,
+    SDEConfirmationRequest,
     SuccessCriterion,
 )
 from curatormd_v2.project_config import ProjectConfig
@@ -40,6 +41,7 @@ from curatormd_v2.review_cli import (
 )
 from curatormd_v2.reviews import ReviewAuthorizationError
 from curatormd_v2.store import CuratorStore
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 class _PurgeStatus(StrEnum):
@@ -95,12 +97,6 @@ class _Packet:
     detail: _Detail
     artifact_inventory: _Inventory
     dependency_map_sha256: str = "d" * 64
-
-
-class _SDEConfirmOptions(TypedDict):
-    artifact_inventory_complete: bool
-    rationale: str
-    dependency_map_sha256: str
 
 
 class _InteractiveInput(StringIO):
@@ -261,10 +257,7 @@ class _ReviewAPI:
         self,
         caller: AuthenticatedCaller,
         project_id: str,
-        candidate_id: str,
-        decision: ReviewDecision,
-        artifacts: tuple[_Artifact, ...],
-        **options: Unpack[_SDEConfirmOptions],
+        request: SDEConfirmationRequest,
     ) -> _Receipt:
         """Record the exact decision request and return its fixture receipt."""
         self.calls.append(
@@ -273,12 +266,12 @@ class _ReviewAPI:
                 (
                     caller.subject_id,
                     project_id,
-                    candidate_id,
-                    decision,
-                    artifacts,
-                    options["artifact_inventory_complete"],
-                    options["rationale"],
-                    options["dependency_map_sha256"],
+                    request.candidate_id,
+                    request.decision,
+                    request.artifacts,
+                    request.artifact_inventory_complete,
+                    request.rationale,
+                    request.dependency_map_sha256,
                 ),
             )
         )
@@ -436,12 +429,14 @@ class ReviewCliTests(unittest.TestCase):
             evidence=(evidence,),
         )
         candidate = plugin.service.sde_assess(
-            goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "A verified local implementation change",
-            (change.fact_id, verified.fact_id),
-            impact="Observed in the disposable fixture",
-            retrieval_value="Useful when reviewing this local change",
+            SDEAssessmentRequest(
+                goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "A verified local implementation change",
+                (change.fact_id, verified.fact_id),
+                impact="Observed in the disposable fixture",
+                retrieval_value="Useful when reviewing this local change",
+            )
         )
         if candidate is None:
             raise AssertionError("verified implementation was not assessed as an SDE")
@@ -689,7 +684,7 @@ class ReviewCliTests(unittest.TestCase):
             replacement = reopened_plugin.stage_artifact(
                 prepared.goal_id,
                 "import",
-                "transient-canary",
+                "transient-canary-replacement",
                 io.BytesIO(b"replacement transient bytes"),
             )
             replacement_age = reopened_plugin.discover_expired_staging_artifacts(
@@ -697,7 +692,7 @@ class ReviewCliTests(unittest.TestCase):
             )
             self.assertTrue(replacement_age.inventory_complete)
             self.assertEqual(replacement_age.eligible_artifacts, ())
-            self.assertEqual(replacement.path, prepared.staged_artifact.path)
+            self.assertNotEqual(replacement.path, prepared.staged_artifact.path)
             reopened.close()
             history = (root / "persistence" / "HISTORY.md").read_text()
             self.assertIn("Implemented the bounded change", history)

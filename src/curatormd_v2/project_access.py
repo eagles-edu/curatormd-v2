@@ -16,6 +16,10 @@ from .api import AuthenticatedCaller, ProjectAction
 from .events import EventInboxReceipt
 from .project_config import ProjectConfig
 from .models import StagingArtifactInventory
+from .store_requests import (
+    ConsumerDrainStoreRequest,
+    TerminalEventDispositionStoreRequest,
+)
 from .store import (
     CuratorStore,
     ProjectGrantRecord,
@@ -404,14 +408,16 @@ class ProjectAccessManager:
             caller, request.project_id, ProjectAdministrationAction.DRAIN
         )
         return self._store.authorize_consumer_drain(
-            project_id=request.project_id,
-            transition_id=request.transition_id,
-            actor_id=caller.subject_id,
-            caller_subject=caller.subject_id,
-            caller_profile=request.consumer_profile,
-            expected_revision=request.expected_revision,
-            expected_inventory_sha256=request.expected_inventory_sha256,
-            lifetime_seconds=request.lifetime_seconds,
+            ConsumerDrainStoreRequest(
+                project_id=request.project_id,
+                transition_id=request.transition_id,
+                actor_id=caller.subject_id,
+                caller_subject=caller.subject_id,
+                caller_profile=request.consumer_profile,
+                expected_revision=request.expected_revision,
+                expected_inventory_sha256=request.expected_inventory_sha256,
+                lifetime_seconds=request.lifetime_seconds,
+            )
         )
 
     def consumer_drain_inventory(
@@ -465,14 +471,16 @@ class ProjectAccessManager:
             caller, request.project_id, ProjectAdministrationAction.DISPOSE_EVENT
         )
         return self._store.terminally_dispose_event(
-            project_id=request.project_id,
-            event_id=request.event_id,
-            transition_id=request.transition_id,
-            actor_id=caller.subject_id,
-            rationale=request.rationale,
-            expected_binding_revision=request.expected_binding_revision,
-            expected_source_epoch=request.expected_source_epoch,
-            expected_payload_sha256=request.expected_payload_sha256,
+            TerminalEventDispositionStoreRequest(
+                project_id=request.project_id,
+                event_id=request.event_id,
+                transition_id=request.transition_id,
+                actor_id=caller.subject_id,
+                rationale=request.rationale,
+                expected_binding_revision=request.expected_binding_revision,
+                expected_source_epoch=request.expected_source_epoch,
+                expected_payload_sha256=request.expected_payload_sha256,
+            )
         )
 
     def get_project_retirement(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from .events import EventEnvelope
 from .models import Fact, GoalStatus, SuccessCriterion
@@ -15,6 +16,45 @@ class ProjectDrainEffectContext:
     event: EventEnvelope
     caller_subject: str
     caller_profile: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SuspendedProcessedEventEpochRequest:
+    """Exact event and repository identity for an authorized replay lookup."""
+
+    subject_id: str
+    project_id: str
+    event_id: str
+    repository_fingerprint: str
+    config_sha256: str
+    backend_api_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalEventDispositionStoreRequest:
+    """Human-reviewed terminal decision bound to one event and source fence."""
+
+    project_id: str
+    event_id: str
+    transition_id: str
+    actor_id: str
+    rationale: str
+    expected_binding_revision: int
+    expected_source_epoch: int
+    expected_payload_sha256: str
+
+
+class ConsumerDrainStoreRequest(NamedTuple):
+    """Exact reviewed inventory and trusted caller fields for drain setup."""
+
+    project_id: str
+    transition_id: str
+    actor_id: str
+    caller_subject: str
+    caller_profile: str | None
+    expected_revision: int
+    expected_inventory_sha256: str
+    lifetime_seconds: int
 
 
 @dataclass(frozen=True, slots=True)

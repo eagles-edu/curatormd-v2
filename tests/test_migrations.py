@@ -25,6 +25,7 @@ from curatormd_v2 import (
     GoalStatus,
     Materiality,
     ReviewDecision,
+    SDEConfirmationRequest,
     SQLITE_SCHEMA_VERSION,
     SuccessCriterion,
 )
@@ -33,6 +34,7 @@ from curatormd_v2.schema_migrations import (
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
 )
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 # EvidenceVerifier test double intentionally implements only `attest`.
@@ -1604,22 +1606,26 @@ class SchemaMigrationTests(unittest.TestCase):
                 ),
             )
             candidate = service.sde_assess(
-                goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "Durable migration fixture",
-                (changed.fact_id, verified.fact_id),
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "Durable migration fixture",
+                    (changed.fact_id, verified.fact_id),
+                    impact="Observed in the bounded test scenario",
+                    retrieval_value="Useful for future maintenance review",
+                )
             )
             self.assertIsNotNone(candidate)
             assert candidate is not None
             target = staging / "temporary-artifact.json"
             target_hash = "b" * 64
             receipt = service.sde_confirm(
-                candidate.candidate_id,
-                ReviewDecision.APPROVED,
-                (ArtifactRef(str(target), target_hash),),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate.candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=(ArtifactRef(str(target), target_hash),),
+                    artifact_inventory_complete=True,
+                )
             )
             self.assertFalse(receipt.canonical_persisted)
             store.close()
@@ -1800,20 +1806,24 @@ class SchemaMigrationTests(unittest.TestCase):
                 ),
             )
             candidate = service.sde_assess(
-                goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "Purge retry migration fixture",
-                (changed.fact_id, verified.fact_id),
-                impact="Observed in the bounded test scenario",
-                retrieval_value="Useful for future maintenance review",
+                SDEAssessmentRequest(
+                    goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "Purge retry migration fixture",
+                    (changed.fact_id, verified.fact_id),
+                    impact="Observed in the bounded test scenario",
+                    retrieval_value="Useful for future maintenance review",
+                )
             )
             self.assertIsNotNone(candidate)
             assert candidate is not None
             receipt = service.sde_confirm(
-                candidate.candidate_id,
-                ReviewDecision.APPROVED,
-                (ArtifactRef(str(staging / "temporary.txt"), "b" * 64),),
-                artifact_inventory_complete=True,
+                SDEConfirmationRequest(
+                    candidate_id=candidate.candidate_id,
+                    decision=ReviewDecision.APPROVED,
+                    artifacts=(ArtifactRef(str(staging / "temporary.txt"), "b" * 64),),
+                    artifact_inventory_complete=True,
+                )
             )
             receipt = store.mark_receipt_canonical_persisted(
                 receipt.receipt_id,

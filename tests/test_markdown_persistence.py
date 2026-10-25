@@ -41,11 +41,13 @@ from curatormd_v2 import (
     ProjectStatusChangeRequest,
     ReacquisitionAction,
     ReviewDecision,
+    SDEConfirmationRequest,
     SuccessCriterion,
     backup_database,
     restore_database,
 )
 from curatormd_v2.project_config import ProjectConfig, ProjectConfigError
+from curatormd_v2.service import SDEAssessmentRequest
 from curatormd_v2.store import ConflictError
 
 
@@ -532,12 +534,14 @@ class MarkdownPersistenceTests(unittest.TestCase):
             evidence=(evidence,),
         )
         candidate = self.plugin.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            "Durable implementation with direct test evidence",
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "Durable implementation with direct test evidence",
+                (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         self.assertIsNotNone(candidate)
         assert candidate is not None
@@ -554,11 +558,13 @@ class MarkdownPersistenceTests(unittest.TestCase):
         )
         artifact = review_packet.review_artifacts[0]
         receipt = self.plugin.sde_confirm(
-            candidate.candidate_id,
-            ReviewDecision.APPROVED,
-            (artifact,),
-            artifact_inventory_complete=True,
-            dependency_map_sha256=review_packet.dependency_map_sha256,
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(artifact,),
+                artifact_inventory_complete=True,
+                dependency_map_sha256=review_packet.dependency_map_sha256,
+            )
         )
         self.assertTrue(artifact_path.exists())
         self.assertFalse(receipt.canonical_persisted)
@@ -638,21 +644,25 @@ class MarkdownPersistenceTests(unittest.TestCase):
             ),
         )
         candidate = self.plugin.sde_assess(
-            self.goal.goal_id,
-            Materiality.RECOVERY,
-            "The interrupted projection can be retried without changing facts",
-            (change.fact_id, verified.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.RECOVERY,
+                "The interrupted projection can be retried without changing facts",
+                (change.fact_id, verified.fact_id),
+                "Observed in the bounded test scenario",
+                "Useful for future maintenance review",
+            )
         )
         assert candidate is not None
         review_packet = self.plugin.sde_review_packet(candidate.candidate_id)
         receipt = self.plugin.sde_confirm(
-            candidate.candidate_id,
-            ReviewDecision.APPROVED,
-            (),
-            artifact_inventory_complete=True,
-            dependency_map_sha256=review_packet.dependency_map_sha256,
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(),
+                artifact_inventory_complete=True,
+                dependency_map_sha256=review_packet.dependency_map_sha256,
+            )
         )
         self.store.close()
         database = Path(self.temporary) / "global.sqlite3"
@@ -764,21 +774,25 @@ raise SystemExit(0)
         )
         rationale = "Proposed SDE narrative that the reviewer rejected"
         candidate = self.plugin.service.sde_assess(
-            self.goal.goal_id,
-            Materiality.IMPLEMENTATION,
-            rationale,
-            (change.fact_id, verification.fact_id),
-            impact="Observed in the bounded test scenario",
-            retrieval_value="Useful for future maintenance review",
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                rationale,
+                (change.fact_id, verification.fact_id),
+                impact="Observed in the bounded test scenario",
+                retrieval_value="Useful for future maintenance review",
+            )
         )
         assert candidate is not None
         review_packet = self.plugin.sde_review_packet(candidate.candidate_id)
         receipt = self.plugin.sde_confirm(
-            candidate.candidate_id,
-            ReviewDecision.REJECTED,
-            (),
-            artifact_inventory_complete=True,
-            dependency_map_sha256=review_packet.dependency_map_sha256,
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=(),
+                artifact_inventory_complete=True,
+                dependency_map_sha256=review_packet.dependency_map_sha256,
+            )
         )
         correction = self.plugin.sde_correction_record(
             "markdown-correction-1",
