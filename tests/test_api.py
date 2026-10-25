@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
 from project_fixtures import create_consumer_repo
+from purge_fixtures import approved_empty_inventory_request
 
 from curatormd_v2 import (
     AuthenticatedCaller,
@@ -638,6 +639,10 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertFalse(before.events_observed)
         self.assertEqual(before.event_receipt_count, 0)
         self.assertEqual(before.goal_count, 0)
+        self.assertEqual(
+            {item.status: item.count for item in before.goal_status_counts},
+            {status: 0 for status in GoalStatus},
+        )
         self.assertEqual(before.fact_count, 0)
         self.assertEqual(before.sde_candidate_count, 0)
         self.assertIsNone(before.last_event_received_at)
@@ -690,6 +695,13 @@ class ApiFacadeTests(unittest.TestCase):
         self.assertEqual(after.event_receipt_count, 2)
         self.assertEqual(after.processed_event_count, 2)
         self.assertEqual(after.goal_count, 1)
+        self.assertEqual(
+            {item.status: item.count for item in after.goal_status_counts},
+            {
+                status: int(status is GoalStatus.ACTIVE)
+                for status in GoalStatus
+            },
+        )
         self.assertEqual(after.fact_count, 1)
         self.assertEqual(after.sde_candidate_count, 0)
         self.assertEqual(after.pending_sde_count, 0)
@@ -902,7 +914,7 @@ class ApiFacadeTests(unittest.TestCase):
             ),
         )
 
-        with patch("curatormd_v2.project_plugin.MAX_STAGING_SCAN_ENTRIES", 1):
+        with patch("curatormd_v2.project_plugin_staging.MAX_STAGING_SCAN_ENTRIES", 1):
             health = api.project_health(self.caller, "project-a")
 
         self.assertEqual(health.status.value, "degraded")
@@ -1915,12 +1927,7 @@ class ApiFacadeTests(unittest.TestCase):
             api.sde_confirm(
                 self.caller,
                 "project-a",
-                SDEConfirmationRequest(
-                    candidate_id=candidate.candidate_id,
-                    decision=ReviewDecision.APPROVED,
-                    artifacts=(),
-                    artifact_inventory_complete=True,
-                ),
+                approved_empty_inventory_request(candidate.candidate_id),
             )
 
         receipt = api.sde_confirm(

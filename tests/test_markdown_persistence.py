@@ -10,17 +10,17 @@ from pathlib import Path
 import hashlib
 import subprocess
 import sys
-import tempfile
 from threading import Event
 import unittest
 from typing import BinaryIO, cast
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
-from project_fixtures import create_consumer_repo
 from purge_fixtures import TestReviewAuthorizer
+from markdown_persistence_fixtures import MarkdownPersistenceFixture
 
 from curatormd_v2 import (
+    AuditReceipt,
     ArtifactPurger,
     ArtifactRef,
     ChecklistGoalStartRequest,
@@ -90,63 +90,9 @@ class PersistedReceiptPurger(ArtifactPurger):  # pylint: disable=too-few-public-
         return super().purge(artifact)
 
 
-class MarkdownPersistenceTests(unittest.TestCase):
+class MarkdownPersistenceTests(MarkdownPersistenceFixture):
     """Verify explicit, bounded, idempotent project Markdown writes."""
 
-    def setUp(self) -> None:
-        self.temporary = self.enterContext(
-            tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
-        )
-        base = Path(self.temporary)
-        self.root = create_consumer_repo(base / "consumer")
-        (self.root / "docs" / "tasks.md").write_text("- [ ] Implement adapter\n")
-        self.target = self.root / "persistence" / "HISTORY.md"
-        self.target.write_text("# Existing project history\n\nKeep this text.\n")
-        (self.root / ".curatormd-v2.toml").write_text(
-            """\
-            schema_version = 1
-            backend_api_version = 1
-            project_id = "consumer-a"
-
-            [scope]
-            read_paths = ["src", "docs"]
-
-            [checklists]
-            tasks = "docs/tasks.md"
-
-            [evidence]
-            adapters = []
-
-            [staging]
-            root = ".curatormd-v2/staging"
-
-            [persistence]
-            targets = ["persistence/HISTORY.md"]
-            """
-        )
-        (self.root / ".curatormd-v2.toml").chmod(0o600)
-        self.config = ProjectConfig.load(self.root)
-        self.store = CuratorStore(base / "global.sqlite3")
-        self.addCleanup(self.store.close)
-        self.store.register_project(
-            ProjectRegistrationRequest.from_project_config(
-                self.config, "Register the Markdown persistence test project"
-            ),
-            "test-admin",
-        )
-        self.plugin = ProjectPlugin.bind(self.config, self.store)
-        self.goal = self.plugin.goal_start_from_checklist(
-            ChecklistGoalStartRequest(
-                checklist_id="tasks",
-                problem="Implement the canonical Markdown projection",
-                success_criteria=(
-                    SuccessCriterion(
-                        "write", "A scoped goal is written as compact bullets"
-                    ),
-                ),
-                exact_item_text="- [ ] Implement adapter",
-            )
-        )
 
     def test_suspend_during_evidence_check_prevents_projection_write(self) -> None:
         """Recheck the captured project revision after external verification."""
@@ -420,77 +366,8 @@ class MarkdownPersistenceTests(unittest.TestCase):
         )
         self.assertEqual(result.target, self.target)
 
-    def test_project_reconciliation_pages_goals_and_finds_orphaned_markers(self) -> None:
-        second_goal = self.plugin.service.goal_start(
-            "A second goal remains absent from Markdown",
-            (SuccessCriterion("listed", "The second goal appears in its page"),),
-        )
-        self.plugin.persist_goal(self.goal.goal_id, self.target)
-        orphan_goal_id = "orphaned-markdown-goal"
-        orphan_marker_hash = hashlib.sha256(orphan_goal_id.encode("utf-8")).hexdigest()
-        malformed_goal_id = "malformed-markdown-goal"
-        malformed_marker_hash = hashlib.sha256(
-            malformed_goal_id.encode("utf-8")
-        ).hexdigest()
-        orphan_block = (
-            f"<!-- curatormd-v2:goal:{orphan_marker_hash}:start -->\n"
-            f"### Goal `{orphan_goal_id}`\n"
-            f"<!-- curatormd-v2:goal:{orphan_marker_hash}:end -->\n"
-            f"<!-- curatormd-v2:goal:{malformed_marker_hash}:start -->\n"
-        )
-        existing = self.target.read_text(encoding="utf-8")
-        self.target.write_text(existing + orphan_block, encoding="utf-8")
-        with_orphan = self.target.read_text(encoding="utf-8")
 
-        first_page = self.plugin.reconcile_project(self.target, offset=0, limit=1)
-        second_page = self.plugin.reconcile_project(self.target, offset=1, limit=1)
 
-        self.assertEqual(first_page.total_goals, 2)
-        self.assertEqual(first_page.next_offset, 1)
-        self.assertEqual(second_page.next_offset, None)
-        results = {
-            item.goal_id: item.status.value
-            for item in first_page.goals + second_page.goals
-        }
-        self.assertEqual(results[self.goal.goal_id], "synced")
-        self.assertEqual(results[second_goal.goal_id], "missing")
-        self.assertEqual(first_page.orphan_marker_sha256, (orphan_marker_hash,))
-        self.assertEqual(
-            first_page.malformed_marker_sha256, (malformed_marker_hash,)
-        )
-        self.assertTrue(first_page.inventory_complete)
-        self.assertEqual(first_page.malformed_marker_count, 1)
-        self.assertEqual(self.target.read_text(encoding="utf-8"), with_orphan)
-
-    def test_project_reconciliation_marks_over_limit_marker_inventory_incomplete(self) -> None:
-        markers = "\n".join(
-            "<!-- curatormd-v2:goal:unrecognized -->"
-            for _ in range(5001)
-        )
-        self.target.write_text(markers, encoding="utf-8")
-
-        report = self.plugin.reconcile_project(self.target)
-
-        self.assertFalse(report.inventory_complete)
-        self.assertEqual(report.unrecognized_marker_count, 5000)
-        self.assertEqual(self.target.read_text(encoding="utf-8"), markers)
-
-    def test_read_only_reconciliation_marks_malformed_markers(self) -> None:
-        """Do not choose a side or mutate a projection with unsafe markers."""
-
-        self.plugin.persist_goal(self.goal.goal_id, self.target)
-        original = self.target.read_text()
-        marker = next(
-            line for line in original.splitlines() if line.endswith(":start -->")
-        )
-        self.target.write_text(original + f"prefix {marker}\n")
-        malformed_content = self.target.read_text()
-
-        result = self.plugin.reconcile_goal(self.goal.goal_id, self.target)
-
-        self.assertEqual(result.status, MarkdownReconciliationStatus.MALFORMED)
-        self.assertIsNone(result.actual_sha256)
-        self.assertEqual(self.target.read_text(), malformed_content)
 
     def test_supersession_link_is_retained_in_canonical_goal_block(self) -> None:
         replacement = self.plugin.service.goal_start(
@@ -508,9 +385,9 @@ class MarkdownPersistenceTests(unittest.TestCase):
         self.assertIn(f"Superseded by goal: `{replacement.goal_id}`", block)
         self.assertIn("Superseded by goal", block)
 
-    def test_plugin_persists_review_receipt_before_releasing_purge_gate(self) -> None:
-        """Only a written canonical facts/receipt block may trigger deletion."""
-
+    def _review_artifact_without_canonical_persistence(
+        self,
+    ) -> tuple[Path, AuditReceipt]:
         self.plugin = ProjectPlugin.bind(
             self.config, self.store, TestVerifier(self.store), TestReviewAuthorizer()
         )
@@ -520,18 +397,19 @@ class MarkdownPersistenceTests(unittest.TestCase):
         change, _ = self.plugin.service.goal_fact(
             self.goal.goal_id, FactKind.CHANGE, "Implemented and tested change"
         )
-        evidence = EvidenceRef(
-            "unit-test",
-            "test-proof:passed",
-            hashlib.sha256(b"proof").hexdigest(),
-            EvidenceOutcome.PASSED,
-        )
         verification, _ = self.plugin.service.goal_fact(
             self.goal.goal_id,
             FactKind.VERIFICATION,
             "Unit check passed",
             criterion_id="write",
-            evidence=(evidence,),
+            evidence=(
+                EvidenceRef(
+                    "unit-test",
+                    "test-proof:passed",
+                    hashlib.sha256(b"proof").hexdigest(),
+                    EvidenceOutcome.PASSED,
+                ),
+            ),
         )
         candidate = self.plugin.service.sde_assess(
             SDEAssessmentRequest(
@@ -543,7 +421,6 @@ class MarkdownPersistenceTests(unittest.TestCase):
                 retrieval_value="Useful for future maintenance review",
             )
         )
-        self.assertIsNotNone(candidate)
         assert candidate is not None
         artifact = self.plugin.stage_artifact(
             self.goal.goal_id,
@@ -551,7 +428,6 @@ class MarkdownPersistenceTests(unittest.TestCase):
             "markdown-persistence-test",
             io.BytesIO(b"temporary test artifact"),
         )
-        artifact_path = Path(artifact.path)
         review_packet = self.plugin.sde_review_packet(
             candidate.candidate_id,
             (replace(artifact, reacquisition_action=ReacquisitionAction.REACQUIRE_FROM_SOURCE),),
@@ -566,6 +442,12 @@ class MarkdownPersistenceTests(unittest.TestCase):
                 dependency_map_sha256=review_packet.dependency_map_sha256,
             )
         )
+        return Path(artifact.path), receipt
+
+    def test_plugin_persists_review_receipt_before_releasing_purge_gate(self) -> None:
+        """Only a written canonical facts/receipt block may trigger deletion."""
+
+        artifact_path, receipt = self._review_artifact_without_canonical_persistence()
         self.assertTrue(artifact_path.exists())
         self.assertFalse(receipt.canonical_persisted)
         purger = PersistedReceiptPurger(
@@ -963,36 +845,6 @@ raise SystemExit(0)
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 
-    def _create_other_repo(self) -> Path:
-        """Create a separately configured consumer for project-isolation tests."""
-
-        root = create_consumer_repo(Path(self.temporary) / "other-consumer")
-        (root / "docs" / "tasks.md").write_text("- [ ] Other task\n")
-        (root / "persistence" / "HISTORY.md").write_text("# Other history\n")
-        (root / ".curatormd-v2.toml").write_text(
-            """\
-            schema_version = 1
-            backend_api_version = 1
-            project_id = "consumer-b"
-
-            [scope]
-            read_paths = ["src", "docs"]
-
-            [checklists]
-            tasks = "docs/tasks.md"
-
-            [evidence]
-            adapters = []
-
-            [staging]
-            root = ".curatormd-v2/staging"
-
-            [persistence]
-            targets = ["persistence/HISTORY.md"]
-            """
-        )
-        (root / ".curatormd-v2.toml").chmod(0o600)
-        return root
 
 
 if __name__ == "__main__":

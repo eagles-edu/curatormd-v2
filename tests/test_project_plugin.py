@@ -23,7 +23,10 @@ from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
 from project_fixtures import create_consumer_repo, write_consumer_config
-from purge_fixtures import TestReviewAuthorizer
+from purge_fixtures import (
+    TestReviewAuthorizer,
+    approved_empty_inventory_request,
+)
 
 from curatormd_v2 import (
     ArtifactCleanupAuthorizationRequest,
@@ -1056,7 +1059,7 @@ class ProjectPluginTests(unittest.TestCase):
         (self.stage / "first.bin").write_bytes(b"a")
         (self.stage / "second.bin").write_bytes(b"bb")
 
-        with patch("curatormd_v2.project_plugin.MAX_STAGING_SCAN_ENTRIES", 1):
+        with patch("curatormd_v2.project_plugin_staging.MAX_STAGING_SCAN_ENTRIES", 1):
             usage = plugin.storage_usage().staging
 
         self.assertIsNotNone(usage)
@@ -1203,7 +1206,7 @@ class ProjectPluginTests(unittest.TestCase):
         goal_stage.mkdir()
         (goal_stage / "too-large.tmp").write_bytes(b"0123456789")
 
-        with patch("curatormd_v2.project_plugin.MAX_STAGING_HASH_BYTES", 5):
+        with patch("curatormd_v2.project_plugin_staging.MAX_STAGING_HASH_BYTES", 5):
             inventory = plugin.discover_staging_artifacts(goal_id)
 
         self.assertFalse(inventory.usage.inventory_complete)
@@ -1571,12 +1574,7 @@ class ProjectPluginTests(unittest.TestCase):
         candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
         self.assertEqual(candidate.status, SDEStatus.PENDING_REVIEW)
         plugin.service.sde_confirm(
-            SDEConfirmationRequest(
-                candidate_id=candidate.candidate_id,
-                decision=ReviewDecision.APPROVED,
-                artifacts=(),
-                artifact_inventory_complete=True,
-            )
+            approved_empty_inventory_request(candidate.candidate_id)
         )
         reviewed_candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
         self.assertEqual(reviewed_candidate.status, SDEStatus.APPROVED)
@@ -1703,7 +1701,7 @@ class ProjectPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact_id"):
             plugin.stage_artifact(goal_id, "cue", "../outside", io.BytesIO(b"x"))
 
-        with patch("curatormd_v2.project_plugin.MAX_STAGED_ARTIFACT_BYTES", 4):
+        with patch("curatormd_v2.project_plugin_staging.MAX_STAGED_ARTIFACT_BYTES", 4):
             with self.assertRaisesRegex(ConflictError, "per-file byte ceiling"):
                 plugin.stage_artifact(
                     goal_id, "cue", "too-large", io.BytesIO(b"12345")

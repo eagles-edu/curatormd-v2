@@ -16,6 +16,57 @@ changes in the Hermes Core repository; they are not part of this wheel. The
 Vhost Manager consumer plugin and hook are installed in its isolated local
 Hermes profile for alpha testing.
 
+## Current local-alpha status (2026-10-25T18:57:17Z)
+
+The supported `renew-ssl-coding` Hermes profile connects to the installed
+Curator V2 stdio server, discovers 48 tools, and reads `vhost-manager-alpha`:
+29 of 29 event receipts are processed, with zero received, failed, or
+quarantined events. The ledger has 12 goals and eight facts; lifecycle counts
+(five planned, seven active, zero in the other six states) reconcile to the
+paginated total. There are no SDE candidates or pending review/purge targets,
+and the staging inventory is complete with zero files. The separately
+timestamped project-health snapshot is `healthy`; the database observation and
+all seven dependencies are healthy, with zero pending review, purge, or expiry
+work. This verifies a fresh bound local-profile read, not production identity
+or general source coverage.
+
+Current wheel refresh (2026-10-26): wheel SHA-256
+`c1c3eb614e0dc85f5c9ebe28842316c6db8c59a748b14f05eb720ebb3bf3cee9` was
+installed only in the dedicated `renew-ssl-coding` Curator V2 virtualenv after
+the previous package, dist-info, and seven entrypoints were archived and
+verified. The rollback archive SHA-256 is
+`a865a4ff3ae737bdee5a9df538b9cba330bf6fd6c8aab0c28e7c49a6360b3452` with 117
+manifest entries. All 61 installed Python module hashes match the source, and
+`pip check` passes. The full local suite passes 465 tests; strict Pyright,
+errors-only Pylint, Bandit, and the locked dependency audit pass. In a clean
+Python 3.12 environment, both installed-wheel MCP tests pass, all seven CLI
+entrypoints load, and storage backup/restore verifies the restored database.
+The installed package then passed eight Vhost consumer contract tests and the
+five-event Hermes-managed disposable integration. These checks use temporary
+workflow state; they do not prove an authenticated person or a real certificate
+renewal. The profile probe starts a fresh stdio process; existing long-lived
+gateway, web, and editor MCP processes were not restarted, so their in-memory
+imports are not claimed to have reloaded this wheel.
+
+The local Vhost Manager HTTP service has applied and rolled back reserved
+`.test` sites through its real routes. Exact receipts were processed, compact
+operation facts were projected and reconciled for the latest apply/rollback,
+and the disposable site/account were removed. The route test does not cover
+every producer or out-of-root artifact. Five earlier operation goals remain
+planned; the two latest apply/rollback review goals remain active pending human
+disposition. The 2026-10-26 read-only browser capture also rendered the local
+Vhost home page and revalidated its content-free digest; this did not exercise
+an authenticated browser session or application operation. No SDE decision or
+artifact purge is claimed.
+
+The approved alpha remains one local OS reviewer (`eaglesvn`), one repository
+at a time, with a six-hour local purge schedule and a 72-hour maximum transient
+artifact age. The Vhost standalone utility source/artifact coverage is closed
+for the owner-reviewed dirty development snapshot; see
+[`vhost-producer-coverage-v2.md`](vhost-producer-coverage-v2.md). Production
+scheduling, identity, alerting, retention policy, recovery drills, and release
+sign-off remain outside this local-alpha evidence.
+
 ## Runtime and verification scope
 
 The package declares Python `>=3.12,<4`. The CI workflow exercises Linux with
@@ -34,9 +85,10 @@ the exact commit only.
   binding are not established.
 - Trusted repository, service, browser, and human evidence adapters remain
   reject-all/reference implementations until their trust roots are approved.
-- No production router, scheduler, monitoring/alert delivery, or real
-  interactive capture event is established by this alpha. The local Vhost
-  Manager pilot has only the bounded lifecycle hook described below.
+- No production router, scheduler, or monitoring/alert delivery is established
+  by this alpha. Real local Vhost operation events are captured as bounded
+  operation summaries; prompt/response content and manual DNS values are not
+  included. This does not establish coverage for every standalone producer.
 - Local-alpha retention defaults and hold semantics are owner-approved: the
   listed transient artifact classes become eligible promptly after recording
   and SDE disposition, with a hard 72-hour maximum age. Pending SDE review
@@ -45,8 +97,11 @@ the exact commit only.
   legal/operational holds require a separate release and are the only local
   alpha exception. Production retention policy, external hold discovery,
   backup/restore drills, and deployment rollback remain open.
-- The Vhost Manager local alpha pilot is installed and its seven consumer
-  contracts pass, including a synthetic bounded event through the profile hook,
+- Historical Vhost deployment checkpoints are listed below. The current
+  workflow and ledger status are summarized at the top of this document; those
+  dated checkpoints must not be read as the latest state. The Vhost Manager
+  local alpha pilot is installed and its seven consumer contracts pass,
+  including a synthetic bounded event through the profile hook,
   installed MCP launcher, Curator V2 store, and Hermes outbox receipt path. On
   2026-10-21, the matching Hermes Core lifecycle-hook/outbox files and
   root-owned Host Steward plugin were installed into the local runtime with a

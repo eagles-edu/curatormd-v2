@@ -24,6 +24,7 @@ from project_fixtures import (
     configure_stdio_consumer,
     create_consumer_repo,
 )
+from purge_fixtures import approved_empty_inventory_request
 
 from curatormd_v2 import (
     ArtifactRef,
@@ -43,7 +44,6 @@ from curatormd_v2 import (
     PurgeFailureCode,
     ArtifactPurger,
     ReviewDecision,
-    SDEConfirmationRequest,
     SuccessCriterion,
     build_mcp_server,
     codex_hook_to_event,
@@ -1519,12 +1519,7 @@ class McpServerTests(unittest.TestCase):
                 )
                 assert candidate is not None
                 plugin.service.sde_confirm(
-                    SDEConfirmationRequest(
-                        candidate_id=candidate.candidate_id,
-                        decision=ReviewDecision.APPROVED,
-                        artifacts=(),
-                        artifact_inventory_complete=True,
-                    ),
+                    approved_empty_inventory_request(candidate.candidate_id),
                     authenticated_subject="host-subject",
                 )
                 caller = AuthenticatedCaller("host-subject")
@@ -1951,6 +1946,18 @@ class McpServerTests(unittest.TestCase):
                         activity_value = json.loads(activity_content.text)
                         self.assertTrue(activity_value["events_observed"])
                         self.assertEqual(activity_value["goal_count"], 2)
+                        lifecycle_counts = {
+                            item["status"]: item["count"]
+                            for item in activity_value["goal_status_counts"]
+                        }
+                        self.assertEqual(
+                            set(lifecycle_counts),
+                            {
+                                "planned", "active", "complete", "open",
+                                "blocked", "deferred", "cancelled", "superseded",
+                            },
+                        )
+                        self.assertEqual(sum(lifecycle_counts.values()), 2)
                         self.assertGreater(activity_value["event_receipt_count"], 0)
                         health_result = await client.call_tool("project_health", {})
                         self.assertFalse(health_result.is_error)

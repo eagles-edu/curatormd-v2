@@ -14,6 +14,7 @@ from .api import (
     RejectAllProjectAccess,
 )
 from .backup import backup_database, restore_database
+from .browser_evidence import LocalBrowserProofResolver, LocalBrowserProofSpec
 from .evidence import (
     BrowserProofEvidenceAdapter,
     EvidenceAdapterError,
@@ -52,7 +53,12 @@ from .events import (
 )
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
 from .service_evidence import LocalServiceProbeResolver, LocalServiceProbeSpec
-from .local_evidence_config import load_local_service_probe_verifier
+from .local_evidence_config import (
+    capture_local_browser_proof_reference,
+    load_local_browser_proof_verifier,
+    load_local_evidence_verifier,
+    load_local_service_probe_verifier,
+)
 from .errors import APIError, APIErrorCode, to_api_error
 from .models import (
     ArtifactCleanupAuthorizationRequest,
@@ -260,7 +266,12 @@ __all__ = [
     "HumanObservationEvidenceAdapter",
     "LocalServiceProbeResolver",
     "LocalServiceProbeSpec",
+    "LocalBrowserProofResolver",
+    "LocalBrowserProofSpec",
     "load_local_service_probe_verifier",
+    "load_local_browser_proof_verifier",
+    "capture_local_browser_proof_reference",
+    "load_local_evidence_verifier",
     "EVENT_SCHEMA_VERSION",
     "EventEnvelope",
     "EventClassStorageUsage",

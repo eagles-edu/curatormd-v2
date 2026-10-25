@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,6 +11,11 @@ import unittest
 from hypothesis import given, settings, strategies as st
 
 from evidence_fixtures import attest_test_evidence
+from lifecycle_fixtures import (
+    FACT_ACCEPTING_GOAL_STATUSES,
+    FINISHABLE_GOAL_STATUSES,
+    UNFINISHED_GOAL_STATUSES,
+)
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -48,6 +55,344 @@ class _TrustedFixtureEvidence:  # pylint: disable=too-few-public-methods
             if evidence.locator in {"suite://first", "suite://second"}
             else None
         )
+
+
+@dataclass
+class _LifecycleSequenceState:
+    """Expected lifecycle state tracked independently from the service."""
+
+    goal_id: str
+    status: GoalStatus
+    lifecycle_revision: int
+    criteria_revision: int
+    criterion_id: str
+    epoch_verified: bool = False
+
+    def record_success(self, action: str) -> None:
+        """Advance the model only after the service accepts an action."""
+
+        if action == "activate":
+            self.status = GoalStatus.ACTIVE
+            self.lifecycle_revision += 1
+        elif action == "verify":
+            self.epoch_verified = True
+        elif action == "finish":
+            if self.status is not GoalStatus.COMPLETE:
+                self.status = (
+                    GoalStatus.COMPLETE if self.epoch_verified else GoalStatus.OPEN
+                )
+                self.lifecycle_revision += 1
+        elif action == "block":
+            self.status = GoalStatus.BLOCKED
+            self.lifecycle_revision += 1
+        elif action == "defer":
+            self.status = GoalStatus.DEFERRED
+            self.lifecycle_revision += 1
+        elif action == "amend":
+            self.criteria_revision += 1
+            self.criterion_id = f"criterion-{self.criteria_revision}"
+            self.epoch_verified = False
+            self.lifecycle_revision += 1
+        elif action == "reopen":
+            self.status = GoalStatus.ACTIVE
+            self.epoch_verified = False
+            self.lifecycle_revision += 1
+        elif action == "cancel":
+            self.status = GoalStatus.CANCELLED
+            self.lifecycle_revision += 1
+        elif action == "supersede":
+            self.status = GoalStatus.SUPERSEDED
+            self.lifecycle_revision += 1
+
+
+def _lifecycle_action_allowed(state: _LifecycleSequenceState, action: str) -> bool:
+    """Return whether the modeled state permits one generated action."""
+
+    unfinished = state.status in UNFINISHED_GOAL_STATUSES
+    facts_allowed = state.status in FACT_ACCEPTING_GOAL_STATUSES
+    finish_allowed = state.status in FINISHABLE_GOAL_STATUSES
+    return {
+        "activate": state.status is GoalStatus.PLANNED,
+        "change": facts_allowed,
+        "verify": facts_allowed,
+        "finish": finish_allowed,
+        "block": unfinished,
+        "defer": unfinished,
+        "amend": unfinished,
+        "reopen": state.status is GoalStatus.COMPLETE,
+        "cancel": unfinished,
+        "supersede": unfinished,
+    }[action]
+
+
+def _amend_generated_criterion(
+    service: CuratorService, state: _LifecycleSequenceState, index: int
+) -> None:
+    """Apply one generated criteria revision at the current lifecycle fence."""
+
+    next_criterion_id = f"criterion-{state.criteria_revision + 1}"
+    service.goal_amend_criteria(
+        GoalCriteriaAmended(
+            goal_id=state.goal_id,
+            expected_revision=state.criteria_revision,
+            success_criteria=(
+                SuccessCriterion(
+                    next_criterion_id,
+                    f"Generated amended criterion {index}",
+                ),
+            ),
+            reason=f"Generated amendment {index}",
+            next_action=f"Verify amended criterion {index}",
+            expected_lifecycle_revision=state.lifecycle_revision,
+        )
+    )
+
+
+def _supersede_generated_goal(
+    service: CuratorService, state: _LifecycleSequenceState, index: int
+) -> None:
+    """Create and link a generated successor to the current goal."""
+
+    replacement = service.goal_start(
+        f"Generated successor {index}",
+        (SuccessCriterion(f"successor-{index}", "Successor is verified"),),
+    )
+    service.goal_supersede(
+        state.goal_id,
+        replacement.goal_id,
+        f"Generated supersession {index}",
+    )
+
+
+def _apply_generated_lifecycle_action(
+    service: CuratorService,
+    state: _LifecycleSequenceState,
+    action: str,
+    index: int,
+) -> None:
+    """Dispatch one generated action with the model's current revisions."""
+
+    actions: dict[str, Callable[[], object]] = {
+        "activate": lambda: service.goal_activate(
+            state.goal_id,
+            f"Generated acceptance {index}",
+            state.lifecycle_revision,
+        ),
+        "change": lambda: service.goal_fact(
+            state.goal_id, FactKind.CHANGE, f"Generated change {index}"
+        ),
+        "verify": lambda: service.goal_fact(
+            state.goal_id,
+            FactKind.VERIFICATION,
+            f"Generated verification {index}",
+            criterion_id=state.criterion_id,
+            evidence=(
+                EvidenceRef(
+                    "test", "suite://first", "a" * 64, EvidenceOutcome.PASSED
+                ),
+            ),
+        ),
+        "finish": lambda: service.goal_finish(
+            state.goal_id,
+            f"Generated completion claim {index}",
+            state.lifecycle_revision,
+        ),
+        "block": lambda: service.goal_block(
+            state.goal_id,
+            f"Generated dependency {index}",
+            f"Generated recovery {index}",
+            state.lifecycle_revision,
+        ),
+        "defer": lambda: service.goal_defer(
+            state.goal_id,
+            f"Generated deferral {index}",
+            f"Generated next action {index}",
+            state.lifecycle_revision,
+        ),
+        "amend": lambda: _amend_generated_criterion(service, state, index),
+        "reopen": lambda: service.goal_reopen(
+            state.goal_id,
+            f"Generated reopen {index}",
+            f"Reverify epoch {index}",
+            state.lifecycle_revision,
+        ),
+        "cancel": lambda: service.goal_cancel(
+            state.goal_id, f"Generated cancellation {index}"
+        ),
+        "supersede": lambda: _supersede_generated_goal(service, state, index),
+    }
+    actions[action]()
+
+
+@dataclass
+class _RelatedLifecycleState:
+    """Expected state for linked dependency, child, and parent goals."""
+
+    goal_ids: dict[str, str]
+    statuses: dict[str, GoalStatus]
+    revisions: dict[str, int]
+
+
+def _create_related_lifecycle_state(
+    service: CuratorService,
+) -> _RelatedLifecycleState:
+    """Create and verify one dependency/child/parent goal graph."""
+
+    criteria = {
+        "dependency": SuccessCriterion("dependency", "Dependency passes"),
+        "child": SuccessCriterion("child", "Child passes"),
+        "parent": SuccessCriterion("parent", "Parent passes"),
+    }
+    dependency = service.goal_start(
+        "Generated prerequisite", (criteria["dependency"],)
+    )
+    parent = service.goal_start("Generated parent", (criteria["parent"],))
+    child = service.goal_start(
+        "Generated child",
+        (criteria["child"],),
+        parent_goal_id=parent.goal_id,
+        depends_on_goal_ids=(dependency.goal_id,),
+    )
+    goals = {"dependency": dependency, "child": child, "parent": parent}
+    for label, goal in goals.items():
+        service.goal_fact(
+            goal.goal_id,
+            FactKind.VERIFICATION,
+            f"Generated {label} criterion passed",
+            criterion_id=criteria[label].criterion_id,
+            evidence=(
+                EvidenceRef("test", "suite://first", "a" * 64, EvidenceOutcome.PASSED),
+            ),
+        )
+    return _RelatedLifecycleState(
+        goal_ids={label: goal.goal_id for label, goal in goals.items()},
+        statuses={label: GoalStatus.ACTIVE for label in goals},
+        revisions={label: goal.lifecycle_revision for label, goal in goals.items()},
+    )
+
+
+def _related_action_allowed(
+    state: _RelatedLifecycleState, target: str, is_finish: bool
+) -> bool:
+    """Apply the modeled parent/child/dependency prerequisite rules."""
+
+    target_status = state.statuses[target]
+    unfinished = target_status in UNFINISHED_GOAL_STATUSES
+    if is_finish:
+        return unfinished or target_status is GoalStatus.COMPLETE
+    if not unfinished:
+        return False
+    if target == "dependency":
+        return state.statuses["child"] not in UNFINISHED_GOAL_STATUSES
+    if target == "parent":
+        return state.statuses["child"] in {
+            GoalStatus.COMPLETE,
+            GoalStatus.CANCELLED,
+            GoalStatus.SUPERSEDED,
+        }
+    return True
+
+
+def _run_related_action(
+    service: CuratorService,
+    state: _RelatedLifecycleState,
+    target: str,
+    action: str,
+    index: int,
+) -> None:
+    """Apply the selected generated finish or cancel operation."""
+
+    if action.startswith("finish_"):
+        service.goal_finish(
+            state.goal_ids[target],
+            f"Generated {target} finish {index}",
+            state.revisions[target],
+        )
+    else:
+        service.goal_cancel(
+            state.goal_ids[target], f"Generated {target} cancellation {index}"
+        )
+
+
+def _snapshot_related_goals(
+    store: CuratorStore, state: _RelatedLifecycleState
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Capture goal rows and fact tuples for an exact denial assertion."""
+
+    return (
+        {
+            label: store.get_goal(goal_id)
+            for label, goal_id in state.goal_ids.items()
+        },
+        {
+            label: store.list_facts(goal_id)
+            for label, goal_id in state.goal_ids.items()
+        },
+    )
+
+
+def _assert_related_goals_unchanged(
+    test_case: unittest.TestCase,
+    store: CuratorStore,
+    state: _RelatedLifecycleState,
+    before_goals: dict[str, object],
+    before_facts: dict[str, object],
+) -> None:
+    """Confirm a denied linked transition changed no goal or fact rows."""
+
+    for label, goal_id in state.goal_ids.items():
+        test_case.assertEqual(store.get_goal(goal_id), before_goals[label])
+        test_case.assertEqual(store.list_facts(goal_id), before_facts[label])
+
+
+def _advance_related_state(
+    service: CuratorService,
+    state: _RelatedLifecycleState,
+    target: str,
+    action: str,
+) -> None:
+    """Advance only the model state proven by an accepted linked-goal action."""
+
+    if action.startswith("cancel_"):
+        state.statuses[target] = GoalStatus.CANCELLED
+        state.revisions[target] += 1
+        return
+    if state.statuses[target] is GoalStatus.COMPLETE:
+        return
+
+    verified = (
+        service.goal_status(state.goal_ids[target]).criteria[0].status.value
+        == "verified"
+    )
+    child_status = state.statuses["child"]
+    related_work_open = (
+        target == "child" and state.statuses["dependency"] is not GoalStatus.COMPLETE
+    ) or (
+        target == "parent"
+        and child_status
+        not in {GoalStatus.COMPLETE, GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}
+    )
+    state.statuses[target] = (
+        GoalStatus.COMPLETE if verified and not related_work_open else GoalStatus.OPEN
+    )
+    state.revisions[target] += 1
+
+
+def _assert_related_goals_match_model(
+    test_case: unittest.TestCase,
+    store: CuratorStore,
+    state: _RelatedLifecycleState,
+) -> None:
+    """Compare every linked goal's persisted status and revision to the model."""
+
+    for label, goal_id in state.goal_ids.items():
+        actual = store.get_goal(goal_id)
+        test_case.assertEqual(actual.status, state.statuses[label])
+        test_case.assertEqual(actual.lifecycle_revision, state.revisions[label])
+        if label == "child" and actual.status is GoalStatus.OPEN:
+            test_case.assertIn(state.goal_ids["dependency"], actual.next_action or "")
+        if label == "parent" and actual.status is GoalStatus.OPEN:
+            test_case.assertIn(state.goal_ids["child"], actual.next_action or "")
 
 
 class EventPropertyTests(unittest.TestCase):
@@ -222,27 +567,24 @@ class StagingUsagePropertyTests(unittest.TestCase):
                     (SuccessCriterion("proof", "A passing verification exists"),),
                 )
                 initial_revision = goal.lifecycle_revision
-                expected_bullets: list[str] = []
 
                 for index, action in enumerate(actions):
                     if action == "block":
-                        dependency = f"dependency-{index}"
-                        recovery = f"recover-{index}"
-                        goal = service.goal_block(goal.goal_id, dependency, recovery)
-                        expected_bullets.append(
-                            f"Blocked: {dependency}; recovery: {recovery}"
+                        goal = service.goal_block(
+                            goal.goal_id,
+                            f"dependency-{index}",
+                            f"recover-{index}",
                         )
                         self.assertEqual(goal.status, GoalStatus.BLOCKED)
-                        self.assertEqual(goal.next_action, recovery)
+                        self.assertEqual(goal.next_action, f"recover-{index}")
                     else:
-                        reason = f"deferred-{index}"
-                        next_action = f"resume-{index}"
-                        goal = service.goal_defer(goal.goal_id, reason, next_action)
-                        expected_bullets.append(
-                            f"Deferred: {reason}; next: {next_action}"
+                        goal = service.goal_defer(
+                            goal.goal_id,
+                            f"deferred-{index}",
+                            f"resume-{index}",
                         )
                         self.assertEqual(goal.status, GoalStatus.DEFERRED)
-                        self.assertEqual(goal.next_action, next_action)
+                        self.assertEqual(goal.next_action, f"resume-{index}")
 
                     self.assertEqual(
                         goal.lifecycle_revision, initial_revision + index + 1
@@ -259,6 +601,14 @@ class StagingUsagePropertyTests(unittest.TestCase):
                     for fact in facts
                     if fact.kind is FactKind.OPEN_GATE
                     and fact.bullet.startswith(("Blocked:", "Deferred:"))
+                ]
+                expected_bullets = [
+                    (
+                        f"Blocked: dependency-{index}; recovery: recover-{index}"
+                        if action == "block"
+                        else f"Deferred: deferred-{index}; next: resume-{index}"
+                    )
+                    for index, action in enumerate(actions)
                 ]
                 self.assertEqual(transition_bullets, expected_bullets)
                 self.assertTrue(
@@ -313,205 +663,55 @@ class StagingUsagePropertyTests(unittest.TestCase):
                     _TrustedFixtureEvidence(),
                     project_id="sequence-project",
                 )
-                initial_status = (
-                    GoalStatus.PLANNED if initially_planned else GoalStatus.ACTIVE
-                )
                 goal = service.goal_start(
                     "Fuzz a mixed lifecycle sequence",
                     (SuccessCriterion("criterion-1", "Current epoch is verified"),),
-                    initial_status=initial_status,
+                    initial_status=(
+                        GoalStatus.PLANNED
+                        if initially_planned
+                        else GoalStatus.ACTIVE
+                    ),
                 )
-                expected_status = initial_status
-                expected_lifecycle_revision = goal.lifecycle_revision
-                expected_criteria_revision = goal.criteria_revision
-                current_criterion_id = "criterion-1"
-                current_epoch_verified = False
+                state = _LifecycleSequenceState(
+                    goal_id=goal.goal_id,
+                    status=(
+                        GoalStatus.PLANNED
+                        if initially_planned
+                        else GoalStatus.ACTIVE
+                    ),
+                    lifecycle_revision=goal.lifecycle_revision,
+                    criteria_revision=goal.criteria_revision,
+                    criterion_id="criterion-1",
+                )
 
                 for index, action in enumerate(actions):
-                    before = store.get_goal(goal.goal_id)
-                    before_facts = store.list_facts(goal.goal_id)
-                    unfinished = expected_status in {
-                        GoalStatus.PLANNED,
-                        GoalStatus.ACTIVE,
-                        GoalStatus.OPEN,
-                        GoalStatus.BLOCKED,
-                        GoalStatus.DEFERRED,
-                    }
-                    fact_allowed = expected_status in {
-                        GoalStatus.ACTIVE,
-                        GoalStatus.OPEN,
-                        GoalStatus.BLOCKED,
-                        GoalStatus.DEFERRED,
-                    }
-                    action_allowed = {
-                        "activate": expected_status is GoalStatus.PLANNED,
-                        "change": fact_allowed,
-                        "verify": fact_allowed,
-                        "finish": expected_status in {
-                            GoalStatus.ACTIVE,
-                            GoalStatus.OPEN,
-                            GoalStatus.BLOCKED,
-                            GoalStatus.DEFERRED,
-                            GoalStatus.COMPLETE,
-                        },
-                        "block": unfinished,
-                        "defer": unfinished,
-                        "amend": unfinished,
-                        "reopen": expected_status is GoalStatus.COMPLETE,
-                        "cancel": unfinished,
-                        "supersede": unfinished,
-                    }[action]
+                    before = store.get_goal(state.goal_id)
+                    before_facts = store.list_facts(state.goal_id)
+                    action_allowed = _lifecycle_action_allowed(state, action)
 
                     try:
-                        if action == "activate":
-                            service.goal_activate(
-                                goal.goal_id,
-                                f"Generated acceptance {index}",
-                                expected_lifecycle_revision,
-                            )
-                        elif action == "change":
-                            service.goal_fact(
-                                goal.goal_id,
-                                FactKind.CHANGE,
-                                f"Generated change {index}",
-                            )
-                        elif action == "verify":
-                            service.goal_fact(
-                                goal.goal_id,
-                                FactKind.VERIFICATION,
-                                f"Generated verification {index}",
-                                criterion_id=current_criterion_id,
-                                evidence=(
-                                    EvidenceRef(
-                                        "test",
-                                        "suite://first",
-                                        "a" * 64,
-                                        EvidenceOutcome.PASSED,
-                                    ),
-                                ),
-                            )
-                        elif action == "finish":
-                            service.goal_finish(
-                                goal.goal_id,
-                                f"Generated completion claim {index}",
-                                expected_lifecycle_revision,
-                            )
-                        elif action == "block":
-                            service.goal_block(
-                                goal.goal_id,
-                                f"Generated dependency {index}",
-                                f"Generated recovery {index}",
-                                expected_lifecycle_revision,
-                            )
-                        elif action == "defer":
-                            service.goal_defer(
-                                goal.goal_id,
-                                f"Generated deferral {index}",
-                                f"Generated next action {index}",
-                                expected_lifecycle_revision,
-                            )
-                        elif action == "amend":
-                            next_criterion_id = (
-                                f"criterion-{expected_criteria_revision + 1}"
-                            )
-                            service.goal_amend_criteria(
-                                GoalCriteriaAmended(
-                                    goal_id=goal.goal_id,
-                                    expected_revision=expected_criteria_revision,
-                                    success_criteria=(
-                                        SuccessCriterion(
-                                            next_criterion_id,
-                                            f"Generated amended criterion {index}",
-                                        ),
-                                    ),
-                                    reason=f"Generated amendment {index}",
-                                    next_action=(
-                                        f"Verify amended criterion {index}"
-                                    ),
-                                    expected_lifecycle_revision=(
-                                        expected_lifecycle_revision
-                                    ),
-                                ),
-                            )
-                        elif action == "reopen":
-                            service.goal_reopen(
-                                goal.goal_id,
-                                f"Generated reopen {index}",
-                                f"Reverify epoch {index}",
-                                expected_lifecycle_revision,
-                            )
-                        elif action == "cancel":
-                            service.goal_cancel(
-                                goal.goal_id, f"Generated cancellation {index}"
-                            )
-                        else:
-                            replacement = service.goal_start(
-                                f"Generated successor {index}",
-                                (
-                                    SuccessCriterion(
-                                        f"successor-{index}", "Successor is verified"
-                                    ),
-                                ),
-                            )
-                            service.goal_supersede(
-                                goal.goal_id,
-                                replacement.goal_id,
-                                f"Generated supersession {index}",
-                            )
+                        _apply_generated_lifecycle_action(
+                            service, state, action, index
+                        )
                     except ConflictError:
                         self.assertFalse(action_allowed, f"unexpected refusal: {action}")
-                        self.assertEqual(store.get_goal(goal.goal_id), before)
-                        self.assertEqual(store.list_facts(goal.goal_id), before_facts)
+                        self.assertEqual(store.get_goal(state.goal_id), before)
+                        self.assertEqual(
+                            store.list_facts(state.goal_id), before_facts
+                        )
                     else:
                         self.assertTrue(action_allowed, f"unexpected acceptance: {action}")
-                        if action == "activate":
-                            expected_status = GoalStatus.ACTIVE
-                            expected_lifecycle_revision += 1
-                        elif action in {"change", "verify"}:
-                            if action == "verify":
-                                current_epoch_verified = True
-                        elif action == "finish":
-                            if expected_status is not GoalStatus.COMPLETE:
-                                expected_status = (
-                                    GoalStatus.COMPLETE
-                                    if current_epoch_verified
-                                    else GoalStatus.OPEN
-                                )
-                                expected_lifecycle_revision += 1
-                        elif action == "block":
-                            expected_status = GoalStatus.BLOCKED
-                            expected_lifecycle_revision += 1
-                        elif action == "defer":
-                            expected_status = GoalStatus.DEFERRED
-                            expected_lifecycle_revision += 1
-                        elif action == "amend":
-                            expected_criteria_revision += 1
-                            current_criterion_id = (
-                                f"criterion-{expected_criteria_revision}"
-                            )
-                            current_epoch_verified = False
-                            expected_lifecycle_revision += 1
-                        elif action == "reopen":
-                            expected_status = GoalStatus.ACTIVE
-                            current_epoch_verified = False
-                            expected_lifecycle_revision += 1
-                        elif action == "cancel":
-                            expected_status = GoalStatus.CANCELLED
-                            expected_lifecycle_revision += 1
-                        else:
-                            expected_status = GoalStatus.SUPERSEDED
-                            expected_lifecycle_revision += 1
+                        state.record_success(action)
 
-                    goal = store.get_goal(goal.goal_id)
-                    self.assertEqual(goal.status, expected_status)
+                    goal = store.get_goal(state.goal_id)
+                    self.assertEqual(goal.status, state.status)
                     self.assertEqual(
-                        goal.lifecycle_revision, expected_lifecycle_revision
+                        goal.lifecycle_revision, state.lifecycle_revision
                     )
-                    self.assertEqual(goal.criteria_revision, expected_criteria_revision)
+                    self.assertEqual(goal.criteria_revision, state.criteria_revision)
                     self.assertEqual(
-                        service.goal_status(goal.goal_id).criteria[0].status.value
-                        == "verified",
-                        current_epoch_verified,
+                        service.goal_status(goal.goal_id).criteria[0].status.value == "verified",
+                        state.epoch_verified,
                     )
             finally:
                 store.close()
@@ -550,146 +750,25 @@ class StagingUsagePropertyTests(unittest.TestCase):
                     _TrustedFixtureEvidence(),
                     project_id="relationship-sequence-project",
                 )
-                criteria = {
-                    "dependency": SuccessCriterion("dependency", "Dependency passes"),
-                    "child": SuccessCriterion("child", "Child passes"),
-                    "parent": SuccessCriterion("parent", "Parent passes"),
-                }
-                dependency = service.goal_start(
-                    "Generated prerequisite", (criteria["dependency"],)
-                )
-                parent = service.goal_start(
-                    "Generated parent", (criteria["parent"],)
-                )
-                child = service.goal_start(
-                    "Generated child",
-                    (criteria["child"],),
-                    parent_goal_id=parent.goal_id,
-                    depends_on_goal_ids=(dependency.goal_id,),
-                )
-                goals = {
-                    "dependency": dependency,
-                    "child": child,
-                    "parent": parent,
-                }
-                for label, goal in goals.items():
-                    service.goal_fact(
-                        goal.goal_id,
-                        FactKind.VERIFICATION,
-                        f"Generated {label} criterion passed",
-                        criterion_id=criteria[label].criterion_id,
-                        evidence=(
-                            EvidenceRef(
-                                "test",
-                                "suite://first",
-                                "a" * 64,
-                                EvidenceOutcome.PASSED,
-                            ),
-                        ),
-                    )
-
-                expected = {
-                    "dependency": GoalStatus.ACTIVE,
-                    "child": GoalStatus.ACTIVE,
-                    "parent": GoalStatus.ACTIVE,
-                }
-                revisions = {
-                    label: goal.lifecycle_revision for label, goal in goals.items()
-                }
+                state = _create_related_lifecycle_state(service)
                 for index, action in enumerate(actions):
                     target = action.removeprefix("finish_").removeprefix("cancel_")
-                    before_goals = {
-                        label: store.get_goal(goal.goal_id)
-                        for label, goal in goals.items()
-                    }
-                    before_facts = {
-                        label: store.list_facts(goal.goal_id)
-                        for label, goal in goals.items()
-                    }
-                    target_status = expected[target]
                     is_finish = action.startswith("finish_")
-                    unfinished = target_status in {
-                        GoalStatus.PLANNED,
-                        GoalStatus.ACTIVE,
-                        GoalStatus.OPEN,
-                        GoalStatus.BLOCKED,
-                        GoalStatus.DEFERRED,
-                    }
-                    if is_finish:
-                        allowed = unfinished or target_status is GoalStatus.COMPLETE
-                    else:
-                        allowed = unfinished
-                        if target == "dependency" and unfinished:
-                            allowed = expected["child"] not in {
-                                GoalStatus.PLANNED,
-                                GoalStatus.ACTIVE,
-                                GoalStatus.OPEN,
-                                GoalStatus.BLOCKED,
-                                GoalStatus.DEFERRED,
-                            }
-                        elif target == "parent" and unfinished:
-                            allowed = expected["child"] in {
-                                GoalStatus.COMPLETE,
-                                GoalStatus.CANCELLED,
-                                GoalStatus.SUPERSEDED,
-                            }
+                    before_goals, before_facts = _snapshot_related_goals(store, state)
+                    allowed = _related_action_allowed(state, target, is_finish)
 
                     try:
-                        if is_finish:
-                            service.goal_finish(
-                                goals[target].goal_id,
-                                f"Generated {target} finish {index}",
-                                revisions[target],
-                            )
-                        else:
-                            service.goal_cancel(
-                                goals[target].goal_id,
-                                f"Generated {target} cancellation {index}",
-                            )
+                        _run_related_action(service, state, target, action, index)
                     except ConflictError:
                         self.assertFalse(allowed, f"unexpected refusal: {action}")
-                        for label, goal in goals.items():
-                            self.assertEqual(store.get_goal(goal.goal_id), before_goals[label])
-                            self.assertEqual(store.list_facts(goal.goal_id), before_facts[label])
+                        _assert_related_goals_unchanged(
+                            self, store, state, before_goals, before_facts
+                        )
                     else:
                         self.assertTrue(allowed, f"unexpected acceptance: {action}")
-                        if is_finish:
-                            if target_status is not GoalStatus.COMPLETE:
-                                is_verified = service.goal_status(
-                                    goals[target].goal_id
-                                ).criteria[0].status.value == "verified"
-                                has_open_related_work = (
-                                    target == "child"
-                                    and expected["dependency"] is not GoalStatus.COMPLETE
-                                ) or (
-                                    target == "parent"
-                                    and expected["child"]
-                                    not in {
-                                        GoalStatus.COMPLETE,
-                                        GoalStatus.CANCELLED,
-                                        GoalStatus.SUPERSEDED,
-                                    }
-                                )
-                                expected[target] = (
-                                    GoalStatus.COMPLETE
-                                    if is_verified and not has_open_related_work
-                                    else GoalStatus.OPEN
-                                )
-                                revisions[target] += 1
-                        else:
-                            expected[target] = GoalStatus.CANCELLED
-                            revisions[target] += 1
+                        _advance_related_state(service, state, target, action)
 
-                    for label, goal in goals.items():
-                        actual = store.get_goal(goal.goal_id)
-                        self.assertEqual(actual.status, expected[label])
-                        self.assertEqual(actual.lifecycle_revision, revisions[label])
-                        if label == "child" and actual.status is GoalStatus.OPEN:
-                            self.assertIn(
-                                dependency.goal_id, actual.next_action or ""
-                            )
-                        if label == "parent" and actual.status is GoalStatus.OPEN:
-                            self.assertIn(child.goal_id, actual.next_action or "")
+                    _assert_related_goals_match_model(self, store, state)
             finally:
                 store.close()
 

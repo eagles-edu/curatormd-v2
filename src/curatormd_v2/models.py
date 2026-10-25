@@ -4,13 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import StrEnum
 from importlib import import_module
 import re
 from typing import TYPE_CHECKING, TypeGuard
 from uuid import uuid4
 
 from .content_safety import validate_safe_text
+from .domain_enums import (
+    ArtifactStatus,
+    EvidenceOutcome,
+    FactKind,
+    GoalStatus,
+    Materiality,
+    PurgeStatus,
+    ReacquisitionAction,
+    RetentionHoldKind,
+    ReviewDecision,
+    SDEQualityFeedbackLabel,
+    SDEStatus,
+)
 from .record_validation import (
     REVIEWER_ID_RE as _REVIEWER_ID_RE,
     SHA256_RE as _SHA256_RE,
@@ -43,6 +55,15 @@ MAX_GOAL_STATUS_CANDIDATES = 32
 MAX_GOAL_STATUS_PURGE_RECEIPTS = 16
 
 __all__ = [
+    "CriterionProgress",
+    "CriterionStatus",
+    "FactCapacity",
+    "FactCompactionProposal",
+    "GoalBulletCategory",
+    "GoalCriteriaVersion",
+    "GoalSnapshot",
+    "OperationalHealth",
+    "PurgeFailureCode",
     "ArtifactEvidenceBinding",
     "ArtifactEvidenceDependency",
     "ArtifactReviewDependency",
@@ -76,8 +97,38 @@ __all__ = [
     "artifact_dependency_map_sha256",
 ]
 _READ_MODEL_NAMES = frozenset(__all__)
+_PROJECTION_READ_MODEL_NAMES = frozenset(
+    {
+        "CriterionProgress",
+        "FactCapacity",
+        "FactCompactionProposal",
+        "GoalCriteriaVersion",
+        "GoalSnapshot",
+    }
+)
+_DOMAIN_ENUM_NAMES = frozenset(
+    {
+        "CriterionStatus",
+        "GoalBulletCategory",
+        "OperationalHealth",
+        "PurgeFailureCode",
+    }
+)
 
 if TYPE_CHECKING:
+    from .domain_enums import (
+        CriterionStatus,
+        GoalBulletCategory,
+        OperationalHealth,
+        PurgeFailureCode,
+    )
+    from .goal_read_models import (
+        CriterionProgress,
+        FactCapacity,
+        FactCompactionProposal,
+        GoalCriteriaVersion,
+        GoalSnapshot,
+    )
     from .read_models import (
         ArtifactEvidenceBinding,
         ArtifactEvidenceDependency,
@@ -114,11 +165,17 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> object:
-    """Preserve legacy imports for read models housed in their own module."""
+    """Preserve model imports for records housed in focused modules."""
 
     if name not in _READ_MODEL_NAMES:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    module = import_module(f"{__package__}.read_models")
+    if name in _DOMAIN_ENUM_NAMES:
+        module_name = "domain_enums"
+    elif name in _PROJECTION_READ_MODEL_NAMES:
+        module_name = "goal_read_models"
+    else:
+        module_name = "read_models"
+    module = import_module(f"{__package__}.{module_name}")
     return getattr(module, name)
 
 
@@ -132,155 +189,6 @@ def new_id() -> str:
     """Generate an opaque identifier suitable for ledger records."""
 
     return uuid4().hex
-
-
-class GoalStatus(StrEnum):
-    """Persisted lifecycle states for a goal and its open work."""
-
-    PLANNED = "planned"
-    ACTIVE = "active"
-    COMPLETE = "complete"
-    OPEN = "open"
-    BLOCKED = "blocked"
-    DEFERRED = "deferred"
-    CANCELLED = "cancelled"
-    SUPERSEDED = "superseded"
-
-
-class CriterionStatus(StrEnum):
-    """Verification state of one success criterion."""
-
-    VERIFIED = "verified"
-    OPEN = "open"
-
-
-class GoalBulletCategory(StrEnum):
-    """Truth labels for the compact user-facing goal projection."""
-
-    PROBLEM = "problem"
-    CRITERION = "criterion"
-    RECORDED = "recorded_fact"
-    VERIFIED = "verified_fact"
-    UNVERIFIED = "unverified_claim"
-    OPEN = "open_gate"
-    NEXT = "next_action"
-
-
-class FactKind(StrEnum):
-    """Typed development facts that may be appended to a goal ledger."""
-
-    INTENT = "intent"
-    RESEARCH = "research"
-    ADVICE = "advice"
-    PROPOSAL = "proposal"
-    CHANGE = "change"
-    VERIFICATION = "verification"
-    OPEN_GATE = "open_gate"
-    COMPLETION_CLAIM = "completion_claim"
-    OUTCOME = "outcome"
-    REOPENED = "reopened"
-    CRITERIA_AMENDED = "criteria_amended"
-    CANCELLED = "cancelled"
-    SUPERSEDED = "superseded"
-
-
-class EvidenceOutcome(StrEnum):
-    """Observed result attached to a bounded evidence reference."""
-
-    PASSED = "passed"
-    FAILED = "failed"
-    OBSERVED = "observed"
-
-
-class Materiality(StrEnum):
-    """Reason category used to assess significant development events."""
-
-    IMPLEMENTATION = "implementation"
-    DECISION = "decision"
-    RECOVERY = "recovery"
-    VERIFIED_LESSON = "verified_lesson"
-    ROUTINE = "routine"
-
-
-class SDEStatus(StrEnum):
-    """Review state of a significant development event candidate."""
-
-    PENDING_REVIEW = "pending_review"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
-class ReviewDecision(StrEnum):
-    """Human disposition recorded for an SDE candidate."""
-
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
-class SDEQualityFeedbackLabel(StrEnum):
-    """Explicit human QA labels; they are not inferred or model predictions."""
-
-    USEFUL = "useful"
-    NOT_USEFUL = "not_useful"
-    INACCURATE = "inaccurate"
-    DUPLICATE = "duplicate"
-
-
-class PurgeStatus(StrEnum):
-    """Overall purge state attached to an auditable review receipt."""
-
-    PURGE_PENDING = "purge_pending"
-    COMPLETE = "complete"
-
-
-class OperationalHealth(StrEnum):
-    """Conservative aggregate state for one project's observed operations."""
-
-    HEALTHY = "healthy"
-    DEGRADED = "degraded"
-    UNKNOWN = "unknown"
-
-
-class ArtifactStatus(StrEnum):
-    """Purge state of one inventoried transient artifact."""
-
-    PENDING = "pending"
-    PURGED = "purged"
-    FAILED = "failed"
-    HELD = "held"
-
-
-class PurgeFailureCode(StrEnum):
-    """Content-free reasons for retryable artifact purge failures."""
-
-    RETENTION_HOLD = "retention_hold"
-    INVALID_PATH = "invalid_path"
-    OUTSIDE_STAGING_ROOT = "outside_staging_root"
-    STAGING_ROOT = "staging_root"
-    UNSUPPORTED_PLATFORM = "unsupported_platform"
-    NOT_REGULAR_FILE = "not_regular_file"
-    ARTIFACT_CHANGED = "artifact_changed"
-    HASH_MISMATCH = "hash_mismatch"
-    PATH_CHANGED = "path_changed"
-    FILESYSTEM_ERROR = "filesystem_error"
-    INVALID_ARTIFACT = "invalid_artifact"
-    LEGACY_FAILURE_DETAIL_REDACTED = "legacy_failure_detail_redacted"
-
-
-class RetentionHoldKind(StrEnum):
-    """Reason class for an explicit, reviewer-visible artifact retention hold."""
-
-    LEGAL = "legal"
-    OPERATIONAL = "operational"
-
-
-class ReacquisitionAction(StrEnum):
-    """Reviewer decision for an artifact that may be removed after review."""
-
-    NOT_RECORDED = "not_recorded"
-    NOT_REQUIRED = "not_required"
-    REACQUIRE_FROM_SOURCE = "reacquire_from_source"
-    RETAIN_UNDER_HOLD = "retain_under_hold"
 
 
 def _is_retention_hold_kind(value: object) -> TypeGuard[RetentionHoldKind]:
@@ -993,138 +901,3 @@ def _validate_receipt_canonical_proof(receipt: AuditReceipt) -> None:
             raise ValueError("canonical persistence target must be one line")
     elif any(value is not None for value in proof):
         raise ValueError("canonical persistence proof fields require persisted=true")
-
-
-@dataclass(frozen=True, slots=True)
-class CriterionProgress:
-    """Current verified/open state and proof links for one criterion."""
-
-    criterion_id: str
-    description: str
-    status: CriterionStatus
-    verification_fact_ids: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class GoalCriteriaVersion:
-    """Immutable snapshot of the original or amended goal contract."""
-
-    revision: int
-    criteria: tuple[SuccessCriterion, ...]
-    reason: str
-    created_at: str
-
-    def __post_init__(self) -> None:
-        validate_safe_text(self.reason, "criteria_version.reason")
-
-
-@dataclass(frozen=True, slots=True)
-class FactCapacity:  # pylint: disable=too-many-instance-attributes  # Capacity counters form one bounded read snapshot.
-    """Current append budget; reaching it blocks capture without pruning facts."""
-
-    goal_fact_count: int
-    goal_fact_bytes: int
-    goal_fact_count_limit: int
-    goal_fact_bytes_limit: int
-    goal_fact_count_remaining: int
-    goal_fact_bytes_remaining: int
-    project_fact_count: int
-    project_fact_bytes: int
-    project_fact_count_limit: int
-    project_fact_bytes_limit: int
-    project_fact_count_remaining: int
-    project_fact_bytes_remaining: int
-    append_available: bool
-    open_gate: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class FactCompactionProposal:
-    """Exact routine facts proposed for reviewer-approved archival."""
-
-    compaction_id: str
-    project_id: str
-    goal_id: str
-    facts: tuple[Fact, ...]
-    source_sha256: str
-    source_bytes: int
-    estimated_compressed_bytes: int
-
-    def __post_init__(self) -> None:
-        if not self.facts or len(self.facts) > MAX_FACT_COMPACTION_BATCH_FACTS:
-            raise ValueError("compaction proposal must contain 1-64 facts")
-        if len({fact.fact_id for fact in self.facts}) != len(self.facts):
-            raise ValueError("compaction proposal fact IDs must be unique")
-        if any(fact.goal_id != self.goal_id for fact in self.facts):
-            raise ValueError("compaction proposal facts must share its goal")
-        if not _SHA256_RE.fullmatch(self.source_sha256):
-            raise ValueError("compaction source_sha256 must be lowercase SHA-256")
-        if not 1 <= self.source_bytes <= MAX_FACT_COMPACTION_SOURCE_BYTES:
-            raise ValueError("compaction source exceeds the bounded batch size")
-        if not 1 <= self.estimated_compressed_bytes <= MAX_FACT_COMPACTION_SOURCE_BYTES:
-            raise ValueError("compaction estimate exceeds the bounded batch size")
-
-
-@dataclass(frozen=True, slots=True)
-class GoalSnapshot:  # pylint: disable=too-many-instance-attributes  # Paginated goal summary fields form one read model.
-    """Bounded read model combining a goal with its current ledger state."""
-
-    goal: GoalCard
-    facts: tuple[Fact, ...]
-    sde_candidates: tuple[SDECandidate, ...]
-    pending_purges: tuple[AuditReceipt, ...]
-    criteria: tuple[CriterionProgress, ...] = ()
-    criteria_history: tuple[GoalCriteriaVersion, ...] = ()
-    fact_capacity: FactCapacity | None = None
-    sde_candidate_total: int | None = None
-    sde_candidate_offset: int = 0
-    sde_candidate_next_offset: int | None = None
-    sde_candidate_status_counts: tuple[tuple[str, int], ...] = ()
-    pending_purge_total: int | None = None
-    pending_purge_offset: int = 0
-    pending_purge_next_offset: int | None = None
-
-    def __post_init__(self) -> None:
-        """Keep status detail pages bounded and pagination metadata consistent."""
-
-        if len(self.sde_candidates) > MAX_GOAL_STATUS_CANDIDATES:
-            raise ValueError("goal status contains too many SDE candidates")
-        if len(self.pending_purges) > MAX_GOAL_STATUS_PURGE_RECEIPTS:
-            raise ValueError("goal status contains too many pending purge receipts")
-        for label, total, offset, records, next_offset in (
-            (
-                "SDE candidate",
-                self.sde_candidate_total,
-                self.sde_candidate_offset,
-                self.sde_candidates,
-                self.sde_candidate_next_offset,
-            ),
-            (
-                "pending purge",
-                self.pending_purge_total,
-                self.pending_purge_offset,
-                self.pending_purges,
-                self.pending_purge_next_offset,
-            ),
-        ):
-            if total is None:
-                if next_offset is not None:
-                    raise ValueError(f"{label} next offset requires a total")
-                continue
-            if not is_exact_int(total) or total < 0:
-                raise ValueError(f"{label} total must be a non-negative integer")
-            if not is_exact_int(offset) or offset < 0:
-                raise ValueError(f"{label} offset must be a non-negative integer")
-            expected_next = offset + len(records) if offset + len(records) < total else None
-            if next_offset != expected_next:
-                raise ValueError(f"{label} next offset does not match its page")
-        valid_sde_states = {status.value for status in SDEStatus}
-        if any(
-            status not in valid_sde_states
-            or not is_exact_int(count)
-            or count < 0
-            for status, count in self.sde_candidate_status_counts
-        ):
-            raise ValueError(
-                "SDE status counts must contain known states and non-negative counts"
-            )

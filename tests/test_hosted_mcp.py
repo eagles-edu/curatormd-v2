@@ -18,7 +18,9 @@ from unittest.mock import patch
 
 from project_fixtures import (
     TestProjectAccess,
+    build_test_profile_mcp,
     create_consumer_repo,
+    open_test_profile_mcp,
     register_test_project_access,
     write_consumer_config,
 )
@@ -197,13 +199,9 @@ class HostedMcpTests(unittest.TestCase):
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(root, database, "gptmd-coding", allow_write=True)
-            runtime = build_local_profile_mcp(
-                project_root=root,
-                database=database,
-                profile_id="gptmd-coding",
-                allow_write=True,
-            )
-            try:
+            with open_test_profile_mcp(
+                root, database, allow_write=True
+            ) as runtime:
                 authorizer = runtime.api.authorizer
                 self.assertTrue(
                     authorizer.authorize(
@@ -227,9 +225,6 @@ class HostedMcpTests(unittest.TestCase):
                         runtime.caller, "bound-project", ProjectAction.REVIEW
                     )
                 )
-            finally:
-                runtime.close()
-
     def test_review_grant_is_exact_and_requires_launcher_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
@@ -320,10 +315,9 @@ class HostedMcpTests(unittest.TestCase):
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(root, database, "gptmd-coding", allow_write=True)
-            runtime = build_local_profile_mcp(
+            runtime = build_test_profile_mcp(
                 project_root=root,
                 database=database,
-                profile_id="gptmd-coding",
                 allow_write=True,
             )
             try:
@@ -655,10 +649,9 @@ class HostedMcpTests(unittest.TestCase):
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
             self._provision(root, database, "gptmd-coding", allow_write=True)
-            runtime = build_local_profile_mcp(
+            runtime = build_test_profile_mcp(
                 project_root=root,
                 database=database,
-                profile_id="gptmd-coding",
                 allow_write=True,
             )
             entered_effect = Event()

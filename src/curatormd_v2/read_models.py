@@ -462,6 +462,7 @@ class ProjectActivitySnapshot:  # pylint: disable=too-many-instance-attributes
     last_event_received_at: str | None
     last_event_processed_at: str | None
     goal_count: int
+    goal_status_counts: tuple[GoalStatusStorageUsage, ...]
     fact_count: int
     sde_candidate_count: int
     pending_sde_count: int
@@ -489,6 +490,16 @@ class ProjectActivitySnapshot:  # pylint: disable=too-many-instance-attributes
             raise ValueError("activity counts must be non-negative integers")
         if self.event_receipt_count != sum(counts[1:5]):
             raise ValueError("event receipt total must match its processing states")
+        if (
+            len(self.goal_status_counts) != len(GoalStatus)
+            or {item.status for item in self.goal_status_counts} != set(GoalStatus)
+            or any(
+                not is_exact_int(item.count) or item.count < 0
+                for item in self.goal_status_counts
+            )
+            or sum(item.count for item in self.goal_status_counts) != self.goal_count
+        ):
+            raise ValueError("goal status counts must cover the exact goal total")
         if self.sde_candidate_count != sum(counts[8:11]):
             raise ValueError("SDE total must match its review states")
         if not is_exact_bool(self.events_observed):

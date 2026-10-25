@@ -22,7 +22,7 @@ from mcp.server import MCPServer
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .evidence import EvidenceVerifier
-from .local_evidence_config import load_local_service_probe_verifier
+from .local_evidence_config import load_local_evidence_verifier
 from .mcp_server import HermesContextOptions, RequestHostReadiness, build_mcp_server
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
@@ -129,7 +129,7 @@ def build_local_profile_mcp(
         host_evidence_path = validate_host_evidence_config_path(
             evidence_config, config.project_root
         )
-        selected_evidence_verifier = load_local_service_probe_verifier(
+        selected_evidence_verifier = load_local_evidence_verifier(
             host_evidence_path,
             project_id=config.project_id,
         )

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import sys
@@ -21,6 +23,7 @@ from curatormd_v2 import (
     ProjectRegistrationRequest,
     ReviewAuthorizer,
 )
+from curatormd_v2.hosted_mcp import LocalProfileMCP, build_local_profile_mcp
 
 
 def create_consumer_repo(root: Path) -> Path:
@@ -76,6 +79,40 @@ def configure_stdio_consumer(root: Path, project_id: str) -> StdioServerParamete
         env={"CURATOR_TEST_PROJECT_ROOT": str(root)},
         cwd=Path(__file__).parents[1],
     )
+
+
+def build_test_profile_mcp(
+    project_root: Path,
+    database: Path,
+    *,
+    allow_write: bool = False,
+) -> LocalProfileMCP:
+    """Build the common isolated gptmd-coding profile used by launcher tests."""
+
+    return build_local_profile_mcp(
+        project_root=project_root,
+        database=database,
+        profile_id="gptmd-coding",
+        allow_write=allow_write,
+    )
+
+
+@contextmanager
+def open_test_profile_mcp(
+    project_root: Path,
+    database: Path,
+    *,
+    allow_write: bool = False,
+) -> Generator[LocalProfileMCP, None, None]:
+    """Open and reliably close a common disposable profile runtime."""
+
+    runtime = build_test_profile_mcp(
+        project_root, database, allow_write=allow_write
+    )
+    try:
+        yield runtime
+    finally:
+        runtime.close()
 
 
 class _TestProjectAdministrator:  # pylint: disable=too-few-public-methods

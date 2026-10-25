@@ -10,11 +10,14 @@ import sqlite3
 import tempfile
 import unittest
 
-from project_fixtures import create_consumer_repo
+from project_fixtures import (
+    build_test_profile_mcp,
+    create_consumer_repo,
+    open_test_profile_mcp,
+)
 
 from curatormd_v2 import ProjectAction
 from curatormd_v2.access_cli import main
-from curatormd_v2.hosted_mcp import build_local_profile_mcp
 from curatormd_v2.project_config import ProjectConfig
 
 
@@ -194,20 +197,14 @@ class AccessCliTests(unittest.TestCase):
                 f"Grant exact {action} access for the test profile",
             )
             self.assertEqual(granted, 0, errors)
-        runtime = build_local_profile_mcp(
-            project_root=root,
-            database=database,
-            profile_id="gptmd-coding",
-            allow_write=True,
-        )
-        try:
+        with open_test_profile_mcp(
+            root, database, allow_write=True
+        ) as runtime:
             self.assertTrue(
                 runtime.api.authorizer.authorize(
                     runtime.caller, "cli-project", ProjectAction.WRITE
                 )
             )
-        finally:
-            runtime.close()
 
     def _update_config_and_verify_replay(self, root: Path, database: Path) -> None:
         """Approve one reviewed config transition and prove its retry is stable."""
@@ -273,10 +270,9 @@ class AccessCliTests(unittest.TestCase):
             "cli-suspend-1",
         )
         with self.assertRaisesRegex(ValueError, "registration fingerprint"):
-            build_local_profile_mcp(
+            build_test_profile_mcp(
                 project_root=root,
                 database=database,
-                profile_id="gptmd-coding",
                 allow_write=True,
             )
         view_output = self._run_success(

@@ -9,14 +9,11 @@ import json
 import os
 from pathlib import Path
 import re
-import selectors
 import shutil
-import subprocess  # nosec B404
-import time
 
 from .evidence import EvidenceSourceReceipt, EvidenceVerificationContext
+from .evidence_process import BoundedEvidenceProcessRequest, hash_bounded_stdout
 from .models import EvidenceRef
-from .process_control import kill_process_group
 from .validation import is_exact_int
 
 MAX_SERVICE_PROBE_OUTPUT_BYTES = 64 * 1024
@@ -146,60 +143,16 @@ class LocalServiceProbeResolver:  # pylint: disable=too-few-public-methods
             revoked=False,
         )
 
-    def _run_probe(self) -> str:  # pylint: disable=too-many-branches
+    def _run_probe(self) -> str:
         """Hash bounded stdout only; never return or persist service output."""
-
-        try:
-            process = subprocess.Popen(  # nosec B603  # pylint: disable=consider-using-with
-                self.spec.command,
-                cwd=self.spec.working_directory,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                env=self.spec.environment,
-                start_new_session=True,
+        return hash_bounded_stdout(
+            BoundedEvidenceProcessRequest(
+                command=self.spec.command,
+                working_directory=self.spec.working_directory,
+                environment=self.spec.environment,
+                timeout_seconds=self.spec.timeout_seconds,
+                max_output_bytes=self.spec.max_output_bytes,
+                label="configured service probe",
+                empty_output_message="configured service probe returned no evidence",
             )
-        except OSError:
-            raise RuntimeError("configured service probe could not start") from None
-        if process.stdout is None:
-            process.kill()
-            process.wait()
-            raise RuntimeError("configured service probe output is unavailable")
-
-        selector = selectors.DefaultSelector()
-        digest = hashlib.sha256()
-        total_bytes = 0
-        deadline = time.monotonic() + self.spec.timeout_seconds
-        try:
-            os.set_blocking(process.stdout.fileno(), False)
-            selector.register(process.stdout, selectors.EVENT_READ)
-            while selector.get_map():
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise RuntimeError("configured service probe timed out")
-                ready = selector.select(min(remaining, 0.1))
-                for key, _ in ready:
-                    chunk = os.read(key.fd, 8192)
-                    if not chunk:
-                        selector.unregister(key.fileobj)
-                        continue
-                    total_bytes += len(chunk)
-                    if total_bytes > self.spec.max_output_bytes:
-                        raise RuntimeError("configured service probe output exceeded its limit")
-                    digest.update(chunk)
-            try:
-                return_code = process.wait(timeout=max(0.1, deadline - time.monotonic()))
-            except subprocess.TimeoutExpired:
-                raise RuntimeError("configured service probe timed out") from None
-            if return_code != 0:
-                raise RuntimeError("configured service probe returned failure")
-            if total_bytes == 0:
-                raise RuntimeError("configured service probe returned no evidence")
-            return digest.hexdigest()
-        except Exception:
-            kill_process_group(process)
-            process.wait()
-            raise
-        finally:
-            selector.close()
-            process.stdout.close()
+        )

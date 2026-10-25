@@ -6388,6 +6388,14 @@ class CuratorStore:
                         (project_id,),
                     ).fetchone()[0]
                 )
+                goal_status_counts = {
+                    row["status"]: int(row["count"])
+                    for row in self._connection.execute(
+                        "SELECT status, COUNT(*) AS count FROM goals "
+                        "WHERE project_id = ? GROUP BY status",
+                        (project_id,),
+                    ).fetchall()
+                }
                 fact_count = int(
                     self._connection.execute(
                         "SELECT COUNT(*) FROM facts AS f JOIN goals AS g "
@@ -6427,6 +6435,12 @@ class CuratorStore:
             last_event_received_at=event_times["last_received"],
             last_event_processed_at=event_times["last_processed"],
             goal_count=goal_count,
+            goal_status_counts=tuple(
+                GoalStatusStorageUsage(
+                    status=status, count=goal_status_counts.get(status.value, 0)
+                )
+                for status in GoalStatus
+            ),
             fact_count=fact_count,
             sde_candidate_count=pending_sde + approved_sde + rejected_sde,
             pending_sde_count=pending_sde,

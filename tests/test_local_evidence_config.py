@@ -11,8 +11,11 @@ from typing import cast
 
 from curatormd_v2.local_evidence_config import (
     MAX_LOCAL_EVIDENCE_CONFIG_BYTES,
+    load_local_browser_proof_verifier,
+    load_local_evidence_verifier,
     load_local_service_probe_verifier,
 )
+from curatormd_v2 import BrowserProofEvidenceAdapter, EvidenceAdapterRegistry
 from curatormd_v2.hosted_mcp import validate_host_evidence_config_path
 
 
@@ -26,7 +29,7 @@ class LocalEvidenceConfigTests(unittest.TestCase):
         self.temporary_directory = temporary
         self.root = Path(temporary)
         self.path = self.root / "evidence.json"
-        self.value = {
+        self.value: dict[str, object] = {
             "schema_version": 1,
             "project_id": "vhost-manager-alpha",
             "probe": {
@@ -50,6 +53,43 @@ class LocalEvidenceConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(type(verifier).__name__, "ServiceProbeEvidenceAdapter")
+
+    def test_loads_browser_proof_and_combined_local_sources(self) -> None:
+        self.value["browser_proof"] = {
+            "adapter_id": "local-browser-home",
+            "proof_id": "vhost-home",
+            "url": "http://127.0.0.1:8700/",
+            "executable": sys.executable,
+        }
+        self._write()
+
+        browser_verifier = load_local_browser_proof_verifier(
+            self.path, project_id="vhost-manager-alpha"
+        )
+        combined_verifier = load_local_evidence_verifier(
+            self.path, project_id="vhost-manager-alpha"
+        )
+
+        self.assertIsInstance(browser_verifier, BrowserProofEvidenceAdapter)
+        self.assertIsInstance(combined_verifier, EvidenceAdapterRegistry)
+
+    def test_browser_proof_config_rejects_public_origin(self) -> None:
+        self.value = {
+            "schema_version": 1,
+            "project_id": "vhost-manager-alpha",
+            "browser_proof": {
+                "adapter_id": "local-browser-home",
+                "proof_id": "vhost-home",
+                "url": "https://example.invalid/",
+                "executable": sys.executable,
+            },
+        }
+        self._write()
+
+        with self.assertRaisesRegex(ValueError, "loopback host"):
+            load_local_browser_proof_verifier(
+                self.path, project_id="vhost-manager-alpha"
+            )
 
     def test_rejects_group_or_world_access(self) -> None:
         self._write(mode=0o640)

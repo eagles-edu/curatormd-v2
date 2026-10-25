@@ -12,7 +12,19 @@ from curatormd_v2 import (
     PurgeError,
     PurgeFailureCode,
     ReviewDecision,
+    SDEConfirmationRequest,
 )
+
+
+def approved_empty_inventory_request(candidate_id: str) -> SDEConfirmationRequest:
+    """Build an approved review request for a candidate with no artifacts."""
+
+    return SDEConfirmationRequest(
+        candidate_id=candidate_id,
+        decision=ReviewDecision.APPROVED,
+        artifacts=(),
+        artifact_inventory_complete=True,
+    )
 
 
 class TestVerifier:  # pylint: disable=too-few-public-methods

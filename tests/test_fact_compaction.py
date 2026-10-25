@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
-import tempfile
 import unittest
 from unittest.mock import patch
 import zlib
 
 from evidence_fixtures import attest_test_evidence
+from store_fixtures import create_store_stage
 
 from curatormd_v2 import (
     ArtifactPurger,
@@ -52,12 +51,7 @@ class FactCompactionTests(unittest.TestCase):
     """Prove proposal, approval, archive integrity, and recovery behavior."""
 
     def setUp(self) -> None:
-        self.root = Path(
-            self.enterContext(tempfile.TemporaryDirectory())  # pylint: disable=consider-using-with
-        )
-        self.stage = self.root / "stage"
-        self.stage.mkdir()
-        self.store = CuratorStore(self.root / "curator.sqlite3")
+        self.root, self.stage, self.store = create_store_stage(self)
         self.service = CuratorService(
             self.store, ArtifactPurger(self.stage), AcceptTestEvidence(),
             project_id="archive-project",

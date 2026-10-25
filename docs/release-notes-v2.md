@@ -13,6 +13,10 @@ capture, destructive cleanup, or deployment.
 - The package provides the local SQLite ledger, stdio MCP launcher, reference
   repository plugin, bounded staging and inventory, explicit one-shot router
   and purge commands, Markdown projection, and backup/restore-to-new-path CLI.
+- The Hermes profile status view reports all eight exact goal lifecycle counts
+  alongside event/SDE activity and a separately timestamped health, staging,
+  and purge observation. Its local-alpha read reconciles 8 goals to the
+  paginated total; production and multi-project readiness remain open.
 - Hermes Core lifecycle integration and Host Steward are separately owned and
   versioned in the Hermes Core repository. Consumer configuration and plugins
   belong in each consumer repository.
@@ -27,8 +31,12 @@ capture, destructive cleanup, or deployment.
   scheduling, dead-letter operations, monitoring, and alert delivery are open.
 - Retention policy, legal and operational holds, production recovery drills,
   and deployment rollback require owner decisions and direct evidence.
-- Local package acceptance and synthetic consumer tests do not establish a
-  real application workflow, production persistence, or live service health.
+- A real local Vhost Manager apply/rollback workflow now produces processed
+  Curator receipts, and the latest operation facts reconcile to its configured
+  Markdown history. This proves only the exercised local routes. Complete
+  producer/artifact coverage, standalone utilities, human disposition, a real
+  certificate renewal, production persistence, and release sign-off remain
+  open.
 
 ### Operator guidance
 

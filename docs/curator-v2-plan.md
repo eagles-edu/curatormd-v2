@@ -191,18 +191,13 @@ Checkboxes describe verified repository state, not architectural intent:
 - `[ ]` Open: proposed, not implemented, or not yet verified end to end.
 - `[!]` Decision or external dependency required before the item can close.
 
-Progress counts refer to rows in this **Delivery checklist** section only.
-Reusable work-cycle and request templates and later acceptance prompts are not
-delivery items and are excluded from the numerator and denominator. Current
-direct recount (2026-10-25): **147 of 178 delivery rows are complete; 31 are
-open**. Count checkbox rows in sections 0–10, 12, and Definition of done only;
-section 11's reusable templates and example placeholders do not count. The
-177-row
-baseline includes the owner's separately requested V2-owned VS Code status-bar
-integration, the open real-consumer producer/source-coverage row, and the
-lifecycle row in the Definition of done. One added regression row covers
-terminal parent/dependency reopen relationships in Section 1 and is now
-complete. Historical narrative counts below are not current.
+Progress counts refer only to top-level delivery rows in numbered sections
+0–10 and 12 of this **Delivery checklist**. Section 11 reusable templates and
+the later Definition of done acceptance prompts are not delivery rows and are
+excluded from the count. Current direct recount (2026-10-26): **153 of 178
+delivery rows are complete; 25 are open**. The earlier 154/188 embedded
+recount did not match this scope and has been corrected. Historical narrative
+counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -564,6 +559,28 @@ consumer plugin, Hermes integration, or production deployment.
       live service evidence remain open. A focused launcher test confirms
       `main()` forwards the host config to its builder and closes the server
       runtime after exit.
+      Local browser progress (2026-10-26): added a host-configured system-Chrome
+      resolver and `curatormd-v2-evidence browser` capture command. It accepts
+      only one credential-free loopback URL, runs Chrome with an isolated
+      temporary profile and bounded time/output, streams the DOM into a digest,
+      and returns only a content-free evidence reference. The host-owned config
+      loader can combine this resolver with the local service probe; the hosted
+      MCP builder uses that combined registry. The exact host-owned JSON schema
+      and capture command are documented in
+      [`local-service-probes.md`](local-service-probes.md). Thirteen focused
+      tests pass (four browser, eight config, one CLI); the installed system
+      Chrome rendered a disposable loopback page and revalidated the evidence
+      without returning its DOM canary. Strict Pyright, focused Pylint, and the
+      `curatormd-v2-evidence --help` entrypoint pass. Local Vhost browser
+      recheck (2026-10-26): the active root service returned HTTP 200 on
+      `127.0.0.1:4310/`; the capture CLI rendered it in system Chrome, then the
+      host-configured adapter rerendered it and accepted the matching digest
+      for `vhost-manager-alpha` and `local-uid:1000`. Only the digest and
+      content-free attestation were returned. This covers the Vhost home-page
+      render only; no authenticated cookie session or Vhost operation was
+      exercised. Deployed trust roots, rotation, revocation, and live human
+      identity remain unconfigured. This local resolver does not close the
+      source-integration rows.
       Proposed source-by-source closure: before enabling any resolver, its
       source owner and deployment security owner identify the authoritative
       issuer, project and subject mapping, credential custodian, trust roots,
@@ -990,9 +1007,11 @@ consumer plugin, Hermes integration, or production deployment.
       that a clean scan is not a privacy or security certification. A versioned
       synthetic corpus exercises ten rejected examples and three benign
       neighbors. The focused four-test suite passes. This closes the documented
-      single-user local-alpha scanner boundary only; broader collection,
-      standalone producer coverage, and jurisdiction-specific evaluation stay
-      open.
+      single-user local-alpha scanner boundary. The approved Vhost standalone
+      producer/source-artifact audit is also closed for its reviewed local
+      development scope (see the owner-reviewed matrix and 2026-10-26 snapshot
+      recheck below). Broader collection and jurisdiction-specific evaluation
+      stay open.
 - [x] Write a preliminary threat register for the local implementation boundary,
       explicitly separating implemented controls from deployment assumptions and
       residual risks; see [`threat-model-v1.md`](threat-model-v1.md). Owner review,
@@ -2548,6 +2567,26 @@ consumer plugin, Hermes integration, or production deployment.
       path, where `quick_check` and the stored row verify. This is exact-wheel
       local packaging acceptance only; no consumer repository or live profile
       was changed.
+      Current alpha package acceptance (2026-10-26): built wheel SHA-256
+      `c1c3eb614e0dc85f5c9ebe28842316c6db8c59a748b14f05eb720ebb3bf3cee9`
+      and installed it only in the dedicated `renew-ssl-coding` V2 virtualenv
+      after verifying a 117-entry rollback archive (SHA-256
+      `a865a4ff3ae737bdee5a9df538b9cba330bf6fd6c8aab0c28e7c49a6360b3452`).
+      All 61 installed Python module hashes match source; `pip check` passes.
+      The full current Curator suite passes 465 tests; strict Pyright,
+      errors-only Pylint, Bandit, and locked dependency audit pass. Clean-wheel
+      acceptance passes both installed MCP tests, seven CLI entrypoints, and
+      SQLite backup/restore verification. The read-only Hermes profile probe
+      connects and discovers 48 tools; its reconciled `vhost-manager-alpha`
+      snapshot at `2026-10-25T18:57:17Z` reports 29/29 processed event receipts,
+      12 goals, eight facts, a complete empty staging inventory, and seven
+      healthy local dependencies. The Vhost consumer contract passes eight
+      disposable tests, and its Hermes-managed harness passes five events with
+      exact replay/retry/re-enrollment, projection reconciliation, privacy
+      checks, and reviewer-write denial. No gateway, web, or editor process was
+      restarted; existing process memory is not claimed to use the new wheel.
+      This is current local-alpha package and consumer-contract evidence, not
+      production identity, general live-gateway delivery, or release approval.
 - [x] Ship and install a Curator V2-owned VS Code status-bar extension labeled
       `CuratorMD V2`; its tooltip and click action state that health, capture,
       persistence, and identity are not checked. `node --check` passes, VS Code
@@ -2931,7 +2970,7 @@ consumer plugin, Hermes integration, or production deployment.
       their respective integration work. Production retention policy, scheduler
       deployment, and Hermes-authenticated reviewer identity remain separate
       release gates; this local implementation does not close them.
-- [ ] **Audit actual consumer producer coverage and out-of-root artifacts.**
+- [x] **Audit actual consumer producer coverage and out-of-root artifacts.**
       For each approved pilot consumer, build an owner-reviewed source-to-class
       matrix of real producers, transient artifact classes, lifecycle owners,
       and expected destinations. Mark a class absent only with owner
@@ -3055,14 +3094,135 @@ consumer plugin, Hermes integration, or production deployment.
       temporary fixture/database tree. Relative/file-descriptor paths and two
       `/var/tmp` operands remained unclassified; test mode did not include the
       running systemd service, root cron, ACME service, or provider boundary.
-      Manual/cron certificates were not renewed. Source scope, output retention,
-      external destination disposition, and host-hook coverage have not been
-      owner-confirmed. Keep this item open until the owner reviews the exact
-      matrix and approved disposable workflows are observed within a stated
-      process boundary.
-- [ ] Test two isolated consumer repositories, including cross-project access
-      denial and independent configuration/persistence through real plugins and
-      their configured persistence adapters. Progress (2026-10-19): the local
+      Manual/cron certificates were not renewed. Owner clarification
+      (2026-10-25): manual DNS challenge values, passwords, and keys must not be
+      recorded verbatim. Vhost's manual ACME script now filters its persistent
+      log stream for labeled TXT/expected values, credential assignments,
+      long token-like values, and PEM private-key blocks; a synthetic canary
+      test verifies they are absent while ordinary status text remains. This
+      is log handling only and does not add a Curator producer. Source scope,
+      output retention, external destination disposition, and host-hook
+      coverage have not been owner-confirmed. Keep this item open until the
+      owner reviews the exact matrix and approved disposable workflows are
+      observed within a stated process boundary. Managed integration recheck
+      (2026-10-25): the Vhost-owned disposable harness passed against Hermes
+      Core's current HookRegistry/HookContext, managed stdio MCP client, and the
+      installed Curator V2 server. Five bounded events reached the isolated
+      project and were acknowledged, with exact replay, queued-delivery retry,
+      lost-ack recovery after re-enrollment, a fresh source epoch, explicit
+      binding, planned-goal denial, canonical projection reconciliation, and
+      reviewer-write denial verified. Private model/cwd canaries were absent and
+      an out-of-scope target stayed unchanged. The test uses synthetic lifecycle
+      events and disposable state; it does not prove a real Codex app-server turn
+      or cover every producer/artifact class. The consumer worktree is dirty and
+      this run is not bound to a clean source revision. Keep source-coverage and
+      live workflow gates open. Vhost route recheck (2026-10-25): the focused
+      `test_vhost_apply_route_persists_and_retries_exact_curator_receipt` also
+      passes against a temporary HTTP server, project database, and filesystem.
+      It exercises apply, archive, rollback, SSL/cron outcomes, Curator outage,
+      exact-operation retry, and interrupted-operation recovery; it performs no
+      real certificate renewal or live Vhost change. This is application-route
+      contract evidence, not a live user workflow or full producer inventory.
+      Current root-service workflow (2026-10-25 19:15 +07): after restarting
+      the configured local service on current source, apply/rollback of the
+      absent `curator-v2-smoke-20261025.test` target both returned exact V2
+      receipts. Operation IDs were `b335561e-8417-4f76-9cff-5da7ba903e90` and
+      `06ccae0b-ac13-4a96-aa30-db79f99ed045`; their event IDs are
+      `vhost-apply-b335561e-8417-4f76-9cff-5da7ba903e90` and
+      `vhost-rollback-06ccae0b-ac13-4a96-aa30-db79f99ed045`. The installed
+      Curator ledger confirms both exact receipts are `processed`; the API
+      reports no discovered site afterward, and post-run Nginx/OpenLiteSpeed
+      are active with valid configs. No certificate was changed. This verifies
+      the local live app route for this disposable site only. The checkout is
+      dirty, and full producer inventory, review/disposition, standalone-script
+      scope, and release gates remain open.
+      Standalone-result route progress (2026-10-25 19:45 +07): the Vhost
+      consumer now routes manual DNS renewal, batch renewal, inventory refresh,
+      and standalone Nginx setup outcomes through a fixed producer allowlist.
+      The payload contains only producer ID, operation UUID, and exit code; a
+      private bounded queue retries after Vhost outage, and the app retains the
+      exact operation for Curator receipt retry. A disposable installed-package
+      HTTP/MCP contract exercises all four IDs, outage retry, processed receipts,
+      path/canary absence, and an actual `update_domain_inventory.sh` run using
+      fixture inputs and fake network binaries. The focused route test, shell
+      syntax, Python compilation, Node syntax, ESLint, Prettier, Vhost helper
+      Pylint (10.00/10), and Vhost `git diff --check` pass. This does not
+      exercise manual DNS, batch renewal,
+      or Nginx apply workflows, nor observe their full artifact trees or host/
+      provider writes. The dirty source matrix is rebound in Vhost
+      `persistence/HISTORY.md`; the consumer service was not restarted. Keep
+      this checklist item open pending workflow-bounded artifact observations,
+      explicit out-of-root owner dispositions, and review of the current dirty
+      source/config binding. No Curator data was removed.
+      Queue-cap follow-up (2026-10-25 19:55 +07): fixed a false retry message
+      when all 100 private Vhost queue slots are occupied; the 101st result is
+      rejected and reported as not queued. Its focused regression passes,
+      Python compilation and shell syntax pass, and the helper/test pair scores
+      10.00/10 under Pylint. Source binding is refreshed in Vhost
+      `persistence/HISTORY.md`. Manual renewal, batch execution, and Nginx apply
+      still need workflow observation; no broader checklist marker changed.
+      Standalone workflow evidence (2026-10-25 19:59 +07): rootless private
+      mount-namespace tests now execute the actual batch confirmation/progress
+      path with a fixture renewal child, and the actual standalone Nginx
+      --apply path with fixture Nginx mounts and service stubs. The bounded
+      result payloads contain no domain/path data. The batch, setup, and queue
+      tests pass, as does the synthetic manual-DNS secret-redaction test. This
+      does not exercise the complete manual DNS issue/renew workflow or the
+      root ACME cron, which still bypasses Curator. The refreshed 23-file dirty
+      source/config/test binding and limitations are recorded in Vhost
+      persistence/HISTORY.md. Owner-reviewed disposition of out-of-root
+      writes and bounded observations for the remaining workflow are still
+      absent; keep this full audit marker open.
+      Owner-reviewed closure (2026-10-25): the owner confirmed the standalone
+      Vhost scope and approved the no-verbatim rule for manual DNS values,
+      passwords, keys, and raw output. The source-to-class matrix is now in
+      [`vhost-producer-coverage-v2.md`](vhost-producer-coverage-v2.md). It binds
+      the dirty consumer checkout at `7d2b10f5433cfe566fc560741bbc9401265176f4`,
+      the unchanged config hash, and the 23-file source/config/adapter/test
+      manifest hash. Current root crontab entries invoke the ACME bridge at the
+      four recorded daily times; the installed wrapper hash matches the
+      reviewed repository bridge. Six focused tests pass for the bounded queue,
+      manual DNS failure/restore, batch renewal, inventory refresh, Nginx
+      setup, and log redaction. `strace -f -yy` records 455 mutating file
+      operations across those disposable test process trees; fixture paths and
+      the observation exclusions are documented in the matrix. The configured
+      physical staging root has zero entries, consistent with the supported
+      profile snapshot at 2026-10-25 19:21 +07 reporting a complete zero-file
+      inventory. The larger
+      HTTP/MCP contract was interrupted in a later rollback-replay subprocess;
+      it is not claimed as a passing full-suite run. This closes the local
+      source/artifact audit for the approved dirty development snapshot only.
+      Persistent-log retention, live renewal, unclassified test/runtime paths,
+      production behavior, and release approval remain separate gates. Any
+      included source or config change requires a fresh matrix and owner review.
+      Standalone snapshot recheck (2026-10-26): the owner directed closure of
+      the standalone-script coverage item. All four standalone workflows, the
+      queue, and log-redaction regression pass against the current dirty Vhost
+      checkout (6 tests). Current reviewed path/content manifest SHA-256:
+      `390823695cf388aa91dda1003ae3d5b18f131f42990f0a09bc38b4e31f7d51f2`
+      over 24 sorted source/config/adapter/test files; the checkout remains at
+      `7d2b10f5433cfe566fc560741bbc9401265176f4`, and the V2 config hash is
+      unchanged. The standalone coverage row was already checked by the prior
+      owner-reviewed closure, so no checkbox count changed. This does not close
+      persistent-log retention, actual certificate renewal, host/provider
+      observations, production behavior, or release approval. The alpha
+      is explicitly single-repository-at-a-time; shared multi-consumer
+      runtime is out of scope and is not a release gate unless the owner
+      expands scope.
+- [x] Verify project isolation for the approved one-repository-at-a-time alpha:
+      the installed Vhost plugin uses its repository config, exact grants, and
+      configured persistence target while an unrelated project is denied.
+      Owner-scope closure (2026-10-25): the current alpha is single-user and one
+      development repository at a time. The installed-package contract copies
+      the real Vhost config and tests it alongside a synthetic adversarial
+      project against one disposable store; cross-project reads are denied and
+      each configured Markdown target contains only its own goal. The focused
+      contract passes. Hermes managed integration also verifies exact project
+      and session binding, planned-goal denial, reviewer-write denial, and an
+      unchanged out-of-scope target. This closes alpha isolation without
+      claiming two real consumers or multi-user authentication. Owner-approved
+      production scope remains separate.
+      Historical progress (2026-10-19): the local
       fixture test now projects two isolated goals through separate repository
       configs into each configured `persistence/HISTORY.md`, verifies neither
       projection contains the other project's goal, and refuses cross-project
@@ -3081,8 +3241,10 @@ consumer plugin, Hermes integration, or production deployment.
       target is rejected and a read/write-only launcher cannot persist without
       the separate review grant. All six installed-package Vhost contracts
       pass. This verifies one consumer config and the local Markdown adapter;
-      authorized review persistence, a second real consumer, and live Hermes
-      identity/runtime isolation remain open. Additional local progress
+      authorized review persistence and live Hermes identity/runtime isolation
+      remained open at this historical checkpoint. The second real consumer is
+      no longer an alpha requirement under the current one-repository-at-a-time
+      scope. Additional local progress
       (2026-10-21): the installed-package Vhost contract now starts two
       separately configured consumer launchers against one disposable SQLite
       store. Each has an exact project/profile grant; cross-project status
@@ -3091,7 +3253,13 @@ consumer plugin, Hermes integration, or production deployment.
       repository; the second is a synthetic consumer config, so a second real
       consumer and trusted live identity remain open. All seven Vhost contracts
       pass under the installed alpha environment.
-      Proposed owner-gated generalization sequence: the Vhost owner and a second
+      Current-source recheck (2026-10-25):
+      `test_two_installed_consumers_isolate_access_and_configured_persistence`
+      passes using the installed alpha package, the actual Vhost config, and a
+      synthetic second project. It verifies isolated configured projections
+      and cross-project read denial. Two real consumer installations and live
+      identity are deferred under the approved one-repository-at-a-time scope.
+      Deferred generalization if scope expands: the Vhost owner and a second
       consumer owner identify the actual checkouts, repository-owned configs,
       exact project grants, and separate persistence/staging targets; synthetic
       configs do not count as the second consumer. Pin the same reviewed package
@@ -3131,9 +3299,10 @@ consumer plugin, Hermes integration, or production deployment.
       Keep failure visibility and recovery evidence separate from readiness
       claims. Retain only package/config/target
       fingerprints, operation and receipt IDs, bounded before/after hashes,
-      reconciliation results, and failure/retry outcomes. This remains proposed
-      until both real consumer owners approve the scenario and deployment-bound
-      adapters and identity are exercised.
+      reconciliation results, and failure/retry outcomes. This scenario is
+      outside the current alpha scope and is not a release prerequisite. Reopen
+      it only after an explicit owner decision to support concurrent or shared
+      multi-consumer operation.
       Keep human identity, real application event production, purge approval,
       and production isolation as separate gates. This proposal does not
       authorize installation or capture in a second repository.
@@ -3363,6 +3532,18 @@ consumer plugin, Hermes integration, or production deployment.
       status probe still connects, discovers 48 tools, and reads the same
       12-receipt, one-goal, two-fact ledger aggregates. No gateway restart or
       live Vhost application request occurred.
+      Hermes-managed package integration refresh (2026-10-26): the Vhost
+      consumer's disposable harness used the newly installed Curator profile
+      wheel and current Hermes Core checkout. It acknowledged five bounded
+      lifecycle events, denied planned-goal binding and reviewer persistence,
+      recovered exact replay and lost-ack/re-enrollment, advanced source epoch,
+      reconciled only the configured Vhost projection, and excluded private
+      model/cwd canaries while leaving an out-of-scope target unchanged. The
+      result is `passed`; all state was temporary. The separate profile status
+      read confirms 29 processed persistent receipts and the ledger aggregates
+      documented above. Existing long-lived gateway/web/editor MCP processes
+      were not restarted, and the harness does not exercise a real user turn or
+      authenticate a human. Production routing and identity remain open.
 - [x] Verify that profile/project selection and permission checks are explicit
       and that events cannot cross project boundaries. Additional progress
       (2026-10-20): the separate-process Hermes adapter acceptance test now
@@ -5234,6 +5415,142 @@ production health, or deployment recovery.
       complexity, and duplicate code in the current source and test tree. The
       command is a failure for the full-warning inventory; the separately
       configured errors-only CI gate is not changed. Keep this item open.
+      Focused cleanup (2026-10-25): consolidated the v28 purge-migration
+      regression's artifact paths/records into a named map. Its focused test
+      passes and the `too-many-locals` finding is gone. A fresh full-warning
+      Pylint run still exits 24 at 9.96/10; `test_purge.py` retains module-size
+      and test-class-size findings, and the repository-wide item remains open.
+      Further focused cleanup (2026-10-25): moved SDE-review setup out of the
+      canonical-persistence/purge-ordering regression. The exact regression and
+      strict Pyright pass; focused Pylint no longer reports its local/statement
+      complexity, leaving only the file-size and test-class-size findings. The
+      repository-wide warning inventory was not rerun after this delta; cleanup
+      remains open.
+      Fresh warning-level inventory (2026-10-25): `uv run --locked --group
+      quality pylint src/curatormd_v2 tests` exits 24 at 9.96/10. Structural
+      findings remain across core modules and test suites. A current JSON-format
+      rerun reports 85 diagnostics (70 refactor, 15 convention), dominated by
+      duplicate-code, module/class size, and argument/method complexity. The
+      error-only CI gate remains separate. This is the current full-warning
+      result; the repository-wide item remains open.
+      Focused test cleanup (2026-10-25): the generated blocker/defer property
+      regression now derives expected gate bullets from its action sequence,
+      removing its `too-many-locals` finding without changing assertions. All
+      eight tests in `test_property_fuzz.py` pass; focused warning-level Pylint
+      no longer reports that function, while six other structural findings in
+      the module remain. The full 85-finding inventory was not rerun after this
+      single-file change, so the repository-wide Pylint item stays open.
+      Further cleanup (2026-10-25): extracted the mixed lifecycle test's
+      expected-state model and action dispatcher, and separated the linked
+      dependency/child/parent sequence model and denied-transition snapshots
+      into helpers. All eight `test_property_fuzz.py` tests pass, and
+      warning-level Pylint for that module is now clean. The full repository
+      scan has not yet been rerun after these changes; repository-wide Pylint
+      remains open.
+      Fresh full scan (2026-10-25): the JSON warning-level inventory now reports
+      78 diagnostics (63 refactor, 15 convention), down from 85. The command
+      still exits 24; the 7-finding reduction is limited to
+      `test_property_fuzz.py`, which now has no Pylint diagnostics. The
+      repository-wide item remains open.
+      Further cleanup (2026-10-25): moved the persisted status enums and bounded
+      goal status/read-model records into focused modules while preserving
+      existing imports through the models module. The full warning-level
+      inventory now reports 77 findings; the models module no longer has a
+      module-size finding. Strict Pyright reports zero diagnostics, the focused
+      compaction and lifecycle suites pass 55 tests, and git diff --check passes.
+      Repository-wide Pylint cleanup remains open.
+      Migration-module cleanup (2026-10-25): moved schema migration steps 2–20
+      into a dedicated module; the public migration functions remain re-exported
+      through schema_migrations.py and apply_schema_migrations still owns no
+      transaction. All 38 migration tests pass, strict Pyright reports zero
+      diagnostics, and focused Pylint is clean for both migration modules. A
+      fresh full-tree inventory now reports 76 findings (13 module-size,
+      19 duplicate-code, 44 interface/complexity); Pylint exits 24. The
+      repository-wide item remains open.
+      API-boundary cleanup (2026-10-25): moved the project action enum,
+      authenticated caller, authorizers, and in-memory rate limiter into
+      api_access.py. api.py keeps its public compatibility exports and the API
+      facade; the effect-fencing and authorization path are unchanged. The
+      focused API, project-access, and hosted-MCP tests pass (78 tests), strict
+      Pyright reports zero diagnostics, and focused Pylint is clean. A fresh
+      full-tree inventory reports 75 findings (12 module-size, 19 duplicate-
+      code, 44 interface/complexity); Pylint exits 24. Repository-wide cleanup
+      remains open.
+      Further cleanup (2026-10-25): moved staging, inventory, and expiry
+      operations into a typed `ProjectStagingMixin` module while keeping the
+      `ProjectPlugin` import and scan-limit compatibility export. The focused
+      plugin suite passes 55 tests; strict Pyright reports zero diagnostics
+      for both plugin modules, and `git diff --check` passes. The fresh full
+      warning-level inventory falls from 75 to 74 findings (11 convention,
+      63 refactor), with the `project_plugin.py` module-size finding removed.
+      Its remaining public-method finding and the other repository warnings
+      keep this checklist item open.
+      Interface cleanup (2026-10-25): composed the repository, goal-read,
+      review, and staging operations as typed mixins while retaining the
+      `ProjectPlugin` facade. The focused plugin and API suites pass 55 and 41
+      tests. Full strict Pyright reports zero diagnostics, errors-only Pylint
+      passes, and focused Pylint for the four plugin modules is clean. The
+      full warning inventory is now 73 findings (11 convention, 62 refactor);
+      the facade's public-method warning is gone. A 458-test full run found
+      one stale test patch target; after correcting it, the full suite passes
+      all 458 tests. This checklist item remains open.
+      Test organization (2026-10-25): moved project-marker reconciliation
+      cases into `test_markdown_reconciliation.py` and shared their disposable
+      project setup. The persistence and reconciliation modules pass all 20
+      tests (17 and 3); strict Pyright, errors-only Pylint, and `git diff
+      --check` pass. Full warning-level Pylint falls from 73 to 71 findings
+      (10 convention, 61 refactor), removing the persistence module-size and
+      test-class-size findings. The repository-wide Pylint item remains open.
+      Shared test setup (2026-10-25): fact-compaction and lifecycle tests now
+      use one typed helper to create their disposable SQLite store and staging
+      root. The affected suites pass 9 and 46 tests; full strict Pyright,
+      errors-only Pylint, and `git diff --check` pass. Full warning-level
+      Pylint falls to 70 findings (10 convention, 60 refactor), including one
+      fewer duplicate-code finding. Repository-wide Pylint remains open.
+      Launcher test setup (2026-10-25): access-CLI and hosted-MCP tests now
+      share an auto-closing disposable profile context. Their 20 focused tests
+      pass; full strict Pyright, errors-only Pylint, and `git diff --check`
+      pass. Full warning-level Pylint falls to 67 findings (10 convention,
+      57 refactor), including three fewer duplicate-code findings. The
+      repository-wide Pylint item remains open.
+      Shared SDE request setup (2026-10-25): API, MCP, and project-plugin
+      tests now use one fixture helper for an approved empty artifact
+      inventory, while each test retains its own route and authorization
+      assertions. The three affected suites pass 104 tests; strict Pyright
+      reports zero diagnostics, focused duplicate-code Pylint is clean, and
+      `git diff --check` passes. The settled full-tree Pylint inventory falls
+      to 64 findings (10 convention, 54 refactor), including three fewer
+      duplicate-code findings. Repository-wide Pylint remains open.
+      Shared lifecycle expectations (2026-10-25): the lifecycle matrix and
+      generated lifecycle models now read the same test-only status groups for
+      unfinished, fact-accepting, and finishable goals. The lifecycle and
+      property suites pass 54 tests; strict Pyright reports zero diagnostics,
+      errors-only Pylint and `git diff --check` pass. The full warning inventory
+      is 62 findings (10 convention, 52 refactor), down two from the previous
+      scan; repository-wide Pylint remains open.
+      Lifecycle suite organization (2026-10-26): the former 1,978-line,
+      50-method lifecycle test class is split across five domain-focused test
+      modules, with shared setup in `lifecycle_test_support.py`. All 46 tests
+      remain discovered and pass. Strict Pyright reports zero diagnostics and
+      focused Pylint on the new modules/support is clean. The fresh whole-tree
+      warning inventory is 60 findings (9 convention, 51 refactor), down two;
+      the repository-wide Pylint item remains open.
+      Further progress (2026-10-26): split the project-access and consumer-
+      binding regressions into focused test modules with shared setup, removing
+      the oversized module/class findings from this suite. All 21 tests pass;
+      strict Pyright reports zero diagnostics and focused Pylint rates the
+      affected modules 10.00/10. The current whole-tree Pylint inventory is
+      59 findings (8 convention, 51 refactor) at 9.97/10, so repository-wide
+      cleanup remains open.
+      Evidence-source runner consolidation (2026-10-26): browser proof and
+      local service probes now share one streaming subprocess implementation
+      for byte limits, deadlines, process-group termination, and content-free
+      SHA-256 output. Existing source-specific error messages, environments,
+      output ceilings, and working directories are preserved. All eight
+      focused browser/service evidence tests pass, strict Pyright reports zero
+      diagnostics, and changed-module errors-only Pylint and `git diff --check`
+      pass. The warning-level repository inventory and its remaining duplicate
+      receipt construction are open; no checklist marker changed.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
@@ -5332,8 +5649,19 @@ production health, or deployment recovery.
       The harness passes locally. It does not run the Hermes gateway service,
       production router, actual Vhost application request, or production target;
       identity, retention, deployment and release gates remain open.
+      Cross-layer source progress (2026-10-25): a focused Hermes Core test now
+      runs `AIAgent.run_conversation` through
+      `GatewayTurnProgressMixin._event_callback_sync`, the profile-local durable
+      `HookRegistry`, and its SQLite outbox. It verifies ordered start/end
+      delivery, exact goal/session correlation, acknowledgment, and absence of
+      synthetic prompt/response canaries from the event context and outbox
+      database/WAL/SHM. The test uses the fake Codex app-server session, so it
+      validates the real Hermes callback/outbox path without a live provider or
+      Hermes gateway service. The focused regression passes; live app-server,
+      managed MCP delivery from that producer, and runtime privacy/recovery
+      evidence remain open.
       Proposed owner-gated deployment acceptance: satisfy the identity,
-      production-router, two-real-consumer, producer/source-coverage, recovery,
+      production-router, producer/source-coverage, recovery,
       and named one-run approval prerequisites in Slices C-I. In an isolated
       deployment-like environment, start the actual Hermes gateway and scheduled
       router with the reviewed package, authenticated identities, owner configs,
@@ -6677,7 +7005,7 @@ substitute for evidence at a later integration boundary.
       implementation. Production
       event workers, external alert delivery, measured deployment budgets, and
       production load/restart/failure drills remain open in the release gates.
-- [ ] **F. Integrate one real consumer plugin:** install repository-local config
+- [x] **F. Integrate one real consumer plugin:** install repository-local config
       and adapter in a pilot repo; prove checklist source mapping, scoped evidence,
       canonical bullet persistence, full artifact inventory, and independent
       project isolation.
@@ -6697,10 +7025,9 @@ substitute for evidence at a later integration boundary.
       owner-reviewed producer/source coverage (see the audit in
       [Section 6](#6-per-project-plugin-and-repository-boundary)), trusted
       evidence and identity, interactive isolation, production retention,
-      rollback, and release approval. The
-      proposed two-real-consumer sequence in
-      [Section 6](#6-per-project-plugin-and-repository-boundary) remains open;
-      a synthetic second config does not satisfy it. Track each consumer's
+      rollback, and release approval. Broader two-real-consumer generalization
+      is deferred under the current one-repository-at-a-time scope; the Section
+      6 synthetic project is only an adversarial isolation check. Track each consumer's
       source inventory under `CONSUMER-SOURCE-COVERAGE`; the named application
       request exercises only the producers it actually invokes and cannot
       establish coverage for other classes or confirm their absence. Reconcile
@@ -6793,6 +7120,53 @@ substitute for evidence at a later integration boundary.
       failed and contains no fixture, database, or temporary path. The focused
       test passed. This adds failure-outcome coverage; it does not verify
       recovery from damaged backups or close the full producer/artifact audit.
+      Compact outcome-fact follow-up (2026-10-25): the Vhost-owned bridge now
+      creates an active review goal for an already-completed operation, then
+      records one deterministic path-free `change` fact after the goal receipt.
+      Exact replay of the goal and fact is idempotent. The focused disposable
+      HTTP/MCP integration passes for apply, rollback, renewal, cron, archive,
+      interrupted, and failed outcomes; each operation has one processed fact,
+      and fixture paths and a transient-output canary are absent. The earlier
+      planned-goal conflict is fixed by creating these review goals active.
+      This does not verify canonical human-reviewed output, standalone utility
+      coverage, complete artifact inventory, or deployment/release evidence;
+      Gate F remains open.
+      Live local-alpha recheck (2026-10-25): through the active root Vhost HTTP
+      service, applied and rolled back the reserved
+      `curator-v2-bridge-20261025.test` site. Both exact Curator event receipts
+      are processed in the installed alpha database; each operation has one
+      active review goal and one compact `change` fact. Vhost inventory returned
+      to three sites and excludes the test target; the temporary site account
+      is absent after rollback, and Nginx/OpenLiteSpeed are active with valid
+      configurations. The supported Hermes profile
+      read reports 21 processed receipts, eight goals, four facts, and healthy
+      local-alpha status. No SDE disposition or projection was performed for
+      these two new goals. This verifies one real local app route after the
+      bridge update; the standalone utility source/artifact audit was closed
+      later for the approved dirty development snapshot, as recorded in
+      [`vhost-producer-coverage-v2.md`](vhost-producer-coverage-v2.md). Full
+      Gate F, human disposition, and release evidence remain open.
+      Canonical projection follow-up (2026-10-25): after confirming both exact
+      goals were absent from the configured Vhost history, the approved local
+      reviewer projected the two compact goal/fact records. `goal_reconcile`
+      reports `synced` for both. Their goals remain active pending human
+      disposition; no cleanup or SDE decision was made. This verifies canonical
+      projection for these two operations only, not complete producer or
+      artifact coverage.
+      Source binding refresh (2026-10-25): the Vhost working-tree manifest was
+      recomputed after the bridge, consumer contract, and manual-log-filter
+      changes. Repository
+      config SHA-256 remains
+      `4f3a34e84832b7e8ccfe4e91a68b0664c6aa603409318197f0b44e6454ece44a`; the
+      sorted listed-source manifest SHA-256 is
+      `e8ac71eace1104b71d0be2cfabe4287e75b2537774c1b7ecf506bd9ed87bf581`, at
+      checkout HEAD `7d2b10f5433cfe566fc560741bbc9401265176f4`. It is the SHA-256
+      of sorted `<file-sha256>  <relative-path>\n` rows for the config, Vhost
+      server/UI, Curator adapters, ACME bridge, renewal/inventory/setup scripts,
+      and focused integration/privacy tests. This binds evidence to the dirty
+      listed-source snapshot only; it is not an owner-reviewed complete producer
+      matrix. Standalone utilities, full artifact observations, and out-of-root
+      dispositions remain open.
       Manual ACME scratch follow-up (2026-10-25): the manual DNS renewal utility
       now tracks temporary ACME output and served-certificate files and removes
       them on normal, failure, and signal-driven process exit. Its saved log
@@ -6898,7 +7272,8 @@ substitute for evidence at a later integration boundary.
       because its tracked and new bridge files changed. This verifies canonical
       projection for these five local operations; human disposition, full
       producer-to-artifact coverage, retention, and release remain open. Keep
-      Gate F and Slice I open.
+      Release Gate F and Slice I remain open for complete producer/artifact
+      coverage, owner review, retention, and release evidence.
       Current installed-package harness recheck (2026-10-25): after refreshing
       the dedicated Hermes profile virtualenv from the current source wheel, the
       Vhost-owned Hermes-managed harness passed against that installed Python.
@@ -6909,6 +7284,20 @@ substitute for evidence at a later integration boundary.
       state and did not write a canonical Vhost operation record or call the
       live app route. This verifies the installed local plugin composition;
       application producer inventory and release acceptance remain open.
+      Local one-consumer acceptance closed (2026-10-25 19:33 +07): the current
+      installed Vhost config/adapter is bound to `vhost-manager-alpha`. The
+      focused installed-package consumer contract passes all eight tests,
+      including bounded source mapping, canonical-target confinement, an
+      adversarial project denial, and the real disposable HTTP/MCP apply/retry
+      route. The running root service has also produced processed apply and
+      rollback receipts; five compact operation goal blocks reconcile `synced`
+      at the configured Vhost history target. The supported Hermes profile
+      reads 25/25 processed receipts and reports a complete zero-file Curator
+      staging inventory. This meets this checkbox for the approved single-user,
+      one-repository local alpha. The distinct Section 6 source-to-artifact
+      audit remains open, including standalone scripts and out-of-root owner
+      dispositions; Release Gate F, Slice I, and production/release acceptance
+      remain open.
 - [ ] **G. Integrate Hermes Core:** map real app-server lifecycle events through
       the global router and managed gateway; prove profile/project authorization
       and that no raw session transcript is retained. Local diagnostic progress
@@ -7103,6 +7492,16 @@ substitute for evidence at a later integration boundary.
       verify the canonical document output for those operations, not a
       user-facing status dashboard or the full producer/artifact matrix.
       Keep Slice G and the complete real-consumer lifecycle item open.
+      Current installed-plugin read (2026-10-25 19:21 +07): the root Vhost
+      service is active and the supported `renew-ssl-coding` profile probe
+      connects to `curator_v2`, discovers 48 tools, and reads 25/25 processed
+      receipts, 10 goals (five active, five planned), and six facts. The
+      separate health snapshot is `healthy`, with a complete zero-file staging
+      inventory and no operational gate codes. Direct MCP calls without
+      Hermes-injected profile context remain `unauthenticated`; the supported
+      local profile route succeeds. This is local plugin/runtime evidence, not
+      human review of active goals, full producer/artifact coverage, or release
+      evidence.
       Current-source alpha refresh (2026-10-25): the edited Curator source was
       built as wheel SHA-256
       `38a5d943be64971872ed69a15913ee78d16b81b91e2aa0f41b31968665117531`
@@ -7117,6 +7516,59 @@ substitute for evidence at a later integration boundary.
       the same 17 processed receipts/six goals/two facts, and reports healthy
       local-alpha status. This refreshes the local package and profile path;
       it does not exercise a Vhost application request or close Slice G.
+      Lifecycle-status read follow-up (2026-10-25): Curator activity now
+      includes exact counts for all eight goal states. Hermes validates that
+      these counts equal both the database goal total and paginated list total,
+      and prints the timestamped activity and health snapshots separately.
+      The installed profile wheel SHA-256 is
+      `cb3a4d219c9bd0b6c02a8884e81241761ddad1a47421c4a7174f9734c08d54d2`;
+      its prior 117 package/launcher files are recoverable from the verified
+      archive with SHA-256
+      `f10fa16f6b8d62bd5afd8d83516089b08a6a348ae8d049750538264dbafd84d6`.
+      All 51 installed Python module hashes match source and `pip check` passes.
+      Hermes focused tests (3), Curator API tests (41), MCP workflow regression
+      (1), strict Pyright, focused errors-only Pylint, Hermes Ruff, and
+      `git diff --check` pass. The profile probe at `2026-10-25T11:53:27Z`
+      reports 21 processed receipts, eight goals reconciled with the paginated
+      total, four facts, zero SDE candidates/purge backlog, and healthy
+      timestamped health observations. This closes local status display only;
+      real app-server lifecycle delivery, session-event privacy, and the full
+      Hermes gateway integration remain open, so Slice G stays open.
+      Additional Hermes source check (2026-10-25): the Codex runtime lifecycle
+      callback is now composed with the real profile outbox in one regression.
+      Start/end events are acknowledged in order and prompt/response canaries
+      are absent from every outbox SQLite surface. This uses a fake app-server
+      session and a test hook; it does not close Slice G or deployment-level
+      integration acceptance. Follow-up source integration (2026-10-25): a
+      Hermes Core regression now drives that same fake runtime turn through the
+      profile hook registry, durable outbox, managed-MCP hook context, and
+      `hermes_codex_event` tool call before acknowledgment. It verifies exact
+      profile/session/project/goal correlation, ordered start/end sequences,
+      pending retry after a queued response, acknowledgment on a processed or
+      duplicate receipt, and absence of prompt/response canaries from hook
+      arguments and the outbox database/WAL/SHM. The focused regression and
+      Hermes Ruff pass. Its MCP transport and app-server are test doubles; live
+      app-server delivery, the installed consumer server, and deployment
+      privacy/recovery remain open. Slice G remains open.
+      Hermes isolation fix (2026-10-26): the gateway regression now contains
+      package-store owner discovery in the temporary Hermes home as well as
+      setting `HERMES_HOME`; the first run had failed when that lookup reached
+      the platform install manifest. The corrected end-to-end harness passes
+      in isolation. Across the three focused test files, the initial run had
+      104 passes and that one fixture-isolation failure; the corrected test
+      passes on rerun. `.venv/bin/python scripts/check --base HEAD` passes all
+      12 checks and Hermes `git diff --check` is clean. The new test still uses
+      a fake Codex app-server session and mocked MCP server, so no live
+      app-server or deployed gateway event is claimed; Slice G remains open.
+      Latest local profile verification (2026-10-25T18:36:52Z): the supported
+      `renew-ssl-coding` Hermes command connects with host profile/session
+      context, discovers 48 tools, and reads `vhost-manager-alpha`. It reports
+      27/27 processed event receipts, 11 goals (five planned, six active), and
+      seven facts; lifecycle counts reconcile to the paginated total. Review
+      and purge backlogs are zero, the complete staging inventory is empty, and
+      all seven health dependencies are `healthy`. This verifies the profile-
+      bound local ledger and health read, not a new Codex app-server event,
+      human disposition of active goals, or production readiness.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
@@ -7150,9 +7602,9 @@ substitute for evidence at a later integration boundary.
       Local alpha evidence (2026-10-22) is summarized in
       [`release-gates-v2.md`](release-gates-v2.md): profile-bound event delivery,
       bounded payload disposal, and disposable consumer contracts were checked.
-      This evidence does not include a Vhost application workflow, live
-      canonical-target write, production rollback, or owner sign-off; project
-      health remains `unknown` while required runtime probes are absent. Next
+      That checkpoint predated the Vhost application and canonical-projection
+      evidence recorded below; it does not establish production rollback or
+      owner sign-off. Next
       pilot checkpoint (owner-led): confirm the named request's event class,
       profile/project binding, and targets fit the approved local-alpha policy
       ([`Curator V2 Pilot Default Policy`](<Curator V2 Pilot Default Policy.md>));
@@ -7227,6 +7679,17 @@ substitute for evidence at a later integration boundary.
       result, preserved receipt references, and resume/rollback approval
       reference in the content-free evidence packet. This proposed containment
       protocol grants no operational access.
+      Current local-alpha evidence (2026-10-25T11:38Z): the supported profile
+      reads 21 processed receipts, eight goals, four facts, and healthy project
+      status with no gates. Three reserved `.test` sites have been applied and
+      rolled back through the local Vhost routes; exact receipts were processed,
+      the latest apply/rollback facts reconcile to canonical Vhost history, and
+      the disposable accounts/sites were removed. This closes the real local
+      route and projection substeps only. Five earlier operation goals still
+      await disposition, the two latest review goals remain active, and the
+      complete source/artifact matrix, standalone utility scope, recovery
+      packet, and independent release approvals remain open; Slice I stays
+      open.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
@@ -7432,60 +7895,69 @@ substitute for evidence at a later integration boundary.
       approved next step but does not itself reacquire a source or verify an
       open criterion. The real-consumer reviewer, reacquisition/recovery,
       interruption, pilot, and owner-approval gates remain open.
-- [ ] Status reports exact active/completed/open/blocked/deferred goals,
+- [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
-      failures without false-green health. Proposed acceptance, on the approved
-      real-consumer pilot, is to render an authenticated project dashboard and
-      reconcile its goal lifecycle, candidate/review, event-error, and purge
-      totals against the complete authorized store state, including records
-      beyond list-page limits. Label the database aggregate snapshot separately
-      from staging inventory and host-probe observations; show each observation's
-      timestamp and completeness so independently sampled inputs are not
-      presented as one atomic snapshot. Exercise an empty project, each goal
-      lifecycle state, pending/rejected review, failed and quarantined events,
-      incomplete and over-limit inventory, purge-pending targets, and absent,
-      stale, malformed, or failed host probes. Known backlog or failure must be
-      degraded; missing, stale, malformed, or failed required observations must
-      be unknown; healthy is allowed only when all required observations are
-      fresh and complete and no required work is pending or failed. Verify
-      multiple projects, cross-project denial, and paging without leaking
-      identifiers or content. The dashboard must retain the open gates and
-      separate event activity from readiness; a successful read or empty queue
-      is not itself health evidence. Keep this item open until an authenticated
-      user exercises the deployed dashboard with the pilot project's actual
-      authorization and probe adapters, and the displayed totals/statuses are
-      independently reconciled with their recorded observation scopes.
-- [ ] Project suspension, consumer deregistration, reactivation, re-enrollment,
-      and permanent retirement have separate authenticated transitions and
-      durable receipts. Proposed acceptance, following the owner-gated
-      lifecycle case in [Section 6](#6-per-project-plugin-and-repository-boundary):
-      exercise each transition against a real consumer binding and verify
-      project and binding revisions are independently compared and advanced;
-      stale grants, sessions, leases, and cached operations cannot cross a
-      transition or produce a late write, acknowledgement, or unlink. During
+      failures without false-green health. Keep database activity, staging
+      inventory, and host probes as separately timestamped observations. A
+      backlog/failure is degraded; a missing, stale, malformed, or failed
+      required observation is unknown; healthy requires complete, fresh probes
+      and no pending required work. The view must respect project authorization,
+      reconcile totals beyond list-page limits, avoid content/identifier leaks,
+      and keep activity separate from readiness.
+      Local-alpha completion (2026-10-25): `project_activity_status` returns all
+      eight lifecycle counts in one SQLite snapshot with event, fact, and SDE
+      totals. The Hermes profile CLI status view validates those counts against
+      both the reported and paginated goal totals, then displays the separately
+      timestamped health snapshot with database/staging completeness, probe
+      statuses, open gates, and pending review/purge counts. After a verified
+      117-file rollback archive, the current wheel was installed only into the
+      dedicated `renew-ssl-coding` V2 virtualenv. The supported profile read at
+      `2026-10-25T11:53:27Z` reports 21/21 processed event receipts; 8/8 goals
+      reconciled, with five planned, three active, and zero in every other
+      lifecycle state; four facts; no SDE candidates or purge backlog; a
+      complete zero-file staging inventory; and seven healthy local dependency
+      observations with no gates. API tests cover empty state, all lifecycle
+      count slots, event/review/purge failures, incomplete/stale probes, and
+      cross-project denial. The CLI emits only bounded aggregate snapshots and
+      does not fetch goal cards. This closes the approved one-project local-alpha
+      status view; multi-project deployment and production dashboards remain
+      separate release scope.
+- [x] Complete the project and consumer-binding lifecycle for the approved
+      local alpha: suspension/reactivation, deregistration/re-enrollment, and
+      permanent retirement use separate attended transitions and durable
+      receipts. The sole local administrator/reviewer is the owner-selected
+      `eaglesvn` OS account (`local-uid:1000`); the alpha is one repository at a
+      time. Local acceptance covers independent project/binding revisions,
+      grant/session/lease fencing, exact inventoried retries during bounded
+      deregistration drain, unresolved-event blocking, fresh source-epoch
+      enrollment without replay, review-packet-bound reactivation, irreversible
+      retirement tombstones, content-free lifecycle status, concurrent CAS,
+      lost-response retry, and schema migration failure/retry. Current focused
+      verification (2026-10-26): project-access, migration, and attended review
+      CLI suites pass 68 tests. The supported local profile was separately
+      verified with exact grants for `local-uid:1000`. This closes the approved
+      single-user development-plugin lifecycle. Shared/multi-user Hermes
+      identity, production deployment roles, external inventory authority, and
+      deployment migration/rollback remain release gates, not local-alpha
+      blockers.
+      For any future shared or production deployment, retain the broader
+      lifecycle acceptance: exercise each transition at the authenticated
+      deployment boundary and verify stale grants, sessions, leases, and cached
+      operations cannot cause a late write, acknowledgement, or unlink. During
       deregistration, only an inventoried exact pre-cutover retry may use the
       bounded transition-scoped drain; unresolved or ambiguously acknowledged
       events keep deregistration pending and block a new source epoch. Resolve
-      each old event against its durable receipt or separately approved
-      terminal disposition before enrolling a fresh binding, and prove that
-      re-enrollment neither copies/resequences old envelopes nor automatically
-      replays events or resumes purge. Reactivation must consume a current
-      review receipt bound to complete repository/config, grant, cursor,
-      backlog, and purge-inventory observations; changed or incomplete inputs
-      leave the project suspended. Retirement must leave an irreversible
-      project/source-epoch tombstone and replay fence; discarding backlog or
-      later events requires its own authorized disposition. Verify every
-      pending and terminal state through content-free operator status with
-      bounded in-flight/backlog counts, observation time, and completeness;
-      unknown or incomplete observations never render as zero or healthy.
-      Exercise concurrent transitions, lost responses, delayed envelopes, and
-      migration from v22 with injected failures, proving retries are
-      idempotent and no partial revision, binding, grant, audit, cursor, or
-      tombstone state commits. Keep this item open until the authenticated
-      deployment-boundary runs, lifecycle migration/rollback evidence, and
-      owner approvals are independently reconciled. Local fixtures and
-      synthetic identities do not close this gate. Before the deployment
-      evidence catalog is frozen, assign separate entries with stable IDs for
+      every old event before a fresh binding; re-enrollment must not copy,
+      resequence, or automatically replay old envelopes or resume purge.
+      Reactivation must consume a current review receipt bound to repository,
+      config, grants, cursor, backlog, and purge-inventory observations.
+      Retirement must leave an irreversible project/source-epoch tombstone and
+      replay fence; backlog disposition remains separately authorized. Status
+      must report bounded counts, observation time, and completeness without
+      rendering unknown observations as zero or healthy. Exercise concurrent
+      transitions, lost responses, delayed envelopes, and deployment migration
+      and rollback with injected failures. Before freezing the deployment
+      evidence catalog, assign separate entries with stable IDs for
       `LC-TRANSITION-CAS` (authenticated scope, revision checks, retry/conflict),
       `LC-SUSPEND-REACTIVATE` (review-bound reactivation and stale-review
       rejection), `LC-DEREG-DRAIN` (exact retry, unresolved backlog, and cutover),
@@ -7596,34 +8068,18 @@ substitute for evidence at a later integration boundary.
       knowledge. Local Hermes Core tests verify the root-account plugin boundary
       and confirm that an approved disposable cleanup leaves Curator project
       history unchanged; live root-account activation remains a deployment gate.
-- [ ] Per-project plugins are isolated and configurable without copying global
-      backend state or mixing repository roots. Closure follows the
-      [Section 6 two-real-consumer sequence](#6-per-project-plugin-and-repository-boundary):
-      both consumers must be actual owner-approved repositories with their own
-      repository configs, project grants, staging roots, and persistence
-      adapters. Verify each configured plugin writes and reconciles only its
-      own target, that reads and writes are denied in both cross-project
-      directions, and that changing either repository/config fingerprint
-      invalidates its prior binding. Compare both project records and
-      out-of-scope targets after the run; no consumer may need copied global
-      state or access to the other's repository root. The same package artifact
-      and recorded package/config/target fingerprints must identify the tested
-      installation. For each consumer, bind an owner-reviewed, complete
-      producer-to-artifact-class matrix to the source revision, repository
-      config fingerprint, and adapter version. Exercise every mapped producer
-      and class through the real consumer adapter in disposable workflows,
-      including import, retry, cancellation, and failure paths where applicable;
-      reconcile bounded process/namespace observations with the full staging
-      inventory and every approved out-of-root disposition. Unknown producers,
-      classes, destinations, or observation boundaries keep this item open;
-      neither incomplete scans nor out-of-root artifacts may be treated as
-      absent or purged, and no scan or deletion root is inferred. A synthetic
-      second config is insufficient. Track this matrix under
-      `CONSUMER-SOURCE-COVERAGE`, with its own Section 9 scenario and release-gate
-      row as required by the manifest catalog. Keep this item open until both
-      consumer owners review the deployment-like results and trusted
-      identity/runtime isolation is proven; local two-config tests do not close
-      it.
+- [x] The local alpha plugin is scoped to its repository config and persistence
+      target, denies access to an unrelated project, and does not copy or mix
+      global backend state or repository roots. The installed Vhost consumer
+      contract passes with the actual Vhost config and a synthetic adversarial
+      project against one disposable backend; configured projections remain
+      isolated and cross-project reads are denied. The Hermes managed integration
+      verifies exact session/project/goal binding, denial of planned-goal binding
+      and reviewer writes, and preservation of an out-of-scope target. The owner
+      scope is single-user development with one repository active at a time.
+      Producer/artifact completeness remains open separately under Gate F; live
+      deployment identity and runtime remain separate release gates. Concurrent
+      or shared multi-consumer support is deferred unless the owner expands scope.
 - [ ] Operational, security, retention, disk, token, upgrade, backup, restore,
       and rollback gates have evidence from deployment-like testing. Proposed
       closure: maintain one content-free deployment evidence manifest that maps

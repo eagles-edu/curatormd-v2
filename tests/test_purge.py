@@ -999,23 +999,27 @@ targets = ["persistence/HISTORY.md"]
         """Keep old targets visible but remove their automatic delete authority."""
 
         candidate_id = self.candidate("legacy occurrence identity")
-        pending_path, pending = self.artifact("legacy-pending.json")
-        failed_path, failed = self.artifact("legacy-failed.json")
-        held_path, held_source = self.artifact("legacy-held.json")
-        purged_path, purged = self.artifact("legacy-purged.json")
+        artifacts = {
+            name: self.artifact(f"legacy-{name}.json")
+            for name in ("pending", "failed", "held", "purged")
+        }
         held = ArtifactRef(
-            held_source.path,
-            held_source.sha256,
+            artifacts["held"][1].path,
+            artifacts["held"][1].sha256,
             RetentionHoldKind.LEGAL,
-            held_source.device_id,
-            held_source.inode_id,
-            held_source.occurrence_id,
+            artifacts["held"][1].device_id,
+            artifacts["held"][1].inode_id,
+            artifacts["held"][1].occurrence_id,
         )
         receipt = self.service.sde_confirm(
             SDEConfirmationRequest(
                 candidate_id=candidate_id,
                 decision=ReviewDecision.APPROVED,
-                artifacts=(pending, failed, held, purged),
+                artifacts=tuple(
+                    artifacts[name][1]
+                    for name in ("pending", "failed", "purged")
+                )
+                + (held,),
                 artifact_inventory_complete=True,
             )
         )
@@ -1026,7 +1030,7 @@ targets = ["persistence/HISTORY.md"]
             "default",
         )
 
-        _expiry_path, expiry_artifact = self.artifact("legacy-expiry.json")
+        expiry_artifact = self.artifact("legacy-expiry.json")[1]
         expiry_manifest = hashlib.sha256(
             json.dumps(
                 [(expiry_artifact.path, expiry_artifact.sha256, expiry_artifact.occurrence_id)],
@@ -1048,12 +1052,12 @@ targets = ["persistence/HISTORY.md"]
             "UPDATE purge_targets SET status = 'failed', attempts = 1, "
             "error = 'path_changed', next_attempt_at = '2026-01-01T00:00:00+00:00' "
             "WHERE receipt_id = ? AND path = ?",
-            (receipt.receipt_id, failed_path.as_posix()),
+            (receipt.receipt_id, artifacts["failed"][0].as_posix()),
         )
         connection.execute(
             "UPDATE purge_targets SET status = 'purged', attempts = 1 "
             "WHERE receipt_id = ? AND path = ?",
-            (receipt.receipt_id, purged_path.as_posix()),
+            (receipt.receipt_id, artifacts["purged"][0].as_posix()),
         )
         connection.execute(
             "UPDATE expiry_purge_targets SET occurrence_id = NULL, approval_stale = 0, "
@@ -1076,31 +1080,37 @@ targets = ["persistence/HISTORY.md"]
         )
         targets = self.store.get_purge_target_records(receipt.receipt_id, "default")
         by_path = {item.artifact.path: item for item in targets}
-        for path in (pending_path, failed_path, held_path):
-            self.assertTrue(by_path[str(path)].approval_stale)
-            self.assertIsNone(by_path[str(path)].next_attempt_at)
-        self.assertEqual(by_path[str(pending_path)].status.value, "pending")
-        self.assertEqual(by_path[str(failed_path)].status.value, "failed")
-        self.assertEqual(by_path[str(held_path)].status.value, "held")
-        self.assertEqual(by_path[str(held_path)].artifact.retention_hold, RetentionHoldKind.LEGAL)
-        self.assertEqual(by_path[str(purged_path)].status.value, "purged")
-        self.assertFalse(by_path[str(purged_path)].approval_stale)
+        for name in ("pending", "failed", "held"):
+            target = by_path[str(artifacts[name][0])]
+            self.assertTrue(target.approval_stale)
+            self.assertIsNone(target.next_attempt_at)
+        self.assertEqual(by_path[str(artifacts["pending"][0])].status.value, "pending")
+        self.assertEqual(by_path[str(artifacts["failed"][0])].status.value, "failed")
+        self.assertEqual(by_path[str(artifacts["held"][0])].status.value, "held")
+        self.assertEqual(
+            by_path[str(artifacts["held"][0])].artifact.retention_hold,
+            RetentionHoldKind.LEGAL,
+        )
+        self.assertEqual(by_path[str(artifacts["purged"][0])].status.value, "purged")
+        self.assertFalse(by_path[str(artifacts["purged"][0])].approval_stale)
         self.assertEqual(
             self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
         )
         with self.assertRaisesRegex(ConflictError, "already complete"):
-            self.store.begin_purge_attempt(receipt.receipt_id, str(pending_path), "default")
+            self.store.begin_purge_attempt(
+                receipt.receipt_id, str(artifacts["pending"][0]), "default"
+            )
 
         self.service.release_artifact_hold(
             receipt.receipt_id,
-            str(held_path),
+            str(artifacts["held"][0]),
             "Retention owner confirmed release",
             authenticated_subject="test-reviewer",
         )
         released = self.store.get_purge_target_records(receipt.receipt_id, "default")
-        released_by_path = {item.artifact.path: item for item in released}
-        self.assertEqual(released_by_path[str(held_path)].status.value, "pending")
-        self.assertTrue(released_by_path[str(held_path)].approval_stale)
+        by_path = {item.artifact.path: item for item in released}
+        self.assertEqual(by_path[str(artifacts["held"][0])].status.value, "pending")
+        self.assertTrue(by_path[str(artifacts["held"][0])].approval_stale)
         self.assertEqual(
             self.store.get_purge_targets(receipt.receipt_id, pending_only=True), ()
         )
