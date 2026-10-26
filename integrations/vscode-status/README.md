@@ -7,9 +7,10 @@ one bounded goal report page at a time. Health, activity, storage, and goal
 totals are separate authorized reads and may reflect different observation
 times. Retained activity is not a capture-completeness measure. Project logical
 record bytes and retained event payload bytes are separate from the shared
-SQLite database/WAL file sizes. This view does not report staging inventory or
-model/token use. Refreshing or changing pages replaces the old view, so pages
-from separate report reads are never combined.
+SQLite database/WAL file sizes. It also reports the staging byte scan,
+completeness, and warning-only byte threshold; writes remain allowed above the
+threshold. Model/token use is not reported. Refreshing or changing pages
+replaces the old view, so pages from separate report reads are never combined.
 
 Configure these **User** settings in VS Code:
 
@@ -40,10 +41,13 @@ dashboard clears previously rendered goal and report data before displaying a
 generic error.
 
 Storage displays only project logical byte/count totals, fact-capacity values,
-and shared database/WAL file sizes. SQLite file sizes are global to the shared
-database and must not be attributed to this project. Missing, malformed, or
-cross-project results display as unknown. Staging and token usage remain outside
-this read and are not inferred from zero values.
+shared database/WAL file sizes, and the bounded staging scan. SQLite file sizes
+are global to the shared database and must not be attributed to this project.
+The staging warning begins at 75% of the configured byte threshold; reaching or
+exceeding the threshold warns but does not block writes. Incomplete scans show
+their fixed error code and observed lower bound. Missing, malformed, or
+cross-project results display as unknown. Token usage remains outside this read
+and is not inferred from zero values.
 
 The editor launches Curator directly over local stdio and supplies profile and
 session routing metadata. It does not supply Hermes Core's trusted host

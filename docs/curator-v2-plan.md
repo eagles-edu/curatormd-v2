@@ -2427,12 +2427,12 @@ consumer plugin, Hermes integration, or production deployment.
       alerting. Local editor follow-up (2026-10-27): the CuratorMD V2 VS Code
       dashboard now also reads `project_storage_usage` and displays project
       logical record bytes, retained event-payload bytes, fact count/byte
-      capacity, and shared SQLite database/WAL file sizes. It labels physical
-      database sizes as shared and explicitly says staging and token use are
-      absent from this read. One focused extension suite verifies content-free
+      capacity, shared SQLite database/WAL file sizes, and the bounded staging
+      byte scan/completeness. It labels physical database sizes as shared and
+      says model/token use is not reported. One focused extension suite verifies content-free
       rendering, project binding, and graceful storage-read failure. This is
-      local operator visibility only; it does not measure staging through the
-      dashboard, complete token usage, or deploy scrape/alert infrastructure.
+      local operator visibility only; it does not establish complete producer
+      artifact coverage, token usage, or deployed scrape/alert infrastructure.
       No checklist marker changed.
       Host scrape endpoint, dashboards, alert rules/delivery, and
       operator budgets remain open. Proposed owner-gated deployment sequence:
@@ -2886,7 +2886,7 @@ consumer plugin, Hermes integration, or production deployment.
       `CuratorMD V2`. Its local dashboard reads project health, retained
       activity, storage usage, and paged goals/reports. It does not prove capture
       completeness, canonical-write reconciliation, or human identity. The
-      current installed package is `0.4.0`, and its extension source hash
+      current installed package is `0.5.0`, and its extension source hash
       matches this repository. A
       previously captured screenshot visibly shows `CuratorMD V2` in the bottom
       status bar. This is a local editor label, not runtime or readiness
@@ -8730,21 +8730,36 @@ substitute for evidence at a later integration boundary.
       Storage-panel follow-up (2026-10-27): the extension also requests the
       project-authorized `project_storage_usage` result on goal refresh and
       displays project logical bytes, retained event-payload bytes, fact
-      capacity, and shared SQLite file sizes. It rejects cross-project or
-      malformed totals and keeps goal browsing available when this optional
-      read fails. VSIX 0.4.0 is installed; its source hash
-      `200a0ea3f48a46af9577bc12582f323b1748ae182738c1dceb477b01ea1989f5`
-      matches the installed extension. The previous 0.3.0 install is archived
-      with SHA-256 `eb18951749ba5ea36eee6301d490bcdc016d3c1cb572d6f8db74e305296f8f26`;
-      VS Code has not been reloaded, and real UI acceptance, staging visibility,
-      token usage, deployed monitoring, and alerts remain open. No dashboard or
-      delivery checklist marker changed. A read through the installed Vhost
+      capacity, shared SQLite file sizes, and the staging scan byte total,
+      completeness, and warning-only threshold. It reports the existing 75%
+      warning level and says writes remain allowed at and above the threshold.
+      It rejects cross-project or malformed totals and keeps goal browsing
+      available when this optional read fails. VSIX 0.4.0 provided the first
+      storage panel and was installed; the next packaged update adds staging
+      display. Real UI acceptance, token usage, deployed monitoring, and alerts
+      remain open. No dashboard or delivery checklist marker changed. A read through the installed Vhost
       profile's actual stdio launcher returned the expected project-bound
       storage result: 27,614 logical bytes, 12 facts, zero retained event
       payload bytes, a 462,848-byte shared database, and a 53,592-byte shared
       WAL at observation time. This confirms the new tool path and bounded
       summary shape, not a rendered VS Code session or per-project physical
-      database attribution.
+      database attribution. The observed scan was complete with 0 bytes and a
+      configured 262,144,000-byte (250 MiB) warning threshold; this was below
+      the warning level and does not show behavior at the threshold. The new
+      editor formatting has focused cases for 75%, threshold reached, and
+      incomplete inventory. Staging display update (2026-10-27): the dashboard
+      renders the returned staging bytes, full/incomplete status and fixed
+      error code. At 75% it says the warning level is reached; at or above
+      250 MiB it says the threshold is reached; both states explicitly say
+      writes remain allowed. It ignores the file-count threshold. Focused tests
+      cover below-warning, 75%, threshold, incomplete scan, project mismatch,
+      and unavailable storage read. Extension 0.5.0 is installed and its source
+      hash `c5a707ab6f1a6ea55dbe49676d1a4888b52f1f6323f29594e4b6c55ebf1ddcfa`
+      matches. The previous 0.4.0 installation is archived with SHA-256
+      `d0f16c7cdfda2a66f3b8fce16e1bf83f202b61c06d6aea32ec844dc7fd479189`;
+      VSIX SHA-256 is `c4f98ab77a2d5465d114f3f8597b520a684a99375f59fd4dc48e6924c7434bee`.
+      The running VS Code window has not been reloaded. Token coverage and
+      deployed monitoring remain open; no checklist marker changed.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

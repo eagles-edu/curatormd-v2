@@ -65,6 +65,12 @@ class FakeMcpProcess extends EventEmitter {
               fact_count_limit: 10000, fact_record_bytes: 512,
               fact_record_bytes_limit: 16777216,
               global_database_bytes: 8192, global_wal_bytes: 1024,
+              staging: {
+                observed_file_bytes: 128,
+                inventory_complete: true,
+                error_code: null,
+              },
+              staging_project_byte_limit: 262144000,
             }) }] };
           } else if (request.params.name === 'goal_list_page') {
             result = { content: [{ type: 'text', text: JSON.stringify({
@@ -176,6 +182,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   assert.equal(goals.health.status, 'healthy');
   assert.equal(goals.activity.event_receipt_count, 3);
   assert.equal(goals.storage.logical_record_bytes, 4096);
+  assert.equal(goals.storage.staging.observed_file_bytes, 128);
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);
@@ -225,10 +232,17 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     acquireVsCodeApi: () => ({ postMessage() {} }),
   });
 
+  const storageSnapshot = {
+    project_id: 'alpha', logical_record_bytes: 4096,
+    event_payload_bytes_retained: 256, fact_count: 2,
+    fact_count_limit: 10000, fact_record_bytes: 512,
+    fact_record_bytes_limit: 16777216,
+    global_database_bytes: 8192, global_wal_bytes: 1024,
+    staging: { observed_file_bytes: 128, inventory_complete: true, error_code: null },
+    staging_project_byte_limit: 262144000,
+  };
   receiveWindowMessage({ data: { type: 'goals', page: {
-    project_id: 'alpha',
-    total: 1,
-    offset: 0,
+    project_id: 'alpha', total: 1, offset: 0,
     goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Private goal' }],
     next_offset: null,
   },
@@ -239,16 +253,34 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     goal_count: 1, fact_count: 2, pending_sde_count: 1,
     approved_sde_count: 0, rejected_sde_count: 0,
   },
-  storage: {
-    project_id: 'alpha', logical_record_bytes: 4096,
-    event_payload_bytes_retained: 256, fact_count: 2,
-    fact_count_limit: 10000, fact_record_bytes: 512,
-    fact_record_bytes_limit: 16777216,
-    global_database_bytes: 8192, global_wal_bytes: 1024,
-  } } });
+  storage: storageSnapshot } });
   assert.match(elements.get('health').textContent, /Project health: healthy\. Open gates: none reported\./);
   assert.match(elements.get('activity').textContent, /Retained receipts: 3 \(processed 2, received 1, failed 0, quarantined 0\); goals 1; facts 2; SDE candidates pending 1, approved 0, rejected 0\./);
-  assert.match(elements.get('storage').textContent, /Project logical records 4\.0 KiB; retained event payload 256 B; facts 2\/10000 \(512 B\/16\.0 MiB\)\. Shared SQLite files: database 8\.0 KiB, WAL 1\.0 KiB\. Staging and token usage are not reported here\./);
+  assert.match(elements.get('storage').textContent, /Project logical records 4\.0 KiB; retained event payload 256 B; facts 2\/10000 \(512 B\/16\.0 MiB\)\. Shared SQLite files: database 8\.0 KiB, WAL 1\.0 KiB\. Staging 128 B \/ 250\.0 MiB warning-only threshold; below warning level, and writes remain allowed\. Model\/token usage is not reported here\./);
+  const stagingAtWarning = {
+    ...storageSnapshot,
+    staging: { observed_file_bytes: 196608000, inventory_complete: true, error_code: null },
+  };
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha', total: 1, offset: 0, goals: [], next_offset: null,
+  }, storage: stagingAtWarning } });
+  assert.match(elements.get('storage').textContent, /warning level reached, and writes remain allowed/);
+  const stagingAtThreshold = {
+    ...storageSnapshot,
+    staging: { observed_file_bytes: 262144000, inventory_complete: true, error_code: null },
+  };
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha', total: 1, offset: 0, goals: [], next_offset: null,
+  }, storage: stagingAtThreshold } });
+  assert.match(elements.get('storage').textContent, /warning threshold reached, and writes remain allowed/);
+  const incompleteStaging = {
+    ...storageSnapshot,
+    staging: { observed_file_bytes: 123, inventory_complete: false, error_code: 'staging_scan_failed' },
+  };
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha', total: 1, offset: 0, goals: [], next_offset: null,
+  }, storage: incompleteStaging } });
+  assert.match(elements.get('storage').textContent, /Staging scan incomplete; observed at least 123 B \(code staging_scan_failed\)/);
   receiveWindowMessage({ data: { type: 'goals', page: {
     total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
   }, storage: { project_id: 'other' } } });

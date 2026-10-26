@@ -35,7 +35,7 @@ class McpStdioClient {
     await this._request('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'curatormd-v2-vscode-dashboard', version: '0.4.0' },
+      clientInfo: { name: 'curatormd-v2-vscode-dashboard', version: '0.5.0' },
     });
     this.child.stdin.write(`${JSON.stringify({
       jsonrpc: '2.0',
@@ -444,6 +444,21 @@ function dashboardHtml(webview) {
         ];
         const validOptionalBytes = (value) => value === null
           || (Number.isSafeInteger(value) && value >= 0);
+        const stagingSnapshot = storageSnapshot && storageSnapshot.staging;
+        const stagingValid = stagingSnapshot
+          && Number.isSafeInteger(stagingSnapshot.observed_file_bytes)
+          && stagingSnapshot.observed_file_bytes >= 0
+          && typeof stagingSnapshot.inventory_complete === 'boolean'
+          && (stagingSnapshot.error_code === null
+            || (typeof stagingSnapshot.error_code === 'string'
+              && /^[a-z][a-z0-9_]{0,79}$/.test(stagingSnapshot.error_code)))
+          && (stagingSnapshot.inventory_complete
+            ? stagingSnapshot.error_code === null
+            : stagingSnapshot.error_code !== null);
+        const stagingLimitValid = storageSnapshot
+          && (storageSnapshot.staging_project_byte_limit === null
+            || (Number.isSafeInteger(storageSnapshot.staging_project_byte_limit)
+              && storageSnapshot.staging_project_byte_limit > 0));
         const storageValid = storageSnapshot
           && storageSnapshot.project_id === page.project_id
           && storageFields.every((field) => Number.isSafeInteger(storageSnapshot[field])
@@ -451,7 +466,9 @@ function dashboardHtml(webview) {
           && storageSnapshot.fact_count_limit > 0
           && storageSnapshot.fact_record_bytes_limit > 0
           && validOptionalBytes(storageSnapshot.global_database_bytes)
-          && validOptionalBytes(storageSnapshot.global_wal_bytes);
+          && validOptionalBytes(storageSnapshot.global_wal_bytes)
+          && stagingValid
+          && stagingLimitValid;
         if (!storageSnapshot) {
           storageSummary.textContent = 'Storage usage: unknown. Storage read unavailable.';
         } else if (storageSnapshot.project_id !== page.project_id) {
@@ -459,6 +476,26 @@ function dashboardHtml(webview) {
         } else if (!storageValid) {
           storageSummary.textContent = 'Storage usage: unknown. Invalid storage snapshot.';
         } else {
+          let stagingText;
+          const stagingLimit = storageSnapshot.staging_project_byte_limit;
+          if (!stagingSnapshot.inventory_complete) {
+            stagingText = 'Staging scan incomplete; observed at least '
+              + formatBytes(stagingSnapshot.observed_file_bytes)
+              + ' (code ' + stagingSnapshot.error_code + ').';
+          } else if (stagingLimit === null) {
+            stagingText = 'Staging scan complete at '
+              + formatBytes(stagingSnapshot.observed_file_bytes)
+              + '; no byte warning threshold is configured.';
+          } else {
+            const ratio = stagingSnapshot.observed_file_bytes / stagingLimit;
+            const level = ratio >= 1
+              ? 'warning threshold reached'
+              : ratio >= 0.75 ? 'warning level reached' : 'below warning level';
+            stagingText = 'Staging '
+              + formatBytes(stagingSnapshot.observed_file_bytes) + ' / '
+              + formatBytes(stagingLimit) + ' warning-only threshold; '
+              + level + ', and writes remain allowed.';
+          }
           storageSummary.textContent = 'Project logical records '
             + formatBytes(storageSnapshot.logical_record_bytes)
             + '; retained event payload '
@@ -469,7 +506,7 @@ function dashboardHtml(webview) {
             + formatBytes(storageSnapshot.fact_record_bytes_limit) + '). Shared SQLite files: database '
             + formatBytes(storageSnapshot.global_database_bytes) + ', WAL '
             + formatBytes(storageSnapshot.global_wal_bytes)
-            + '. Staging and token usage are not reported here.';
+            + '. ' + stagingText + ' Model/token usage is not reported here.';
         }
         goalTotal = page.total || 0;
         goalOffset = page.offset || 0;
