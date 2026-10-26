@@ -8585,3 +8585,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** `scripts/run_tests.sh tests/plugins/test_project_usage.py -q` passes five tests. Hermes Core `scripts/check --base HEAD^` passes all 12 checks. Commit `d2aac32b8` is pushed to the configured fork branch.
 - **Open gate:** This measures the retained ledger span only. It does not add missing usage classes or prove complete Codex app-server capture; Slice G and the project token-usage checklist remain open.
 - **Outcome:** Added a bounded, privacy-preserving measurement interval without changing usage capture or declaring complete coverage.
+
+## 2026-10-27 — Reconcile current V2 checklist and staging-policy notes
+
+- **Intent:** Keep the plan's current progress count and active staging-policy description aligned with their current authoritative sources.
+- **Changed fact:** The plan header now records the delivery-count tool's current result, 154/178 complete and 24 open. The earlier installed-package note now labels the 150-file setting as historical and points to the later warning-only configuration with no file-count limit.
+- **Verification:** `python3 tools/count_curator_v2_delivery.py` reports 154/178 complete; the plan's delivery rows were not changed. `git diff --check` passes.
+- **Open gate:** The full V2 plan remains active with 24 delivery rows open; this documentation correction closes no checklist item.
+- **Outcome:** Preserve the correct historical config record while making the present count and policy unambiguous.

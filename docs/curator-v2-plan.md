@@ -194,10 +194,9 @@ Checkboxes describe verified repository state, not architectural intent:
 Progress counts refer only to top-level delivery rows in numbered sections
 0–10 and 12 of this **Delivery checklist**. Section 11 reusable templates and
 the later Definition of done acceptance prompts are not delivery rows and are
-excluded from the count. Current direct recount (2026-10-26): **153 of 178
-delivery rows are complete; 25 are open**. The earlier 154/188 embedded
-recount did not match this scope and has been corrected. Historical narrative
-counts below are not current.
+excluded from the count. Current direct recount (2026-10-27): **154 of 178
+delivery rows are complete; 24 are open**. Historical narrative counts below
+are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -8377,9 +8376,11 @@ substitute for evidence at a later integration boundary.
       Installed-alpha refresh (2026-10-27): rebuilt and installed the current
       V2 source wheel in the dedicated `renew-ssl-coding` Curator virtualenv
       after verifying a 104-member rollback archive. All 87 installed Python
-      module hashes match source; `pip check` passes. The installed package
-      reads the owner-approved Vhost staging cap (262,144,000 bytes, 150 files)
-      and returns oldest-first expiry proposals in a read-only FIFO check. This
+      module hashes match source; `pip check` passes. At this refresh, the
+      installed package read the then-configured Vhost staging limits
+      (262,144,000 bytes and 150 files); the later warning-only configuration
+      removed the file-count setting and made the byte threshold warning-only.
+      It returned oldest-first expiry proposals in a read-only FIFO check. This
       refresh advances the local plugin package only. It does not prove a real
       app-server turn, authenticated person, real certificate renewal, or
       release readiness; Slice G remains open. Vhost Manager is a local utility;
