@@ -8633,3 +8633,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** `code --list-extensions --show-versions` reports version 0.3.0. Installed and source `extension.js` SHA-256 both equal `420cd9c66e88760f1cfa3dd907df36c925c6ec3e9874ca330311296c224905a9`. Six focused Node tests pass; package JSON, JS syntax, and `git diff --check` pass.
 - **Open gate:** The VS Code process was already running and was not reloaded. It has not rendered or interacted with version 0.3.0; grant-revocation and full dashboard acceptance remain open.
 - **Outcome:** Install the current local plugin with a verified rollback copy and no editor restart.
+
+## 2026-10-27 — Verify installed dashboard reads against the Vhost alpha
+
+- **Intent:** Check the installed 0.3.0 dashboard's authorized health, activity, and goal read path against the real local Vhost project.
+- **Changed fact:** The installed extension returned a 16-goal page, 37 retained receipts, 12 facts, and zero pending SDEs. `project_health` returned `unknown` for all seven host dependencies because the direct VS Code stdio client sends profile/session routing metadata but not Hermes Core's trusted `hermes/readiness` observations.
+- **Verification:** The actual installed extension used the configured `renew-ssl-coding` User settings and local Curator MCP launcher. Output was limited to aggregate counts, status, and fixed gate/dependency codes; no goal or fact text was printed and no state was changed.
+- **Open gate:** A trusted Hermes-managed readiness source is not connected to this standalone editor path. Profile labels cannot stand in for host identity/readiness; the health result remains correctly fail-closed.
+- **Outcome:** Verify real profile-bound dashboard reads and identify the missing trusted readiness link without claiming healthy host services.

@@ -8703,6 +8703,18 @@ substitute for evidence at a later integration boundary.
       backup directory. VS Code was running during installation and has not
       reloaded, so the visible window has not yet exercised the new version.
       Real UI interaction and grant-revocation evidence remain open.
+      Fresh installed-extension read (2026-10-27): the 0.3.0 source, exercised
+      through its local stdio client with the actual Vhost User settings,
+      returned a 16-goal page, 37 retained receipts, 12 facts, and zero pending
+      SDEs. Health is `unknown` for all seven host dependencies. Curator's
+      `RequestHostReadiness` accepts trusted observations only from Hermes
+      Core's `hermes/readiness` metadata; the editor supplies profile/session
+      routing metadata but no readiness observations. This is the correct
+      fail-closed result for the standalone editor route, not evidence that the
+      host services are healthy or failed. A trusted Hermes-managed readiness
+      source is still needed for host health in this UI; do not synthesize it
+      from the profile label. The profile-bound goal/activity reads themselves
+      succeeded.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

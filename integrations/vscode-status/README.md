@@ -36,6 +36,13 @@ cross-project summary results display as `unknown`. If a fresh read fails, the
 dashboard clears previously rendered goal and report data before displaying a
 generic error.
 
+The editor launches Curator directly over local stdio and supplies profile and
+session routing metadata. It does not supply Hermes Core's trusted host
+readiness observations. Therefore host dependencies in `project_health` remain
+`unknown` in this editor path until a trusted Hermes-managed readiness source is
+connected. Do not treat the configured profile label as proof of host identity
+or readiness.
+
 Install locally by opening this directory in VS Code and selecting **Developer:
 Install Extension from Location...**. Reload the window, set the User settings,
 then click `CuratorMD V2` in the bottom status bar.
