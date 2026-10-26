@@ -8697,3 +8697,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** The focused MCP workflow tests, all nine extension tests, Pyright, errors-only Pylint, `node --check`, `pip check`, and `git diff --check` pass. All 87 installed Python modules match source. Hermes profile discovery reports 49 tools, including the new card tool; its project-scoped stdio call returned `vhost-manager-alpha` with zero candidates. Installed/source extension hashes match at `c1058235785dbaa57bf9817de2664179c677615fb5d5728b6b6a2d36fbc6fc77`; VSIX SHA-256 is `2771c8d4dcdc0661904c4fdce67b0aab46e567c5d471512bbf93f32df42b701f`.
 - **Open gate:** No SDE candidate was available for an attended review. The VS Code window has not reloaded. Human review, decision projection, purge, and the broader privacy/release gates remain open; no ledger or artifact was changed.
 - **Outcome:** Keep detailed review records inside the backend unless the attended CLI is actually reviewing a selected candidate.
+
+## 2026-10-27 — Correct the V2 alpha editor status
+
+- **Intent:** Make the alpha overview match the installed V2-owned VS Code extension and distinguish installation from live editor acceptance.
+- **Changed fact:** `docs/alpha-v2.md` now identifies extension 0.7.0 and its local dashboard/review scope; it labels the older profile report historical and records that the current VS Code window has not activated the installed version.
+- **Verification:** `python3 tools/count_curator_v2_delivery.py` reports 154/178 complete; `git diff --check` passes. No tests ran because this documentation-only change does not alter code.
+- **Open gate:** Visible status-bar rendering and dashboard interaction in a running VS Code window remain unverified. No checklist marker changed.
+- **Outcome:** Keep installed local capability and live UI evidence distinct.

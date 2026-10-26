@@ -15,11 +15,15 @@ Core integration and Host Steward are separate source
 changes in the Hermes Core repository; they are not part of this wheel. The
 Vhost Manager consumer plugin and hook are installed in its isolated local
 Hermes profile for alpha testing.
-The separate V2-owned VS Code extension `curatormd.curatormd-v2-status@0.1.0`
-is installed and displays the neutral `CuratorMD V2` status label; it does not
-report health or persistence.
+The separate V2-owned VS Code extension
+`curatormd.curatormd-v2-status@0.7.0` is installed. It provides the project
+dashboard, bounded review-queue display, and attended review handoff. Its
+profile-bound MCP read path is verified locally. The currently running VS Code
+window predates this version, and no activation entry was found in that
+window's extension-host logs; visible status-bar and dashboard interaction
+remain unverified.
 
-## Current local-alpha status (2026-10-26T14:38:13Z)
+## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
 
 The supported `renew-ssl-coding` Hermes profile connects to the installed
 Curator V2 stdio server, discovers 48 tools, and reads `vhost-manager-alpha`:
