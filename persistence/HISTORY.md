@@ -8705,3 +8705,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** `python3 tools/count_curator_v2_delivery.py` reports 154/178 complete; `git diff --check` passes. No tests ran because this documentation-only change does not alter code.
 - **Open gate:** Visible status-bar rendering and dashboard interaction in a running VS Code window remain unverified. No checklist marker changed.
 - **Outcome:** Keep installed local capability and live UI evidence distinct.
+
+## 2026-10-27 — Activate the V2 editor extension in an isolated profile
+
+- **Intent:** Verify that the installed V2 status-bar integration activates in a real VS Code host against the Vhost workspace.
+- **Changed fact:** Launched VS Code 1.143.1 with an isolated temporary User profile, the existing `renew-ssl-coding` database/profile settings, and the real `renew_ssl` workspace. Its extension-host log records activation of `curatormd.curatormd-v2-status`; the rendered editor showed `CuratorMD V2` in the status bar.
+- **Verification:** Captured the activation log and rendered window. The temporary window closed before a stable dashboard response was confirmed. No app source edit or reviewer/cleanup action occurred.
+- **Open gate:** Dashboard read/rendering, reviewer interaction, cleanup, and acceptance in the ordinary editor window remain open. No checklist marker changed.
+- **Outcome:** Confirm real extension activation and status-bar rendering without claiming full dashboard acceptance.

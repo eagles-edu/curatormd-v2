@@ -8939,7 +8939,15 @@ substitute for evidence at a later integration boundary.
       `2771c8d4dcdc0661904c4fdce67b0aab46e567c5d471512bbf93f32df42b701f`.
       The profile probe is local development evidence, not authenticated human
       identity or real reviewer action. The editor window has not been
-      reloaded; live UI, review receipt, and purge acceptance remain open.
+      reloaded; live dashboard, review receipt, and purge acceptance remain
+      open. Direct UI follow-up (2026-10-27): an isolated VS Code 1.143.1
+      profile opened the real `renew_ssl` workspace with the configured alpha
+      database and profile. Its extension-host log records activation of
+      `curatormd.curatormd-v2-status`, and the rendered status bar shows
+      `CuratorMD V2`. The ordinary editor window remains on its earlier
+      label-only version. The isolated window closed before a dashboard response
+      could be confirmed, so real dashboard rendering, project reads, reviewer
+      interaction, and cleanup remain open; no checklist marker changed.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging

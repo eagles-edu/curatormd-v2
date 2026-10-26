@@ -18,10 +18,11 @@ Hermes profile for alpha testing.
 The separate V2-owned VS Code extension
 `curatormd.curatormd-v2-status@0.7.0` is installed. It provides the project
 dashboard, bounded review-queue display, and attended review handoff. Its
-profile-bound MCP read path is verified locally. The currently running VS Code
-window predates this version, and no activation entry was found in that
-window's extension-host logs; visible status-bar and dashboard interaction
-remain unverified.
+profile-bound MCP read path is verified locally. In an isolated VS Code 1.143.1
+profile opened on the Vhost workspace, the extension-host log recorded 0.7.0
+activation and the `CuratorMD V2` status item rendered. The ordinary running
+window still shows the older label-only tooltip. A stable dashboard response
+from the new UI has not been verified.
 
 ## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
 
