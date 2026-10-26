@@ -81,8 +81,9 @@ class FakeMcpProcess extends EventEmitter {
               goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Smoke goal' }],
               next_offset: null,
             }) }] };
-          } else if (request.params.name === 'sde_review_queue') {
-            result = { content: [{ type: 'text', text: JSON.stringify([{
+          } else if (request.params.name === 'sde_review_queue_cards') {
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              project_id: 'alpha', candidates: [{
               candidate: {
                 candidate_id: 'candidate-1', materiality: 'decision',
                 rationale: 'Retain this verified project decision.',
@@ -91,7 +92,8 @@ class FakeMcpProcess extends EventEmitter {
               goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
               facts: [{ bullet: 'PRIVATE_REVIEW_FACT_CANARY' }],
               receipt: { receipt_id: 'PRIVATE_REVIEW_RECEIPT_CANARY' },
-            }]) }] };
+              }],
+            }) }] };
           } else {
             result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
           }
@@ -174,18 +176,20 @@ test('review CLI defaults beside the configured MCP launcher', () => {
 });
 
 test('review queue rejects malformed and cross-project candidates instead of showing zero', () => {
-  const valid = [{
+  const valid = { project_id: 'alpha', candidates: [{
     candidate: {
       candidate_id: 'candidate-1', goal_id: 'goal-1', status: 'pending_review',
       materiality: 'decision', rationale: 'Reviewed project decision.',
     },
     goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
-  }];
+    facts: [{ bullet: 'PRIVATE_FACT' }],
+    receipt: { receipt_id: 'PRIVATE_RECEIPT' },
+  }] };
   const compact = validateReviewQueue(valid, 'alpha');
   assert.equal(compact.length, 1);
   assert.deepEqual(Object.keys(compact[0]), ['candidate', 'goal']);
   assert.equal(validateReviewQueue(valid, 'other'), null);
-  assert.equal(validateReviewQueue([{ candidate: valid[0].candidate }], 'alpha'), null);
+  assert.equal(validateReviewQueue({ project_id: 'alpha', candidates: [{ candidate: valid.candidates[0].candidate }] }, 'alpha'), null);
 });
 
 test('dashboard opens a panel, reads goal and report pages, and clears on disposal', async () => {

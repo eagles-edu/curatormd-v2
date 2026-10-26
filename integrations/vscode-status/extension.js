@@ -223,7 +223,7 @@ async function showDashboard(spawnProcess = spawn) {
             offset,
             limit: GOAL_PAGE_SIZE,
           }).then((wire) => JSON.parse(wire));
-          const reviewRequest = client.callTool('sde_review_queue', {
+          const reviewRequest = client.callTool('sde_review_queue_cards', {
             limit: REVIEW_QUEUE_SIZE,
           }).then((wire) => JSON.parse(wire)).catch(() => null);
           const [health, activity, storage, page, reviews] = await Promise.all([
@@ -652,10 +652,13 @@ function defaultReviewCommand(serverCommand) {
 }
 
 function validateReviewQueue(value, projectId) {
-  if (!Array.isArray(value) || value.length > REVIEW_QUEUE_SIZE
+  if (!value || typeof value !== 'object'
+    || value.project_id !== projectId
+    || !Array.isArray(value.candidates)
+    || value.candidates.length > REVIEW_QUEUE_SIZE
     || typeof projectId !== 'string' || !projectId) return null;
   const candidateIds = new Set();
-  for (const item of value) {
+  for (const item of value.candidates) {
     const candidate = item && item.candidate;
     const goal = item && item.goal;
     if (!candidate || !goal
@@ -673,7 +676,7 @@ function validateReviewQueue(value, projectId) {
       || goal.problem.length > 4000) return null;
     candidateIds.add(candidate.candidate_id);
   }
-  return value.map(({ candidate, goal }) => ({
+  return value.candidates.map(({ candidate, goal }) => ({
     candidate: {
       candidate_id: candidate.candidate_id,
       goal_id: candidate.goal_id,

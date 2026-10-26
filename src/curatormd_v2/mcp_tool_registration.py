@@ -713,6 +713,34 @@ def _register_review_discovery_tools(registrar: _McpToolRegistrar) -> None:
 
         return json_result(api.sde_review_queue(caller, project_id, limit))
 
+    @_read_tool()
+    def sde_review_queue_cards(limit: int = 100) -> str:
+        """List bounded candidate summaries without facts, evidence, or receipts."""
+
+        details = api.sde_review_queue(caller, project_id, limit)
+        return json_result(
+            {
+                "project_id": project_id,
+                "candidates": [
+                    {
+                        "candidate": {
+                            "candidate_id": item.candidate.candidate_id,
+                            "goal_id": item.candidate.goal_id,
+                            "status": item.candidate.status.value,
+                            "materiality": item.candidate.materiality.value,
+                            "rationale": item.candidate.rationale,
+                        },
+                        "goal": {
+                            "goal_id": item.goal.goal_id,
+                            "project_id": item.goal.project_id,
+                            "problem": item.goal.problem,
+                        },
+                    }
+                    for item in details
+                ],
+            }
+        )
+
     @_safe_tool()
     def sde_assess(
         goal_id: str,

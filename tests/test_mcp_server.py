@@ -605,6 +605,7 @@ class McpServerTests(McpServerTestSupport):
                     self.assertIn("project_reconcile", tool_names)
                     self.assertIn("artifact_purge_status", tool_names)
                     self.assertIn("artifact_cleanup_approve", tool_names)
+                    self.assertIn("sde_review_queue_cards", tool_names)
 
             asyncio.run(exercise())
 

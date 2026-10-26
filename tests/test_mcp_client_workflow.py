@@ -174,6 +174,7 @@ class McpClientWorkflowTests(McpServerTestSupport):
             "goal_reconcile",
             "project_reconcile",
             "sde_review_queue",
+            "sde_review_queue_cards",
             "sde_review_detail",
             "sde_quality_feedback_summary",
             "artifact_purge_status",

@@ -302,6 +302,17 @@ class McpSdeWorkflowTests(McpServerTestSupport):
             [item["candidate"]["candidate_id"] for item in queue],
             [candidate["candidate_id"]],
         )
+        cards = await self._call_mcp_json(client, "sde_review_queue_cards", {})
+        self.assertEqual(cards["project_id"], "mcp-project")
+        self.assertEqual(
+            [item["candidate"]["candidate_id"] for item in cards["candidates"]],
+            [candidate["candidate_id"]],
+        )
+        serialized_cards = json.dumps(cards)
+        self.assertNotIn("fact_ids", serialized_cards)
+        self.assertNotIn("mcp-sde-change", serialized_cards)
+        self.assertNotIn("facts", cards["candidates"][0])
+        self.assertNotIn("receipt", cards["candidates"][0])
         return candidate
 
     def _assert_review_packet(

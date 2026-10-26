@@ -8915,6 +8915,31 @@ substitute for evidence at a later integration boundary.
       executed MCP fixture carries private canaries to verify their omission.
       Nine focused extension tests pass. This is one local renderer boundary,
       not the full source-to-sink privacy audit.
+      Compact MCP read follow-up (2026-10-27): added the read-only
+      `sde_review_queue_cards` tool and switched the dashboard to it. The server
+      returns only project-bound candidate and goal summaries; supporting fact
+      bodies, evidence, receipts, and corrections no longer cross the MCP stdio
+      boundary for queue display. The existing detailed review tools remain
+      available to the attended reviewer. Focused MCP workflow tests verify the
+      summary fields and omission of fact identifiers and bodies. This reduces
+      one transfer boundary and does not close the full source-to-sink audit or
+      real-review acceptance gate.
+      Alpha installation and profile probe (2026-10-27): the new Curator wheel
+      was installed only into the dedicated `renew-ssl-coding` alpha virtualenv
+      after archiving its prior distribution and entrypoints at
+      `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-review-summary-20261027.tar.gz`
+      (SHA-256 `d177433a36c9ceeffe9c57c300191b674e9eb250436dba424ba7e711d80fd573`).
+      All 87 installed Python modules match this source tree and `pip check`
+      passes. The Hermes profile probe connects and discovers 49 tools; a
+      project-scoped stdio call to `sde_review_queue_cards` returns
+      `vhost-manager-alpha` with zero pending candidates. No facts, receipts, or
+      artifacts were changed. VS Code extension 0.7.0 is installed with source
+      hash `c1058235785dbaa57bf9817de2664179c677615fb5d5728b6b6a2d36fbc6fc77`;
+      its VSIX SHA-256 is
+      `2771c8d4dcdc0661904c4fdce67b0aab46e567c5d471512bbf93f32df42b701f`.
+      The profile probe is local development evidence, not authenticated human
+      identity or real reviewer action. The editor window has not been
+      reloaded; live UI, review receipt, and purge acceptance remain open.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging
