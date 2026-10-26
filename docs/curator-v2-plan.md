@@ -8880,6 +8880,26 @@ substitute for evidence at a later integration boundary.
       approved next step but does not itself reacquire a source or verify an
       open criterion. The real-consumer reviewer, reacquisition/recovery,
       interruption, pilot, and owner-approval gates remain open.
+      Local editor progress (2026-10-27): the V2-owned VS Code dashboard now
+      reads the project-authorized pending SDE queue and offers a terminal
+      handoff to `curatormd-v2-review` for the selected candidate. The handoff
+      passes the exact workspace, database, and candidate as separately quoted
+      arguments; candidate IDs must be present in the last authorized queue
+      result, and workspace overrides of the review executable are rejected.
+      The existing attended CLI retains local-UID reauthorization, bounded
+      packet and inventory display, typed digest-bound confirmation, decision
+      receipt, and canonical projection before cleanup eligibility. The editor
+      does not submit decisions or purge requests. Eight focused extension
+      tests pass. Extension 0.6.0 is installed, and its
+      `extension.js` hash `891c3b3449292d26e6582d1aa0000b140a19e0cf5eab6e6afbe31daca1251a95`
+      matches source. The configured alpha MCP launcher has the attended review
+      CLI beside it, so the default handoff needs no User-settings change. The
+      prior 0.5.0 installation is archived with SHA-256
+      `7133c756dfbaab51b4f08b76b5522278330e8568713333baa65b56157f252be4`.
+      This makes the local review path reachable from the V2 dashboard; no live
+      review queue read, VS Code SDE decision, canonical review receipt, or
+      resulting purge was exercised. The reviewer and exact-inventory
+      acceptance gates remain open.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging

@@ -16,7 +16,9 @@ Module._load = function load(request, parent, isMain) {
 const {
   McpStdioClient,
   dashboardHtml,
+  defaultReviewCommand,
   hasWorkspaceSettingOverride,
+  quotePosixShellArgument,
   showDashboard,
 } = require('./extension');
 Module._load = originalLoad;
@@ -78,6 +80,14 @@ class FakeMcpProcess extends EventEmitter {
               goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Smoke goal' }],
               next_offset: null,
             }) }] };
+          } else if (request.params.name === 'sde_review_queue') {
+            result = { content: [{ type: 'text', text: JSON.stringify([{
+              candidate: {
+                candidate_id: 'candidate-1', materiality: 'high',
+                rationale: 'Retain this verified project decision.',
+              },
+              goal: { goal_id: 'goal-1', problem: 'Smoke goal' },
+            }]) }] };
           } else {
             result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
           }
@@ -114,7 +124,11 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.match(html, /Restarting from the first page/);
   assert.match(html, /reportRevision\.slice\(0, 12\)/);
   assert.match(html, /report\.textContent = message\.report/);
+  assert.match(html, /Pending SDE review/);
+  assert.match(html, /Review in terminal/);
+  assert.match(html, /label\.textContent = candidate\.materiality/);
   assert.doesNotMatch(html, /report\.innerHTML/);
+  assert.doesNotMatch(html, /reviews\.innerHTML/);
 });
 
 test('launcher, database, and profile settings reject workspace overrides', () => {
@@ -122,10 +136,11 @@ test('launcher, database, and profile settings reject workspace overrides', () =
     databasePath: { globalValue: '/home/user/curator.sqlite3' },
     profileId: { globalValue: 'development-profile' },
     serverCommand: { globalValue: '/opt/curator/bin/curatormd-v2-mcp' },
+    reviewCommand: { globalValue: '/opt/curator/bin/curatormd-v2-review' },
   };
   const config = { inspect: (name) => settings[name] };
   assert.equal(
-    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand']),
+    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand']),
     false,
   );
   settings.databasePath.workspaceValue = '/tmp/attacker.sqlite3';
@@ -133,6 +148,25 @@ test('launcher, database, and profile settings reject workspace overrides', () =
     hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand']),
     true,
   );
+  delete settings.databasePath.workspaceValue;
+  settings.reviewCommand.workspaceFolderValue = '/tmp/attacker-review';
+  assert.equal(
+    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand']),
+    true,
+  );
+});
+
+test('POSIX command quoting keeps paths with spaces and quotes as one argument', () => {
+  assert.equal(quotePosixShellArgument("/tmp/a user's project"), "'/tmp/a user'\\''s project'");
+  assert.throws(() => quotePosixShellArgument('/tmp/project\nreview'), /control characters/);
+});
+
+test('review CLI defaults beside the configured MCP launcher', () => {
+  assert.equal(
+    defaultReviewCommand('/opt/curator tools/bin/curatormd-v2-mcp'),
+    '/opt/curator tools/bin/curatormd-v2-review',
+  );
+  assert.equal(defaultReviewCommand('curatormd-v2-mcp'), 'curatormd-v2-review');
 });
 
 test('dashboard opens a panel, reads goal and report pages, and clears on disposal', async () => {
@@ -145,7 +179,9 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
     serverCommand: 'fixture-mcp',
+    reviewCommand: '/opt/curator tools/curatormd-v2-review',
   };
+  const terminalCalls = [];
   vscodeMock.workspace = {
     workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
     getConfiguration: () => ({
@@ -157,6 +193,10 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   vscodeMock.window = {
     showWarningMessage: assert.fail,
     showErrorMessage: assert.fail,
+    createTerminal: (options) => ({
+      show: () => terminalCalls.push({ action: 'show', options }),
+      sendText: (text, addNewLine) => terminalCalls.push({ action: 'sendText', text, addNewLine }),
+    }),
     createWebviewPanel: () => ({
       webview: {
         cspSource: 'vscode-webview:',
@@ -183,6 +223,16 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   assert.equal(goals.activity.event_receipt_count, 3);
   assert.equal(goals.storage.logical_record_bytes, 4096);
   assert.equal(goals.storage.staging.observed_file_bytes, 128);
+  assert.equal(goals.reviews.length, 1);
+  await receiveMessage({ type: 'openReview', candidateId: 'unlisted-candidate' });
+  assert.equal(terminalCalls.length, 0);
+  await receiveMessage({ type: 'openReview', candidateId: 'candidate-1' });
+  assert.equal(terminalCalls[0].action, 'show');
+  assert.equal(terminalCalls[1].action, 'sendText');
+  assert.match(terminalCalls[1].text, /'\/opt\/curator tools\/curatormd-v2-review'/);
+  assert.match(terminalCalls[1].text, /'\/tmp\/project'/);
+  assert.match(terminalCalls[1].text, /'candidate-1'/);
+  assert.equal(terminalCalls[1].addNewLine, true);
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);

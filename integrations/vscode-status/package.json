@@ -2,7 +2,7 @@
   "name": "curatormd-v2-status",
   "displayName": "CuratorMD V2 Status",
   "description": "A local, project-scoped CuratorMD V2 dashboard and status bar integration.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "curatormd",
   "repository": {
     "type": "git",
@@ -34,6 +34,12 @@
         "default": "curatormd-v2-mcp",
         "scope": "application",
         "description": "Absolute path or PATH command for the locally installed Curator V2 MCP launcher."
+      },
+      "curatormdV2.reviewCommand": {
+        "type": "string",
+        "default": "",
+        "scope": "application",
+        "description": "Optional attended review CLI path or PATH command; defaults to the executable beside serverCommand, or curatormd-v2-review on PATH."
       },
       "curatormdV2.databasePath": {
         "type": "string",

@@ -1,9 +1,10 @@
 # CuratorMD V2 VS Code dashboard
 
 The V2-owned extension keeps the `CuratorMD V2` status-bar label and opens a
-read-only dashboard for the first workspace folder. It shows a project health
-summary, retained event/review totals, storage estimates, paged goal cards, and
-one bounded goal report page at a time. Health, activity, storage, and goal
+project-scoped dashboard for the first workspace folder. Goal, health, activity,
+storage, and SDE queue reads are read-only. It shows a project health summary,
+retained event/review totals, storage estimates, paged goal cards, and one
+bounded goal report page at a time. Health, activity, storage, and goal
 totals are separate authorized reads and may reflect different observation
 times. Retained activity is not a capture-completeness measure. Project logical
 record bytes and retained event payload bytes are separate from the shared
@@ -18,10 +19,14 @@ Configure these **User** settings in VS Code:
 - `curatormdV2.profileId`: host-selected profile routing label.
 - `curatormdV2.serverCommand`: optional local `curatormd-v2-mcp` path or PATH
   command; defaults to `curatormd-v2-mcp`.
+- `curatormdV2.reviewCommand`: attended local SDE review CLI path or PATH
+  command; defaults beside an absolute `serverCommand`, otherwise
+  `curatormd-v2-review` on PATH.
 
 The extension rejects workspace-level overrides for the launcher, database,
-and profile. It starts a read-only stdio MCP process for each request, pinned to
-the open repository's `.curatormd-v2.toml` project. The Python host derives the
+profile, and review CLI. It starts a read-only stdio MCP process for each
+request, pinned to the open repository's `.curatormd-v2.toml` project. The
+Python host derives the
 authorization subject from the kernel UID and checks the exact project read
 grant on every request. The profile ID is routing context, not an identity or
 credential. Missing settings, a missing grant, or an unavailable launcher leave
@@ -55,6 +60,16 @@ readiness observations. Therefore host dependencies in `project_health` remain
 `unknown` in this editor path until a trusted Hermes-managed readiness source is
 connected. Do not treat the configured profile label as proof of host identity
 or readiness.
+
+The pending SDE section shows bounded candidate summaries from the authorized
+review queue. **Review in terminal** opens the attended CLI for that exact
+candidate, workspace, and database. The CLI rechecks the local OS identity and
+project grant, displays the current evidence and complete artifact inventory,
+requires a typed confirmation bound to candidate and inventory digests, records
+the decision, and persists the canonical projection before cleanup becomes
+eligible. The extension does not submit review decisions or cleanup commands.
+The existing six-hour purge timer processes only already-approved cleanup
+receipts.
 
 Install locally by opening this directory in VS Code and selecting **Developer:
 Install Extension from Location...**. Reload the window, set the User settings,

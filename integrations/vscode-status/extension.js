@@ -2,11 +2,13 @@
 
 const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
+const path = require('node:path');
 const vscode = require('vscode');
 
 const STATUS_LABEL = 'CuratorMD V2';
 const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
+const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 
 class McpStdioClient {
@@ -144,14 +146,16 @@ async function showDashboard(spawnProcess = spawn) {
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   const workspaceOverride = hasWorkspaceSettingOverride(
     configuration,
-    ['databasePath', 'profileId', 'serverCommand'],
+    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand'],
   );
   const databasePath = configuration.get('databasePath', '');
   const profileId = configuration.get('profileId', '');
   const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
+  const configuredReviewCommand = configuration.get('reviewCommand', '');
+  const reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
   if (workspaceOverride) {
     vscode.window.showErrorMessage(
-      'Curator launcher, database, and profile settings must be set in User settings, not the project.',
+      'Curator launcher, database, profile, and review CLI settings must be set in User settings, not the project.',
     );
     return;
   }
@@ -170,6 +174,7 @@ async function showDashboard(spawnProcess = spawn) {
   );
   panel.webview.html = dashboardHtml(panel.webview);
   let goalIds = new Set();
+  let candidateIds = new Set();
   const reportRevisions = new Map();
   let requestInProgress = false;
 
@@ -201,6 +206,7 @@ async function showDashboard(spawnProcess = spawn) {
     try {
       if (!message || typeof message.type !== 'string') return;
       if (message.type === 'loadGoals') {
+        candidateIds.clear();
         const offset = Number.isSafeInteger(message.offset) && message.offset >= 0
           ? message.offset : 0;
         const result = await withClient(async (client) => {
@@ -217,19 +223,31 @@ async function showDashboard(spawnProcess = spawn) {
             offset,
             limit: GOAL_PAGE_SIZE,
           }).then((wire) => JSON.parse(wire));
-          const [health, activity, storage, page] = await Promise.all([
+          const reviewRequest = client.callTool('sde_review_queue', {
+            limit: REVIEW_QUEUE_SIZE,
+          }).then((wire) => JSON.parse(wire)).catch(() => null);
+          const [health, activity, storage, page, reviews] = await Promise.all([
             healthRequest,
             activityRequest,
             storageRequest,
             pageRequest,
+            reviewRequest,
           ]);
-          return { health, activity, storage, page };
+          return { health, activity, storage, page, reviews };
         });
-        const { page, health, activity, storage } = result;
+        const { page, health, activity, storage, reviews } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
-        panel.webview.postMessage({ type: 'goals', page, health, activity, storage });
+        const reviewItems = Array.isArray(reviews) ? reviews.filter((item) =>
+          item && item.candidate && typeof item.candidate.candidate_id === 'string'
+          && /^[A-Za-z0-9_-]{1,128}$/.test(item.candidate.candidate_id)
+          && item.goal && typeof item.goal.problem === 'string') : [];
+        candidateIds = new Set(reviewItems.map((item) => item.candidate.candidate_id));
+        panel.webview.postMessage({
+          type: 'goals', page, health, activity, storage, reviews: reviewItems,
+          reviewAvailable: Boolean(reviewCommand),
+        });
       } else if (message.type === 'loadReport' && goalIds.has(message.goalId)) {
         const factOffset = Number.isSafeInteger(message.factOffset) && message.factOffset >= 0
           ? message.factOffset : 0;
@@ -259,6 +277,22 @@ async function showDashboard(spawnProcess = spawn) {
           reportRevision,
           report,
         });
+      } else if (message.type === 'openReview'
+        && typeof message.candidateId === 'string'
+        && typeof reviewCommand === 'string' && reviewCommand.trim().length > 0
+        && candidateIds.has(message.candidateId)) {
+        const terminal = vscode.window.createTerminal({
+          name: 'Curator V2 SDE Review',
+          cwd: workspace.uri.fsPath,
+        });
+        const command = [
+          reviewCommand,
+          '--project-root', workspace.uri.fsPath,
+          '--database', databasePath,
+          'review', message.candidateId,
+        ].map(quotePosixShellArgument).join(' ');
+        terminal.show();
+        terminal.sendText(command, true);
       }
     } catch (error) {
       panel.webview.postMessage({
@@ -268,7 +302,10 @@ async function showDashboard(spawnProcess = spawn) {
     }
   });
 
-  panel.onDidDispose(() => { goalIds.clear(); });
+  panel.onDidDispose(() => {
+    goalIds.clear();
+    candidateIds.clear();
+  });
 }
 
 function dashboardHtml(webview) {
@@ -308,6 +345,11 @@ function dashboardHtml(webview) {
   </section>
   <div><button id="refresh">Refresh goals</button> <button id="previousGoals">Previous goals</button> <button id="nextGoals">Next goals</button></div>
   <p id="goalPage"></p><div id="goals"></div>
+  <section aria-labelledby="reviewsHeading">
+    <h2 id="reviewsHeading">Pending SDE review</h2>
+    <p id="reviewNote" role="status">Loading authorized review queue…</p>
+    <div id="reviews"></div>
+  </section>
   <h2 id="selected"></h2>
   <div><button id="previousFacts">Previous facts</button> <button id="nextFacts">Next facts</button></div>
   <p id="factPage"></p><p id="error" role="alert"></p><pre id="report"></pre>
@@ -325,6 +367,8 @@ function dashboardHtml(webview) {
     const health = document.getElementById('health');
     const activitySummary = document.getElementById('activity');
     const storageSummary = document.getElementById('storage');
+    const reviewSummary = document.getElementById('reviewNote');
+    const reviews = document.getElementById('reviews');
     function formatBytes(value) {
       if (value === null) return 'unavailable';
       if (value < 1024) return value + ' B';
@@ -337,6 +381,8 @@ function dashboardHtml(webview) {
       factTotal = 0;
       reportRevision = null;
       goals.replaceChildren();
+      reviews.replaceChildren();
+      reviewSummary.textContent = 'Pending SDE review: unknown. Refresh to retry the authorized queue read.';
       report.textContent = '';
       health.textContent = 'Project health: unknown. Refresh to retry the health read.';
       activitySummary.textContent = 'Retained activity: unknown. Refresh to retry the activity read.';
@@ -355,6 +401,8 @@ function dashboardHtml(webview) {
       reportRevision = null;
       report.textContent = '';
       goals.replaceChildren();
+      reviews.replaceChildren();
+      reviewSummary.textContent = 'Loading the authorized review queue…';
       document.getElementById('selected').textContent = '';
       document.getElementById('factPage').textContent = '';
       document.getElementById('goalPage').textContent = 'Loading a fresh authorized goal page…';
@@ -525,6 +573,37 @@ function dashboardHtml(webview) {
           });
           goals.appendChild(button);
         }
+        reviews.replaceChildren();
+        if (!Array.isArray(message.reviews)) {
+          reviewSummary.textContent = 'Review queue: unavailable. Goal browsing remains available.';
+        } else if (!message.reviews.length) {
+          reviewSummary.textContent = 'No pending SDE candidates.';
+        } else {
+          reviewSummary.textContent = 'Pending review: ' + message.reviews.length
+            + (message.reviews.length === ${REVIEW_QUEUE_SIZE} ? ' shown (queue limit reached).' : '.');
+          for (const item of message.reviews) {
+            const candidate = item && item.candidate;
+            const goal = item && item.goal;
+            if (!candidate || typeof candidate.candidate_id !== 'string'
+              || typeof goal?.problem !== 'string') continue;
+            const row = document.createElement('p');
+            const label = document.createElement('span');
+            label.textContent = candidate.materiality + ': ' + goal.problem
+              + ' — ' + candidate.rationale;
+            const button = document.createElement('button');
+            button.textContent = 'Review in terminal';
+            button.disabled = !message.reviewAvailable;
+            button.addEventListener('click', () => api.postMessage({
+              type: 'openReview', candidateId: candidate.candidate_id,
+            }));
+            row.appendChild(label);
+            row.appendChild(button);
+            reviews.appendChild(row);
+          }
+          if (!message.reviewAvailable) {
+            reviewSummary.textContent += ' Configure the User-scoped reviewCommand to open the attended reviewer.';
+          }
+        }
         document.getElementById('previousGoals').disabled = goalOffset === 0;
         document.getElementById('nextGoals').disabled = page.next_offset === null || page.next_offset === undefined;
       } else if (message.type === 'report' && message.goalId === selectedGoal) {
@@ -560,11 +639,28 @@ function hasWorkspaceSettingOverride(configuration, settingNames) {
   });
 }
 
+function quotePosixShellArgument(value) {
+  const argument = String(value);
+  if (/[\u0000-\u001f\u007f]/.test(argument)) {
+    throw new Error('Curator review command arguments cannot contain control characters.');
+  }
+  return `'${argument.replace(/'/g, `'\\''`)}'`;
+}
+
+function defaultReviewCommand(serverCommand) {
+  if (path.basename(serverCommand) === 'curatormd-v2-mcp') {
+    return path.join(path.dirname(serverCommand), 'curatormd-v2-review');
+  }
+  return 'curatormd-v2-review';
+}
+
 module.exports = {
   activate,
   deactivate,
   McpStdioClient,
   dashboardHtml,
+  defaultReviewCommand,
   hasWorkspaceSettingOverride,
+  quotePosixShellArgument,
   showDashboard,
 };
