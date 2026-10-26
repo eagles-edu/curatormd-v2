@@ -1,9 +1,12 @@
 # CuratorMD V2 VS Code dashboard
 
 The V2-owned extension keeps the `CuratorMD V2` status-bar label and opens a
-read-only dashboard for the first workspace folder. It lists paged goal cards
-and displays one bounded goal report page at a time. Refreshing or changing
-pages replaces the old view, so pages from separate reads are never combined.
+read-only dashboard for the first workspace folder. It shows a project health
+summary, retained event/review totals, paged goal cards, and one bounded goal
+report page at a time. Health, activity, and goal totals are separate authorized
+reads and may reflect different observation times. Retained activity is not a
+capture-completeness measure. Refreshing or changing pages replaces the old
+view, so pages from separate report reads are never combined.
 
 Configure these **User** settings in VS Code:
 
@@ -26,6 +29,12 @@ Each report shows a revision label. If the ledger changes between fact-page
 requests, the extension clears the page and reloads from page one.
 Each page is a new authorized read; the prior page is cleared before requesting
 the next one. The dashboard does not cache reports across requests.
+Health displays only the project status and fixed gate codes. Activity displays
+retained receipt states, goal/fact totals, and pending/approved/rejected SDE
+counts; it includes no record IDs or fact text. Missing, malformed, or
+cross-project summary results display as `unknown`. If a fresh read fails, the
+dashboard clears previously rendered goal and report data before displaying a
+generic error.
 
 Install locally by opening this directory in VS Code and selecting **Developer:
 Install Extension from Location...**. Reload the window, set the User settings,

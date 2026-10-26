@@ -8625,3 +8625,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** All six focused VS Code extension tests pass, including the MCP response path, content-free rendering, and unavailable-summary fallback. `node --check integrations/vscode-status/extension.js` and `git diff --check` pass.
 - **Open gate:** This remains a local editor dashboard. Deployed dashboard/scrape wiring, alerts, storage-growth views, and operator acceptance remain open.
 - **Outcome:** Add local backlog visibility without equating retained activity with complete capture.
+
+## 2026-10-27 — Install the updated V2 VS Code dashboard
+
+- **Intent:** Put the current local health/activity dashboard source into the existing VS Code extension installation.
+- **Changed fact:** Packaged and installed `curatormd.curatormd-v2-status@0.3.0`. The installed extension source matches the repository. The prior installed 0.2.0 extension is archived at `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curatormd-v2-vscode-0.2.0-before-0.3.0-20261027/installed-0.2.0.tar.gz`; SHA-256 is `d4f86bd2ca48a984c5dfd162b55949ce94de7f795ea7141b242a7cccc7be41c2`. The new VSIX is also preserved in that directory; SHA-256 is `334ffb89f7a2ed0f75f0473e2a2f9aa3abeed8c45185684e58fcab18549b9944`.
+- **Verification:** `code --list-extensions --show-versions` reports version 0.3.0. Installed and source `extension.js` SHA-256 both equal `420cd9c66e88760f1cfa3dd907df36c925c6ec3e9874ca330311296c224905a9`. Six focused Node tests pass; package JSON, JS syntax, and `git diff --check` pass.
+- **Open gate:** The VS Code process was already running and was not reloaded. It has not rendered or interacted with version 0.3.0; grant-revocation and full dashboard acceptance remain open.
+- **Outcome:** Install the current local plugin with a verified rollback copy and no editor restart.

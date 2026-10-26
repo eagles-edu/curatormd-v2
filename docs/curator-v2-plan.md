@@ -2874,11 +2874,11 @@ consumer plugin, Hermes integration, or production deployment.
       production identity, general live-gateway delivery, or release approval.
 - [x] Ship and install a Curator V2-owned VS Code status-bar extension labeled
       `CuratorMD V2`; its tooltip and click action state that health, capture,
-      persistence, and identity are not checked. `node --check` passes, VS Code
-      lists version `0.1.0`, and the installed extension source hash matches
-      this repository. A cropped screenshot of the active Curator V2 VS Code
-      window visibly shows `CuratorMD V2` in the bottom status bar. This is a
-      local editor label, not runtime or readiness evidence.
+      persistence, and identity are not checked. The current installed version
+      is `0.3.0`, and its extension source hash matches this repository. A
+      previously captured screenshot visibly shows `CuratorMD V2` in the bottom
+      status bar. This is a local editor label, not runtime or readiness
+      evidence.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
@@ -8695,6 +8695,14 @@ substitute for evidence at a later integration boundary.
       suppress a successful goal page. Six focused Node tests pass, including
       the MCP request/response path and bounded content-free rendering. Deployed
       dashboard wiring and alert delivery remain open.
+      Installed refresh (2026-10-27): packaged and installed extension 0.3.0
+      from the current source. VS Code lists `curatormd.curatormd-v2-status@0.3.0`;
+      installed `extension.js` SHA-256 matches source at
+      `420cd9c66e88760f1cfa3dd907df36c925c6ec3e9874ca330311296c224905a9`.
+      The previous 0.2.0 extension and new VSIX are preserved in the alpha
+      backup directory. VS Code was running during installation and has not
+      reloaded, so the visible window has not yet exercised the new version.
+      Real UI interaction and grant-revocation evidence remain open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
