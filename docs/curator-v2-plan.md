@@ -8908,6 +8908,13 @@ substitute for evidence at a later integration boundary.
       valid, malformed, and cross-project queue results. This strengthens the
       local review display but does not provide authenticated-review runtime
       evidence or close the reviewer acceptance gate.
+      Review-summary privacy follow-up (2026-10-27): although the MCP queue
+      returns detailed review records, the editor now forwards only the bounded
+      candidate and goal summary fields it renders. Supporting fact text,
+      receipts, and corrections are not copied into webview messages; an
+      executed MCP fixture carries private canaries to verify their omission.
+      Nine focused extension tests pass. This is one local renderer boundary,
+      not the full source-to-sink privacy audit.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging

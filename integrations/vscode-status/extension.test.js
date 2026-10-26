@@ -89,6 +89,8 @@ class FakeMcpProcess extends EventEmitter {
                 goal_id: 'goal-1', status: 'pending_review',
               },
               goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
+              facts: [{ bullet: 'PRIVATE_REVIEW_FACT_CANARY' }],
+              receipt: { receipt_id: 'PRIVATE_REVIEW_RECEIPT_CANARY' },
             }]) }] };
           } else {
             result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
@@ -179,7 +181,9 @@ test('review queue rejects malformed and cross-project candidates instead of sho
     },
     goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
   }];
-  assert.equal(validateReviewQueue(valid, 'alpha').length, 1);
+  const compact = validateReviewQueue(valid, 'alpha');
+  assert.equal(compact.length, 1);
+  assert.deepEqual(Object.keys(compact[0]), ['candidate', 'goal']);
   assert.equal(validateReviewQueue(valid, 'other'), null);
   assert.equal(validateReviewQueue([{ candidate: valid[0].candidate }], 'alpha'), null);
 });
@@ -239,6 +243,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   assert.equal(goals.storage.logical_record_bytes, 4096);
   assert.equal(goals.storage.staging.observed_file_bytes, 128);
   assert.equal(goals.reviews.length, 1);
+  assert.doesNotMatch(JSON.stringify(goals.reviews), /PRIVATE_REVIEW_(?:FACT|RECEIPT)_CANARY/);
   await receiveMessage({ type: 'openReview', candidateId: 'unlisted-candidate' });
   assert.equal(terminalCalls.length, 0);
   await receiveMessage({ type: 'openReview', candidateId: 'candidate-1' });

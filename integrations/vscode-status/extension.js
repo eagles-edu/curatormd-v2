@@ -665,13 +665,28 @@ function validateReviewQueue(value, projectId) {
       || candidate.status !== 'pending_review'
       || !['implementation', 'decision', 'recovery', 'verified_lesson'].includes(candidate.materiality)
       || typeof candidate.rationale !== 'string' || !candidate.rationale.trim()
+      || candidate.rationale.length > 1000
       || typeof candidate.goal_id !== 'string'
       || candidate.goal_id !== goal.goal_id
       || goal.project_id !== projectId
-      || typeof goal.problem !== 'string' || !goal.problem.trim()) return null;
+      || typeof goal.problem !== 'string' || !goal.problem.trim()
+      || goal.problem.length > 4000) return null;
     candidateIds.add(candidate.candidate_id);
   }
-  return value;
+  return value.map(({ candidate, goal }) => ({
+    candidate: {
+      candidate_id: candidate.candidate_id,
+      goal_id: candidate.goal_id,
+      status: candidate.status,
+      materiality: candidate.materiality,
+      rationale: candidate.rationale,
+    },
+    goal: {
+      goal_id: goal.goal_id,
+      project_id: goal.project_id,
+      problem: goal.problem,
+    },
+  }));
 }
 
 module.exports = {

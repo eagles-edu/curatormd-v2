@@ -8681,3 +8681,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** All nine focused extension tests pass, including valid, malformed, and cross-project queue cases. `node --check` and `git diff --check` pass. Installed/source `extension.js` hashes match at `b981d1b6a7718976c34f007ac3648d1611c92ec7a3ef0ac723a09f7350b91a68`; VSIX SHA-256 is `2cbfc350e6710be28942963cea5d6ccaff3f436d945d6feb7c484f203289caf1`.
 - **Open gate:** The running VS Code window has not been reloaded and no real queue response or reviewer action was observed. Human review, canonical decision receipt, exact cleanup, and pilot gates remain open. The Curator V2 MCP still returned `unauthenticated` for goal-ledger access.
 - **Outcome:** Make malformed queue state visibly unavailable rather than falsely empty, with no ledger or artifact mutation.
+
+## 2026-10-27 — Keep full review details out of dashboard messages
+
+- **Intent:** Limit the pending-review dashboard to the candidate summary it renders instead of forwarding full MCP review records into the webview.
+- **Changed fact:** The queue adapter now validates and copies only candidate ID, goal ID, pending state, materiality, rationale, project ID, and bounded goal problem. Supporting facts, receipts, and corrections are omitted from webview messages. Extension 0.6.2 is installed after archiving 0.6.1 at `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curatormd-v2-vscode-0.6.1-before-0.6.2-20261027/installed-0.6.1.tar.gz` (SHA-256 `fc1b19bacc6e0e019ab942a7f5bd4836782cc03d584efd3f8ac343d86e552d48`).
+- **Verification:** All nine focused extension tests pass, including an executed MCP fixture with fact and receipt canaries, malformed queue rejection, and cross-project denial. VS Code lists 0.6.2, and installed/source `extension.js` hashes match at `61529229a305afeebdea7f202c48a778d1654940f0ccddbeee6301ab532d6326`; VSIX SHA-256 is `bf4b0c3e2f478e83fc9b0039ed632c43e401d126ecb58b425ba8c2097909a697`. `node --check` and `git diff --check` pass.
+- **Open gate:** This covers the local review-queue renderer boundary only. Real VS Code interaction, live queue data, decision receipts, projection-before-purge, and the full source-to-sink privacy audit remain open.
+- **Outcome:** Reduce dashboard exposure without changing the authorized review CLI or candidate lifecycle.
