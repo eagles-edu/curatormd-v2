@@ -8679,6 +8679,14 @@ substitute for evidence at a later integration boundary.
       This protects the local view after a failed reauthorization, but does not
       prove a real VS Code interaction, grant-revocation transition, or external
       trust-version handling. The dashboard checklist item remains open.
+      Local health-card follow-up (2026-10-27): the editor dashboard now reads
+      the authorized `project_health` snapshot alongside each goal page and
+      displays only status and fixed gate codes. Missing, malformed, or
+      cross-project health is shown as `unknown`; an unavailable health probe
+      does not suppress a successful goal page. The six focused Node tests cover
+      healthy, degraded, unavailable, and mismatched health plus the denied-read
+      flow. This is local project visibility, not deployed monitoring or alert
+      delivery; the operational dashboard/alert checklist remains open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

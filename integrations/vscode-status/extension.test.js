@@ -22,10 +22,11 @@ const {
 Module._load = originalLoad;
 
 class FakeMcpProcess extends EventEmitter {
-  constructor(reportRevision = 'a'.repeat(64), denyToolCall = false) {
+  constructor(reportRevision = 'a'.repeat(64), denyToolCall = false, denyToolName = null) {
     super();
     this.requests = [];
     this.denyToolCall = denyToolCall;
+    this.denyToolName = denyToolName;
     this.stdout = new PassThrough();
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -35,14 +36,18 @@ class FakeMcpProcess extends EventEmitter {
           let result;
           if (request.method === 'initialize') {
             result = { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'fixture', version: '1' } };
+          } else if (this.denyToolCall || request.params.name === this.denyToolName) {
+            result = { isError: true, content: [{ type: 'text', text: 'permission denied' }] };
+          } else if (request.params.name === 'project_health') {
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              project_id: 'alpha', status: 'healthy', gate_codes: [],
+            }) }] };
           } else if (request.params.name === 'goal_list_page') {
             result = { content: [{ type: 'text', text: JSON.stringify({
               project_id: 'alpha', total: 1, offset: 0, limit: 20,
               goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Smoke goal' }],
               next_offset: null,
             }) }] };
-          } else if (this.denyToolCall) {
-            result = { isError: true, content: [{ type: 'text', text: 'permission denied' }] };
           } else {
             result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
           }
@@ -144,6 +149,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   await receiveMessage({ type: 'loadGoals', offset: 0 });
   const goals = messages.find((message) => message.type === 'goals');
   assert.equal(goals.page.goals[0].goal_id, 'goal-1');
+  assert.equal(goals.health.status, 'healthy');
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);
@@ -194,11 +200,32 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   });
 
   receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha',
     total: 1,
     offset: 0,
     goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Private goal' }],
     next_offset: null,
-  } } });
+  }, health: { project_id: 'alpha', status: 'healthy', gate_codes: [] } } });
+  assert.match(elements.get('health').textContent, /Project health: healthy\. Open gates: none reported\./);
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
+  }, health: { project_id: 'alpha', status: 'degraded', gate_codes: ['staging_budget_warning'] } } });
+  assert.match(elements.get('health').textContent, /degraded\. Open gates: staging_budget_warning/);
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
+  }, health: { project_id: 'other', status: 'healthy', gate_codes: [] } } });
+  assert.match(elements.get('health').textContent, /unknown\. Open gates: health_project_mismatch/);
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
+  }, health: null } });
+  assert.match(elements.get('health').textContent, /unknown\. Open gates: health_read_unavailable/);
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    total: 1,
+    offset: 0,
+    goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Private goal' }],
+    next_offset: null,
+    project_id: 'alpha',
+  }, health: { project_id: 'alpha', status: 'healthy', gate_codes: [] } } });
   elements.get('goals').children[0].listeners.click();
   receiveWindowMessage({ data: {
     type: 'report',
@@ -220,4 +247,42 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   assert.equal(elements.get('factPage').textContent, '');
   assert.equal(elements.get('error').textContent, 'Curator read failed.');
   assert.equal(elements.get('nextFacts').disabled, true);
+  assert.match(elements.get('health').textContent, /Project health: unknown/);
+});
+
+test('dashboard still reads goals when the health probe is unavailable', async () => {
+  const messages = [];
+  let receiveMessage;
+  const userSettings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showWarningMessage: assert.fail,
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => { messages.push(message); },
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+
+  await showDashboard(() => new FakeMcpProcess('a'.repeat(64), false, 'project_health'));
+  await receiveMessage({ type: 'loadGoals', offset: 0 });
+
+  const goals = messages.find((message) => message.type === 'goals');
+  assert.equal(goals.page.goals[0].goal_id, 'goal-1');
+  assert.equal(goals.health, null);
 });

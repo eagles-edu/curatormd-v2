@@ -203,17 +203,22 @@ async function showDashboard(spawnProcess = spawn) {
       if (message.type === 'loadGoals') {
         const offset = Number.isSafeInteger(message.offset) && message.offset >= 0
           ? message.offset : 0;
-        const page = await withClient(async (client) => {
-          const wire = await client.callTool('goal_list_page', {
+        const result = await withClient(async (client) => {
+          const healthRequest = client.callTool('project_health', {})
+            .then((wire) => JSON.parse(wire))
+            .catch(() => null);
+          const pageRequest = client.callTool('goal_list_page', {
             offset,
             limit: GOAL_PAGE_SIZE,
-          });
-          return JSON.parse(wire);
+          }).then((wire) => JSON.parse(wire));
+          const [health, page] = await Promise.all([healthRequest, pageRequest]);
+          return { health, page };
         });
+        const { page, health } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
-        panel.webview.postMessage({ type: 'goals', page });
+        panel.webview.postMessage({ type: 'goals', page, health });
       } else if (message.type === 'loadReport' && goalIds.has(message.goalId)) {
         const factOffset = Number.isSafeInteger(message.factOffset) && message.factOffset >= 0
           ? message.factOffset : 0;
@@ -278,6 +283,10 @@ function dashboardHtml(webview) {
 <body>
   <h1>CuratorMD V2</h1>
   <p id="notice">Reads are project-scoped and reauthorized by Curator on each request. Refresh replaces the current page; pages are never joined across reads.</p>
+  <section aria-labelledby="healthHeading">
+    <h2 id="healthHeading">Project health</h2>
+    <p id="health" role="status">Loading an authorized health snapshot…</p>
+  </section>
   <div><button id="refresh">Refresh goals</button> <button id="previousGoals">Previous goals</button> <button id="nextGoals">Next goals</button></div>
   <p id="goalPage"></p><div id="goals"></div>
   <h2 id="selected"></h2>
@@ -294,6 +303,7 @@ function dashboardHtml(webview) {
     const goals = document.getElementById('goals');
     const report = document.getElementById('report');
     const error = document.getElementById('error');
+    const health = document.getElementById('health');
     function clearDashboard() {
       selectedGoal = null;
       factOffset = 0;
@@ -301,6 +311,7 @@ function dashboardHtml(webview) {
       reportRevision = null;
       goals.replaceChildren();
       report.textContent = '';
+      health.textContent = 'Project health: unknown. Refresh to retry the health read.';
       document.getElementById('selected').textContent = '';
       document.getElementById('goalPage').textContent = '';
       document.getElementById('factPage').textContent = '';
@@ -318,6 +329,7 @@ function dashboardHtml(webview) {
       document.getElementById('selected').textContent = '';
       document.getElementById('factPage').textContent = '';
       document.getElementById('goalPage').textContent = 'Loading a fresh authorized goal page…';
+      health.textContent = 'Loading an authorized health snapshot…';
       api.postMessage({ type: 'loadGoals', offset });
       error.textContent = '';
     }
@@ -350,6 +362,22 @@ function dashboardHtml(webview) {
       }
       if (message.type === 'goals') {
         const page = message.page;
+        const healthSnapshot = message.health;
+        const healthProjectMatches = healthSnapshot
+          && healthSnapshot.project_id === page.project_id;
+        const validHealthStatus = healthSnapshot
+          && ['healthy', 'degraded', 'unknown'].includes(healthSnapshot.status);
+        const healthStatus = healthProjectMatches && validHealthStatus
+          ? healthSnapshot.status : 'unknown';
+        const healthGates = !healthSnapshot
+          ? ['health_read_unavailable']
+          : !healthProjectMatches
+            ? ['health_project_mismatch']
+            : !validHealthStatus || !Array.isArray(healthSnapshot.gate_codes)
+              ? ['health_observation_invalid']
+              : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string');
+        health.textContent = 'Project health: ' + healthStatus + '. Open gates: '
+          + (healthGates.length ? healthGates.join(', ') : 'none reported') + '.';
         goalTotal = page.total || 0;
         goalOffset = page.offset || 0;
         document.getElementById('goalPage').textContent = 'Goals ' + (goalTotal ? goalOffset + 1 : 0) + '–' + Math.min(goalOffset + (page.goals || []).length, goalTotal) + ' of ' + goalTotal;

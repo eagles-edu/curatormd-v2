@@ -8609,3 +8609,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** All five VS Code extension tests pass; `node --check integrations/vscode-status/extension.test.js` and `git diff --check` pass.
 - **Open gate:** The denial is simulated at the MCP protocol boundary. A real VS Code grant-revocation transition and full dashboard acceptance remain open.
 - **Outcome:** Add protocol-path evidence without claiming live authorization revocation.
+
+## 2026-10-27 — Show authorized project health in the VS Code dashboard
+
+- **Intent:** Give the local V2 dashboard a concise project-health view while keeping goal reads usable when the health probe is unavailable.
+- **Changed fact:** Loading goals now also requests `project_health`; the dashboard shows only status and fixed gate codes, treats missing or mismatched project health as `unknown`, and does not let a failed health request suppress a successful goal page.
+- **Verification:** All six focused extension tests pass, including healthy, degraded, unavailable, and cross-project health results. `node --check integrations/vscode-status/extension.js` and `git diff --check` pass.
+- **Open gate:** This is a local project dashboard only. Deployed scrape infrastructure, operator dashboards, alert delivery, and real VS Code acceptance remain open.
+- **Outcome:** Improve local V2 visibility without claiming deployment monitoring or closing the operational dashboard checklist.
