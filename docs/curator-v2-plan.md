@@ -8900,6 +8900,14 @@ substitute for evidence at a later integration boundary.
       review queue read, VS Code SDE decision, canonical review receipt, or
       resulting purge was exercised. The reviewer and exact-inventory
       acceptance gates remain open.
+      Review-queue validation follow-up (2026-10-27): the editor now rejects an
+      oversized, malformed, duplicated, non-pending, or cross-project candidate
+      response as unavailable rather than filtering it into a false empty
+      queue. It binds each candidate ID to the returned goal in the same
+      project before enabling the terminal handoff. A focused regression covers
+      valid, malformed, and cross-project queue results. This strengthens the
+      local review display but does not provide authenticated-review runtime
+      evidence or close the reviewer acceptance gate.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging

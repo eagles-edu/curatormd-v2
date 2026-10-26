@@ -239,11 +239,8 @@ async function showDashboard(spawnProcess = spawn) {
         if (page.project_id !== undefined && page.project_id !== '') {
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
-        const reviewItems = Array.isArray(reviews) ? reviews.filter((item) =>
-          item && item.candidate && typeof item.candidate.candidate_id === 'string'
-          && /^[A-Za-z0-9_-]{1,128}$/.test(item.candidate.candidate_id)
-          && item.goal && typeof item.goal.problem === 'string') : [];
-        candidateIds = new Set(reviewItems.map((item) => item.candidate.candidate_id));
+        const reviewItems = validateReviewQueue(reviews, page.project_id);
+        candidateIds = new Set((reviewItems || []).map((item) => item.candidate.candidate_id));
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage, reviews: reviewItems,
           reviewAvailable: Boolean(reviewCommand),
@@ -654,6 +651,29 @@ function defaultReviewCommand(serverCommand) {
   return 'curatormd-v2-review';
 }
 
+function validateReviewQueue(value, projectId) {
+  if (!Array.isArray(value) || value.length > REVIEW_QUEUE_SIZE
+    || typeof projectId !== 'string' || !projectId) return null;
+  const candidateIds = new Set();
+  for (const item of value) {
+    const candidate = item && item.candidate;
+    const goal = item && item.goal;
+    if (!candidate || !goal
+      || typeof candidate.candidate_id !== 'string'
+      || !/^[A-Za-z0-9_-]{1,128}$/.test(candidate.candidate_id)
+      || candidateIds.has(candidate.candidate_id)
+      || candidate.status !== 'pending_review'
+      || !['implementation', 'decision', 'recovery', 'verified_lesson'].includes(candidate.materiality)
+      || typeof candidate.rationale !== 'string' || !candidate.rationale.trim()
+      || typeof candidate.goal_id !== 'string'
+      || candidate.goal_id !== goal.goal_id
+      || goal.project_id !== projectId
+      || typeof goal.problem !== 'string' || !goal.problem.trim()) return null;
+    candidateIds.add(candidate.candidate_id);
+  }
+  return value;
+}
+
 module.exports = {
   activate,
   deactivate,
@@ -663,4 +683,5 @@ module.exports = {
   hasWorkspaceSettingOverride,
   quotePosixShellArgument,
   showDashboard,
+  validateReviewQueue,
 };

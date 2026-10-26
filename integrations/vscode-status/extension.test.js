@@ -20,6 +20,7 @@ const {
   hasWorkspaceSettingOverride,
   quotePosixShellArgument,
   showDashboard,
+  validateReviewQueue,
 } = require('./extension');
 Module._load = originalLoad;
 
@@ -83,10 +84,11 @@ class FakeMcpProcess extends EventEmitter {
           } else if (request.params.name === 'sde_review_queue') {
             result = { content: [{ type: 'text', text: JSON.stringify([{
               candidate: {
-                candidate_id: 'candidate-1', materiality: 'high',
+                candidate_id: 'candidate-1', materiality: 'decision',
                 rationale: 'Retain this verified project decision.',
+                goal_id: 'goal-1', status: 'pending_review',
               },
-              goal: { goal_id: 'goal-1', problem: 'Smoke goal' },
+              goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
             }]) }] };
           } else {
             result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
@@ -167,6 +169,19 @@ test('review CLI defaults beside the configured MCP launcher', () => {
     '/opt/curator tools/bin/curatormd-v2-review',
   );
   assert.equal(defaultReviewCommand('curatormd-v2-mcp'), 'curatormd-v2-review');
+});
+
+test('review queue rejects malformed and cross-project candidates instead of showing zero', () => {
+  const valid = [{
+    candidate: {
+      candidate_id: 'candidate-1', goal_id: 'goal-1', status: 'pending_review',
+      materiality: 'decision', rationale: 'Reviewed project decision.',
+    },
+    goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
+  }];
+  assert.equal(validateReviewQueue(valid, 'alpha').length, 1);
+  assert.equal(validateReviewQueue(valid, 'other'), null);
+  assert.equal(validateReviewQueue([{ candidate: valid[0].candidate }], 'alpha'), null);
 });
 
 test('dashboard opens a panel, reads goal and report pages, and clears on disposal', async () => {
