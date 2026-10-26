@@ -8617,3 +8617,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** All six focused extension tests pass, including healthy, degraded, unavailable, and cross-project health results. `node --check integrations/vscode-status/extension.js` and `git diff --check` pass.
 - **Open gate:** This is a local project dashboard only. Deployed scrape infrastructure, operator dashboards, alert delivery, and real VS Code acceptance remain open.
 - **Outcome:** Improve local V2 visibility without claiming deployment monitoring or closing the operational dashboard checklist.
+
+## 2026-10-27 — Show retained activity totals in the VS Code dashboard
+
+- **Intent:** Expose local, project-authorized event and review backlog totals beside health and goal browsing.
+- **Changed fact:** Each goal-page load also requests `project_activity_status`; the dashboard displays retained receipt states, goal/fact totals, and pending/approved/rejected SDE counts without IDs or content. Missing, malformed, or cross-project summaries show `unknown`; an unavailable summary does not block goal browsing.
+- **Verification:** All six focused VS Code extension tests pass, including the MCP response path, content-free rendering, and unavailable-summary fallback. `node --check integrations/vscode-status/extension.js` and `git diff --check` pass.
+- **Open gate:** This remains a local editor dashboard. Deployed dashboard/scrape wiring, alerts, storage-growth views, and operator acceptance remain open.
+- **Outcome:** Add local backlog visibility without equating retained activity with complete capture.

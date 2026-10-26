@@ -207,18 +207,25 @@ async function showDashboard(spawnProcess = spawn) {
           const healthRequest = client.callTool('project_health', {})
             .then((wire) => JSON.parse(wire))
             .catch(() => null);
+          const activityRequest = client.callTool('project_activity_status', {})
+            .then((wire) => JSON.parse(wire))
+            .catch(() => null);
           const pageRequest = client.callTool('goal_list_page', {
             offset,
             limit: GOAL_PAGE_SIZE,
           }).then((wire) => JSON.parse(wire));
-          const [health, page] = await Promise.all([healthRequest, pageRequest]);
-          return { health, page };
+          const [health, activity, page] = await Promise.all([
+            healthRequest,
+            activityRequest,
+            pageRequest,
+          ]);
+          return { health, activity, page };
         });
-        const { page, health } = result;
+        const { page, health, activity } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
-        panel.webview.postMessage({ type: 'goals', page, health });
+        panel.webview.postMessage({ type: 'goals', page, health, activity });
       } else if (message.type === 'loadReport' && goalIds.has(message.goalId)) {
         const factOffset = Number.isSafeInteger(message.factOffset) && message.factOffset >= 0
           ? message.factOffset : 0;
@@ -287,6 +294,10 @@ function dashboardHtml(webview) {
     <h2 id="healthHeading">Project health</h2>
     <p id="health" role="status">Loading an authorized health snapshot…</p>
   </section>
+  <section aria-labelledby="activityHeading">
+    <h2 id="activityHeading">Retained activity</h2>
+    <p id="activity" role="status">Loading authorized activity totals…</p>
+  </section>
   <div><button id="refresh">Refresh goals</button> <button id="previousGoals">Previous goals</button> <button id="nextGoals">Next goals</button></div>
   <p id="goalPage"></p><div id="goals"></div>
   <h2 id="selected"></h2>
@@ -304,6 +315,7 @@ function dashboardHtml(webview) {
     const report = document.getElementById('report');
     const error = document.getElementById('error');
     const health = document.getElementById('health');
+    const activitySummary = document.getElementById('activity');
     function clearDashboard() {
       selectedGoal = null;
       factOffset = 0;
@@ -312,6 +324,7 @@ function dashboardHtml(webview) {
       goals.replaceChildren();
       report.textContent = '';
       health.textContent = 'Project health: unknown. Refresh to retry the health read.';
+      activitySummary.textContent = 'Retained activity: unknown. Refresh to retry the activity read.';
       document.getElementById('selected').textContent = '';
       document.getElementById('goalPage').textContent = '';
       document.getElementById('factPage').textContent = '';
@@ -330,6 +343,7 @@ function dashboardHtml(webview) {
       document.getElementById('factPage').textContent = '';
       document.getElementById('goalPage').textContent = 'Loading a fresh authorized goal page…';
       health.textContent = 'Loading an authorized health snapshot…';
+      activitySummary.textContent = 'Loading authorized activity totals…';
       api.postMessage({ type: 'loadGoals', offset });
       error.textContent = '';
     }
@@ -363,6 +377,7 @@ function dashboardHtml(webview) {
       if (message.type === 'goals') {
         const page = message.page;
         const healthSnapshot = message.health;
+        const activitySnapshot = message.activity;
         const healthProjectMatches = healthSnapshot
           && healthSnapshot.project_id === page.project_id;
         const validHealthStatus = healthSnapshot
@@ -378,6 +393,33 @@ function dashboardHtml(webview) {
               : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string');
         health.textContent = 'Project health: ' + healthStatus + '. Open gates: '
           + (healthGates.length ? healthGates.join(', ') : 'none reported') + '.';
+        const activityFields = [
+          'event_receipt_count', 'processed_event_count', 'received_event_count',
+          'failed_event_count', 'quarantined_event_count', 'goal_count',
+          'fact_count', 'pending_sde_count', 'approved_sde_count',
+          'rejected_sde_count',
+        ];
+        const activityValid = activitySnapshot
+          && activitySnapshot.project_id === page.project_id
+          && activityFields.every((field) => Number.isSafeInteger(activitySnapshot[field])
+            && activitySnapshot[field] >= 0);
+        if (!activitySnapshot) {
+          activitySummary.textContent = 'Retained activity: unknown. Activity read unavailable.';
+        } else if (activitySnapshot.project_id !== page.project_id) {
+          activitySummary.textContent = 'Retained activity: unknown. Project mismatch.';
+        } else if (!activityValid) {
+          activitySummary.textContent = 'Retained activity: unknown. Invalid activity snapshot.';
+        } else {
+          activitySummary.textContent = 'Retained receipts: ' + activitySnapshot.event_receipt_count
+            + ' (processed ' + activitySnapshot.processed_event_count
+            + ', received ' + activitySnapshot.received_event_count
+            + ', failed ' + activitySnapshot.failed_event_count
+            + ', quarantined ' + activitySnapshot.quarantined_event_count
+            + '); goals ' + activitySnapshot.goal_count + '; facts ' + activitySnapshot.fact_count
+            + '; SDE candidates pending ' + activitySnapshot.pending_sde_count
+            + ', approved ' + activitySnapshot.approved_sde_count
+            + ', rejected ' + activitySnapshot.rejected_sde_count + '.';
+        }
         goalTotal = page.total || 0;
         goalOffset = page.offset || 0;
         document.getElementById('goalPage').textContent = 'Goals ' + (goalTotal ? goalOffset + 1 : 0) + '–' + Math.min(goalOffset + (page.goals || []).length, goalTotal) + ' of ' + goalTotal;

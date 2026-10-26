@@ -8687,6 +8687,14 @@ substitute for evidence at a later integration boundary.
       healthy, degraded, unavailable, and mismatched health plus the denied-read
       flow. This is local project visibility, not deployed monitoring or alert
       delivery; the operational dashboard/alert checklist remains open.
+      Retained-activity follow-up (2026-10-27): the same page now reads the
+      authorized `project_activity_status` aggregate and shows retained receipt
+      states, goal/fact totals, and pending/approved/rejected SDE counts. The UI
+      labels this as retained activity, not complete capture. Missing or
+      cross-project activity is `unknown`, and an unavailable summary does not
+      suppress a successful goal page. Six focused Node tests pass, including
+      the MCP request/response path and bounded content-free rendering. Deployed
+      dashboard wiring and alert delivery remain open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

@@ -36,11 +36,27 @@ class FakeMcpProcess extends EventEmitter {
           let result;
           if (request.method === 'initialize') {
             result = { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'fixture', version: '1' } };
-          } else if (this.denyToolCall || request.params.name === this.denyToolName) {
+          } else if (this.denyToolCall || (Array.isArray(this.denyToolName)
+            ? this.denyToolName.includes(request.params.name)
+            : request.params.name === this.denyToolName)) {
             result = { isError: true, content: [{ type: 'text', text: 'permission denied' }] };
           } else if (request.params.name === 'project_health') {
             result = { content: [{ type: 'text', text: JSON.stringify({
               project_id: 'alpha', status: 'healthy', gate_codes: [],
+            }) }] };
+          } else if (request.params.name === 'project_activity_status') {
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              project_id: 'alpha',
+              event_receipt_count: 3,
+              processed_event_count: 2,
+              received_event_count: 1,
+              failed_event_count: 0,
+              quarantined_event_count: 0,
+              goal_count: 1,
+              fact_count: 2,
+              pending_sde_count: 1,
+              approved_sde_count: 0,
+              rejected_sde_count: 0,
             }) }] };
           } else if (request.params.name === 'goal_list_page') {
             result = { content: [{ type: 'text', text: JSON.stringify({
@@ -150,6 +166,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   const goals = messages.find((message) => message.type === 'goals');
   assert.equal(goals.page.goals[0].goal_id, 'goal-1');
   assert.equal(goals.health.status, 'healthy');
+  assert.equal(goals.activity.event_receipt_count, 3);
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);
@@ -205,8 +222,16 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     offset: 0,
     goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Private goal' }],
     next_offset: null,
-  }, health: { project_id: 'alpha', status: 'healthy', gate_codes: [] } } });
+  },
+  health: { project_id: 'alpha', status: 'healthy', gate_codes: [] },
+  activity: {
+    project_id: 'alpha', event_receipt_count: 3, processed_event_count: 2,
+    received_event_count: 1, failed_event_count: 0, quarantined_event_count: 0,
+    goal_count: 1, fact_count: 2, pending_sde_count: 1,
+    approved_sde_count: 0, rejected_sde_count: 0,
+  } } });
   assert.match(elements.get('health').textContent, /Project health: healthy\. Open gates: none reported\./);
+  assert.match(elements.get('activity').textContent, /Retained receipts: 3 \(processed 2, received 1, failed 0, quarantined 0\); goals 1; facts 2; SDE candidates pending 1, approved 0, rejected 0\./);
   receiveWindowMessage({ data: { type: 'goals', page: {
     total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
   }, health: { project_id: 'alpha', status: 'degraded', gate_codes: ['staging_budget_warning'] } } });
@@ -279,10 +304,13 @@ test('dashboard still reads goals when the health probe is unavailable', async (
     }),
   };
 
-  await showDashboard(() => new FakeMcpProcess('a'.repeat(64), false, 'project_health'));
+  await showDashboard(() => new FakeMcpProcess(
+    'a'.repeat(64), false, ['project_health', 'project_activity_status'],
+  ));
   await receiveMessage({ type: 'loadGoals', offset: 0 });
 
   const goals = messages.find((message) => message.type === 'goals');
   assert.equal(goals.page.goals[0].goal_id, 'goal-1');
   assert.equal(goals.health, null);
+  assert.equal(goals.activity, null);
 });
