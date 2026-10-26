@@ -8673,7 +8673,9 @@ substitute for evidence at a later integration boundary.
       clears the rendered goals, facts, selected-goal label, page counts, and
       pagination controls before showing the generic error. A focused webview
       script regression loads a goal/report, injects a denied read, and verifies
-      the prior data is gone; all five extension tests and `node --check` pass.
+      the prior data is gone; the panel integration test also sends an MCP
+      `isError` response through the stdio client and confirms the generic error
+      reaches the webview. All five extension tests and `node --check` pass.
       This protects the local view after a failed reauthorization, but does not
       prove a real VS Code interaction, grant-revocation transition, or external
       trust-version handling. The dashboard checklist item remains open.

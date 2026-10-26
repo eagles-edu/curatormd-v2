@@ -22,9 +22,10 @@ const {
 Module._load = originalLoad;
 
 class FakeMcpProcess extends EventEmitter {
-  constructor(reportRevision = 'a'.repeat(64)) {
+  constructor(reportRevision = 'a'.repeat(64), denyToolCall = false) {
     super();
     this.requests = [];
+    this.denyToolCall = denyToolCall;
     this.stdout = new PassThrough();
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -40,6 +41,8 @@ class FakeMcpProcess extends EventEmitter {
               goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Smoke goal' }],
               next_offset: null,
             }) }] };
+          } else if (this.denyToolCall) {
+            result = { isError: true, content: [{ type: 'text', text: 'permission denied' }] };
           } else {
             result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
           }
@@ -102,6 +105,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   let receiveMessage;
   let disposePanel;
   let reportReadCount = 0;
+  let processCount = 0;
   const userSettings = {
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
@@ -128,9 +132,13 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     }),
   };
 
-  await showDashboard(() => new FakeMcpProcess(
-    reportReadCount++ >= 2 ? 'b'.repeat(64) : 'a'.repeat(64),
-  ));
+  await showDashboard(() => {
+    const current = processCount++;
+    return new FakeMcpProcess(
+      reportReadCount++ >= 2 ? 'b'.repeat(64) : 'a'.repeat(64),
+      current === 3,
+    );
+  });
   assert.equal(typeof receiveMessage, 'function');
   assert.equal(typeof disposePanel, 'function');
   await receiveMessage({ type: 'loadGoals', offset: 0 });
@@ -141,6 +149,11 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   assert.match(report.report, /Open TODOs/);
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 16 });
   assert.ok(messages.some((message) => message.type === 'reportStale'));
+  await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 16 });
+  assert.equal(
+    messages.filter((message) => message.type === 'error').at(-1).message,
+    'Curator read failed. Check User settings, the local project grant, and the launcher.',
+  );
   disposePanel();
 });
 

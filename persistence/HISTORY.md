@@ -8601,3 +8601,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** The focused Node suite passes all five tests, including an executed webview-script regression that loads a goal/report, injects a failed read, and verifies the prior content is removed. `node --check integrations/vscode-status/extension.js` and `git diff --check` pass.
 - **Open gate:** Real VS Code interaction, grant revocation between pages, and external trust-version changes remain unverified; the dashboard checklist row stays open.
 - **Outcome:** Close the local stale-display defect without claiming the full dashboard acceptance gate.
+
+## 2026-10-27 — Exercise dashboard denial through MCP stdio
+
+- **Intent:** Verify that a rejected Curator MCP tool response reaches the dashboard's clear-and-error path.
+- **Changed fact:** The dashboard panel test now returns an MCP `isError` from the stdio child for a fresh report read and checks that the webview receives its generic failure message.
+- **Verification:** All five VS Code extension tests pass; `node --check integrations/vscode-status/extension.test.js` and `git diff --check` pass.
+- **Open gate:** The denial is simulated at the MCP protocol boundary. A real VS Code grant-revocation transition and full dashboard acceptance remain open.
+- **Outcome:** Add protocol-path evidence without claiming live authorization revocation.
