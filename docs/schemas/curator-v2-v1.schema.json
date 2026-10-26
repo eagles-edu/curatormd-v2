@@ -341,7 +341,8 @@
         "hold_released_at": {"type": ["string", "null"]},
         "hold_released_by": {"type": ["string", "null"], "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"},
         "hold_release_rationale": {"type": ["string", "null"], "maxLength": 500, "pattern": "^[^\\r\\n]+$"},
-        "approval_stale": {"type": "boolean"}
+        "approval_stale": {"type": "boolean"},
+        "outcome": {"type": ["string", "null"], "enum": ["deleted", "already_absent", "held", "changed", "failed", null]}
       },
       "additionalProperties": false
     },

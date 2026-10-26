@@ -9,10 +9,9 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
-import sys
 import tempfile
 from threading import Event
-from typing import Callable, cast
+from typing import Callable, TypedDict, cast
 import unittest
 from unittest.mock import patch
 
@@ -26,7 +25,6 @@ from project_fixtures import (
 )
 
 from mcp import Client
-from mcp.client.stdio import StdioServerParameters
 from mcp.types import RequestParamsMeta, TextContent
 
 from curatormd_v2 import (
@@ -48,11 +46,11 @@ from curatormd_v2 import (
     SuccessCriterion,
     hosted_mcp,
 )
-from curatormd_v2.hosted_mcp import build_local_profile_mcp
+from curatormd_v2.hosted_mcp import LocalProfileMCP, build_local_profile_mcp
 from curatormd_v2.service import _PreparedEvent  # pyright: ignore[reportPrivateUsage]
 from curatormd_v2.mcp_server import safe_tool_handler
 
-def _hermes_meta(
+def hermes_meta(
     profile_id: str, session_id: str = "test-session"
 ) -> RequestParamsMeta:
     """Build synthetic Hermes context metadata for boundary tests."""
@@ -67,6 +65,23 @@ def _local_subject() -> str:
     """Match the authenticated account used by the local MCP child process."""
 
     return f"local-uid:{os.geteuid()}"
+
+
+class _InFlightSuspendContext(TypedDict):
+    """Bound state for the admitted-write versus suspend race test."""
+
+    runtime: LocalProfileMCP
+    entered_effect: Event
+    release_effect: Event
+    status_started: Event
+    plugin: ProjectPlugin
+    pause_commit: Callable[
+        [EventEnvelope, _PreparedEvent, str | None], EventInboxReceipt
+    ]
+    event: EventEnvelope
+    transition_store: CuratorStore
+    manager: ProjectAccessManager
+    operator: AuthenticatedCaller
 
 
 # ProjectAdminAuthorizer fixture intentionally implements one protocol method.
@@ -106,14 +121,21 @@ class _TestProjectAdmin:  # pylint: disable=too-few-public-methods
         )
 
 
-class HostedMcpTests(unittest.TestCase):
-    """Keep each local MCP process pinned to one project and principal."""
+class HostedMcpFixtures:  # pylint: disable=too-few-public-methods
+    """Shared disposable project setup for hosted MCP process tests."""
 
     def _project(self, root: Path, project_id: str = "bound-project") -> None:
         create_consumer_repo(root)
         (root / "docs" / "tasks.md").write_text("- [ ] Bounded task\n")
         (root / "persistence" / "HISTORY.md").write_text("# History\n")
         write_consumer_config(root, project_id)
+
+    def _project_database(
+        self, temporary: str, project_id: str = "bound-project"
+    ) -> tuple[Path, Path]:
+        root = Path(temporary) / "consumer"
+        self._project(root, project_id)
+        return root, Path(temporary) / "global.sqlite3"
 
     def _provision(
         self,
@@ -150,6 +172,69 @@ class HostedMcpTests(unittest.TestCase):
             )
         finally:
             store.close()
+
+    def _inflight_suspend_context(
+        self, temporary_root: Path
+    ) -> _InFlightSuspendContext:
+        root = temporary_root / "consumer"
+        self._project(root)
+        database = temporary_root / "global.sqlite3"
+        self._provision(root, database, "gptmd-coding", allow_write=True)
+        runtime = build_test_profile_mcp(
+            project_root=root,
+            database=database,
+            allow_write=True,
+        )
+        entered_effect = Event()
+        release_effect = Event()
+        status_started = Event()
+        plugin = getattr(runtime.api, "_plugins")["bound-project"]
+        original_commit_event = cast(
+            Callable[
+                [EventEnvelope, _PreparedEvent, str | None], EventInboxReceipt
+            ],
+            getattr(plugin.service, "_commit_event"),
+        )
+        event = EventEnvelope(
+            "fenced-event-1",
+            "bound-project",
+            GoalStarted(
+                "fenced-goal",
+                "Ensure the event commits before project suspension",
+                (SuccessCriterion("recorded", "The event is durably recorded"),),
+            ),
+        )
+        transition_store = CuratorStore(database)
+        manager = ProjectAccessManager(transition_store, _TestProjectAdmin())
+        operator = AuthenticatedCaller("test-operator")
+
+        def pause_commit(
+            envelope: EventEnvelope,
+            prepared: _PreparedEvent,
+            lease_owner: str | None,
+        ) -> EventInboxReceipt:
+            entered_effect.set()
+            if not release_effect.wait(timeout=10):
+                raise TimeoutError("test did not release the fenced event effect")
+            return original_commit_event(envelope, prepared, lease_owner)
+
+        return {
+            "runtime": runtime,
+            "entered_effect": entered_effect,
+            "release_effect": release_effect,
+            "status_started": status_started,
+            "plugin": plugin,
+            "pause_commit": pause_commit,
+            "event": event,
+            "transition_store": transition_store,
+            "manager": manager,
+            "operator": operator,
+        }
+
+
+
+class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
+    """Exercise profile-bound access through the local MCP launcher."""
 
     def test_profile_binding_defaults_to_read_only_and_denies_review_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -332,18 +417,18 @@ class HostedMcpTests(unittest.TestCase):
                             ],
                         }
                         first = await client.call_tool(
-                            "goal_start", arguments, meta=_hermes_meta("gptmd-coding")
+                            "goal_start", arguments, meta=hermes_meta("gptmd-coding")
                         )
                         self.assertFalse(first.is_error)
                         retry = await client.call_tool(
-                            "goal_start", arguments, meta=_hermes_meta("gptmd-coding")
+                            "goal_start", arguments, meta=hermes_meta("gptmd-coding")
                         )
                         self.assertFalse(retry.is_error)
 
                         changed = dict(arguments)
                         changed["problem"] = "Changed payload must conflict"
                         conflict = await client.call_tool(
-                            "goal_start", changed, meta=_hermes_meta("gptmd-coding")
+                            "goal_start", changed, meta=hermes_meta("gptmd-coding")
                         )
                         self.assertTrue(conflict.is_error)
                         conflict_content = conflict.content[0]
@@ -460,7 +545,7 @@ class HostedMcpTests(unittest.TestCase):
                         mismatch = await client.call_tool(
                             "project_activity_status",
                             {},
-                            meta=_hermes_meta("another-profile"),
+                            meta=hermes_meta("another-profile"),
                         )
                         self.assertTrue(mismatch.is_error)
 
@@ -474,7 +559,7 @@ class HostedMcpTests(unittest.TestCase):
                         valid = await client.call_tool(
                             "project_activity_status",
                             {},
-                            meta=_hermes_meta("gptmd-coding"),
+                            meta=hermes_meta("gptmd-coding"),
                         )
                         self.assertFalse(valid.is_error)
 
@@ -500,7 +585,7 @@ class HostedMcpTests(unittest.TestCase):
                         result = await client.call_tool(
                             "project_activity_status",
                             {},
-                            meta=_hermes_meta("gptmd-coding"),
+                            meta=hermes_meta("gptmd-coding"),
                         )
                         self.assertTrue(result.is_error)
                         content = result.content[0]
@@ -512,7 +597,7 @@ class HostedMcpTests(unittest.TestCase):
                             "project_activity_status",
                             {},
                             meta={
-                                **_hermes_meta("gptmd-coding"),
+                                **hermes_meta("gptmd-coding"),
                                 "hermes/authenticated_subject": (
                                     'auth:v1:["oidc","https://issuer.example","user-42"]'
                                 ),
@@ -645,76 +730,36 @@ class HostedMcpTests(unittest.TestCase):
         """Serialize an already admitted durable write before a status change."""
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "consumer"
-            self._project(root)
-            database = Path(temporary) / "global.sqlite3"
-            self._provision(root, database, "gptmd-coding", allow_write=True)
-            runtime = build_test_profile_mcp(
-                project_root=root,
-                database=database,
-                allow_write=True,
-            )
-            entered_effect = Event()
-            release_effect = Event()
-            status_started = Event()
-            plugin = getattr(runtime.api, "_plugins")["bound-project"]
-            # Pause at the exact transaction boundary to prove suspension waits.
-            original_commit_event = cast(
-                Callable[
-                    [EventEnvelope, _PreparedEvent, str | None], EventInboxReceipt
-                ],
-                getattr(plugin.service, "_commit_event"),
-            )
-
-            def pause_inside_fenced_event_commit(
-                event: EventEnvelope,
-                prepared: _PreparedEvent,
-                lease_owner: str | None,
-            ):
-                entered_effect.set()
-                if not release_effect.wait(timeout=10):
-                    raise TimeoutError("test did not release the fenced event effect")
-                return original_commit_event(event, prepared, lease_owner)
-
-            event = EventEnvelope(
-                "fenced-event-1",
-                "bound-project",
-                GoalStarted(
-                    "fenced-goal",
-                    "Ensure the event commits before project suspension",
-                    (SuccessCriterion("recorded", "The event is durably recorded"),),
-                ),
-            )
-            transition_store = CuratorStore(database)
-            manager = ProjectAccessManager(transition_store, _TestProjectAdmin())
-            operator = AuthenticatedCaller("test-operator")
+            context = self._inflight_suspend_context(Path(temporary))
             try:
                 with ThreadPoolExecutor(max_workers=2) as workers:
                     with patch.object(
-                        plugin.service,
+                        context["plugin"].service,
                         "_commit_event",
-                        side_effect=pause_inside_fenced_event_commit,
+                        side_effect=context["pause_commit"],
                     ):
                         write_future = workers.submit(
-                            runtime.api.process_event_json,
-                            runtime.caller,
+                            context["runtime"].api.process_event_json,
+                            context["runtime"].caller,
                             "bound-project",
-                            event.to_json(),
+                            context["event"].to_json(),
                         )
                         self.assertTrue(
-                            entered_effect.wait(timeout=5),
+                            context["entered_effect"].wait(timeout=5),
                             str(write_future.exception(timeout=0))
                             if write_future.done()
                             else "event worker did not reach its durable commit",
                         )
 
                         def suspend_after_effect_admission():
-                            status_started.set()
-                            registration = transition_store.get_project_registration(
+                            context["status_started"].set()
+                            registration = context[
+                                "transition_store"
+                            ].get_project_registration(
                                 "bound-project"
                             )
-                            return manager.set_project_status(
-                                operator,
+                            return context["manager"].set_project_status(
+                                context["operator"],
                                 ProjectStatusChangeRequest(
                                     project_id="bound-project",
                                     status="suspended",
@@ -727,9 +772,9 @@ class HostedMcpTests(unittest.TestCase):
                             )
 
                         status_future = workers.submit(suspend_after_effect_admission)
-                        self.assertTrue(status_started.wait(timeout=5))
+                        self.assertTrue(context["status_started"].wait(timeout=5))
                         self.assertFalse(status_future.done())
-                        release_effect.set()
+                        context["release_effect"].set()
                         receipt = write_future.result(timeout=10)
                         transition = status_future.result(timeout=10)
                 self.assertEqual(receipt.status, EventInboxStatus.PROCESSED)
@@ -737,23 +782,29 @@ class HostedMcpTests(unittest.TestCase):
                 self.assertEqual(transition.receipt.revision, 2)
                 self.assertEqual(transition.registration.status, "suspended")
                 self.assertEqual(
-                    runtime.api.consumer_source_epoch(
-                        runtime.caller, "bound-project", event.event_id
+                    context["runtime"].api.consumer_source_epoch(
+                        context["runtime"].caller,
+                        "bound-project",
+                        context["event"].event_id,
                     ),
                     1,
                 )
                 with self.assertRaisesRegex(PermissionError, "not authorized"):
-                    runtime.api.consumer_source_epoch(
-                        runtime.caller, "bound-project", "unprocessed-event"
+                    context["runtime"].api.consumer_source_epoch(
+                        context["runtime"].caller,
+                        "bound-project",
+                        "unprocessed-event",
                     )
-                replayed_receipt = runtime.api.process_event_json(
-                    runtime.caller, "bound-project", event.to_json()
+                replayed_receipt = context["runtime"].api.process_event_json(
+                    context["runtime"].caller,
+                    "bound-project",
+                    context["event"].to_json(),
                 )
                 self.assertEqual(replayed_receipt, receipt)
 
                 changed_event = EventEnvelope(
-                    event.event_id,
-                    event.project_id,
+                    context["event"].event_id,
+                    context["event"].project_id,
                     GoalStarted(
                         "fenced-goal",
                         "Changed event payload must not reuse the processed receipt",
@@ -761,13 +812,15 @@ class HostedMcpTests(unittest.TestCase):
                     ),
                 )
                 with self.assertRaisesRegex(PermissionError, "not authorized"):
-                    runtime.api.process_event_json(
-                        runtime.caller, "bound-project", changed_event.to_json()
+                    context["runtime"].api.process_event_json(
+                        context["runtime"].caller,
+                        "bound-project",
+                        changed_event.to_json(),
                     )
             finally:
-                release_effect.set()
-                runtime.close()
-                transition_store.close()
+                context["release_effect"].set()
+                context["runtime"].close()
+                context["transition_store"].close()
 
 
     def test_database_path_must_be_absolute_and_profile_id_bounded(self) -> None:
@@ -838,335 +891,9 @@ class HostedMcpTests(unittest.TestCase):
                 self.assertNotIn("private SQL fragment", stderr.getvalue())
                 self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_stdio_process_pins_real_config_and_rejects_ungranted_goal_write(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "consumer"
-            self._project(root)
-            database = Path(temporary) / "global.sqlite3"
-            self._provision(root, database, "gptmd-coding")
-            parameters = StdioServerParameters(
-                command=sys.executable,
-                args=[
-                    "-m",
-                    "curatormd_v2.hosted_mcp",
-                    "--project-root",
-                    str(root),
-                    "--database",
-                    str(database),
-                    "--profile-id",
-                    "gptmd-coding",
-                ],
-                env={
-                    "PATH": os.environ.get("PATH", ""),
-                    "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
-                },
-                cwd=Path(__file__).parents[1],
-            )
 
-            async def exercise() -> None:
-                async with Client(parameters, raise_exceptions=False) as client:
-                    denied = await client.call_tool(
-                        "goal_start",
-                        {
-                            "event_id": "denied-event",
-                            "goal_id": "denied-goal",
-                            "problem": "A write must require the explicit write grant",
-                            "success_criteria": [
-                                {
-                                    "criterion_id": "denied",
-                                    "description": "The write is rejected",
-                                }
-                            ],
-                        },
-                        meta=_hermes_meta("gptmd-coding"),
-                    )
-                    self.assertTrue(denied.is_error)
-                    denied_content = denied.content[0]
-                    assert isinstance(denied_content, TextContent)
-                    public_error = json.loads(denied_content.text)
-                    self.assertEqual(public_error["schema_version"], 1)
-                    self.assertEqual(public_error["code"], "forbidden")
-                    self.assertEqual(
-                        public_error["message"],
-                        "The caller is not allowed to perform this operation.",
-                    )
-                    self.assertNotIn("Traceback", denied_content.text)
-                    self.assertNotIn("project is not authorized", denied_content.text)
-                    missing_context = await client.call_tool(
-                        "event_queue_status", {}
-                    )
-                    self.assertTrue(missing_context.is_error)
-                    queue = await client.call_tool(
-                        "event_queue_status",
-                        {},
-                        meta=_hermes_meta("gptmd-coding"),
-                    )
-                    self.assertFalse(queue.is_error)
-                    content = queue.content[0]
-                    assert isinstance(content, TextContent)
-                    self.assertEqual(json.loads(content.text)["received_count"], 0)
 
-            asyncio.run(exercise())
 
-    def test_installed_launcher_writes_and_reads_a_project_bound_goal(self) -> None:
-        """Exercise the packaged command, not only its Python module entrypoint."""
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "consumer"
-            self._project(root)
-            database = Path(temporary) / "global.sqlite3"
-            self._provision(
-                root,
-                database,
-                "gptmd-coding",
-                allow_write=True,
-                allow_review=True,
-            )
-            launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
-            self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
-            parameters = StdioServerParameters(
-                command=str(launcher),
-                args=[
-                    "--project-root",
-                    str(root),
-                    "--database",
-                    str(database),
-                    "--profile-id",
-                    "gptmd-coding",
-                    "--allow-write",
-                    "--allow-review",
-                ],
-                env={
-                    "PATH": os.environ.get("PATH", ""),
-                },
-                cwd=Path(__file__).parents[1],
-            )
-
-            async def exercise() -> None:
-                async with Client(parameters, raise_exceptions=True) as client:
-                    tools = await client.list_tools()
-                    self.assertIn(
-                        "project_artifact_inventory_discover",
-                        {tool.name for tool in tools.tools},
-                    )
-                    goal_start = next(
-                        tool for tool in tools.tools if tool.name == "goal_start"
-                    )
-                    self.assertNotIn("project_id", goal_start.input_schema["properties"])
-                    self.assertNotIn("caller", goal_start.input_schema["properties"])
-                    started = await client.call_tool(
-                        "goal_start",
-                        {
-                            "event_id": "launcher-event-1",
-                            "goal_id": "launcher-goal-1",
-                            "problem": "Verify the installed Curator V2 MCP launcher",
-                            "success_criteria": [
-                                {
-                                    "criterion_id": "stdio-roundtrip",
-                                    "description": "Create and read a scoped goal over MCP stdio",
-                                }
-                            ],
-                        },
-                        meta=_hermes_meta("gptmd-coding"),
-                    )
-                    self.assertFalse(started.is_error)
-                    status = await client.call_tool(
-                        "goal_status",
-                        {"goal_id": "launcher-goal-1"},
-                        meta=_hermes_meta("gptmd-coding"),
-                    )
-                    self.assertFalse(status.is_error)
-                    content = status.content[0]
-                    assert isinstance(content, TextContent)
-                    value = json.loads(content.text)
-                    goal = value["goal"]
-                    self.assertEqual(goal["project_id"], "bound-project")
-                    self.assertEqual(goal["status"], "planned")
-                    self.assertEqual(
-                        goal["problem"],
-                        "Verify the installed Curator V2 MCP launcher",
-                    )
-                    self.assertEqual(
-                        goal["success_criteria"][0]["criterion_id"],
-                        "stdio-roundtrip",
-                    )
-                    inventory_result = await client.call_tool(
-                        "project_artifact_inventory_discover",
-                        {},
-                        meta=_hermes_meta("gptmd-coding"),
-                    )
-                    self.assertFalse(inventory_result.is_error)
-                    inventory_content = inventory_result.content[0]
-                    assert isinstance(inventory_content, TextContent)
-                    inventory = json.loads(inventory_content.text)
-                    self.assertTrue(inventory["usage"]["inventory_complete"])
-                    self.assertIsNone(inventory["scope_goal_id"])
-
-            asyncio.run(exercise())
-
-    def test_installed_launcher_exposes_sde_proposal_context(self) -> None:
-        """The installed MCP schema carries compact proposal context fields."""
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "consumer"
-            self._project(root)
-            database = Path(temporary) / "global.sqlite3"
-            self._provision(root, database, "gptmd-coding", allow_write=True)
-            launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
-            self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
-            parameters = StdioServerParameters(
-                command=str(launcher),
-                args=[
-                    "--project-root",
-                    str(root),
-                    "--database",
-                    str(database),
-                    "--profile-id",
-                    "gptmd-coding",
-                    "--allow-write",
-                ],
-                env={"PATH": os.environ.get("PATH", "")},
-                cwd=Path(__file__).parents[1],
-            )
-
-            async def exercise() -> None:
-                async with Client(parameters, raise_exceptions=True) as client:
-                    tools = await client.list_tools()
-                    assessment = next(
-                        tool for tool in tools.tools if tool.name == "sde_assess"
-                    )
-                    schema = assessment.input_schema
-                    properties = schema["properties"]
-                    self.assertIn("impact", properties)
-                    self.assertIn("retrieval_value", properties)
-                    self.assertNotIn("project_id", properties)
-                    required = set(schema.get("required", []))
-                    self.assertTrue(
-                        {"impact", "retrieval_value"}.isdisjoint(required),
-                        "routine progress must remain valid without SDE context",
-                    )
-
-            asyncio.run(exercise())
-
-    def test_two_stdio_projects_sharing_database_remain_isolated(self) -> None:
-        """Separate consumer launchers cannot list or read each other's goals."""
-
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            project_a = base / "consumer-a"
-            project_b = base / "consumer-b"
-            self._project(project_a, "project-a")
-            self._project(project_b, "project-b")
-            database = base / "global.sqlite3"
-            self._provision(
-                project_a, database, "profile-a", allow_write=True
-            )
-            self._provision(
-                project_b, database, "profile-b", allow_write=True
-            )
-            launcher = Path(sys.executable).with_name("curatormd-v2-mcp")
-            self.assertTrue(launcher.is_file(), f"missing installed launcher: {launcher}")
-
-            def parameters(root: Path, profile_id: str) -> StdioServerParameters:
-                return StdioServerParameters(
-                    command=str(launcher),
-                    args=[
-                        "--project-root",
-                        str(root),
-                        "--database",
-                        str(database),
-                        "--profile-id",
-                        profile_id,
-                        "--allow-write",
-                    ],
-                    env={"PATH": os.environ.get("PATH", "")},
-                    cwd=Path(__file__).parents[1],
-                )
-
-            async def exercise() -> None:
-                async with Client(
-                    parameters(project_a, "profile-a"), raise_exceptions=True
-                ) as client_a:
-                    started_a = await client_a.call_tool(
-                        "goal_start",
-                        {
-                            "event_id": "project-a-event",
-                            "goal_id": "project-a-goal",
-                            "problem": "A scoped goal for consumer A",
-                            "success_criteria": [
-                                {
-                                    "criterion_id": "a-only",
-                                    "description": "Remain visible only in project A",
-                                }
-                            ],
-                        },
-                        meta=_hermes_meta("profile-a"),
-                    )
-                    self.assertFalse(started_a.is_error)
-
-                    async with Client(
-                        parameters(project_b, "profile-b"), raise_exceptions=True
-                    ) as client_b:
-                        page_b = await client_b.call_tool(
-                            "goal_list_page",
-                            {"offset": 0, "limit": 10},
-                            meta=_hermes_meta("profile-b"),
-                        )
-                        self.assertFalse(page_b.is_error)
-                        page_b_content = page_b.content[0]
-                        assert isinstance(page_b_content, TextContent)
-                        page_b_value = json.loads(page_b_content.text)
-                        self.assertEqual(page_b_value["project_id"], "project-b")
-                        self.assertEqual(page_b_value["total"], 0)
-                        self.assertEqual(page_b_value["goals"], [])
-
-                        foreign_status = await client_b.call_tool(
-                            "goal_status",
-                            {"goal_id": "project-a-goal"},
-                            meta=_hermes_meta("profile-b"),
-                        )
-                        self.assertTrue(foreign_status.is_error)
-
-                        started_b = await client_b.call_tool(
-                            "goal_start",
-                            {
-                                "event_id": "project-b-event",
-                                "goal_id": "project-b-goal",
-                                "problem": "A scoped goal for consumer B",
-                                "success_criteria": [
-                                    {
-                                        "criterion_id": "b-only",
-                                        "description": "Remain visible only in project B",
-                                    }
-                                ],
-                            },
-                            meta=_hermes_meta("profile-b"),
-                        )
-                        self.assertFalse(started_b.is_error)
-
-                    page_a = await client_a.call_tool(
-                        "goal_list_page",
-                        {"offset": 0, "limit": 10},
-                        meta=_hermes_meta("profile-a"),
-                    )
-                    self.assertFalse(page_a.is_error)
-                    page_a_content = page_a.content[0]
-                    assert isinstance(page_a_content, TextContent)
-                    page_a_value = json.loads(page_a_content.text)
-                    self.assertEqual(page_a_value["project_id"], "project-a")
-                    self.assertEqual(page_a_value["total"], 1)
-                    self.assertEqual(
-                        [goal["goal_id"] for goal in page_a_value["goals"]],
-                        ["project-a-goal"],
-                    )
-                    foreign_status = await client_a.call_tool(
-                        "goal_status",
-                        {"goal_id": "project-b-goal"},
-                        meta=_hermes_meta("profile-a"),
-                    )
-                    self.assertTrue(foreign_status.is_error)
-
-            asyncio.run(exercise())
 
 
 if __name__ == "__main__":

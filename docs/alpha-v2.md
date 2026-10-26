@@ -15,22 +15,25 @@ Core integration and Host Steward are separate source
 changes in the Hermes Core repository; they are not part of this wheel. The
 Vhost Manager consumer plugin and hook are installed in its isolated local
 Hermes profile for alpha testing.
+The separate V2-owned VS Code extension `curatormd.curatormd-v2-status@0.1.0`
+is installed and displays the neutral `CuratorMD V2` status label; it does not
+report health or persistence.
 
-## Current local-alpha status (2026-10-25T18:57:17Z)
+## Current local-alpha status (2026-10-26T14:38:13Z)
 
 The supported `renew-ssl-coding` Hermes profile connects to the installed
 Curator V2 stdio server, discovers 48 tools, and reads `vhost-manager-alpha`:
-29 of 29 event receipts are processed, with zero received, failed, or
-quarantined events. The ledger has 12 goals and eight facts; lifecycle counts
-(five planned, seven active, zero in the other six states) reconcile to the
+35 of 35 event receipts are processed, with zero received, failed, or
+quarantined events. The ledger has 15 goals and 11 facts; lifecycle counts
+(five planned, ten active, zero in the other six states) reconcile to the
 paginated total. There are no SDE candidates or pending review/purge targets,
 and the staging inventory is complete with zero files. The separately
 timestamped project-health snapshot is `healthy`; the database observation and
 all seven dependencies are healthy, with zero pending review, purge, or expiry
-work. This verifies a fresh bound local-profile read, not production identity
-or general source coverage.
+work. This verifies the bound local-profile read, not a real app-server event,
+production identity, or general source coverage.
 
-Current wheel refresh (2026-10-26): wheel SHA-256
+Prior package verification (2026-10-26): wheel SHA-256
 `c1c3eb614e0dc85f5c9ebe28842316c6db8c59a748b14f05eb720ebb3bf3cee9` was
 installed only in the dedicated `renew-ssl-coding` Curator V2 virtualenv after
 the previous package, dist-info, and seven entrypoints were archived and
@@ -47,6 +50,48 @@ workflow state; they do not prove an authenticated person or a real certificate
 renewal. The profile probe starts a fresh stdio process; existing long-lived
 gateway, web, and editor MCP processes were not restarted, so their in-memory
 imports are not claimed to have reloaded this wheel.
+
+Current-source package refresh (2026-10-26): rebuilt from this checkout as
+wheel SHA-256
+`96ff9a085c0a8a7a80ee685a61b5986bcc58e9f102c185b169d1a004147f5a57` and
+installed only in the dedicated profile virtualenv. Before replacement, the
+prior package, metadata, and eight launchers were copied to a verified
+130-file rollback archive at
+`~/.hermes/profiles/renew-ssl-coding/backups/curator-v2-before-source-refresh-5e7wgdz5.tar.gz`
+with SHA-256
+`34222eaec1ed2d8e4080f85c5e2d686d4a3f3cfb922987b61d70a1b30d72568a`.
+All 61 installed Python modules match this source tree byte for byte; `pip
+check` passes. Pyright, errors-only Pylint, and Bandit pass on the current
+source. A fresh Hermes-profile MCP probe still reads 29/29 processed receipts,
+12 goals, eight facts, zero review/purge backlog, an empty complete staging
+inventory, and healthy local-alpha dependencies. No service was restarted;
+long-lived processes are not claimed to have reloaded the package. This
+refresh does not prove a new app-server event, a real certificate renewal, or
+human disposition of active goals. The disposable Hermes-managed Vhost
+integration was rerun against this installed interpreter and passed five
+events, exact replay and retry, lost-ack recovery after re-enrollment, source
+epoch advancement, project/goal binding, Vhost projection reconciliation,
+privacy-canary exclusion, and reviewer-write denial. It remains synthetic
+app-server event evidence. The last full 465-test run applies to the prior
+wheel above; the current source changes have focused test evidence recorded in
+`persistence/HISTORY.md`.
+
+Latest source refresh (2026-10-26): built wheel SHA-256
+`f804deb41386b36c445d65f1e6bad283f139944836ffbf64ce8d2fd715f2430c` and
+installed it only into the dedicated Vhost Curator V2 virtualenv. Before
+replacement, archived the package, dist-info, and eight launchers in the
+verified 141-entry archive
+`~/.hermes/profiles/renew-ssl-coding/backups/curator-v2-before-wheel-f804deb4-20261026T1435Z.tar.gz`
+(SHA-256 `74edd9c3e52cedd8c12ec9190d4f9656f5315507b6d7848fd17f336225fd4ce2`).
+All 63 installed Python modules match source and `uv pip check` passes. The
+current 478-test suite, strict Pyright, errors-only Pylint, Bandit, locked
+dependency audit, and `git diff --check` pass. Both installed-wheel MCP tests,
+all eight command entrypoints, and installed storage backup/restore pass. The
+Hermes-managed disposable Vhost integration passes five bounded events,
+including retry/replay, re-enrollment, goal binding, projection reconciliation,
+and privacy checks. The fresh profile read remains healthy at 35 processed
+receipts. No gateway or Vhost service was restarted; a real active-gateway
+app-server event and a new live Vhost operation are still unverified.
 
 The local Vhost Manager HTTP service has applied and rolled back reserved
 `.test` sites through its real routes. Exact receipts were processed, compact
@@ -333,3 +378,79 @@ These checks verify the current package and local plugin composition. They do
 not verify an interactive profile tool call or live Vhost application request;
 authenticated identity, production policy/recovery, and live runtime gates
 remain open.
+
+## 2026-10-27 installed alpha staging-budget refresh
+
+The current Curator source wheel was rebuilt as
+`curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
+`0fe468fcd209ef39cca85b6e986b1cb7907fa85a8ff2ffc510dce4358ec72159`) and
+installed in the dedicated `renew-ssl-coding` Curator V2 virtualenv. Before
+replacement, the installed distribution files were archived at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-fifo-20261026T173915Z.tar.gz`
+(104 members; SHA-256
+`da915d01d53f459f4c91ef4356677931083368da62979797e649468d4bbf8c2d`). All 87
+installed Python modules match the source byte for byte and `pip check` passes.
+
+The installed package loads the Vhost consumer config as
+`vhost-manager-alpha` with a 262,144,000-byte (250 MiB) staging warning
+threshold and no project file-count limit.
+An installed-module check confirms expired cleanup candidates are ordered by
+staged age, oldest first. The 17 staging-writer tests, 19 storage/expiry tests,
+strict Pyright, and `git diff --check` pass. This refresh used only disposable
+data; no gateway/service was restarted, no real renewal was run, and no artifact
+was deleted. Real interactive app-server delivery, user identity, and release
+gates remain open.
+
+## 2026-10-27 staging-warning refresh
+
+The warning-gate update was rebuilt as wheel SHA-256
+`c9a1c8b3f068b20b780c4a0461ea83c8839c0f42400c4175b57ac6844a2bed50` and
+installed in the same isolated alpha virtualenv. Before replacement, the
+previous package was archived to
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-budget-warning-20261026T174403Z.tar.gz`
+(104 members; SHA-256
+`130447b3722854ebbf4e09c0478225c9c5401952069bf97bbcf1d56f16eaa802`). All 87
+installed Python modules match source, and `pip check` passes.
+
+Project health and Prometheus emit `staging_budget_warning` at 75% of the
+configured byte threshold and `staging_budget_reached` at or above the
+threshold. Both are warnings only; staging writes continue, subject to the
+independent per-artifact and per-goal hard limits. The health/metrics regression
+suite passes 16 tests and checks
+the 75% boundary and a below-threshold case. The installed helper and Vhost
+config were read back successfully. No gateway process was restarted, so this
+documents the installed package contents, not a reload by an already-running
+MCP process. External journal/alert delivery remains open.
+
+The owner-approved consumer config is now registered in the local alpha ledger
+at revision 2 with its current config fingerprint. The attended update receipt
+uses transition `vhost-manager-alpha-staging-budget-20261027`; read-only SQLite
+inspection confirms the exact config hash and all five existing read/write/
+review grants remain. A fresh Hermes Core `renew-ssl-coding` profile probe now
+connects to the installed MCP package and reads the project: 35/35 receipts are
+processed, 15 goals and 11 facts reconcile, the staging inventory is complete
+and empty, and health is `healthy` with no gates. This is a profile-context
+read, not a real interactive app-server turn or a live Vhost operation.
+
+## 2026-10-27 warning-only threshold correction
+
+The owner clarified that 262,144,000 bytes (250 MiB) is a warning threshold,
+not a staging write limit, and that project file count is irrelevant. The Vhost
+consumer config now sets only `max_project_bytes`; registration revision 3
+binds its SHA-256 `a37448f38683c864480d4f90db8fc6a6b694311679b598979f86ff574713f746`
+under transition `vhost-manager-alpha-byte-warning-only-20261027`. Curator
+health warns at 75% and reports `staging_budget_reached` at or above the
+threshold while accepting new writes. Per-artifact/per-goal safety limits and
+complete-inventory checks remain active.
+
+The updated wheel SHA-256 is
+`56ab545000bfa9e1161a1d133674b28534fa6b1ab4343f027bb310288ee35573`. Before
+installation the previous package was archived at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-warning-only-20261027.tar.gz`
+with SHA-256
+`0b8d65b56949cee73a1969aeebe7ddf9c397023ab4a066d76567d9faaf219d96`. All 87
+installed Python modules match source, `pip check` passes, and the profile
+status probe reads 35/35 receipts, 15 goals, 11 facts, and healthy status with
+a complete empty staging inventory. Focused tests verify warnings and writes
+above the threshold; the real profile has not crossed 250 MiB. No service was
+restarted, and no real certificate renewal or artifact deletion was performed.

@@ -9,8 +9,13 @@ import tempfile
 import unittest
 from typing import cast
 
+from git_test_support import create_git_commit_range
+from evidence_test_support import local_service_probe_config
+
 from curatormd_v2.local_evidence_config import (
     MAX_LOCAL_EVIDENCE_CONFIG_BYTES,
+    capture_local_repository_diff_reference,
+    capture_local_repository_test_reference,
     load_local_browser_proof_verifier,
     load_local_evidence_verifier,
     load_local_service_probe_verifier,
@@ -29,17 +34,11 @@ class LocalEvidenceConfigTests(unittest.TestCase):
         self.temporary_directory = temporary
         self.root = Path(temporary)
         self.path = self.root / "evidence.json"
-        self.value: dict[str, object] = {
-            "schema_version": 1,
-            "project_id": "vhost-manager-alpha",
-            "probe": {
-                "adapter_id": "local-readiness",
-                "probe_id": "readiness",
-                "source_subject": "local-probe:eaglesvn",
-                "command": [sys.executable, "-c", "print('ready')"],
-                "working_directory": str(self.root),
-            },
-        }
+        self.value: dict[str, object] = local_service_probe_config(
+            source_subject="local-probe:eaglesvn",
+            command=[sys.executable, "-c", "print('ready')"],
+            working_directory=str(self.root),
+        )
 
     def _write(self, raw: bytes | None = None, *, mode: int = 0o600) -> None:
         self.path.write_bytes(raw if raw is not None else json.dumps(self.value).encode())
@@ -72,6 +71,59 @@ class LocalEvidenceConfigTests(unittest.TestCase):
 
         self.assertIsInstance(browser_verifier, BrowserProofEvidenceAdapter)
         self.assertIsInstance(combined_verifier, EvidenceAdapterRegistry)
+
+    def test_loads_git_diff_and_test_runner_from_owner_only_config(self) -> None:
+        repository, _, base_revision, head_revision = create_git_commit_range(
+            self.root
+        )
+        self.value["repository_diff"] = {
+            "adapter_id": "local-repository-diff",
+            "source_subject": "local-git:eaglesvn",
+            "repository_root": str(repository),
+        }
+        self.value["repository_test"] = {
+            "adapter_id": "local-repository-test",
+            "runner_id": "curator-unit-tests",
+            "source_subject": "local-git:eaglesvn",
+            "repository_root": str(repository),
+            "command": [sys.executable, "-c", "print('bounded-test-proof')"],
+        }
+        self._write()
+
+        verifier = load_local_evidence_verifier(
+            self.path, project_id="vhost-manager-alpha"
+        )
+
+        self.assertIsInstance(verifier, EvidenceAdapterRegistry)
+        registry = cast(EvidenceAdapterRegistry, verifier)
+        self.assertEqual(
+            registry.evidence_kinds,
+            {"service_probe", "repository_diff", "repository_test"},
+        )
+        diff_reference = capture_local_repository_diff_reference(
+            self.path,
+            project_id="vhost-manager-alpha",
+            base_revision=base_revision,
+            head_revision=head_revision,
+        )
+        test_reference = capture_local_repository_test_reference(
+            self.path,
+            project_id="vhost-manager-alpha",
+            runner_id="curator-unit-tests",
+            commit_id=head_revision,
+        )
+        self.assertEqual(diff_reference.evidence_kind, "repository_diff")
+        self.assertEqual(
+            diff_reference.locator,
+            f"git-diff:{base_revision}..{head_revision}",
+        )
+        self.assertEqual(test_reference.evidence_kind, "repository_test")
+        self.assertEqual(
+            test_reference.locator,
+            f"git-test:curator-unit-tests:{head_revision}",
+        )
+        self.assertNotEqual(diff_reference.sha256, "0" * 64)
+        self.assertNotEqual(test_reference.sha256, "0" * 64)
 
     def test_browser_proof_config_rejects_public_origin(self) -> None:
         self.value = {

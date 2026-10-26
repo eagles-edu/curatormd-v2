@@ -8,6 +8,7 @@ Every operation requires a TTY and an exact confirmation phrase.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from dataclasses import asdict, dataclass
 import json
 import os
@@ -622,36 +623,32 @@ def main(
         errors.write("Curator access operation failed (invalid configuration).\n")
         return 2
 
-    store: CuratorStore | None = None
     try:
         config = ProjectConfig.load(arguments.project_root)
         caller = _confirmed_caller(arguments, config, input_stream, errors)
         if caller is None:
             return 2
-        store = CuratorStore(database)
-        manager = ProjectAccessManager(
-            store,
-            _SingleOperationPolicy(
-                caller.subject_id,
-                config.project_id,
-                _OPERATION_ACTIONS[arguments.operation],
-            ),
-        )
-        plugin = (
-            ProjectPlugin.bind(config, store)
-            if arguments.operation in {"view", "reactivate"}
-            else None
-        )
-        result = _perform(arguments, config, manager, caller, plugin)
-        output.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
-        return 0
+        with closing(CuratorStore(database)) as store:
+            manager = ProjectAccessManager(
+                store,
+                _SingleOperationPolicy(
+                    caller.subject_id,
+                    config.project_id,
+                    _OPERATION_ACTIONS[arguments.operation],
+                ),
+            )
+            plugin = (
+                ProjectPlugin.bind(config, store)
+                if arguments.operation in {"view", "reactivate"}
+                else None
+            )
+            result = _perform(arguments, config, manager, caller, plugin)
+            output.write(
+                json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n"
+            )
+            return 0
     except Exception:  # pylint: disable=broad-exception-caught
         errors.write("Curator access operation failed (policy or runtime error).\n")
         return 2
-    finally:
-        if store is not None:
-            store.close()
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -46,7 +46,8 @@ class StagingClassUsage:
 
 
 @dataclass(frozen=True, slots=True)
-class StagingUsage:
+# Pylint: these fields mirror the bounded staging inventory response.
+class StagingUsage:  # pylint: disable=too-many-instance-attributes
     """Content-free, bounded scan results for one configured staging tree."""
 
     entries_scanned: int

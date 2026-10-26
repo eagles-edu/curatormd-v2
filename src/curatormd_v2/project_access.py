@@ -39,6 +39,7 @@ from .store import (
     TerminalEventInventory,
     ProjectLifecycleStatusSnapshot,
     ProjectReactivationReviewPacket,
+    project_registration_binding_fields,
 )
 
 
@@ -137,10 +138,7 @@ class ProjectAuthorizationBinding:
         """Bind grants to the exact values from a validated project config."""
 
         return cls(
-            project_id=config.project_id,
-            repository_fingerprint=config.repository_fingerprint,
-            config_sha256=config.config_sha256,
-            backend_api_version=config.backend_api_version,
+            *project_registration_binding_fields(config),
             allowed_actions=allowed_actions,
         )
 

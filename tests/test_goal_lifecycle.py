@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import stat
+from typing import Any
 from lifecycle_fixtures import (
     FACT_ACCEPTING_GOAL_STATUSES,
     FINISHABLE_GOAL_STATUSES,
@@ -26,6 +27,22 @@ from curatormd_v2.events import GoalCriteriaAmended
 
 class GoalLifecycleTests(LifecycleTestSupport):
     """Cover goallifecycle invariants."""
+
+    def test_goal_start_and_fact_reject_unknown_typed_options(self) -> None:
+        unknown_options: Any = {"unexpected_field": "value"}
+        with self.assertRaisesRegex(TypeError, "unsupported option"):
+            self.service.goal_start(
+                "Reject an unsupported intake field",
+                (SuccessCriterion("done", "The field is rejected"),),
+                **unknown_options,
+            )
+        with self.assertRaisesRegex(TypeError, "unsupported option"):
+            self.service.goal_fact(
+                self.goal.goal_id,
+                FactKind.CHANGE,
+                "Reject an unsupported fact field",
+                **unknown_options,
+            )
 
     def test_invalid_initial_status_does_not_retain_raw_value(self) -> None:
         """Goal intake errors must not chain caller-controlled enum values."""

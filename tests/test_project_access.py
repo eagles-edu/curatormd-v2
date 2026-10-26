@@ -7,7 +7,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 import json
 import unittest
-from unittest.mock import patch
+
+from store_test_support import patch_store_symbol
 
 from project_access_test_support import (
     ProjectAccessTestCase,
@@ -34,6 +35,19 @@ class _ExpiredObservationDatetime(datetime):
 
 class DurableProjectAccessTests(ProjectAccessTestCase):
     """Durable project registration and grant tests."""
+
+    def _assert_physical_class_names_cover_schema_tables(
+        self, physical_class_names: set[str]
+    ) -> None:
+        with self.store.transaction() as connection:
+            table_names = {
+                str(row["name"])
+                for row in connection.execute(
+                    """SELECT name FROM sqlite_master
+                       WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"""
+                ).fetchall()
+            }
+        self.assertSetEqual(physical_class_names, table_names)
 
     def test_reactivation_review_is_bound_to_current_backlog_and_receipt(self) -> None:
         """A new old-source event invalidates the reviewed reactivation packet."""
@@ -320,7 +334,7 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
             transition_id="reactivate-expired-staging-review-1",
             staging_inventory_sha256=inventory.manifest_sha256,
         )
-        with patch("curatormd_v2.store.datetime", _ExpiredObservationDatetime):
+        with patch_store_symbol("datetime", _ExpiredObservationDatetime):
             with self.assertRaisesRegex(
                 ConflictError, "review packet is incomplete or stale"
             ):
@@ -460,6 +474,9 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
             physical_classes = {item.class_name: item for item in physical.classes}
             self.assertIn("project_registry", physical_classes)
             self.assertGreater(physical_classes["project_registry"].page_count, 0)
+            self._assert_physical_class_names_cover_schema_tables(
+                set(physical_classes)
+            )
             self.assertEqual(
                 sum(item.allocated_bytes for item in physical.classes),
                 pages.attributed_btree_bytes,

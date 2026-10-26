@@ -89,7 +89,8 @@ class MarkdownReconciliationResult:
 
 
 @dataclass(frozen=True, slots=True)
-class MarkdownProjectReconciliation:
+# Pylint: the result keeps each independent reconciliation count explicit.
+class MarkdownProjectReconciliation:  # pylint: disable=too-many-instance-attributes
     """Bounded read-only comparison of one Markdown target and a project page."""
 
     project_id: str

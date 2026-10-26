@@ -6,7 +6,8 @@ from pathlib import Path
 import tempfile
 from threading import Barrier, Event, Thread
 import unittest
-from unittest.mock import patch
+
+from store_test_support import patch_store_symbol
 
 from evidence_fixtures import attest_test_evidence
 
@@ -50,7 +51,7 @@ class TestVerifier:
         )
 
 
-class PausingStore(CuratorStore):
+class PausingStore(CuratorStore):  # pylint: disable=too-many-ancestors
     """Pause immediately before append to expose lifecycle interleavings."""
 
     def __init__(self, database: Path) -> None:
@@ -69,7 +70,7 @@ class PausingStore(CuratorStore):
         return super().append_fact(fact, project_id)
 
 
-class SnapshotInjectingStore(CuratorStore):
+class SnapshotInjectingStore(CuratorStore):  # pylint: disable=too-many-ancestors
     """Commit a second-connection event between health aggregate queries."""
 
     def __init__(
@@ -463,7 +464,7 @@ class GoalConcurrencyTests(unittest.TestCase):
             database = Path(temporary) / "curator.sqlite3"
             staging = Path(temporary) / "staging"
             staging.mkdir()
-            with patch("curatormd_v2.store.MAX_FACTS_PER_GOAL", 2):
+            with patch_store_symbol("MAX_FACTS_PER_GOAL", 2):
                 initial_store = CuratorStore(database)
                 initial_service = CuratorService(
                     initial_store, ArtifactPurger(staging), TestVerifier()
@@ -544,7 +545,7 @@ class GoalConcurrencyTests(unittest.TestCase):
                     ),
                 ),
             )
-            with patch("curatormd_v2.store.MAX_EVENT_RECEIPTS_GLOBAL", 1):
+            with patch_store_symbol("MAX_EVENT_RECEIPTS_GLOBAL", 1):
                 barrier = Barrier(3)
                 outcomes: list[str] = []
 

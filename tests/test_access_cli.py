@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from io import StringIO
 import json
 import os
@@ -15,6 +16,7 @@ from project_fixtures import (
     create_consumer_repo,
     open_test_profile_mcp,
 )
+from cli_test_support import access_cli_args
 
 from curatormd_v2 import ProjectAction
 from curatormd_v2.access_cli import main
@@ -74,14 +76,7 @@ class AccessCliTests(unittest.TestCase):
         stdout = StringIO()
         stderr = StringIO()
         code = main(
-            [
-                operation,
-                "--project-root",
-                str(root),
-                "--database",
-                str(database),
-                *extra,
-            ],
+            access_cli_args(operation, root, database, *extra),
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -275,6 +270,25 @@ class AccessCliTests(unittest.TestCase):
                 database=database,
                 allow_write=True,
             )
+        self._assert_stale_reactivation_denied(root, database)
+        self._reactivate_with_exact_review(root, database)
+        self._run_success(
+            "revoke",
+            root,
+            database,
+            f"REVOKE write cli-project {subject_id}",
+            "--subject-id",
+            subject_id,
+            "--action",
+            "write",
+            "--rationale",
+            "Remove write access after the positive launcher check",
+        )
+
+    def _assert_stale_reactivation_denied(
+        self, root: Path, database: Path
+    ) -> None:
+        """Do not reactivate after the reviewed staging inventory changes."""
         view_output = self._run_success(
             "view", root, database, "VIEW cli-project ACCESS"
         )
@@ -307,12 +321,16 @@ class AccessCliTests(unittest.TestCase):
             stale_review_hash,
         )
         self.assertEqual(stale_reactivation, 2, errors)
-        self.assertEqual(
-            sqlite3.connect(database).execute(
+        with closing(sqlite3.connect(database)) as connection:
+            status = connection.execute(
                 "SELECT status FROM project_registry WHERE project_id='cli-project'"
-            ).fetchone()[0],
-            "suspended",
-        )
+            ).fetchone()[0]
+        self.assertEqual(status, "suspended")
+
+    def _reactivate_with_exact_review(
+        self, root: Path, database: Path
+    ) -> None:
+        """Reactivate from a fresh review packet and verify exact replay."""
         view_output = self._run_success(
             "view", root, database, "VIEW cli-project ACCESS"
         )
@@ -323,11 +341,7 @@ class AccessCliTests(unittest.TestCase):
             "REACTIVATE cli-project AT REVISION 3 AFTER SUSPENSION "
             f"{suspension_id} REVIEW {review_hash} TRANSITION cli-reactivate-1"
         )
-        self._run_success(
-            "reactivate",
-            root,
-            database,
-            phrase,
+        reactivation_options = (
             "--rationale",
             "Restore access after the suspension regression",
             "--expected-revision",
@@ -338,36 +352,14 @@ class AccessCliTests(unittest.TestCase):
             suspension_id,
             "--review-packet-sha256",
             review_hash,
+        )
+        self._run_success(
+            "reactivate", root, database, phrase, *reactivation_options
         )
         replay_output = self._run_success(
-            "reactivate",
-            root,
-            database,
-            phrase,
-            "--rationale",
-            "Restore access after the suspension regression",
-            "--expected-revision",
-            "3",
-            "--transition-id",
-            "cli-reactivate-1",
-            "--suspension-transition-id",
-            suspension_id,
-            "--review-packet-sha256",
-            review_hash,
+            "reactivate", root, database, phrase, *reactivation_options
         )
         self.assertTrue(json.loads(replay_output)["replayed"])
-        self._run_success(
-            "revoke",
-            root,
-            database,
-            f"REVOKE write cli-project {subject_id}",
-            "--subject-id",
-            subject_id,
-            "--action",
-            "write",
-            "--rationale",
-            "Remove write access after the positive launcher check",
-        )
 
     def _assert_access_audit(self, root: Path, database: Path) -> None:
         """Check the durable exact grant, revocation, and registration audit."""

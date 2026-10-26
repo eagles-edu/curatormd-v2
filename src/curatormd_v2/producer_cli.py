@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from pathlib import Path
 import sys
 from typing import BinaryIO, TextIO
@@ -50,27 +51,21 @@ def main(
         print("Curator V2 staging failed (invalid request or producer error).", file=errors)
         return 2
 
-    store: CuratorStore | None = None
     try:
         config = ProjectConfig.load(arguments.project_root)
-        store = CuratorStore(database)
-        plugin = ProjectPlugin.bind(config, store)
-        artifact = plugin.stage_artifact(
-            arguments.goal_id,
-            arguments.artifact_class,
-            arguments.artifact_id,
-            stdin or sys.stdin.buffer,
-        )
-        write_json_line(output, {"path": artifact.path, "sha256": artifact.sha256})
-        return 0
+        with closing(CuratorStore(database)) as store:
+            plugin = ProjectPlugin.bind(config, store)
+            artifact = plugin.stage_artifact(
+                arguments.goal_id,
+                arguments.artifact_class,
+                arguments.artifact_id,
+                stdin or sys.stdin.buffer,
+            )
+            write_json_line(output, {"path": artifact.path, "sha256": artifact.sha256})
+            return 0
     # The producer boundary must sanitize arbitrary adapter and input failures.
     except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         print("Curator V2 staging failed (invalid request or producer error).", file=errors)
         return 2
-    finally:
-        if store is not None:
-            store.close()
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

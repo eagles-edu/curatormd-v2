@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 import hashlib
 import ipaddress
 import json
@@ -14,7 +13,12 @@ import shutil
 import tempfile
 from urllib.parse import urlsplit
 
-from .evidence import EvidenceSourceReceipt, EvidenceVerificationContext
+from .evidence import (
+    EvidenceSourceReceipt,
+    EvidenceVerificationContext,
+    LocalSourceReceiptBinding,
+    create_local_source_receipt,
+)
 from .evidence_process import BoundedEvidenceProcessRequest, hash_bounded_stdout
 from .models import EvidenceOutcome, EvidenceRef
 from .validation import is_exact_int
@@ -152,23 +156,17 @@ class LocalBrowserProofResolver:
             or match.group(1) != self.spec.proof_id
         ):
             return None
-        observed_at = context.now_utc
-        return EvidenceSourceReceipt(
-            evidence_kind="browser",
-            locator=evidence.locator,
-            evidence_sha256=self._rendered_dom_sha256(),
-            project_id=self.spec.project_id,
-            goal_id=context.goal_id,
-            criterion_id=context.criterion_id,
-            scope_id=self.spec.scope_id,
-            source_revision=self.spec.source_revision,
-            authenticated_subject=self.spec.source_subject,
-            observed_at=observed_at.isoformat(timespec="microseconds"),
-            valid_until=(observed_at + timedelta(seconds=900)).isoformat(
-                timespec="microseconds"
+        return create_local_source_receipt(
+            LocalSourceReceiptBinding(
+                evidence_kind="browser",
+                scope_id=self.spec.scope_id,
+                source_revision=self.spec.source_revision,
+                authenticated_subject=self.spec.source_subject,
+                validity_seconds=900,
             ),
-            revocation_checked_at=observed_at.isoformat(timespec="microseconds"),
-            revoked=False,
+            evidence.locator,
+            self._rendered_dom_sha256(),
+            context,
         )
 
     def _rendered_dom_sha256(self) -> str:

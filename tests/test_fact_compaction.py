@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import unittest
-from unittest.mock import patch
 import zlib
+from unittest.mock import patch
+
+from store_test_support import patch_store_symbol
 
 from evidence_fixtures import attest_test_evidence
 from store_fixtures import create_store_stage
@@ -429,7 +431,7 @@ class FactCompactionTests(unittest.TestCase):
             "The exact source bullet remains active when archive storage is full.",
         )
         proposal = self.service.fact_compaction_propose(self.goal.goal_id)
-        with patch("curatormd_v2.store.MAX_FACT_ARCHIVE_BYTES_PER_PROJECT", 1):
+        with patch_store_symbol("MAX_FACT_ARCHIVE_BYTES_PER_PROJECT", 1):
             with self.assertRaises(FactCapacityError):
                 self.approve(
                     proposal.compaction_id,
@@ -444,7 +446,7 @@ class FactCompactionTests(unittest.TestCase):
         )
 
     def test_capacity_gate_reopens_only_after_approved_compaction(self) -> None:
-        with patch("curatormd_v2.store.MAX_FACTS_PER_GOAL", 2):
+        with patch_store_symbol("MAX_FACTS_PER_GOAL", 2):
             first = self.add_fact(
                 FactKind.RESEARCH,
                 "Inspect the bounded routine-fact persistence path carefully",

@@ -199,7 +199,9 @@ index overhead, which is represented only by the separate global database/WAL
 sizes.
 
 `artifact_purge_status` is project-scoped and reports per-target status,
-including `held` plus its `legal`/`operational` retention class, durable attempt count, creation and last-attempt timestamps with age in
+including the separately recorded outcome (`deleted`, `already_absent`,
+`held`, `changed`, or `failed`; null for historical rows with no outcome
+evidence) and the `legal`/`operational` retention class, durable attempt count, creation and last-attempt timestamps with age in
 seconds, the persisted next retry deadline and remaining delay, the last error,
 and a `safe_recovery_action`. That action is a
 read-only recommendation selected from the current gates

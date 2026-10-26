@@ -5,8 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NamedTuple
 
+from .domain_enums import ArtifactStatus, PurgeOutcome
 from .events import EventEnvelope
 from .models import Fact, GoalStatus, SuccessCriterion
+
+
+@dataclass(frozen=True, slots=True)
+class PurgeTargetResult:
+    """Observed outcome and content-free error for one purge attempt."""
+
+    status: ArtifactStatus
+    error: str | None
+    outcome: PurgeOutcome | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +41,8 @@ class SuspendedProcessedEventEpochRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class TerminalEventDispositionStoreRequest:
+# Pylint: these fields bind the stored disposition to its exact evidence.
+class TerminalEventDispositionStoreRequest:  # pylint: disable=too-many-instance-attributes
     """Human-reviewed terminal decision bound to one event and source fence."""
 
     project_id: str

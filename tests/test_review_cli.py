@@ -18,6 +18,8 @@ from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
 from project_fixtures import create_consumer_repo
+from cli_test_support import access_cli_args
+from store_test_support import patch_store_symbol
 
 from curatormd_v2.api import AuthenticatedCaller
 from curatormd_v2.access_cli import main as access_main
@@ -365,16 +367,9 @@ class ReviewCliTests(unittest.TestCase):
         ):
             errors = StringIO()
             result = access_main(
-                [
-                    operation,
-                    "--project-root",
-                    str(root),
-                    "--database",
-                    str(database),
-                    *extra,
-                    "--rationale",
-                    rationale,
-                ],
+                access_cli_args(
+                    operation, root, database, *extra, "--rationale", rationale
+                ),
                 stdin=_InteractiveInput(phrase + "\n"),
                 stdout=StringIO(),
                 stderr=errors,
@@ -737,8 +732,8 @@ class ReviewCliTests(unittest.TestCase):
                 (SuccessCriterion("verified", "The artifact is temporary"),),
                 goal_id="expiry-cli-goal",
             )
-            with patch(
-                "curatormd_v2.store.utc_now",
+            with patch_store_symbol(
+                "utc_now",
                 return_value=(datetime.now(UTC) - timedelta(hours=73)).isoformat(),
             ):
                 artifact = plugin.stage_artifact(

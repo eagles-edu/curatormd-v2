@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from store_test_support import patch_store_symbol
 
 from purge_fixtures import TestVerifier
 from lifecycle_test_support import LifecycleTestSupport
@@ -139,7 +139,7 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
             (SuccessCriterion("other", "Other project evidence is recorded"),),
         )
 
-        with patch("curatormd_v2.store.MAX_FACTS_PER_PROJECT", 2):
+        with patch_store_symbol("MAX_FACTS_PER_PROJECT", 2):
             self.service.goal_fact(
                 self.goal.goal_id, FactKind.RESEARCH, "First project fact"
             )

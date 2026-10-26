@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
+from datetime import date, datetime
+from enum import Enum
+import hashlib
+import json
 
 from .models import (
     AuditReceipt,
@@ -703,7 +707,9 @@ def render_goal_report(
 
     selected_page = page or GoalReportPage()
     _validate_page(selected_page)
-    lines = _goal_header_lines(data.snapshot.goal, intake)
+    revision = goal_report_revision(data, intake=intake, summary=summary)
+    lines = [f"- Report snapshot: `{revision}`"]
+    lines.extend(_goal_header_lines(data.snapshot.goal, intake))
     lines.extend(_criterion_lines(data.snapshot, intake))
     lines.extend(_fact_lines(data, selected_page))
     lines.extend(_open_gate_lines(data.projection))
@@ -720,3 +726,42 @@ def render_goal_report(
     lines.extend(_sde_lines(data.snapshot, summary))
     lines.extend(_cleanup_lines(data.receipts, summary, selected_page.receipt_offset))
     return "\n".join(lines)
+
+
+def goal_report_revision(
+    data: GoalReportData,
+    *,
+    intake: GoalReportContext | None = None,
+    summary: GoalReportSummary | None = None,
+) -> str:
+    """Return a content-free identifier for the bounded report state."""
+
+    payload = {
+        "snapshot": data.snapshot,
+        "projection": data.projection,
+        "children": data.children,
+        "dependencies": data.dependencies,
+        "receipts": data.receipts,
+        "intake": intake,
+        "summary": summary,
+    }
+    encoded = json.dumps(
+        payload,
+        default=_report_json_default,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _report_json_default(value: object) -> object:
+    """Encode typed report values deterministically for the revision digest."""
+
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    raise TypeError(f"unsupported report revision value: {type(value).__name__}")

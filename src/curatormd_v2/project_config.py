@@ -39,7 +39,8 @@ class ProjectConfigError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectConfig:
+# Pylint: these fields are the validated consumer configuration contract.
+class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     """Validated paths and bindings owned by one consuming repository."""
 
     project_root: Path

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from functools import wraps
 import sqlite3
-from typing import Callable, Concatenate, Mapping, ParamSpec, TypeVar
+from typing import Callable, Concatenate, Mapping, ParamSpec, TypeVar, cast
 
 from .api_access import (
     AuthenticatedCaller,
@@ -102,15 +102,67 @@ __all__ = (
 )
 
 
-class AuthenticatedCuratorAPI:
-    """Expose project-scoped operations after host authentication/authorization.
+# The decorator is shared while constructing the facade method groups.
+# pylint: disable=protected-access
+def _project_effect_fenced(
+    action: ProjectAction,
+) -> Callable[
+    [
+        Callable[
+            Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P],
+            _R,
+        ]
+    ],
+    Callable[
+        Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
+    ],
+]:
+    """Fence one API effect against project suspension/revision cutover."""
 
-    This facade is transport-neutral. A future MCP/HTTP layer should map each
-    method to a named tool/route and supply only identity obtained from its
-    trusted authenticated session. Direct access to a ``ProjectPlugin`` or
-    ``CuratorService`` bypasses this boundary and must remain internal.
-    """
+    def decorate(
+        method: Callable[
+            Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
+        ],
+    ) -> Callable[
+        Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
+    ]:
+        @wraps(method)
+        def fenced(
+            self: AuthenticatedCuratorAPI,
+            caller: AuthenticatedCaller,
+            project_id: str,
+            *args: _P.args,
+            **kwargs: _P.kwargs,
+        ) -> _R:
+            plugin_registry = cast(
+                Mapping[str, ProjectPlugin], getattr(self, "_plugins")
+            )
+            plugin = plugin_registry.get(project_id)
+            if (
+                plugin is None
+                or not self.authorizer.authorize(caller, project_id, action)
+            ):
+                return method(self, caller, project_id, *args, **kwargs)
+            store = plugin.service.store
+            try:
+                registration = store.get_project_registration(project_id)
+            except NotFoundError:
+                registration = None
+            if registration is None:
+                return method(self, caller, project_id, *args, **kwargs)
+            with plugin.project_effect_lock():
+                with store.project_revision_fence(
+                    project_id, registration.revision
+                ):
+                    return method(self, caller, project_id, *args, **kwargs)
 
+        return fenced
+
+    return decorate
+# pylint: enable=protected-access
+
+
+class _APIState:  # pylint: disable=too-few-public-methods  # Shared initialized state and effect fence.
     def __init__(
         self,
         plugins: Mapping[str, ProjectPlugin],
@@ -128,60 +180,24 @@ class AuthenticatedCuratorAPI:
         self.limiter = limiter or InMemoryTokenBucket()
         self.dependency_readiness = dependency_readiness
 
-    @staticmethod
-    def _project_effect_fenced(
+
+    def _authorized_plugin(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
         action: ProjectAction,
-    ) -> Callable[
-        [
-            Callable[
-                Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P],
-                _R,
-            ]
-        ],
-        Callable[
-            Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
-        ],
-    ]:
-        """Fence one API effect against project suspension/revision cutover."""
+    ) -> ProjectPlugin:
+        if not _PROJECT_ID_RE.fullmatch(project_id):
+            raise PermissionError("project is not authorized")
+        plugin = self._plugins.get(project_id)
+        if plugin is None or not self.authorizer.authorize(caller, project_id, action):
+            raise PermissionError("project is not authorized")
+        if not self.limiter.allow(caller.subject_id, project_id):
+            raise RateLimitExceeded("project request budget exceeded")
+        return plugin
 
-        def decorate(
-            method: Callable[
-                Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
-            ],
-        ) -> Callable[
-            Concatenate[AuthenticatedCuratorAPI, AuthenticatedCaller, str, _P], _R
-        ]:
-            @wraps(method)
-            def fenced(
-                self: AuthenticatedCuratorAPI,
-                caller: AuthenticatedCaller,
-                project_id: str,
-                *args: _P.args,
-                **kwargs: _P.kwargs,
-            ) -> _R:
-                plugin = self._plugins.get(project_id)  # pylint: disable=protected-access  # Same-class decorator closure.
-                if (
-                    plugin is None
-                    or not self.authorizer.authorize(caller, project_id, action)
-                ):
-                    return method(self, caller, project_id, *args, **kwargs)
-                store = plugin.service.store
-                try:
-                    registration = store.get_project_registration(project_id)
-                except NotFoundError:
-                    registration = None
-                if registration is None:
-                    return method(self, caller, project_id, *args, **kwargs)
-                with plugin.project_effect_lock():
-                    with store.project_revision_fence(
-                        project_id, registration.revision
-                    ):
-                        return method(self, caller, project_id, *args, **kwargs)
 
-            return fenced
-
-        return decorate
-
+class _APIEventMethods(_APIState):
     def process_event_json(
         self,
         caller: AuthenticatedCaller,
@@ -516,6 +532,8 @@ class AuthenticatedCuratorAPI:
             caller, project_id, ProjectAction.EVENT_RETRY
         ).retry_quarantined_event(event_id, caller.subject_id)
 
+
+class _APIGoalMethods(_APIEventMethods):
     def goal_status(
         self,
         caller: AuthenticatedCaller,
@@ -678,6 +696,8 @@ class AuthenticatedCuratorAPI:
         plugin.goal_amend_criteria(request)
         return plugin.goal_status(request.goal_id)
 
+
+class _APIStorageMethods(_APIGoalMethods):
     def project_storage_usage(
         self, caller: AuthenticatedCaller, project_id: str
     ) -> ProjectStorageUsage:
@@ -745,6 +765,8 @@ class AuthenticatedCuratorAPI:
             caller, project_id, ProjectAction.REVIEW
         ).retry_expiry_purge(receipt_id)
 
+
+class _APIReviewPurgeMethods(_APIStorageMethods):
     def sde_review_queue(
         self, caller: AuthenticatedCaller, project_id: str, limit: int = 100
     ) -> tuple[SDEReviewDetail, ...]:
@@ -967,17 +989,11 @@ class AuthenticatedCuratorAPI:
             caller, project_id, ProjectAction.PURGE_RETRY
         ).retry_pending_purges()
 
-    def _authorized_plugin(
-        self,
-        caller: AuthenticatedCaller,
-        project_id: str,
-        action: ProjectAction,
-    ) -> ProjectPlugin:
-        if not _PROJECT_ID_RE.fullmatch(project_id):
-            raise PermissionError("project is not authorized")
-        plugin = self._plugins.get(project_id)
-        if plugin is None or not self.authorizer.authorize(caller, project_id, action):
-            raise PermissionError("project is not authorized")
-        if not self.limiter.allow(caller.subject_id, project_id):
-            raise RateLimitExceeded("project request budget exceeded")
-        return plugin
+class AuthenticatedCuratorAPI(_APIReviewPurgeMethods):  # pylint: disable=too-few-public-methods  # Public facade inherits the complete API.
+    """Expose project-scoped operations after host authentication/authorization.
+
+    This facade is transport-neutral. A future MCP/HTTP layer should map each
+    method to a named tool/route and supply only identity obtained from its
+    trusted authenticated session. Direct access to a ``ProjectPlugin`` or
+    ``CuratorService`` bypasses this boundary and must remain internal.
+    """

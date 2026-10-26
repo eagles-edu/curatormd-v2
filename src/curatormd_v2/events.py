@@ -20,6 +20,7 @@ from .models import (
     FactKind,
     GoalStatus,
     SuccessCriterion,
+    GoalDefinitionFields,
     utc_now,
 )
 from .content_safety import validate_safe_text
@@ -105,18 +106,9 @@ class EventQueueStatus:
 
 
 @dataclass(frozen=True, slots=True)
-class GoalStarted:  # pylint: disable=too-many-instance-attributes
+class GoalStarted(GoalDefinitionFields):  # pylint: disable=too-many-instance-attributes
     """Event record mirrors the versioned goal.started payload fields."""
 
-    goal_id: str
-    problem: str
-    success_criteria: tuple[SuccessCriterion, ...]
-    owner: str | None = None
-    checklist_id: str | None = None
-    checklist_version: str | None = None
-    checklist_source_text: str | None = None
-    parent_goal_id: str | None = None
-    depends_on_goal_ids: tuple[str, ...] = ()
     initial_status: GoalStatus = GoalStatus.ACTIVE
     next_action: str | None = None
 

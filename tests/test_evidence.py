@@ -12,6 +12,8 @@ import tempfile
 from typing import cast
 import unittest
 
+from git_test_support import create_git_commit_range
+
 from curatormd_v2 import (
     BrowserProofEvidenceAdapter,
     EvidenceAdapterRegistry,
@@ -30,6 +32,10 @@ from curatormd_v2.git_evidence import (
     GitCommitDiffResolver,
     LocalGitTestRunnerConfig,
     LocalGitTestRunnerResolver,
+)
+from curatormd_v2.evidence import (
+    LocalSourceReceiptBinding,
+    create_local_source_receipt,
 )
 
 
@@ -93,35 +99,23 @@ class EvidenceAdapterTests(unittest.TestCase):
             ),
         )
 
-    @staticmethod
-    def _local_git_diff_fixture(directory: Path) -> tuple[
-        Path, Path, str, str
-    ]:
-        root = directory / "repository"
-        root.mkdir()
-
-        def git(*arguments: str) -> str:
-            result = subprocess.run(
-                ["git", "-C", str(root), *arguments],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            return result.stdout.strip()
-
-        git("init", "--quiet")
-        git("config", "user.name", "Curator test")
-        git("config", "user.email", "curator-test@example.invalid")
-        source = root / "task.txt"
-        source.write_text("before\n", encoding="utf-8")
-        git("add", "task.txt")
-        git("commit", "--quiet", "-m", "base")
-        base_revision = git("rev-parse", "HEAD")
-        source.write_text("private diff contents\n", encoding="utf-8")
-        git("add", "task.txt")
-        git("commit", "--quiet", "-m", "change")
-        return root, source, base_revision, git("rev-parse", "HEAD")
+    def test_local_source_receipt_rejects_invalid_validity_bounds(self) -> None:
+        for validity_seconds in (0, 901, True):
+            with self.subTest(validity_seconds=validity_seconds):
+                binding = LocalSourceReceiptBinding(
+                    evidence_kind="service_probe",
+                    scope_id="local-service-probe:readiness",
+                    source_revision="probe-revision-1",
+                    authenticated_subject="local-uid:1000",
+                    validity_seconds=validity_seconds,
+                )
+                with self.assertRaisesRegex(ValueError, "validity exceeds"):
+                    create_local_source_receipt(
+                        binding,
+                        self.evidence.locator,
+                        self.evidence.sha256,
+                        self.context,
+                    )
 
     def test_service_receipt_creates_exact_compact_attestation(self) -> None:
         attestation = self.adapter.attest(self.evidence, self.context)
@@ -305,7 +299,7 @@ class EvidenceAdapterTests(unittest.TestCase):
         """Attest exact Git diff bytes without returning or retaining patch text."""
 
         with tempfile.TemporaryDirectory() as temporary:
-            root, source, base_revision, head_revision = self._local_git_diff_fixture(
+            root, source, base_revision, head_revision = create_git_commit_range(
                 Path(temporary)
             )
 
@@ -352,7 +346,7 @@ class EvidenceAdapterTests(unittest.TestCase):
         """Enforce project binding and byte ceiling on repository diff receipts."""
 
         with tempfile.TemporaryDirectory() as temporary:
-            root, _, base_revision, head_revision = self._local_git_diff_fixture(
+            root, _, base_revision, head_revision = create_git_commit_range(
                 Path(temporary)
             )
             resolver = GitCommitDiffResolver(
@@ -425,32 +419,13 @@ class EvidenceAdapterTests(unittest.TestCase):
         """Run a fixed test command at one commit and retain only its digest."""
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "repository"
-            root.mkdir()
-
-            def git(*arguments: str) -> str:
-                result = subprocess.run(
-                    ["git", "-C", str(root), *arguments],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-                return result.stdout.strip()
-
-            git("init", "--quiet")
-            git("config", "user.name", "Curator test")
-            git("config", "user.email", "curator-test@example.invalid")
-            marker = root / "test-marker.txt"
-            marker.write_text("pass\n", encoding="utf-8")
-            git("add", "test-marker.txt")
-            git("commit", "--quiet", "-m", "passing test input")
-            revision = git("rev-parse", "HEAD")
+            root, marker, _, revision = create_git_commit_range(Path(temporary))
             command = (
                 sys.executable,
                 "-c",
-                "from pathlib import Path; value=Path('test-marker.txt').read_text(); "
-                "print(value.strip()); raise SystemExit(value != 'pass\\n')",
+                "from pathlib import Path; value=Path('task.txt').read_text(); "
+                "print(value.strip()); "
+                "raise SystemExit(value != 'private diff contents\\n')",
             )
             resolver = LocalGitTestRunnerResolver(
                 root,
@@ -476,7 +451,7 @@ class EvidenceAdapterTests(unittest.TestCase):
             self.assertEqual(
                 receipt.source_revision, f"git-test:unit-tests:{revision}"
             )
-            self.assertNotIn("pass", repr(receipt))
+            self.assertNotIn("private diff contents", repr(receipt))
             self.assertNotIn(str(root), repr(receipt))
 
             marker.write_text("uncommitted failure\n", encoding="utf-8")

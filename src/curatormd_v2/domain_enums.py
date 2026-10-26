@@ -121,6 +121,16 @@ class ArtifactStatus(StrEnum):
     HELD = "held"
 
 
+class PurgeOutcome(StrEnum):
+    """Observed result of one artifact cleanup target."""
+
+    DELETED = "deleted"
+    ALREADY_ABSENT = "already_absent"
+    HELD = "held"
+    CHANGED = "changed"
+    FAILED = "failed"
+
+
 class PurgeFailureCode(StrEnum):
     """Content-free reasons for retryable artifact purge failures."""
 

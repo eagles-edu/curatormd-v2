@@ -14,6 +14,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+from event_test_support import make_event_retry_due
+
 from curatormd_v2 import (
     ArtifactPurger,
     backup_database,
@@ -356,12 +358,7 @@ finally:
         self.assertEqual(self.store.pending_events(project_id="project-b"), ())
 
         # Fast-forward the durable schedule rather than sleeping in the test.
-        with self.store.transaction() as connection:
-            connection.execute(
-                "UPDATE event_inbox SET next_attempt_at = '2000-01-01T00:00:00+00:00' "
-                "WHERE project_id = ? AND event_id = ?",
-                ("project-a", event.event_id),
-            )
+        make_event_retry_due(self.store, event)
 
         second = self.router.route_once()
         self.assertEqual(second.quarantined_count, 1)

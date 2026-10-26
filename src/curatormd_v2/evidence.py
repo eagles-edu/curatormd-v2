@@ -68,7 +68,8 @@ class EvidenceVerificationContext:
 
 
 @dataclass(frozen=True, slots=True)
-class EvidenceSourceReceipt:
+# Pylint: the receipt fields are independently checked trust-boundary claims.
+class EvidenceSourceReceipt:  # pylint: disable=too-many-instance-attributes
     """Typed, bounded result returned by a host-authenticated source resolver."""
 
     evidence_kind: str
@@ -119,6 +120,49 @@ class EvidenceSourceReceipt:
             r"[0-9a-f]{32}", self.occurrence_id
         ):
             raise ValueError("evidence receipt occurrence_id is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class LocalSourceReceiptBinding:
+    """Host-derived source identity and validity for a local proof receipt."""
+
+    evidence_kind: str
+    scope_id: str
+    source_revision: str
+    authenticated_subject: str
+    validity_seconds: int
+
+
+def create_local_source_receipt(
+    binding: LocalSourceReceiptBinding,
+    locator: str,
+    evidence_sha256: str,
+    context: EvidenceVerificationContext,
+) -> EvidenceSourceReceipt:
+    """Build a short-lived receipt bound to one local verification context."""
+
+    if not is_exact_int(binding.validity_seconds) or not 1 <= binding.validity_seconds <= 900:
+        raise ValueError("local evidence receipt validity exceeds the fixed ceiling")
+    observed_at = context.now_utc
+    return EvidenceSourceReceipt(
+        evidence_kind=binding.evidence_kind,
+        locator=locator,
+        evidence_sha256=evidence_sha256,
+        project_id=context.project_id,
+        goal_id=context.goal_id,
+        criterion_id=context.criterion_id,
+        scope_id=binding.scope_id,
+        source_revision=binding.source_revision,
+        authenticated_subject=binding.authenticated_subject,
+        observed_at=observed_at.isoformat(timespec="microseconds"),
+        valid_until=(
+            observed_at + timedelta(seconds=binding.validity_seconds)
+        ).isoformat(
+            timespec="microseconds"
+        ),
+        revocation_checked_at=observed_at.isoformat(timespec="microseconds"),
+        revoked=False,
+    )
 
 
 class EvidenceSourceResolver(Protocol):
@@ -456,6 +500,12 @@ class EvidenceAdapterRegistry:
             return None
         return adapter.attest(evidence, context)
 
+    @property
+    def evidence_kinds(self) -> frozenset[str]:
+        """Expose the fixed host registry's supported evidence kinds."""
+
+        return frozenset(self._by_kind)
+
 
 def evidence_has_current_attestations(
     verifier: EvidenceVerifier,
@@ -465,17 +515,29 @@ def evidence_has_current_attestations(
 ) -> bool:
     """Revalidate provenance outside write transactions and reject drift."""
 
+    return evidence_current_attestations(verifier, context, evidence, stored) is not None
+
+
+def evidence_current_attestations(
+    verifier: EvidenceVerifier,
+    context: EvidenceVerificationContext,
+    evidence: tuple[EvidenceRef, ...],
+    stored: tuple[EvidenceAttestation, ...],
+) -> tuple[EvidenceAttestation, ...] | None:
+    """Return fresh source leases only when stored and current proof agree."""
+
     if not evidence or len(evidence) != len(stored):
-        return False
+        return None
     try:
         fresh_items = tuple(verifier.attest(item, context) for item in evidence)
     except Exception:  # pylint: disable=broad-exception-caught
         raise EvidenceAdapterError() from None
     if any(item is None for item in fresh_items):
-        return False
+        return None
+    current_items = tuple(item for item in fresh_items if item is not None)
     for reference, current, original in zip(
         evidence,
-        (item for item in fresh_items if item is not None),
+        current_items,
         stored,
         strict=True,
     ):
@@ -486,8 +548,8 @@ def evidence_has_current_attestations(
             or not _attestation_matches_context(original, context)
             or not _attestations_share_source(current, original)
         ):
-            return False
-    return True
+            return None
+    return current_items
 
 
 def _attestation_matches_reference(

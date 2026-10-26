@@ -28,7 +28,7 @@ from .schema_migration_steps_v2_v20 import (
 )
 
 
-SQLITE_SCHEMA_VERSION = 37
+SQLITE_SCHEMA_VERSION = 38
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -617,6 +617,27 @@ def migrate_reactivation_review_receipts_v37(connection: sqlite3.Connection) -> 
     connection.execute("PRAGMA user_version = 37")
 
 
+def migrate_purge_target_outcomes_v38(connection: sqlite3.Connection) -> None:
+    """Persist observed per-artifact cleanup outcomes without inventing history."""
+
+    table = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'purge_targets'"
+    ).fetchone()
+    if table is not None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(purge_targets)").fetchall()
+        }
+        if "outcome" not in columns:
+            connection.execute(
+                """ALTER TABLE purge_targets ADD COLUMN outcome TEXT
+                   CHECK (outcome IN (
+                       'deleted', 'already_absent', 'held', 'changed', 'failed'
+                   ))"""
+            )
+    connection.execute("PRAGMA user_version = 38")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -654,6 +675,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_drain_and_retirement_v35,
     migrate_terminal_event_dispositions_v36,
     migrate_reactivation_review_receipts_v37,
+    migrate_purge_target_outcomes_v38,
 )
 
 

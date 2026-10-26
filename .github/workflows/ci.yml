@@ -44,8 +44,8 @@ jobs:
           env -u PYTHONPATH \
             "$RUNNER_TEMP/curator-v2-wheel-venv/bin/python" \
             -m unittest \
-            test_hosted_mcp.HostedMcpTests.test_installed_launcher_writes_and_reads_a_project_bound_goal \
-            test_hosted_mcp.HostedMcpTests.test_installed_launcher_exposes_sde_proposal_context \
+            test_hosted_mcp_installed.InstalledHostedMcpTests.test_installed_launcher_writes_and_reads_a_project_bound_goal \
+            test_hosted_mcp_installed.InstalledHostedMcpTests.test_installed_launcher_exposes_sde_proposal_context \
             -v
       - name: Exercise installed operational command entrypoints
         env:
@@ -60,6 +60,7 @@ jobs:
           "$wheel_bin/curatormd-v2-review" --help >/dev/null
           "$wheel_bin/curatormd-v2-router" --help >/dev/null
           "$wheel_bin/curatormd-v2-storage" --help >/dev/null
+          "$wheel_bin/curatormd-v2-evidence" --help >/dev/null
           "$wheel_python" - <<'PY'
           import os
           import sqlite3

@@ -32,10 +32,10 @@ class ArtifactPurger:
         self.staging_root = root
 
     def purge(self, artifact: ArtifactRef) -> bool:
-        """Remove an artifact; return True if removed or already absent.
+        """Remove an artifact; return True only when this call unlinks it.
 
-        A missing file is treated as success to make retries idempotent after a
-        process crash between unlink and recording the result in SQLite.
+        A missing file remains an idempotent success for receipt completion, but
+        returns False so the durable receipt records that no unlink occurred.
         """
 
         if artifact.retention_hold is not None:
@@ -80,8 +80,9 @@ class ArtifactPurger:
             )
 
         filesystem_failed = False
+        deleted = False
         try:
-            self._remove_target(relative, no_follow, directory, artifact)
+            deleted = self._remove_target(relative, no_follow, directory, artifact)
         except OSError:
             filesystem_failed = True
         if filesystem_failed:
@@ -89,7 +90,7 @@ class ArtifactPurger:
                 PurgeFailureCode.FILESYSTEM_ERROR,
                 "cannot safely inspect or remove artifact",
             )
-        return True
+        return deleted
 
     def _remove_target(
         self,
@@ -97,7 +98,7 @@ class ArtifactPurger:
         no_follow: int,
         directory: int,
         artifact: ArtifactRef,
-    ) -> None:
+    ) -> bool:
         """Open, verify, and unlink one exact staged file with pinned parents."""
 
         root_fd = -1
@@ -117,7 +118,7 @@ class ArtifactPurger:
                         dir_fd=parent_fd,
                     )
                 except FileNotFoundError:
-                    return
+                    return False
                 directory_fds.append(child_fd)
                 parent_fd = child_fd
             filename = relative.parts[-1]
@@ -128,9 +129,10 @@ class ArtifactPurger:
                     dir_fd=parent_fd,
                 )
             except FileNotFoundError:
-                return
+                return False
             self._verify_target(file_fd, parent_fd, filename, artifact)
             os.unlink(filename, dir_fd=parent_fd)
+            return True
         finally:
             if file_fd >= 0:
                 os.close(file_fd)

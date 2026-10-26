@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 import hashlib
 import tempfile
@@ -125,12 +126,13 @@ class ProjectAccessTestCase(unittest.TestCase):  # pylint: disable=too-few-publi
         expected_revision: int,
         transition_id: str,
     ):
-        review_packet_sha256: str | None = None
-        suspension_transition_id: str | None = None
-        staging_inventory_sha256: str | None = None
-        staging_inventory_count: int | None = None
-        staging_inventory_bytes: int | None = None
-        staging_inventory_observed_at: str | None = None
+        request = ProjectStatusChangeRequest(
+            project_id=self.project_id,
+            status=status,
+            rationale=rationale,
+            expected_revision=expected_revision,
+            transition_id=transition_id,
+        )
         if status == "active":
             registration = self.store.get_project_registration(self.project_id)
             if (
@@ -143,30 +145,25 @@ class ProjectAccessTestCase(unittest.TestCase):  # pylint: disable=too-few-publi
                     self.operator, self.project_id, inventory
                 )
                 assert packet.packet_sha256 is not None
-                review_packet_sha256 = packet.packet_sha256
-                suspension_transition_id = packet.suspension_transition_id
-                staging_inventory_sha256 = packet.staging_inventory_sha256
-                staging_inventory_count = packet.staging_inventory_count
-                staging_inventory_bytes = packet.staging_inventory_bytes
-                staging_inventory_observed_at = packet.staging_inventory_observed_at
+                request = replace(
+                    request,
+                    review_packet_sha256=packet.packet_sha256,
+                    suspension_transition_id=packet.suspension_transition_id,
+                    staging_inventory_sha256=packet.staging_inventory_sha256,
+                    staging_inventory_count=packet.staging_inventory_count,
+                    staging_inventory_bytes=packet.staging_inventory_bytes,
+                    staging_inventory_observed_at=(
+                        packet.staging_inventory_observed_at
+                    ),
+                )
             elif self.store.get_project_retirement(self.project_id) is not None:
                 # Supply syntactically valid review IDs so the store reaches
                 # the irreversible retirement tombstone check.
-                review_packet_sha256 = "0" * 64
-                suspension_transition_id = "prior-suspension"
+                request = replace(
+                    request,
+                    review_packet_sha256="0" * 64,
+                    suspension_transition_id="prior-suspension",
+                )
         return self.manager.set_project_status(
-            self.operator,
-            ProjectStatusChangeRequest(
-                project_id=self.project_id,
-                status=status,
-                rationale=rationale,
-                expected_revision=expected_revision,
-                transition_id=transition_id,
-                review_packet_sha256=review_packet_sha256,
-                suspension_transition_id=suspension_transition_id,
-                staging_inventory_sha256=staging_inventory_sha256,
-                staging_inventory_count=staging_inventory_count,
-                staging_inventory_bytes=staging_inventory_bytes,
-                staging_inventory_observed_at=staging_inventory_observed_at,
-            ),
+            self.operator, request
         )

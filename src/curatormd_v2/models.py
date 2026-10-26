@@ -16,6 +16,7 @@ from .domain_enums import (
     FactKind,
     GoalStatus,
     Materiality,
+    PurgeOutcome,
     PurgeStatus,
     ReacquisitionAction,
     RetentionHoldKind,
@@ -64,6 +65,7 @@ __all__ = [
     "GoalSnapshot",
     "OperationalHealth",
     "PurgeFailureCode",
+    "PurgeOutcome",
     "ArtifactEvidenceBinding",
     "ArtifactEvidenceDependency",
     "ArtifactReviewDependency",
@@ -112,6 +114,7 @@ _DOMAIN_ENUM_NAMES = frozenset(
         "GoalBulletCategory",
         "OperationalHealth",
         "PurgeFailureCode",
+        "PurgeOutcome",
     }
 )
 
@@ -215,6 +218,22 @@ class SuccessCriterion:
             raise ValueError("criterion description exceeds 500 characters")
         if "\n" in self.description or "\r" in self.description:
             raise ValueError("criterion description must be a single line")
+
+
+@dataclass(frozen=True, slots=True)
+# Pylint: this immutable record mirrors the shared versioned goal-definition contract.
+class GoalDefinitionFields:  # pylint: disable=too-many-instance-attributes
+    """Shared versioned goal-definition fields for intake and goal snapshots."""
+
+    goal_id: str
+    problem: str
+    success_criteria: tuple[SuccessCriterion, ...]
+    owner: str | None = None
+    checklist_id: str | None = None
+    checklist_version: str | None = None
+    checklist_source_text: str | None = None
+    parent_goal_id: str | None = None
+    depends_on_goal_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,18 +357,9 @@ class EvidenceAttestation:  # pylint: disable=too-many-instance-attributes  # Ve
 
 
 @dataclass(frozen=True, slots=True)
-class GoalCard:  # pylint: disable=too-many-instance-attributes  # Immutable goal snapshot mirrors the persisted contract.
+class GoalCard(GoalDefinitionFields):  # pylint: disable=too-many-instance-attributes  # Immutable goal snapshot mirrors the persisted contract.
     """Current project-scoped goal contract and lifecycle state."""
 
-    goal_id: str
-    problem: str
-    success_criteria: tuple[SuccessCriterion, ...]
-    owner: str | None = None
-    checklist_id: str | None = None
-    checklist_version: str | None = None
-    checklist_source_text: str | None = None
-    parent_goal_id: str | None = None
-    depends_on_goal_ids: tuple[str, ...] = ()
     project_id: str = "default"
     status: GoalStatus = GoalStatus.ACTIVE
     next_action: str | None = None
@@ -776,8 +786,8 @@ class ArtifactCleanupAuthorizationRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class PurgeTargetRecord:  # pylint: disable=too-many-instance-attributes  # Retry and hold receipt fields are one durable record.
-    """Durable cleanup state; error is a content-free failure code."""
+class PurgeTargetFields:
+    """Shared persisted fields for per-artifact cleanup state and status."""
 
     artifact: ArtifactRef
     status: ArtifactStatus
@@ -786,12 +796,19 @@ class PurgeTargetRecord:  # pylint: disable=too-many-instance-attributes  # Retr
     created_at: str
     last_attempt_at: str | None
     next_attempt_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PurgeTargetRecord(PurgeTargetFields):  # pylint: disable=too-many-instance-attributes  # Retry and hold receipt fields are one durable record.
+    """Durable cleanup state; error is a content-free failure code."""
+
     hold_created_at: str | None = None
     hold_created_by: str | None = None
     hold_released_at: str | None = None
     hold_released_by: str | None = None
     hold_release_rationale: str | None = None
     approval_stale: bool = False
+    outcome: PurgeOutcome | None = None
 
 
 @dataclass(frozen=True, slots=True)

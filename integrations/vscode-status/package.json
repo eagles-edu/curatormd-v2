@@ -1,8 +1,8 @@
 {
   "name": "curatormd-v2-status",
   "displayName": "CuratorMD V2 Status",
-  "description": "A neutral VS Code status bar label for CuratorMD V2.",
-  "version": "0.1.0",
+  "description": "A local, project-scoped CuratorMD V2 dashboard and status bar integration.",
+  "version": "0.2.0",
   "publisher": "curatormd",
   "repository": {
     "type": "git",
@@ -21,9 +21,32 @@
   "contributes": {
     "commands": [
       {
-        "command": "curatormdV2.showStatusInfo",
-        "title": "CuratorMD V2: About Status Label"
+        "command": "curatormdV2.openDashboard",
+        "title": "CuratorMD V2: Open Project Dashboard"
       }
     ]
+  },
+  "configuration": {
+    "title": "CuratorMD V2",
+    "properties": {
+      "curatormdV2.serverCommand": {
+        "type": "string",
+        "default": "curatormd-v2-mcp",
+        "scope": "application",
+        "description": "Absolute path or PATH command for the locally installed Curator V2 MCP launcher."
+      },
+      "curatormdV2.databasePath": {
+        "type": "string",
+        "default": "",
+        "scope": "application",
+        "description": "Absolute path to the local Curator V2 database."
+      },
+      "curatormdV2.profileId": {
+        "type": "string",
+        "default": "",
+        "scope": "application",
+        "description": "Host-configured profile routing label; authorization comes from the local OS UID and exact project grant."
+      }
+    }
   }
 }

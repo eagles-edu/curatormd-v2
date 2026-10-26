@@ -7,12 +7,17 @@ from unittest.mock import patch
 
 from lifecycle_test_support import (
     LifecycleTestSupport,
+    TestVerifier,
     TransactionCheckingVerifier,
 )
 
 from curatormd_v2 import (
+    ArtifactPurger,
     CriterionStatus,
+    CuratorService,
+    CuratorStore,
     FactKind,
+    GoalCard,
     GoalStatus,
     SuccessCriterion,
 )
@@ -151,13 +156,53 @@ class GoalReportingTests(LifecycleTestSupport):
         second_page = self.service.goal_report(
             self.goal.goal_id, GoalReportPage(fact_offset=1, fact_limit=3)
         )
+        first_revision = report.split("Report snapshot: `", 1)[1].split("`", 1)[0]
+        second_revision = second_page.split("Report snapshot: `", 1)[1].split("`", 1)[0]
+        self.assertEqual(first_revision, second_revision)
         self.assertIn("Verified facts", second_page)
         self.assertIn("Unverified claims or checks", second_page)
         self.assertIn("completion claim", second_page)
+        self.service.goal_fact(
+            self.goal.goal_id,
+            FactKind.CHANGE,
+            "Changed after the first report page",
+        )
+        changed_report = self.service.goal_report(
+            self.goal.goal_id, GoalReportPage(fact_offset=1, fact_limit=3)
+        )
+        changed_revision = changed_report.split("Report snapshot: `", 1)[1].split("`", 1)[0]
+        self.assertNotEqual(first_revision, changed_revision)
         with self.assertRaisesRegex(ValueError, "fact_limit"):
             self.service.goal_report(
                 self.goal.goal_id, GoalReportPage(fact_limit=17)
             )
+
+    def test_goal_report_uses_one_read_snapshot_for_database_records(self) -> None:
+        writer_store = self.enterContext(CuratorStore(self.store.database))
+        writer = CuratorService(
+            writer_store, ArtifactPurger(self.stage), TestVerifier()
+        )
+        original_get_goal = self.store.get_goal
+        inserted = False
+
+        def get_goal_then_write(goal_id: str, project_id: str) -> GoalCard:
+            nonlocal inserted
+            goal = original_get_goal(goal_id, project_id)
+            if not inserted:
+                inserted = True
+                writer.goal_fact(
+                    goal_id,
+                    FactKind.CHANGE,
+                    "Committed during report assembly",
+                )
+            return goal
+
+        with patch.object(self.store, "get_goal", side_effect=get_goal_then_write):
+            first_report = self.service.goal_report(self.goal.goal_id)
+
+        self.assertNotIn("Committed during report assembly", first_report)
+        second_report = self.service.goal_report(self.goal.goal_id)
+        self.assertIn("Committed during report assembly", second_report)
 
     def test_goal_intake_report_preserves_next_action_and_names_open_criteria(self) -> None:
         """Expose the caller's concrete first step without inventing one."""

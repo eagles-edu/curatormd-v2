@@ -9,9 +9,11 @@ import sqlite3
 import stat
 import tempfile
 import unittest
-from unittest.mock import patch
+
+from store_test_support import patch_store_symbol
 
 from evidence_fixtures import attest_test_evidence
+from event_test_support import make_event_retry_due
 
 from curatormd_v2.events import (
     EventEnvelope,
@@ -160,7 +162,7 @@ class EventInboxTests(_EventInboxTestCase):
         self.assertEqual(len(snapshot.facts), 1)
 
     def test_global_event_receipt_ceiling_is_shared_and_never_prunes(self) -> None:
-        with patch("curatormd_v2.store.MAX_EVENT_RECEIPTS_GLOBAL", 1):
+        with patch_store_symbol("MAX_EVENT_RECEIPTS_GLOBAL", 1):
             accepted = self.service.process_event(self.event)
             self.assertEqual(accepted.status.value, "processed")
             replayed = self.service.process_event(self.event)
@@ -195,7 +197,7 @@ class EventInboxTests(_EventInboxTestCase):
             self.assertEqual(usage_b.event_receipt_count, 0)
 
     def test_global_event_byte_ceiling_rejects_before_receipt_write(self) -> None:
-        with patch("curatormd_v2.store.MAX_EVENT_RECEIPT_BYTES_GLOBAL", 10):
+        with patch_store_symbol("MAX_EVENT_RECEIPT_BYTES_GLOBAL", 10):
             with self.assertRaises(EventInboxCapacityError):
                 self.service.process_event(self.event)
             with self.assertRaises(NotFoundError):
@@ -965,12 +967,7 @@ class EventSequencePersistenceTests(unittest.TestCase):
         self.assertEqual(replay.last_error_code, failed.last_error_code)
         self.assertEqual(replay.attempts, 1)
 
-        with self.store.transaction() as connection:
-            connection.execute(
-                "UPDATE event_inbox SET next_attempt_at = '2000-01-01T00:00:00+00:00' "
-                "WHERE project_id = ? AND event_id = ?",
-                ("project-a", event.event_id),
-            )
+        make_event_retry_due(self.store, event)
         retried = verified_service.process_event(event)
         self.assertEqual(
             (retried.project_id, retried.event_id),

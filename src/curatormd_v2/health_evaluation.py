@@ -38,6 +38,7 @@ REQUIRED_HEALTH_DEPENDENCIES = (
 )
 MAX_DEPENDENCY_PROBE_AGE_SECONDS = 60
 MAX_DEPENDENCY_CLOCK_SKEW_SECONDS = 5
+STAGING_BUDGET_WARNING_PERCENT = 75
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,7 +122,9 @@ def evaluate_local_health(
         gates.append("staging_observation_time_unavailable")
         unknown = True
     _add_staging_budget_gate(staging, usage, gates)
-    degraded = degraded or "staging_budget_reached" in gates
+    degraded = degraded or any(
+        code in gates for code in ("staging_budget_warning", "staging_budget_reached")
+    )
     if staging_complete is False:
         gates.append("staging_inventory_incomplete")
         degraded = True
@@ -162,6 +165,28 @@ def _add_staging_budget_gate(
     )
     if byte_limit_reached or file_limit_reached:
         gates.append("staging_budget_reached")
+        return
+    byte_limit_warning = _staging_budget_warning(
+        staging.observed_file_bytes,
+        usage.staging_project_byte_limit,
+    )
+    file_limit_warning = _staging_budget_warning(
+        staging.regular_file_count,
+        usage.staging_project_file_limit,
+    )
+    if byte_limit_warning or file_limit_warning:
+        gates.append("staging_budget_warning")
+
+
+def _staging_budget_warning(observed: int, limit: int | None) -> bool:
+    """Warn at the approved 75% threshold without dividing or rounding."""
+
+    return (
+        limit is not None
+        and limit > 0
+        and observed < limit
+        and observed * 100 >= limit * STAGING_BUDGET_WARNING_PERCENT
+    )
 
 
 def _evaluate_probe_value(

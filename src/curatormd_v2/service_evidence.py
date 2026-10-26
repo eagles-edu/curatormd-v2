@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 import hashlib
 import json
 import os
@@ -11,7 +10,12 @@ from pathlib import Path
 import re
 import shutil
 
-from .evidence import EvidenceSourceReceipt, EvidenceVerificationContext
+from .evidence import (
+    EvidenceSourceReceipt,
+    EvidenceVerificationContext,
+    LocalSourceReceiptBinding,
+    create_local_source_receipt,
+)
 from .evidence_process import BoundedEvidenceProcessRequest, hash_bounded_stdout
 from .models import EvidenceRef
 from .validation import is_exact_int
@@ -124,23 +128,17 @@ class LocalServiceProbeResolver:  # pylint: disable=too-few-public-methods
             return None
 
         digest = self._run_probe()
-        observed_at = context.now_utc
-        return EvidenceSourceReceipt(
-            evidence_kind="service_probe",
-            locator=evidence.locator,
-            evidence_sha256=digest,
-            project_id=self.spec.project_id,
-            goal_id=context.goal_id,
-            criterion_id=context.criterion_id,
-            scope_id=self.spec.scope_id,
-            source_revision=self.spec.source_revision,
-            authenticated_subject=self.spec.source_subject,
-            observed_at=observed_at.isoformat(timespec="microseconds"),
-            valid_until=(
-                observed_at + timedelta(seconds=self.spec.timeout_seconds)
-            ).isoformat(timespec="microseconds"),
-            revocation_checked_at=observed_at.isoformat(timespec="microseconds"),
-            revoked=False,
+        return create_local_source_receipt(
+            LocalSourceReceiptBinding(
+                evidence_kind="service_probe",
+                scope_id=self.spec.scope_id,
+                source_revision=self.spec.source_revision,
+                authenticated_subject=self.spec.source_subject,
+                validity_seconds=self.spec.timeout_seconds,
+            ),
+            evidence.locator,
+            digest,
+            context,
         )
 
     def _run_probe(self) -> str:
