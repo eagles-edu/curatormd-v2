@@ -2572,6 +2572,14 @@ consumer plugin, Hermes integration, or production deployment.
       errors-only Pylint on the changed files, and `git diff --check` pass. This
       closes the cap-edge idempotency defect only; backend budgets and broader
       usage/alert policy remain open, so the checklist row stays unchecked.
+      Report-only token-usage refresh (2026-10-27): the opt-in Hermes
+      `project_usage` profile tool returned an available aggregate for
+      `vhost-manager-alpha`: six retained turns, five with reported usage and
+      one with unknown usage. `coverage_complete` and `tokens_complete` were
+      both false; the observed source was Codex app-server. The view is
+      report-only and does not define or enforce a budget. This confirms the
+      local usage read works while coverage remains incomplete; it does not
+      support complete project token totals, billing, or alert claims.
       Provider/model token usage is not collected by Curator. It belongs to
       Hermes Core's local project-usage accounting; Host Steward remains a
       separate root-account host-disk concern and must not own project token
@@ -4175,6 +4183,19 @@ both SDE context columns. No Vhost source or application data changed.
 This package/profile integration result does not prove authenticated
 identity, successful interactive MCP approval, application workflow,
 production health, or deployment recovery.
+
+Current local profile probe (2026-10-27): the Hermes Core checkout command
+`./hermes -p renew-ssl-coding mcp test curator_v2 --probe-curator-status`
+exits 0, connects to the profile's local stdio Curator server, and discovers
+48 tools. Its bounded project response reports 37/37 event receipts processed,
+16 goals, 12 facts, no pending SDEs, and a separate `healthy` project-health
+snapshot with seven required dependencies healthy, complete staging inventory,
+and no gate codes. The activity and health observations are timestamped at
+`2026-10-26T19:11Z`; the latest event is `2026-10-26T18:52Z`. This is trusted
+local profile-context evidence, not a live gateway/app-server lifecycle event,
+human authentication, or production-readiness proof. The direct VS Code stdio
+route still lacks Hermes readiness metadata and correctly shows host health as
+unknown. The dashboard and live event-delivery gates remain open.
 
 ### 8. Security, privacy, token, and disk controls
 
