@@ -2,11 +2,14 @@
 
 The V2-owned extension keeps the `CuratorMD V2` status-bar label and opens a
 read-only dashboard for the first workspace folder. It shows a project health
-summary, retained event/review totals, paged goal cards, and one bounded goal
-report page at a time. Health, activity, and goal totals are separate authorized
-reads and may reflect different observation times. Retained activity is not a
-capture-completeness measure. Refreshing or changing pages replaces the old
-view, so pages from separate report reads are never combined.
+summary, retained event/review totals, storage estimates, paged goal cards, and
+one bounded goal report page at a time. Health, activity, storage, and goal
+totals are separate authorized reads and may reflect different observation
+times. Retained activity is not a capture-completeness measure. Project logical
+record bytes and retained event payload bytes are separate from the shared
+SQLite database/WAL file sizes. This view does not report staging inventory or
+model/token use. Refreshing or changing pages replaces the old view, so pages
+from separate report reads are never combined.
 
 Configure these **User** settings in VS Code:
 
@@ -35,6 +38,12 @@ counts; it includes no record IDs or fact text. Missing, malformed, or
 cross-project summary results display as `unknown`. If a fresh read fails, the
 dashboard clears previously rendered goal and report data before displaying a
 generic error.
+
+Storage displays only project logical byte/count totals, fact-capacity values,
+and shared database/WAL file sizes. SQLite file sizes are global to the shared
+database and must not be attributed to this project. Missing, malformed, or
+cross-project results display as unknown. Staging and token usage remain outside
+this read and are not inferred from zero values.
 
 The editor launches Curator directly over local stdio and supplies profile and
 session routing metadata. It does not supply Hermes Core's trusted host

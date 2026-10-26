@@ -35,7 +35,7 @@ class McpStdioClient {
     await this._request('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'curatormd-v2-vscode-dashboard', version: '0.2.0' },
+      clientInfo: { name: 'curatormd-v2-vscode-dashboard', version: '0.4.0' },
     });
     this.child.stdin.write(`${JSON.stringify({
       jsonrpc: '2.0',
@@ -210,22 +210,26 @@ async function showDashboard(spawnProcess = spawn) {
           const activityRequest = client.callTool('project_activity_status', {})
             .then((wire) => JSON.parse(wire))
             .catch(() => null);
+          const storageRequest = client.callTool('project_storage_usage', {})
+            .then((wire) => JSON.parse(wire))
+            .catch(() => null);
           const pageRequest = client.callTool('goal_list_page', {
             offset,
             limit: GOAL_PAGE_SIZE,
           }).then((wire) => JSON.parse(wire));
-          const [health, activity, page] = await Promise.all([
+          const [health, activity, storage, page] = await Promise.all([
             healthRequest,
             activityRequest,
+            storageRequest,
             pageRequest,
           ]);
-          return { health, activity, page };
+          return { health, activity, storage, page };
         });
-        const { page, health, activity } = result;
+        const { page, health, activity, storage } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
-        panel.webview.postMessage({ type: 'goals', page, health, activity });
+        panel.webview.postMessage({ type: 'goals', page, health, activity, storage });
       } else if (message.type === 'loadReport' && goalIds.has(message.goalId)) {
         const factOffset = Number.isSafeInteger(message.factOffset) && message.factOffset >= 0
           ? message.factOffset : 0;
@@ -298,6 +302,10 @@ function dashboardHtml(webview) {
     <h2 id="activityHeading">Retained activity</h2>
     <p id="activity" role="status">Loading authorized activity totals…</p>
   </section>
+  <section aria-labelledby="storageHeading">
+    <h2 id="storageHeading">Storage usage</h2>
+    <p id="storage" role="status">Loading authorized storage totals…</p>
+  </section>
   <div><button id="refresh">Refresh goals</button> <button id="previousGoals">Previous goals</button> <button id="nextGoals">Next goals</button></div>
   <p id="goalPage"></p><div id="goals"></div>
   <h2 id="selected"></h2>
@@ -316,6 +324,13 @@ function dashboardHtml(webview) {
     const error = document.getElementById('error');
     const health = document.getElementById('health');
     const activitySummary = document.getElementById('activity');
+    const storageSummary = document.getElementById('storage');
+    function formatBytes(value) {
+      if (value === null) return 'unavailable';
+      if (value < 1024) return value + ' B';
+      if (value < 1048576) return (value / 1024).toFixed(1) + ' KiB';
+      return (value / 1048576).toFixed(1) + ' MiB';
+    }
     function clearDashboard() {
       selectedGoal = null;
       factOffset = 0;
@@ -325,6 +340,7 @@ function dashboardHtml(webview) {
       report.textContent = '';
       health.textContent = 'Project health: unknown. Refresh to retry the health read.';
       activitySummary.textContent = 'Retained activity: unknown. Refresh to retry the activity read.';
+      storageSummary.textContent = 'Storage usage: unknown. Refresh to retry the storage read.';
       document.getElementById('selected').textContent = '';
       document.getElementById('goalPage').textContent = '';
       document.getElementById('factPage').textContent = '';
@@ -344,6 +360,7 @@ function dashboardHtml(webview) {
       document.getElementById('goalPage').textContent = 'Loading a fresh authorized goal page…';
       health.textContent = 'Loading an authorized health snapshot…';
       activitySummary.textContent = 'Loading authorized activity totals…';
+      storageSummary.textContent = 'Loading authorized storage totals…';
       api.postMessage({ type: 'loadGoals', offset });
       error.textContent = '';
     }
@@ -419,6 +436,40 @@ function dashboardHtml(webview) {
             + '; SDE candidates pending ' + activitySnapshot.pending_sde_count
             + ', approved ' + activitySnapshot.approved_sde_count
             + ', rejected ' + activitySnapshot.rejected_sde_count + '.';
+        }
+        const storageSnapshot = message.storage;
+        const storageFields = [
+          'logical_record_bytes', 'event_payload_bytes_retained', 'fact_count',
+          'fact_count_limit', 'fact_record_bytes', 'fact_record_bytes_limit',
+        ];
+        const validOptionalBytes = (value) => value === null
+          || (Number.isSafeInteger(value) && value >= 0);
+        const storageValid = storageSnapshot
+          && storageSnapshot.project_id === page.project_id
+          && storageFields.every((field) => Number.isSafeInteger(storageSnapshot[field])
+            && storageSnapshot[field] >= 0)
+          && storageSnapshot.fact_count_limit > 0
+          && storageSnapshot.fact_record_bytes_limit > 0
+          && validOptionalBytes(storageSnapshot.global_database_bytes)
+          && validOptionalBytes(storageSnapshot.global_wal_bytes);
+        if (!storageSnapshot) {
+          storageSummary.textContent = 'Storage usage: unknown. Storage read unavailable.';
+        } else if (storageSnapshot.project_id !== page.project_id) {
+          storageSummary.textContent = 'Storage usage: unknown. Project mismatch.';
+        } else if (!storageValid) {
+          storageSummary.textContent = 'Storage usage: unknown. Invalid storage snapshot.';
+        } else {
+          storageSummary.textContent = 'Project logical records '
+            + formatBytes(storageSnapshot.logical_record_bytes)
+            + '; retained event payload '
+            + formatBytes(storageSnapshot.event_payload_bytes_retained)
+            + '; facts ' + storageSnapshot.fact_count + '/'
+            + storageSnapshot.fact_count_limit + ' ('
+            + formatBytes(storageSnapshot.fact_record_bytes) + '/'
+            + formatBytes(storageSnapshot.fact_record_bytes_limit) + '). Shared SQLite files: database '
+            + formatBytes(storageSnapshot.global_database_bytes) + ', WAL '
+            + formatBytes(storageSnapshot.global_wal_bytes)
+            + '. Staging and token usage are not reported here.';
         }
         goalTotal = page.total || 0;
         goalOffset = page.offset || 0;

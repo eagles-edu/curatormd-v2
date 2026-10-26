@@ -58,6 +58,14 @@ class FakeMcpProcess extends EventEmitter {
               approved_sde_count: 0,
               rejected_sde_count: 0,
             }) }] };
+          } else if (request.params.name === 'project_storage_usage') {
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              project_id: 'alpha', logical_record_bytes: 4096,
+              event_payload_bytes_retained: 256, fact_count: 2,
+              fact_count_limit: 10000, fact_record_bytes: 512,
+              fact_record_bytes_limit: 16777216,
+              global_database_bytes: 8192, global_wal_bytes: 1024,
+            }) }] };
           } else if (request.params.name === 'goal_list_page') {
             result = { content: [{ type: 'text', text: JSON.stringify({
               project_id: 'alpha', total: 1, offset: 0, limit: 20,
@@ -167,6 +175,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   assert.equal(goals.page.goals[0].goal_id, 'goal-1');
   assert.equal(goals.health.status, 'healthy');
   assert.equal(goals.activity.event_receipt_count, 3);
+  assert.equal(goals.storage.logical_record_bytes, 4096);
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);
@@ -229,9 +238,21 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     received_event_count: 1, failed_event_count: 0, quarantined_event_count: 0,
     goal_count: 1, fact_count: 2, pending_sde_count: 1,
     approved_sde_count: 0, rejected_sde_count: 0,
+  },
+  storage: {
+    project_id: 'alpha', logical_record_bytes: 4096,
+    event_payload_bytes_retained: 256, fact_count: 2,
+    fact_count_limit: 10000, fact_record_bytes: 512,
+    fact_record_bytes_limit: 16777216,
+    global_database_bytes: 8192, global_wal_bytes: 1024,
   } } });
   assert.match(elements.get('health').textContent, /Project health: healthy\. Open gates: none reported\./);
   assert.match(elements.get('activity').textContent, /Retained receipts: 3 \(processed 2, received 1, failed 0, quarantined 0\); goals 1; facts 2; SDE candidates pending 1, approved 0, rejected 0\./);
+  assert.match(elements.get('storage').textContent, /Project logical records 4\.0 KiB; retained event payload 256 B; facts 2\/10000 \(512 B\/16\.0 MiB\)\. Shared SQLite files: database 8\.0 KiB, WAL 1\.0 KiB\. Staging and token usage are not reported here\./);
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
+  }, storage: { project_id: 'other' } } });
+  assert.match(elements.get('storage').textContent, /unknown\. Project mismatch/);
   receiveWindowMessage({ data: { type: 'goals', page: {
     total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
   }, health: { project_id: 'alpha', status: 'degraded', gate_codes: ['staging_budget_warning'] } } });
@@ -273,6 +294,7 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   assert.equal(elements.get('error').textContent, 'Curator read failed.');
   assert.equal(elements.get('nextFacts').disabled, true);
   assert.match(elements.get('health').textContent, /Project health: unknown/);
+  assert.match(elements.get('storage').textContent, /Storage usage: unknown/);
 });
 
 test('dashboard still reads goals when the health probe is unavailable', async () => {
@@ -305,7 +327,8 @@ test('dashboard still reads goals when the health probe is unavailable', async (
   };
 
   await showDashboard(() => new FakeMcpProcess(
-    'a'.repeat(64), false, ['project_health', 'project_activity_status'],
+    'a'.repeat(64), false,
+    ['project_health', 'project_activity_status', 'project_storage_usage'],
   ));
   await receiveMessage({ type: 'loadGoals', offset: 0 });
 
@@ -313,4 +336,5 @@ test('dashboard still reads goals when the health probe is unavailable', async (
   assert.equal(goals.page.goals[0].goal_id, 'goal-1');
   assert.equal(goals.health, null);
   assert.equal(goals.activity, null);
+  assert.equal(goals.storage, null);
 });

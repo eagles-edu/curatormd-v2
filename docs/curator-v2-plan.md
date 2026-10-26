@@ -2424,7 +2424,17 @@ consumer plugin, Hermes integration, or production deployment.
       Event-ingress regressions distinguish unsupported proof from an operational
       resolver exception and prove neither failure accepts verification facts.
       This is a snapshot function, not deployed scrape infrastructure or
-      alerting. Host scrape endpoint, dashboards, alert rules/delivery, and
+      alerting. Local editor follow-up (2026-10-27): the CuratorMD V2 VS Code
+      dashboard now also reads `project_storage_usage` and displays project
+      logical record bytes, retained event-payload bytes, fact count/byte
+      capacity, and shared SQLite database/WAL file sizes. It labels physical
+      database sizes as shared and explicitly says staging and token use are
+      absent from this read. One focused extension suite verifies content-free
+      rendering, project binding, and graceful storage-read failure. This is
+      local operator visibility only; it does not measure staging through the
+      dashboard, complete token usage, or deploy scrape/alert infrastructure.
+      No checklist marker changed.
+      Host scrape endpoint, dashboards, alert rules/delivery, and
       operator budgets remain open. Proposed owner-gated deployment sequence:
       choose an authenticated scrape path and service identity, define its
       network/storage boundary and retention, and publish only fixed bounded
@@ -2873,9 +2883,11 @@ consumer plugin, Hermes integration, or production deployment.
       This is current local-alpha package and consumer-contract evidence, not
       production identity, general live-gateway delivery, or release approval.
 - [x] Ship and install a Curator V2-owned VS Code status-bar extension labeled
-      `CuratorMD V2`; its tooltip and click action state that health, capture,
-      persistence, and identity are not checked. The current installed version
-      is `0.3.0`, and its extension source hash matches this repository. A
+      `CuratorMD V2`. Its local dashboard reads project health, retained
+      activity, storage usage, and paged goals/reports. It does not prove capture
+      completeness, canonical-write reconciliation, or human identity. The
+      current installed package is `0.4.0`, and its extension source hash
+      matches this repository. A
       previously captured screenshot visibly shows `CuratorMD V2` in the bottom
       status bar. This is a local editor label, not runtime or readiness
       evidence.
@@ -8715,6 +8727,24 @@ substitute for evidence at a later integration boundary.
       source is still needed for host health in this UI; do not synthesize it
       from the profile label. The profile-bound goal/activity reads themselves
       succeeded.
+      Storage-panel follow-up (2026-10-27): the extension also requests the
+      project-authorized `project_storage_usage` result on goal refresh and
+      displays project logical bytes, retained event-payload bytes, fact
+      capacity, and shared SQLite file sizes. It rejects cross-project or
+      malformed totals and keeps goal browsing available when this optional
+      read fails. VSIX 0.4.0 is installed; its source hash
+      `200a0ea3f48a46af9577bc12582f323b1748ae182738c1dceb477b01ea1989f5`
+      matches the installed extension. The previous 0.3.0 install is archived
+      with SHA-256 `eb18951749ba5ea36eee6301d490bcdc016d3c1cb572d6f8db74e305296f8f26`;
+      VS Code has not been reloaded, and real UI acceptance, staging visibility,
+      token usage, deployed monitoring, and alerts remain open. No dashboard or
+      delivery checklist marker changed. A read through the installed Vhost
+      profile's actual stdio launcher returned the expected project-bound
+      storage result: 27,614 logical bytes, 12 facts, zero retained event
+      payload bytes, a 462,848-byte shared database, and a 53,592-byte shared
+      WAL at observation time. This confirms the new tool path and bounded
+      summary shape, not a rendered VS Code session or per-project physical
+      database attribution.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
