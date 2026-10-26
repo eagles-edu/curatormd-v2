@@ -8669,7 +8669,14 @@ substitute for evidence at a later integration boundary.
       trust-root versions, evidence expiry, or revocation. No real VS Code
       interaction or
       grant-revocation transition has been observed, so the dashboard item stays
-      open.
+      open. Denied-read follow-up (2026-10-27): any Curator read error now
+      clears the rendered goals, facts, selected-goal label, page counts, and
+      pagination controls before showing the generic error. A focused webview
+      script regression loads a goal/report, injects a denied read, and verifies
+      the prior data is gone; all five extension tests and `node --check` pass.
+      This protects the local view after a failed reauthorization, but does not
+      prove a real VS Code interaction, grant-revocation transition, or external
+      trust-version handling. The dashboard checklist item remains open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

@@ -8593,3 +8593,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** `python3 tools/count_curator_v2_delivery.py` reports 154/178 complete; the plan's delivery rows were not changed. `git diff --check` passes.
 - **Open gate:** The full V2 plan remains active with 24 delivery rows open; this documentation correction closes no checklist item.
 - **Outcome:** Preserve the correct historical config record while making the present count and policy unambiguous.
+
+## 2026-10-27 — Clear dashboard data after a denied read
+
+- **Intent:** Prevent a project dashboard from retaining previously rendered goal and fact data after a fresh Curator read fails authorization or otherwise errors.
+- **Changed fact:** The VS Code webview now clears goal buttons, report text, selection, page labels, and pagination state before showing its generic read error.
+- **Verification:** The focused Node suite passes all five tests, including an executed webview-script regression that loads a goal/report, injects a failed read, and verifies the prior content is removed. `node --check integrations/vscode-status/extension.js` and `git diff --check` pass.
+- **Open gate:** Real VS Code interaction, grant revocation between pages, and external trust-version changes remain unverified; the dashboard checklist row stays open.
+- **Outcome:** Close the local stale-display defect without claiming the full dashboard acceptance gate.

@@ -294,6 +294,21 @@ function dashboardHtml(webview) {
     const goals = document.getElementById('goals');
     const report = document.getElementById('report');
     const error = document.getElementById('error');
+    function clearDashboard() {
+      selectedGoal = null;
+      factOffset = 0;
+      factTotal = 0;
+      reportRevision = null;
+      goals.replaceChildren();
+      report.textContent = '';
+      document.getElementById('selected').textContent = '';
+      document.getElementById('goalPage').textContent = '';
+      document.getElementById('factPage').textContent = '';
+      document.getElementById('previousGoals').disabled = true;
+      document.getElementById('nextGoals').disabled = true;
+      document.getElementById('previousFacts').disabled = true;
+      document.getElementById('nextFacts').disabled = true;
+    }
     function requestGoals(offset) {
       goalOffset = offset;
       selectedGoal = null;
@@ -321,7 +336,11 @@ function dashboardHtml(webview) {
     document.getElementById('nextFacts').addEventListener('click', () => requestReport(factOffset + ${REPORT_PAGE_SIZE}));
     window.addEventListener('message', (event) => {
       const message = event.data;
-      if (message.type === 'error') { error.textContent = message.message; return; }
+      if (message.type === 'error') {
+        clearDashboard();
+        error.textContent = message.message;
+        return;
+      }
       error.textContent = '';
       if (message.type === 'reportStale' && message.goalId === selectedGoal) {
         report.textContent = '';

@@ -5,6 +5,7 @@ const { EventEmitter } = require('node:events');
 const Module = require('node:module');
 const { PassThrough, Writable } = require('node:stream');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const vscodeMock = {};
 const originalLoad = Module._load;
@@ -141,4 +142,69 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 16 });
   assert.ok(messages.some((message) => message.type === 'reportStale'));
   disposePanel();
+});
+
+test('dashboard clears previously rendered data when a fresh read is denied', () => {
+  class Element {
+    constructor() {
+      this.textContent = '';
+      this.disabled = false;
+      this.children = [];
+      this.listeners = {};
+    }
+
+    addEventListener(type, listener) { this.listeners[type] = listener; }
+    appendChild(child) { this.children.push(child); }
+    replaceChildren(...children) { this.children = children; }
+  }
+
+  const elements = new Map();
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, new Element());
+      return elements.get(id);
+    },
+    createElement() { return new Element(); },
+  };
+  let receiveWindowMessage;
+  const window = {
+    addEventListener(type, listener) {
+      if (type === 'message') receiveWindowMessage = listener;
+    },
+  };
+  const html = dashboardHtml({ cspSource: 'vscode-webview:' });
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  vm.runInNewContext(script, {
+    document,
+    window,
+    acquireVsCodeApi: () => ({ postMessage() {} }),
+  });
+
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    total: 1,
+    offset: 0,
+    goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Private goal' }],
+    next_offset: null,
+  } } });
+  elements.get('goals').children[0].listeners.click();
+  receiveWindowMessage({ data: {
+    type: 'report',
+    goalId: 'goal-1',
+    factOffset: 0,
+    factTotal: 1,
+    reportRevision: 'a'.repeat(64),
+    report: 'Private facts',
+  } });
+  assert.equal(elements.get('report').textContent, 'Private facts');
+  assert.equal(elements.get('goals').children.length, 1);
+
+  receiveWindowMessage({ data: { type: 'error', message: 'Curator read failed.' } });
+
+  assert.equal(elements.get('report').textContent, '');
+  assert.equal(elements.get('goals').children.length, 0);
+  assert.equal(elements.get('selected').textContent, '');
+  assert.equal(elements.get('goalPage').textContent, '');
+  assert.equal(elements.get('factPage').textContent, '');
+  assert.equal(elements.get('error').textContent, 'Curator read failed.');
+  assert.equal(elements.get('nextFacts').disabled, true);
 });
