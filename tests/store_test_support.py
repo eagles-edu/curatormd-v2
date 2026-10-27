@@ -4,8 +4,24 @@ from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
 from importlib import import_module
+from pathlib import Path
+import tempfile
 from typing import Any, Generator
 from unittest.mock import DEFAULT, patch
+
+from curatormd_v2 import CuratorStore
+
+
+@contextmanager
+def temporary_store_database() -> Generator[tuple[Path, Path], None, None]:
+    """Yield a temporary root and a closed, initialized Curator SQLite file."""
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        source = root / "source.sqlite3"
+        store = CuratorStore(source)
+        store.close()
+        yield root, source
 
 
 @contextmanager

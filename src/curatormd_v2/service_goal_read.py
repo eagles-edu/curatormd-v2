@@ -13,9 +13,11 @@ from .models import (
     FactCompactionProposal,
     GoalBulletProjection,
     GoalCard,
+    GoalBulletCategory,
     GoalChildrenPageRequest,
     GoalListPage,
     GoalSnapshot,
+    Fact,
     GoalStatus,
     PurgeStatus,
     SDEStatus,
@@ -25,10 +27,15 @@ from .reporting import (
     MAX_GOAL_REPORT_RECEIPTS,
     MAX_GOAL_REPORT_SDE_CANDIDATES,
     GoalReportData,
+    GoalFactEvidence,
+    GoalFactEvidenceReference,
+    GoalReportContext,
     GoalReportPage,
     GoalReportSummary,
     goal_bullet_projection,
+    goal_report_revision,
     render_goal_report,
+    validate_goal_report_page,
 )
 from .store import FactCompactionApprovalRequest
 
@@ -158,17 +165,16 @@ class _GoalReadMixin(_GoalLifecycleMixin):
             purge_status_counts=related.purge_status_counts,
         )
 
-    def goal_report(
-        self,
-        goal_id: str,
-        page: GoalReportPage | None = None,
-    ) -> str:
-        """Render one bounded read without holding a write lock during evidence checks."""
-        selected_page = page or GoalReportPage()
+    def _goal_report_data(
+        self, goal_id: str, page: GoalReportPage
+    ) -> tuple[GoalReportData, GoalReportContext, GoalReportSummary]:
+        """Build one report revision from a consistent ledger snapshot."""
+
+        validate_goal_report_page(page)
         with self.store.read_snapshot():
-            local = self._goal_report_snapshot(goal_id, selected_page)
+            local = self._goal_report_snapshot(goal_id, page)
             related = self._goal_report_relations(
-                goal_id, local.snapshot.goal, selected_page
+                goal_id, local.snapshot.goal, page
             )
             summary = self._goal_report_summary(goal_id, local, related)
             intake = self.store.goal_report_context(goal_id, self.project_id)
@@ -176,26 +182,90 @@ class _GoalReadMixin(_GoalLifecycleMixin):
         snapshot = replace(
             local.snapshot,
             criteria=tuple(
-                self._criterion_progress(local.snapshot.goal, criterion, local.snapshot.facts)
+                self._criterion_progress(
+                    local.snapshot.goal, criterion, local.snapshot.facts
+                )
                 for criterion in local.snapshot.goal.success_criteria
             ),
         )
-        local = replace(
-            local,
-            snapshot=snapshot,
-            projection=goal_bullet_projection(snapshot),
-        )
-        return render_goal_report(
+        projection = goal_bullet_projection(snapshot)
+        return (
             GoalReportData(
-                snapshot=local.snapshot,
-                projection=local.projection,
+                snapshot=snapshot,
+                projection=projection,
                 children=related.children,
                 dependencies=related.dependencies,
                 receipts=related.receipts,
             ),
+            intake,
+            summary,
+        )
+
+    def goal_report(
+        self,
+        goal_id: str,
+        page: GoalReportPage | None = None,
+    ) -> str:
+        """Render one bounded read without holding a write lock during evidence checks."""
+        selected_page = page or GoalReportPage()
+        data, intake, summary = self._goal_report_data(goal_id, selected_page)
+        return render_goal_report(
+            data,
             intake=intake,
             summary=summary,
             page=selected_page,
+        )
+
+    def goal_fact_evidence(
+        self, goal_id: str, fact_id: str, page: GoalReportPage | None = None
+    ) -> GoalFactEvidence:
+        """Return exact evidence pointers for one fact on the displayed page."""
+
+        selected_page = page or GoalReportPage()
+        data, intake, summary = self._goal_report_data(goal_id, selected_page)
+        fact: Fact | None = next(
+            (item for item in data.snapshot.facts if item.fact_id == fact_id), None
+        )
+        if fact is None:
+            raise ValueError("fact is not part of this goal report")
+        page_facts = data.snapshot.facts[
+            selected_page.fact_offset : selected_page.fact_offset
+            + selected_page.fact_limit
+        ]
+        if fact not in page_facts:
+            raise ValueError("fact is not on the selected report page")
+        categories = {
+            bullet.fact_id: bullet.category
+            for bullet in data.projection.bullets
+            if bullet.fact_id is not None
+        }
+        return GoalFactEvidence(
+            project_id=self.project_id,
+            goal_id=goal_id,
+            fact_id=fact.fact_id,
+            fact_kind=fact.kind,
+            criterion_id=fact.criterion_id,
+            verification_status=categories.get(
+                fact.fact_id, GoalBulletCategory.UNVERIFIED
+            ),
+            report_revision=goal_report_revision(
+                data, intake=intake, summary=summary
+            ),
+            evidence=tuple(
+                GoalFactEvidenceReference(
+                    evidence_kind=evidence.evidence_kind,
+                    locator=evidence.locator,
+                    sha256=evidence.sha256,
+                    outcome=evidence.outcome,
+                    occurrence_id=evidence.occurrence_id,
+                    attestation=(
+                        fact.verification_attestations[index]
+                        if index < len(fact.verification_attestations)
+                        else None
+                    ),
+                )
+                for index, evidence in enumerate(fact.evidence)
+            ),
         )
 
     def fact_compaction_propose(

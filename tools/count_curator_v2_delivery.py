@@ -8,12 +8,14 @@ from pathlib import Path
 
 
 _SECTION = re.compile(r"^### (\d+)\.")
+_DEFINITION_OF_DONE = re.compile(r"^### Definition of done$")
 _CHECKBOX = re.compile(r"^- \[([ xX])\] ")
-_DELIVERY_SECTIONS = frozenset((*range(11), 12))
+_DEFINITION_SECTION = 13
+_DELIVERY_SECTIONS = frozenset((*range(11), 12, _DEFINITION_SECTION))
 
 
 def count_delivery_rows(plan: Path) -> tuple[int, int]:
-    """Return checked and total top-level rows in delivery sections 0–10 and 12."""
+    """Count top-level rows in sections 0–10, 12, and Definition of done."""
 
     section: int | None = None
     in_fence = False
@@ -25,6 +27,10 @@ def count_delivery_rows(plan: Path) -> tuple[int, int]:
             in_fence = not in_fence
             continue
         if in_fence:
+            continue
+
+        if _DEFINITION_OF_DONE.match(line):
+            section = _DEFINITION_SECTION
             continue
 
         heading = _SECTION.match(line)
@@ -46,7 +52,7 @@ def main() -> None:
     plan = Path(__file__).resolve().parents[1] / "docs" / "curator-v2-plan.md"
     checked, total = count_delivery_rows(plan)
     print(
-        f"Curator V2 delivery checklist (sections 0–10 and 12): "
+        f"Curator V2 delivery checklist (sections 0–10, 12, and Definition of done): "
         f"{checked}/{total} complete; {total - checked} open"
     )
 

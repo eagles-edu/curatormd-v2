@@ -6,13 +6,11 @@ from dataclasses import dataclass, replace
 import hashlib
 import os
 import secrets
-import sqlite3
 import stat
 from typing import BinaryIO, Callable
 
 from .models import ArtifactRef, new_id
 from .project_config import ProjectConfig, ProjectConfigError
-from .staging_models import StagingUsage
 from .store import ConflictError
 
 
@@ -26,7 +24,6 @@ class StagingArtifactWriteRequest:
     artifact_id: str
     source: BinaryIO
     existing_goal_bytes: int
-    project_usage: StagingUsage | None
     existing_artifact: ArtifactRef | None
 
 
@@ -57,12 +54,63 @@ class _StagingFileMetadata:
     occurrence_id: str
 
 
-def write_staged_artifact(
-    config: ProjectConfig,
-    record_staged_time: Callable[[str, ArtifactRef], object],
+@dataclass(frozen=True, slots=True)
+class StagingWriteCallbacks:
+    """Persistence callbacks used after an artifact has been verified."""
+
+    record_staged_time: Callable[[str, ArtifactRef], object]
     bind_existing_occurrences: Callable[
         [str, tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]
-    ],
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class _ExistingRetryRequest:
+    """All inputs needed to verify and persist one exact staging retry."""
+
+    class_fd: int
+    project_id: str
+    request: StagingArtifactWriteRequest
+    limits: StagingWriteLimits
+    callbacks: StagingWriteCallbacks
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedPublishRequest:
+    """All inputs needed for no-clobber publication and receipt persistence."""
+
+    class_fd: int
+    project_id: str
+    staged: _StagedFile
+    max_artifact_bytes: int
+    callbacks: StagingWriteCallbacks
+
+
+@dataclass(frozen=True, slots=True)
+class _ExistingOccurrenceRequest:
+    """Bound artifact and filesystem context for an exact existing occurrence."""
+
+    project_id: str
+    temporary_name: str | None
+    class_fd: int
+    artifact: ArtifactRef
+    callbacks: StagingWriteCallbacks
+
+
+@dataclass(frozen=True, slots=True)
+class _RetryFileEvidence:
+    """Descriptor and path metadata captured around one retry comparison."""
+
+    before: os.stat_result
+    after: os.stat_result
+    path: os.stat_result
+    total_bytes: int
+    digest: str
+
+
+def write_staged_artifact(
+    config: ProjectConfig,
+    callbacks: StagingWriteCallbacks,
     request: StagingArtifactWriteRequest,
     limits: StagingWriteLimits,
 ) -> ArtifactRef:
@@ -85,12 +133,9 @@ def write_staged_artifact(
         )
         if request.existing_artifact is not None:
             return _verify_existing_retry(
-                class_fd,
-                config.project_id,
-                request,
-                limits,
-                record_staged_time,
-                bind_existing_occurrences,
+                _ExistingRetryRequest(
+                    class_fd, config.project_id, request, limits, callbacks
+                )
             )
         digest, device_id, inode_id = _write_temporary_file(
             class_fd, temporary_name, request, limits, no_follow
@@ -109,12 +154,13 @@ def write_staged_artifact(
             ),
         )
         return _publish_staged_file(
-            class_fd,
-            config.project_id,
-            staged,
-            record_staged_time,
-            bind_existing_occurrences,
-            limits.max_artifact_bytes,
+            _StagedPublishRequest(
+                class_fd,
+                config.project_id,
+                staged,
+                limits.max_artifact_bytes,
+                callbacks,
+            )
         )
     finally:
         _close_target_directories(class_fd, goal_fd, temporary_name)
@@ -205,80 +251,116 @@ def _check_chunk_limits(
 
 
 def _verify_existing_retry(
-    class_fd: int,
-    project_id: str,
-    request: StagingArtifactWriteRequest,
-    limits: StagingWriteLimits,
-    record_staged_time: Callable[[str, ArtifactRef], object],
-    bind_existing_occurrences: Callable[
-        [str, tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]
-    ],
+    retry: _ExistingRetryRequest,
 ) -> ArtifactRef:
     """Compare a retry to its inventoried file without consuming staging quota."""
 
+    request = retry.request
     expected = request.existing_artifact
     if expected is None:
         raise ValueError("an existing retry requires its inventoried artifact")
     descriptor = os.open(
         f"{request.artifact_id}.bin",
         os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
-        dir_fd=class_fd,
+        dir_fd=retry.class_fd,
     )
     try:
         before = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_size > limits.max_artifact_bytes
-            or (expected.device_id is not None and expected.device_id != before.st_dev)
-            or (expected.inode_id is not None and expected.inode_id != before.st_ino)
-        ):
+        if not _retry_descriptor_matches(expected, before, retry.limits):
             raise ConflictError("staged artifact changed before exact retry")
-        digest = hashlib.sha256()
-        total_bytes = 0
-        while True:
-            source_chunk = request.source.read(64 * 1024)
-            if source_chunk:
-                target_chunk = _read_exact(descriptor, len(source_chunk))
-            else:
-                target_chunk = os.read(descriptor, 1)
-            if source_chunk != target_chunk:
-                raise FileExistsError("staging artifact ID is already in use")
-            if not source_chunk:
-                break
-            total_bytes += len(source_chunk)
-            if total_bytes > limits.max_artifact_bytes:
-                raise ConflictError("artifact exceeds the per-file byte ceiling")
-            digest.update(source_chunk)
+        digest, total_bytes = _compare_retry_content(
+            descriptor, request.source, retry.limits.max_artifact_bytes
+        )
         after = os.fstat(descriptor)
     finally:
         os.close(descriptor)
 
-    try:
-        path_metadata = os.stat(
-            f"{request.artifact_id}.bin",
-            dir_fd=class_fd,
-            follow_symlinks=False,
-        )
-    except OSError:
-        raise ConflictError("staged artifact changed during exact retry") from None
-    before_identity = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
-    after_identity = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-    if (
-        before_identity != after_identity
-        or (path_metadata.st_dev, path_metadata.st_ino) != (after.st_dev, after.st_ino)
-        or total_bytes != after.st_size
-        or digest.hexdigest() != expected.sha256
-    ):
+    path = _retry_path_metadata(retry.class_fd, request.artifact_id)
+    evidence = _RetryFileEvidence(before, after, path, total_bytes, digest)
+    if not _retry_evidence_matches(expected, evidence):
         raise ConflictError("staged artifact changed during exact retry")
     current = replace(expected, device_id=after.st_dev, inode_id=after.st_ino)
     return _record_existing_occurrence(
-        project_id,
-        None,
-        class_fd,
-        current,
-        bind_existing_occurrences,
-        record_staged_time,
+        _ExistingOccurrenceRequest(
+            retry.project_id, None, retry.class_fd, current, retry.callbacks
+        )
     )
+
+
+def _retry_descriptor_matches(
+    expected: ArtifactRef, metadata: os.stat_result, limits: StagingWriteLimits
+) -> bool:
+    """Check type, size, and any previously bound inode before reading a retry."""
+
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and metadata.st_size <= limits.max_artifact_bytes
+        and (expected.device_id is None or expected.device_id == metadata.st_dev)
+        and (expected.inode_id is None or expected.inode_id == metadata.st_ino)
+    )
+
+
+def _compare_retry_content(
+    descriptor: int, source: BinaryIO, max_artifact_bytes: int
+) -> tuple[str, int]:
+    """Compare bounded source chunks with the existing file and hash the source."""
+
+    digest = hashlib.sha256()
+    total_bytes = 0
+    while True:
+        source_chunk = source.read(64 * 1024)
+        target_chunk = (
+            _read_exact(descriptor, len(source_chunk))
+            if source_chunk
+            else os.read(descriptor, 1)
+        )
+        if source_chunk != target_chunk:
+            raise FileExistsError("staging artifact ID is already in use")
+        if not source_chunk:
+            return digest.hexdigest(), total_bytes
+        total_bytes += len(source_chunk)
+        if total_bytes > max_artifact_bytes:
+            raise ConflictError("artifact exceeds the per-file byte ceiling")
+        digest.update(source_chunk)
+
+
+def _retry_path_metadata(class_fd: int, artifact_id: str) -> os.stat_result:
+    """Read the no-follow path identity after verifying the open descriptor."""
+
+    try:
+        return os.stat(
+            f"{artifact_id}.bin", dir_fd=class_fd, follow_symlinks=False
+        )
+    except OSError:
+        raise ConflictError("staged artifact changed during exact retry") from None
+
+
+def _retry_evidence_matches(
+    expected: ArtifactRef, evidence: _RetryFileEvidence
+) -> bool:
+    """Require stable descriptor and path identity plus the inventoried digest."""
+
+    if not _same_stat_identity(evidence.before, evidence.after):
+        return False
+    if (evidence.path.st_dev, evidence.path.st_ino) != (
+        evidence.after.st_dev,
+        evidence.after.st_ino,
+    ):
+        return False
+    if evidence.total_bytes != evidence.after.st_size:
+        return False
+    return evidence.digest == expected.sha256
+
+
+def _same_stat_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    """Compare stable regular-file identity fields around a streamed read."""
+
+    return (
+        left.st_dev,
+        left.st_ino,
+        left.st_size,
+        left.st_mtime_ns,
+    ) == (right.st_dev, right.st_ino, right.st_size, right.st_mtime_ns)
 
 
 def _read_exact(descriptor: int, byte_count: int) -> bytes:
@@ -316,71 +398,68 @@ def _staged_file(
 
 
 def _publish_staged_file(
-    class_fd: int,
-    project_id: str,
-    staged: _StagedFile,
-    record_staged_time: Callable[[str, ArtifactRef], object],
-    bind_existing_occurrences: Callable[
-        [str, tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]
-    ],
-    max_artifact_bytes: int,
+    request: _StagedPublishRequest,
 ) -> ArtifactRef:
     """Publish no-clobber content and roll it back if receipt persistence fails."""
 
+    staged = request.staged
     try:
         os.link(
             staged.temporary_name,
             staged.final_name,
-            src_dir_fd=class_fd,
-            dst_dir_fd=class_fd,
+            src_dir_fd=request.class_fd,
+            dst_dir_fd=request.class_fd,
             follow_symlinks=False,
         )
     except FileExistsError:
         existing_artifact = _matching_existing_artifact(
-            class_fd, staged, max_artifact_bytes
+            request.class_fd, staged, request.max_artifact_bytes
         )
         if existing_artifact is None:
             raise FileExistsError("staging artifact ID is already in use") from None
         return _record_existing_occurrence(
-            project_id,
-            staged.temporary_name,
-            class_fd,
-            existing_artifact,
-            bind_existing_occurrences,
-            record_staged_time,
+            _ExistingOccurrenceRequest(
+                request.project_id,
+                staged.temporary_name,
+                request.class_fd,
+                existing_artifact,
+                request.callbacks,
+            )
         )
 
-    os.unlink(staged.temporary_name, dir_fd=class_fd)
-    os.fsync(class_fd)
+    os.unlink(staged.temporary_name, dir_fd=request.class_fd)
+    os.fsync(request.class_fd)
     try:
-        record_staged_time(project_id, staged.artifact)
-    except (sqlite3.Error, ConflictError, ValueError):
-        os.unlink(staged.final_name, dir_fd=class_fd)
-        os.fsync(class_fd)
+        request.callbacks.record_staged_time(request.project_id, staged.artifact)
+    # Roll back pre-receipt publication even when the callback is interrupted.
+    except BaseException as receipt_error:  # pylint: disable=broad-exception-caught
+        try:
+            os.unlink(staged.final_name, dir_fd=request.class_fd)
+            os.fsync(request.class_fd)
+        except BaseException as cleanup_error:  # pylint: disable=broad-exception-caught
+            receipt_error.add_note(
+                "staging rollback after receipt failure also failed "
+                f"({type(cleanup_error).__name__})"
+            )
         raise
     return staged.artifact
 
 
 def _record_existing_occurrence(
-    project_id: str,
-    temporary_name: str | None,
-    class_fd: int,
-    existing_artifact: ArtifactRef,
-    bind_existing_occurrences: Callable[
-        [str, tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]
-    ],
-    record_staged_time: Callable[[str, ArtifactRef], object],
+    request: _ExistingOccurrenceRequest,
 ) -> ArtifactRef:
     """Preserve the original occurrence and age for an exact retry."""
 
-    bound_artifacts = bind_existing_occurrences(project_id, (existing_artifact,))
+    bound_artifacts = request.callbacks.bind_existing_occurrences(
+        request.project_id, (request.artifact,)
+    )
     if len(bound_artifacts) != 1:
         raise ValueError("staging occurrence binding returned an invalid result")
     existing_artifact = bound_artifacts[0]
-    if temporary_name is not None:
-        os.unlink(temporary_name, dir_fd=class_fd)
-        os.fsync(class_fd)
-    record_staged_time(project_id, existing_artifact)
+    if request.temporary_name is not None:
+        os.unlink(request.temporary_name, dir_fd=request.class_fd)
+        os.fsync(request.class_fd)
+    request.callbacks.record_staged_time(request.project_id, existing_artifact)
     return existing_artifact
 
 

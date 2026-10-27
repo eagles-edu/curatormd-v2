@@ -8729,3 +8729,397 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Observed the rendered 0.7.0 dashboard at 14:05 local time. The health, activity, and storage panels were populated from the local Curator V2 MCP reads. No decision, purge, or application-source change occurred.
 - **Open gate:** This confirms the ordinary-window project read/render path only. Reviewer action, grant revocation, cleanup, token coverage, deployed scrape/alert delivery, and the broader pilot remain open; no checklist marker changed.
 - **Outcome:** Verify the local plugin's live dashboard read while preserving unknown dependency state and remaining release gates.
+
+## 2026-10-27 — Refresh the enabled Hermes project-usage plugin copy
+
+- **Intent:** Resolve the stale installed plugin implementation and determine the freshness and completeness of its current project report.
+- **Changed fact:** The `renew-ssl-coding` profile's enabled `project-usage` files now match Hermes Core source at SHA-256 `75ac7048626b3d274ed0d3b93fed2d2b9f91275d64394e1427bedcb7c1ad25f2`; the previous files were preserved in the profile backup directory. Its read-only report for `vhost-manager-alpha` contains six retained turns from 2026-10-20 through 2026-10-21: five reported and one with unknown usage, all from `codex_app_server`.
+- **Verification:** Compared installed/source file hashes and called the plugin's read-only report function against the profile ledger. It returned the retained interval, `coverage_complete=false`, `tokens_complete=false`, and the three declared exclusions. No ledger rows were written and no Hermes service was restarted.
+- **Open gate:** The source implementation is current, but its data is stale and incomplete. No new bound usage event was generated; missing call classes, token budgets, retention thresholds, and alerts remain open. No plan checkbox changed.
+- **Outcome:** Make the data age and known coverage gaps explicit without presenting stale aggregate totals as current project usage.
+
+## 2026-10-27 — Place the V2 status item after Git Graph and apply health colors
+
+- **Intent:** Make the V2-owned editor status item easy to find and show project health with the established V1 color mapping.
+- **Changed fact:** Extension 0.8.0 places the item on the left status-bar group at priority 0, after Git Graph's priority 1, and displays green/healthy, red/degraded, yellow/unknown, or gray before a health read. The V2 backend checkout has no consumer project config by design; the `renew_ssl` config matches the active `vhost-manager-alpha` registration and the `renew-ssl-coding` read grant.
+- **Verification:** Ten focused extension tests pass; the packaged extension is installed, activation was observed, and installed/source extension hashes match. A direct read-only launcher call from `renew_ssl` returned project health `unknown` with seven dependency observations missing. The backend checkout's missing `.curatormd-v2.toml` explains why its own dashboard read fails. No consumer config or grant changed.
+- **Open gate:** The 0.8.0 dashboard has not been rendered in the configured consumer workspace. Health remains unknown, and reviewer action, cleanup, complete token coverage, and deployment monitoring remain open. No checklist marker changed.
+- **Outcome:** Show project-bound health at the requested status-bar position while preserving the backend/consumer boundary and truthful unknown health.
+
+## 2026-10-27 — Explain missing consumer configuration in the V2 editor
+
+- **Intent:** Replace the generic dashboard read failure when a workspace is the Curator V2 backend repo rather than a configured consumer.
+- **Changed fact:** The dashboard now checks for `.curatormd-v2.toml` in an existing workspace before reading user settings or spawning the launcher. Missing config produces a direct message to open a configured consumer project. No consumer config or grant was added to the backend repo. Extension 0.8.1 was packaged and installed; the previous 0.8.0 install is archived at `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curatormd-v2-vscode-0.8.0-before-0.8.1-20261027/installed-0.8.0.tar.gz` (SHA-256 `3f58e399f5707bc1ec15c3c2247217fe447feb7e36a7a969e8ff7db0d404d3af`).
+- **Verification:** The missing-config regression confirms the launcher is not started and the exact configuration guidance is shown. All 11 focused extension tests pass; `node --check` and `git diff --check` pass. Installed/source `extension.js` hashes match at `0881fb12b0c7b1ccf7ceaef31045c5446e8cea203c00dbc758d66147c983a3c9`; VSIX SHA-256 is `dd3e0c892e739d602a1c70d77878d077a4d03ce4a745ce8a7718d3b1c5718b77`. The configured `renew_ssl` launcher returns successful, same-project results for `project_health`, `project_activity_status`, `project_storage_usage`, `goal_list_page` (18 goals), and `sde_review_queue_cards`; health is `unknown` with seven missing dependency observations. After reloading that VS Code window, its extension-host log records 0.8.1 activation. The dashboard rendered project health, and the yellow status item appeared immediately after Git Graph.
+- **Open gate:** Health remains `unknown` because seven dependency observations are missing. Real reviewer decisions, purge, complete token coverage, and deployment monitoring remain open. No checklist marker changed.
+- **Outcome:** Make the backend/consumer setup error actionable and verify the updated editor plugin in its configured consumer and backend workspaces without weakening registration or grant checks.
+
+## 2026-10-27 — Make V2 dashboard read failures actionable
+
+- **Intent:** Help the repository owner distinguish project-access failures from launcher and MCP transport failures without exposing backend diagnostics.
+- **Changed fact:** The V2 editor dashboard now maps denied reads, launcher start/exit failures, timeouts, MCP request errors, and malformed responses to fixed user guidance. Unknown errors remain generic; backend exception text and process output are never forwarded. The current status legend describes green healthy, red degraded, yellow unknown, and gray before first read without a V1 runtime dependency.
+- **Verification:** The focused editor suite passes 12/12 tests, including redaction of a private-path/traceback canary. `node --check` and `git diff --check` pass. Package 0.8.2 installed successfully; `code --list-extensions` reports 0.8.2, and installed/source `extension.js` hashes match (`f01c0abc1745cec0cac8fa6fbae07b8d9e4ee350fc8871e509b6ec393ff0cf76`). VSIX SHA-256 is `918c8526fa12509e714449234892f8101744a38191576890f1db911dd86d1573`. The prior 0.8.1 extension was archived with SHA-256 `2c24cccb5c68a1c2a6c8af7d06856313675ec7adc2bcb4edc068f74822132e6e`.
+- **Open gate:** Activation of 0.8.2 in the existing editor host and the revised denied-read message in a live dashboard have not been independently observed. The backend repository intentionally has no consumer `.curatormd-v2.toml`; opening the dashboard there must remain unavailable. No checklist marker changed.
+- **Outcome:** Improve failure guidance and package the local VS Code extension while preserving the backend/consumer boundary and not overstating editor-host activation.
+
+## 2026-10-27 — Show V2 goal and operational queue totals
+
+- **Intent:** Advance the local dashboard portion of the operational-visibility plan and keep an unconfigured backend workspace from showing a false yellow health result.
+- **Changed fact:** The project dashboard now summarizes all eight goal states and the project-matched event, review, purge, and expiry queues from health/activity snapshots. Missing, incomplete, or cross-project snapshots render as unknown. The status item stays gray until a health read is attempted; unknown health after a read remains yellow. The dashboard is read-only and does not send external alerts.
+- **Verification:** Thirteen focused extension tests pass, including exact queue/goal totals, mismatch/incomplete handling, and the no-config gray status. `node --check` and `git diff --check` pass. Package 0.8.3 installed successfully; its source hash matches this checkout (`a3ccf82a823f675e9a76f302f63c4b650c7bd4ed01cbfaea5ddc8f2b5978dc80`); VSIX SHA-256 is `96361a669edc667b90cf0b72d3fa82e93f3eee1094fe3f17e968b40acbd8d089`. A fresh read-only installed-launcher call returned same-project health/activity for `vhost-manager-alpha` and rendered 5 planned/13 active goals with zero event, review, purge, or expiry queue work; health remained `unknown`. The prior 0.8.2 install was archived with SHA-256 `2fb4e5c9595863de410ca88d1e19a44ee845236bc6a1422989f29c4eecd700b6`.
+- **Open gate:** Activation of 0.8.3 in the existing editor host, external alert delivery, and deployment monitoring remain unverified. No plan marker changed.
+- **Outcome:** Make local goal and queue state visible without representing the local dashboard as a deployed alerting system.
+
+## 2026-10-27 — Clarify V2 status colors
+
+- **Intent:** Make the V2 status legend distinguish “not checked” from an unknown health result and prevent confusion with deprecated V1 colors.
+- **Changed fact:** The V2 extension guide now defines gray as no health read attempted, yellow as an attempted read that is unavailable, mismatched, or unknown, green as healthy, and red as degraded. V2 has no purple state.
+- **Verification:** Compared the V2 `STATUS_COLORS` mapping and status update paths with the V1 palette and its Hermes-unhealthy branch. Documentation matches the V2 implementation. `pyright` reports 0 diagnostics; errors-only Pylint, Bandit, locked `uv audit`, and `git diff --check` pass. No unit tests ran because this was a documentation-only clarification.
+- **Open gate:** Runtime display still depends on the installed extension version loaded by the current VS Code window. No checklist marker changed.
+- **Outcome:** Preserve the V2 color contract without importing V1 state or meanings.
+
+## 2026-10-27 — Check the loaded V2 editor package
+
+- **Intent:** Determine whether the backend workspace's visible status item uses the latest V2 extension.
+- **Changed fact:** The installed extension is 0.8.3, while the two existing `curatormd-v2.0` extension-host logs show 0.8.0 and 0.8.1. A request to open a new VS Code window produced no observed 0.8.3 activation log.
+- **Verification:** Compared `code --list-extensions --show-versions` with the current extension-host activation/module-load entries for the backend workspace. The loaded package is older than the installed package.
+- **Open gate:** The current window has not been verified after reload with 0.8.3; its visible color is not evidence of the current implementation. No checklist marker changed.
+- **Outcome:** Identify stale VS Code activation as the reason the gray-state fix is not yet confirmed in the visible backend window.
+
+## 2026-10-27 — Align reviewer acceptance with approved local-alpha identity
+
+- **Intent:** Remove the definition-of-done conflict that rejected local UID review despite the owner's single-user alpha decision.
+- **Changed fact:** The SDE acceptance now recognizes the attended `eaglesvn` OS UID, current-process UID check, and exact `vhost-manager-alpha` grant against the owner-owned ledger for local alpha. A shared or production deployment still requires its authenticated subject/role path. The review and one-action cleanup checklist items remain unchecked until an authorized human decision and its receipts are independently verified.
+- **Verification:** `id` reports UID 1000 as `eaglesvn`; the alpha database is owned by `eaglesvn` with mode 0600 and schema 38. A read-only SQLite query confirms active `local-uid:1000` read, write, and review grants on `vhost-manager-alpha`; legacy profile read/write grants are revoked. The same read-only check finds no SDE candidates for the project. No ledger rows were changed.
+- **Open gate:** No candidate currently exists for the authorized human to decide, and no exact-inventory cleanup receipt was created or independently checked. No checklist marker changed.
+- **Outcome:** Make local-alpha acceptance match the approved single-user design while preserving human-review and cleanup evidence requirements.
+
+## 2026-10-27 — Add local operational attention summary
+
+- **Intent:** Make actionable local project warnings visible in the V2 editor without treating missing observations as zero or adding a deployed alerting claim.
+- **Changed fact:** The dashboard now summarizes degraded/unknown readiness, event intake/failure counts, review and cleanup queues, incomplete staging inventory, and the warning-only byte threshold. Failed-event text points to fixed project metric categories for evidence rejection vs adapter errors; the dashboard does not display event content or raw diagnostics.
+- **Verification:** The focused VS Code extension suite passes 14/14 tests, including project mismatch, unknown counters, pending queues, and staging warnings while writes remain allowed. `node --check` passes. Package 0.8.4 was built and installed; installed/source `extension.js` hashes match at `d97a0d4134a8e6012c81f8cfc3edbc1628d5bea2e904735948a5ae9a5fba9319`, and VSIX SHA-256 is `2b33577de7aa0b625e188a1afa271e7ddda08678b5157ce5da773a6d0d86b917`. The prior 0.8.3 install was archived with SHA-256 `7f7b23a8cbd013bbe8bd44565973ccb1e0bce7fa891b675a15c49b03c13b1874`. No backend suite was rerun because the change is isolated to the extension.
+- **Open gate:** Existing VS Code windows still load 0.8.0/0.8.1, so activation and rendered 0.8.4 alert states remain unverified. This is local snapshot alerting only. External alert delivery, deployment monitoring, complete producer coverage, and the full operational-dashboard checklist item remain open. No checklist marker changed.
+- **Outcome:** Improve and install local alpha operator visibility while preserving unknown states and separating it from deployed alert delivery.
+
+## 2026-10-27 — Show the installed version in the V2 status tooltip
+
+- **Intent:** Let the operator identify which V2 extension package a status-bar button is using.
+- **Changed fact:** Neutral and project-health tooltips include the packaged extension version. The dashboard also displays fixed project-bound event-failure categories when metrics reconcile with health receipt totals.
+- **Verification:** The focused VS Code extension suite passes 14/14 tests; `node --check` and `git diff --check` pass. Extension 0.8.6 is packaged and installed. Source and installed `extension.js` hashes match at `07fe63530d1373b14735a3171021a035660f3bfa5a1663dadebddd6118bc942e`; VSIX SHA-256 is `fbeff4c0c83eaa3191a2a7ceeeb80ff72b9dc3f7a81eb2ceed5e692e0a2e60fd`. The prior 0.8.5 installation is preserved at `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curatormd-v2-vscode-0.8.5-before-0.8.6-20261027/installed-0.8.5.tar.gz` (SHA-256 `25fc60815684d156c7f528524872d37610ceac97f0aa8a44d4677de785e9461f`).
+- **Open gate:** Existing VS Code host activation and rendered tooltip remain unverified; no checklist marker changed. No backend tests were rerun because this change is isolated to the extension.
+- **Outcome:** Install a version-identifiable local V2 status button without changing consumer repositories or V1.
+
+## 2026-10-27 — Confirm V2 extension activation in the consumer editor
+
+- **Intent:** Check whether the installed tooltip update is loaded by the current editor host.
+- **Changed fact:** The `renew_ssl` VS Code extension host now loads CuratorMD V2 extension 0.8.6; this supersedes the prior observation that the existing windows still loaded 0.8.0/0.8.1.
+- **Verification:** `/home/eaglesvn/.config/Code/logs/20261026T201215/window1/exthost/exthost.log` records `loadModule` for `/home/eaglesvn/.vscode/extensions/curatormd.curatormd-v2-status-0.8.6/extension.js` at 2026-10-27 15:17:28. The package version and installed/source hashes match the prior entry. This proves module activation, not rendered hover text.
+- **Open gate:** Current tooltip text has not been inspected in the editor, and activation in the unconfigured Curator backend workspace remains unverified. No plan marker changed.
+- **Outcome:** Replace stale activation status with current consumer-window evidence while keeping visual verification open.
+
+## 2026-10-27 — Confirm the V2 status tooltip version
+
+- **Intent:** Resolve whether the installed status-bar tooltip visibly identifies the active package.
+- **Changed fact:** The owner reports the tooltip displays `8.6` in the current editor, matching installed extension version 0.8.6.
+- **Verification:** User-observed tooltip text; extension-host logs independently record module activation from the 0.8.6 install, and focused extension tests assert that tooltip strings include the package version. No screenshot or automated UI capture was retained.
+- **Open gate:** Activation in the unconfigured Curator backend workspace remains unverified. No plan marker changed.
+- **Outcome:** Record the visible tooltip version without overstating the available UI evidence.
+
+## 2026-10-27 — Preserve a concurrent restore destination
+
+- **Intent:** Verify restore-to-new-path does not overwrite a file created after destination validation.
+- **Changed fact:** Added a regression that injects a concurrent restore target immediately before the atomic hard-link install.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_backup.py` passes all six backup/restore tests. The regression confirms the competing file's bytes survive, the source snapshot remains present, and the temporary restore file is removed. `git diff --check` passes.
+- **Open gate:** This is local filesystem evidence. The production-shaped storage/staging fault matrix, deployment recovery, and review of retry/stop policy remain open; no checklist marker changed.
+- **Outcome:** Extend local no-overwrite recovery coverage for database restore.
+
+## 2026-10-27 — Preserve unsupported-schema snapshots for isolated review
+
+- **Intent:** Verify restore behavior when the backup is structurally valid but its schema is newer than this Curator build supports.
+- **Changed fact:** Added a composed backup/restore regression proving the future schema is copied only to a new path, then rejected by the application without downgrading or mutating its `user_version`.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_backup.py` passes all seven backup/restore tests. The source, snapshot, and isolated restored copy retain the newer schema version. `git diff --check` passes.
+- **Open gate:** This confirms local preservation and fail-closed open behavior; production storage drills, owner-reviewed recovery, and backup/restore authorization remain open. No checklist marker changed.
+- **Outcome:** Keep unsupported recovery data intact for a compatible tool or operator review.
+
+## 2026-10-27 — Back up committed WAL state with a held reader
+
+- **Intent:** Verify online backup while an older read transaction prevents WAL truncation.
+- **Changed fact:** Added a real SQLite integration regression that holds a reader snapshot, commits a later fact into WAL, confirms checkpoint busy, then backs up both committed facts without changing what the held reader observes.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_backup.py` passes all eight backup/restore tests. `git diff --check` passes.
+- **Open gate:** This validates the local SQLite online-backup path under a held reader; deployment filesystem behavior, power loss, operational restore review, and production drills remain open. No checklist marker changed.
+- **Outcome:** Cover WAL-reader interference in local recovery evidence.
+
+## 2026-10-27 — Recheck the local Vhost maintenance timer
+
+- **Intent:** Refresh the live local-alpha maintenance status before relying on older timer evidence.
+- **Changed fact:** The six-hour `vhost-manager-alpha` timer is active and waiting; its latest run completed successfully with no expiry or purge targets.
+- **Verification:** `systemctl --user show` reports timer active/waiting, `Result=success`, last trigger 2026-10-27 12:00:09 +07, and next trigger 18:00:13 +07. The service reports exit status 0. Its bounded journal summary reports zero processed and zero pending expiry/purge targets. No deletion or service restart occurred.
+- **Open gate:** This is an idle local maintenance pass; it does not prove production router scheduling, external alert delivery, or a purge of an approved artifact. No checklist marker changed.
+- **Outcome:** Replace the stale “first six-hour run pending” observation with current local service evidence.
+
+## 2026-10-27 — Refresh the repository-wide quality inventory
+
+- **Intent:** Recheck the documented blocking quality chain and warning-level Pylint after the store decomposition.
+- **Changed fact:** `store.py` is 88 lines; the previous warning inventory describing it as 9,645 lines is stale. Full-tree Pylint currently reports 22 findings across seven modules and exits 28 at 9.99/10.
+- **Verification:** Strict Pyright, errors-only Pylint, Bandit, and `git diff --check` pass. Bandit emits `nosec` and test-comment notices but exits successfully. Full warning-level Pylint findings are staging-write complexity, MCP registration module size, cleanup exception catches, a contextmanager warning, test-helper docstrings, and duplicate test-helper code.
+- **Open gate:** Repository-wide warning-level cleanup remains open; no checklist marker changed. No source code or tests were changed in this verification step.
+- **Outcome:** Replace the outdated Pylint inventory with current results without claiming broad lint completion.
+
+## 2026-10-27 — Verify Hermes Core checks against the available base
+
+- **Intent:** Recheck the Hermes Core integration branch with its repository quality command.
+- **Changed fact:** The shallow checkout has no `main` or `origin/main` ref. Its current commit is `d2aac32b8`, with available parent `49c13f030cc7c4151d85c85de855246c81dc81a1`.
+- **Verification:** The default `scripts/check` invocation cannot resolve its implicit base. Re-running `.venv/bin/python scripts/check --base 49c13f030cc7c4151d85c85de855246c81dc81a1` passes all 12 checks, including code-health with zero blocking and advisory findings. The Hermes worktree remains clean.
+- **Open gate:** This verifies checkout quality against the current commit's parent; it does not prove active gateway delivery or a real app-server event. Slice G remains open.
+- **Outcome:** Refresh local Hermes Core check evidence without changing its source or runtime.
+
+## 2026-10-27 — Document staging and store fault-injection helpers
+
+- **Intent:** Remove missing-docstring findings from the current warning-level Pylint inventory without changing test behavior.
+- **Changed fact:** Added short docstrings to five commit/rollback connection-fault helper methods and two staging-writer fault helpers.
+- **Verification:** Focused warning-level Pylint rates `tests/test_store_resources.py` and `tests/test_project_plugin_staging.py` 10.00/10; `git diff --check` passes. No tests were rerun because executable behavior did not change.
+- **Open gate:** The full-tree Pylint inventory was not rerun; the remaining warnings and broad lint checklist item remain open.
+- **Outcome:** Clear seven targeted style findings while preserving the warning gate's incomplete status.
+
+## 2026-10-27 — Narrow SQLite cleanup exception handling
+
+- **Intent:** Remove overly broad cleanup catches without masking the original commit failure.
+- **Changed fact:** Transaction recovery catches `sqlite3.Error` for rollback and close failures, matching the SQLite adapter contract.
+- **Verification:** All five `test_store_resources.py` tests pass; focused Pylint on `store_operations_00.py` rates 10.00/10; `git diff --check` passes.
+- **Open gate:** The full-tree warning-level inventory was not rerun. Other warning findings remain and the broad lint checklist item stays open.
+- **Outcome:** Narrow rollback/close recovery to expected SQLite errors and retain fault-injection coverage.
+
+## 2026-10-27 — Split MCP artifact cleanup registrations
+
+- **Intent:** Bring the MCP registration module below its configured size limit without changing its public tool contract.
+- **Changed fact:** Moved six reviewed artifact cleanup handlers to `mcp_tool_cleanup_registration.py`; tool names, schemas, annotations, and API calls remain the same.
+- **Verification:** Focused Pyright and Pylint pass. The MCP server suite passes five tests and the hosted-MCP suite passes 12. Whole-tree Pylint falls from 22 to 12 findings (score 9.99/10); the registration module, broad SQLite cleanup catches, and seven helper-docstring findings are cleared. `git diff --check` passes.
+- **Open gate:** Twelve whole-tree Pylint findings remain: ten in staging-write design, one contextmanager warning, and one duplicate test fixture. The warning-level quality item remains open.
+- **Outcome:** Separate cleanup registration from general tool wiring while preserving behavior.
+
+## 2026-10-27 — Clear the remaining full-tree Pylint findings
+
+- **Intent:** Remove the remaining staging-write, test-fixture, and contextmanager findings from the warning-level quality scan.
+- **Changed fact:** Staging persistence callbacks and retry/publish/occurrence parameters now use typed request records; retry identity checks are separated into bounded helpers; the unused project-usage field was removed from the write request while the configured complete-inventory scan remains. Backup and storage CLI tests share one temporary initialized database fixture. A line-level Pylint waiver documents that the project-revision transaction intentionally remains open across the yielded caller effect.
+- **Verification:** The staging suite passes 18 tests; backup and storage CLI suites pass 12. Full-tree warning-level Pylint reports 10.00/10 and exits successfully. Strict Pyright, errors-only Pylint, Bandit, and `git diff --check` pass. Bandit prints existing `nosec` and test-comment notices but returns success.
+- **Open gate:** This closes local repository lint cleanup only. Deployment, production workflow, operational recovery, and release gates remain open; no delivery marker changed.
+- **Outcome:** Restore a clean full-tree Pylint result without changing staged-file limits or the transaction fence's lifetime.
+
+## 2026-10-27 — Preserve staging rollback errors
+
+- **Intent:** Ensure unexpected staging-age receipt failures do not leave an unreceipted file silently published.
+- **Changed fact:** Any exception from age-receipt persistence now attempts to remove the just-published target and sync its directory. If unlink or directory sync also fails, the original receipt exception remains primary and receives only the cleanup exception type as a note.
+- **Verification:** The focused staging suite passes 20 tests, including unexpected callback failure and simultaneous rollback-unlink failure. The former leaves no final/partial files; the latter keeps the final file visible in a complete inventory. Strict Pyright, focused Pylint, and `git diff --check` pass.
+- **Open gate:** This covers local adapter behavior only. Process kill, power loss, and production storage/staging recovery remain open; no delivery marker changed.
+- **Outcome:** Make staging rollback outcomes explicit and avoid falsely acknowledging a file with no durable age receipt.
+
+## 2026-10-27 — Refresh the Hermes alpha profile read
+
+- **Intent:** Recheck local Hermes-profile connectivity and Curator V2 health without changing ledger state.
+- **Changed fact:** The `renew-ssl-coding` profile connects to its installed Curator V2 stdio server and discovers 49 tools. Its `vhost-manager-alpha` ledger read returns 41 processed receipts, 18 goals, and 14 facts; the separate health read reports healthy with no pending review/purge work, a complete empty staging inventory, and seven fresh dependencies.
+- **Verification:** `.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` succeeds at 2026-10-27 08:51 UTC. The Hermes checkout remains clean at `d2aac32b8`.
+- **Open gate:** The last processed ledger event is timestamped 06:52 UTC; this profile health read does not create or prove a new app-server lifecycle event. Active gateway delivery and Slice G remain open.
+- **Outcome:** Refresh local alpha integration evidence while preserving the distinction between profile connectivity and live lifecycle delivery.
+
+## 2026-10-27 — Verify the V2 status tooltip in the reloaded consumer editor
+
+- **Intent:** Confirm the rendered tooltip identifies the current V2 status extension package after the owner observed the previous `0.8.6` version.
+- **Changed fact:** Rebuilt and reinstalled extension `0.8.7`. After `Developer: Reload Window` in the ordinary `renew_ssl` editor, hovering the status item visibly rendered `CuratorMD V2 0.8.7. Project health has not been checked. Click to open the dashboard.` The item was gray before the health read. After clicking it, the dashboard read health `unknown` with seven unverified dependency gates and showed 41 processed receipts, 18 goals, 14 facts, zero pending SDEs, and a complete empty staging inventory; the status turned yellow, and the hover rendered `CuratorMD V2 0.8.7. Project health: unknown, no SDE reviews pending. Click to open the project-scoped dashboard.` The V2 legend assigns purple to pending SDE review only when no other degraded health gate takes precedence.
+- **Verification:** All 14 focused extension tests pass; `node --check` and `git diff --check` pass. `code --list-extensions --show-versions` reports `curatormd.curatormd-v2-status@0.8.7`; source and installed `extension.js` hashes match at `6209202ed1fac1f5a73398b4c4625e882a71a957fae5a9c276fe5686ac860188`. VSIX SHA-256 is `f26efef88fb0459c4338216dff7a09b5125d7e8fada32c5b20dae847be530834`. Both hover states were inspected directly in the `renew_ssl` window; the screenshots were not retained.
+- **Open gate:** Activation in the unconfigured Curator backend workspace and live health/review color transitions remain unverified in the editor. No checklist marker changed.
+- **Outcome:** Replace the stale 0.8.6 hover with directly verified 0.8.7 tooltip text in the configured consumer editor.
+
+## 2026-10-27 — Exercise actual staging root and lock failures
+
+- **Intent:** Fill the local health-path gap where prior coverage replaced the whole staging-lock context instead of failing the underlying OS operations.
+- **Changed fact:** Added regressions that fail the real staging-root `os.open` and `fcntl.flock(LOCK_EX)` calls. Each project health read returns degraded with incomplete staging inventory and omits the injected private path. The lock-failure path closes the root descriptor; after each fault is removed, a fresh health read returns healthy with complete inventory.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_api_health_metrics.py` passes 18 tests. Focused Pyright reports zero diagnostics, errors-only Pylint passes, and `git diff --check` passes.
+- **Open gate:** These verify local filesystem adapter boundaries. Production-adapter faults, repeated retry/stop behavior, and deployment-owner recovery classifications remain open; no checklist marker changed.
+- **Outcome:** Add direct local evidence for staging root/lock failures and recovery without claiming production matrix completion.
+
+## 2026-10-27 — Distinguish unreadable staged files from file changes
+
+- **Intent:** Make staging inventory report unreadable-file faults accurately and ensure the existing changing-file test reaches the descriptor-read code.
+- **Changed fact:** The scanner now maps hashing `OSError` values through its fixed filesystem error classifier, so `EACCES` yields `permission_denied`; `ValueError` from changed descriptor/path identity still yields `changed_during_scan`. Both keep the inventory incomplete with no manifest. The open-fault test fixtures preserve the `os.open` dir-fd capability check; a fault-free retry then returns a complete manifest.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_project_plugin_storage.py` passes 20 tests, including actual file mutation and unreadable-file cases. Focused Pyright reports zero diagnostics, errors-only Pylint passes, and `git diff --check` passes.
+- **Open gate:** These are local file-read results. Filesystem races in the deployment adapter, bounded repeated-retry classification, and production recovery evidence remain open; no checklist marker changed.
+- **Outcome:** Preserve truthful incomplete inventory semantics and fixed privacy-safe codes for local file-read faults.
+
+## 2026-10-27 — Recheck the Curator V2 quality gate
+
+- **Intent:** Complete the previously pending repository quality check against the current dirty V2 worktree without repeating the unit suite.
+- **Changed fact:** No application source or checklist marker changed in this verification step. The local alpha six-hour purge timer and 72-hour staging expiry policy were already configured; production retention and monitoring remain separate gates.
+- **Verification:** The README/CI quality commands pass: strict Pyright reports zero diagnostics, errors-only Pylint passes, Bandit exits 0, and `git diff --check` is clean. Bandit emits existing `nosec` and comment-tag notices. The unit suite was not rerun.
+- **Open gate:** These are current local static/security checks only. Production scheduling, alert delivery, deployment identity, and live workflow evidence remain open.
+- **Outcome:** Refresh current-tree quality evidence without claiming release readiness.
+
+## 2026-10-27 — Confirm stale Hermes project-usage coverage
+
+- **Intent:** Refresh the current usage measurement for the one-project Hermes alpha profile and determine whether the missing provider/model route can be recovered safely.
+- **Changed fact:** The query-only `renew-ssl-coding` usage ledger still contains six `vhost-manager-alpha` turns from 2026-10-20 through 2026-10-21: five reported and one unknown. The unknown row has no provider/model labels. The stored Codex lifecycle envelope intentionally keeps only its allowlisted lifecycle fields and cannot supply those missing labels; do not backfill them by guessing.
+- **Verification:** SQLite `PRAGMA quick_check` returns `ok`; the bounded aggregate read found six distinct turns, five reported, one unknown, and a last `occurred_at` of `2026-10-21T10:40:21.453664+00:00`. The query printed no token values, event IDs, or session IDs and wrote no rows. Hermes Core checkout remains clean on `codex/curator-v2-hermes-integration-upstream`.
+- **Open gate:** The report is six days stale and incomplete. No new bound Hermes usage event was generated; excluded call paths, token budgets, billing reconciliation, retention thresholds, and alerts remain open. No checklist marker changed.
+- **Outcome:** Preserve the unknown attribution and make stale usage evidence explicit rather than fabricating provider/model data.
+
+## 2026-10-27 — Report age of retained Hermes project usage
+
+- **Intent:** Make the read-only Hermes project-usage result expose how old its latest retained observation is, without choosing an owner freshness threshold.
+- **Changed fact:** Hermes Core `project_usage` now returns UTC `measured_at` and `latest_event_age_seconds`; empty or invalid timestamps keep the age null. The profile-local plugin copy was refreshed after backing up its prior files under `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/project-usage-before-age-field-20261027T104832Z/`.
+- **Verification:** Five focused plugin tests pass. `plugins doctor --ci` reports one registered tool. A direct handler read for `vhost-manager-alpha` returns six turns (five reported, one unknown), age 518,900 seconds, and `coverage_complete=false` / `tokens_complete=false`; token values and private IDs were not printed. `scripts/check --base 49c13f030cc7c4151d85c85de855246c81dc81a1` passes all 12 checks.
+- **Open gate:** The new field measures age without deciding freshness. No new usage event or source coverage was created; token budget policy, excluded call classes, billing reconciliation, retention, alerting, and live runtime remain open. No checklist marker changed.
+- **Outcome:** Give the local operator an explicit usage age while preserving unknown counts and avoiding an invented freshness policy.
+
+## 2026-10-27 — Recheck Hermes-profile Curator V2 access
+
+- **Intent:** Recheck the supported Hermes profile path behind the direct-Codex `unauthenticated` response and distinguish profile access from new lifecycle delivery.
+- **Changed fact:** The `renew-ssl-coding` CLI connects to the installed Curator V2 stdio server with host-injected Hermes profile/session context and reads `vhost-manager-alpha`: 41 processed receipts, 18 goals, 14 facts, zero pending review/purge work, and healthy project health with complete empty staging.
+- **Verification:** `/home/eaglesvn/.hermes/hermes-agent/.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` exits 0 and discovers 49 tools. The last processed event remains timestamped 2026-10-27 06:52 UTC; the probe created no new app-server lifecycle event.
+- **Open gate:** Direct Codex MCP without Hermes context remains unauthenticated by design; supported profile access is verified. This does not establish human identity or live event delivery. Slice G and production gates remain open; no checklist marker changed.
+- **Outcome:** Clarify the supported local access path without equating missing Codex caller context with a failed Curator ledger.
+
+
+
+## 2026-10-27 — Verify the local alpha dashboard and alert surface
+
+- **Intent:** Finish the local V2 operator dashboard/alert requirement for the approved single-user development alpha.
+- **Changed fact:** The local acceptance row now records the installed V2 editor dashboard, attention summary, and journal-backed maintenance status. The dashboard covers project health, goal states, queues, staging completeness and warning threshold, storage, and reconciled event-failure categories.
+- **Verification:** The focused extension suite has 14 passing cases for project binding, queue and failure summaries, incomplete snapshots, warning-only staging, and mismatch handling. The `renew-ssl-coding` profile reads the bound `vhost-manager-alpha` ledger. The six-hour user timer is active; its latest run exited 0 with zero processed or pending targets, and service output is in the user journal.
+- **Open gate:** Production scrape infrastructure, remote alert routes, shared retention/cardinality policy, and production scheduler/recovery evidence remain open in their separate checklist rows. No production monitoring or all-producer coverage is claimed.
+- **Outcome:** Record local dashboard and journal evidence without checking off the broader end-to-end monitoring requirement.
+
+## 2026-10-27 — Preserve source apply criteria through Vhost Curator retries
+
+- **Intent:** Keep a Vhost apply preview's source problem and success criteria intact when its first Curator event attempt is unavailable.
+- **Changed fact:** The Vhost plan response now exposes the bounded problem and fixed criteria, and its review modal displays each criterion as open before apply. `/api/apply` carries that same problem and criterion IDs. It persists only those fields in the operation manifest before sending, reuses them on retry/replay, and removes them after a durable receipt. The operation outcome remains a separate compact fact.
+- **Verification:** One focused Vhost browser preview test passes against a temporary build and test server. `test_vhost_apply_route_persists_and_retries_exact_curator_receipt` passes against a disposable Vhost server and Curator V2 store. It verifies project-scoped receipt, preview-to-goal problem/criteria equality, pending retry after restart, outcome fact, request cleanup, and identical replay. Node syntax checks and Python compilation pass; both repository `git diff --check` commands pass. The root Vhost process and its static asset directory were not modified.
+- **Open gate:** This is fixture evidence only. The real-consumer request, named pilot bindings, owner-reviewed acceptance packet, and deployment/release gates remain open. No checklist marker changed; the V2 checklist count is unchanged.
+- **Outcome:** Remove the lossy generic-goal fallback for pending apply retries without claiming the real one-run pilot acceptance.
+
+## 2026-10-27 — Explain V2 status colors in the live tooltip
+
+- **Intent:** Make the status-bar color meanings understandable from the button itself while retaining the installed version and project health in the hover.
+- **Changed fact:** VS Code extension `0.8.8` now adds the active color meaning to its tooltip. Gray says no health read has been attempted; yellow says health or the SDE review count is unknown. Green, purple, and red receive corresponding descriptions. The status-bar extension checklist row was already complete; no checklist marker changed.
+- **Verification:** The focused Node suite passes 14/14; `node --check` and `git diff --check` pass. VS Code lists `curatormd.curatormd-v2-status@0.8.8`; packaged and installed `extension.js` hashes match at `c91042d76b30704614ab141ec30bc2c052512ebd28290a2c2850d89d71f27217`. After reloading the `renew_ssl` window, live hovers displayed `CuratorMD V2 0.8.8. Gray means no health read has been attempted...` and, after the read, `CuratorMD V2 0.8.8. Yellow means health or the SDE review count is unknown. Project health: unknown, no SDE reviews pending...`. The dashboard still showed seven unknown host-dependency gates.
+- **Open gate:** Live green/purple/red transitions and deployed monitoring remain unverified. Yellow is the correct fail-closed editor result without Hermes-provided readiness metadata; this UI change does not supply that metadata or claim those dependencies are healthy.
+- **Outcome:** Close the color-explanation and rendered-tooltip detail for the local editor plugin; retain deployment and host-readiness gates as open.
+
+## 2026-10-27 — Verify the live V2 status-bar hover
+
+- **Intent:** Resolve the reported mismatch between the visible status-bar tooltip and the installed V2 extension version.
+- **Changed fact:** In the current `renew_ssl` VS Code window, the `CuratorMD V2` item appears immediately after Git Graph, is yellow for unknown health, and its rendered hover reads `CuratorMD V2 0.8.7. Project health: unknown, no SDE reviews pending. Click to open the project-scoped dashboard.` The dashboard shows 41 processed receipts, 18 goals, 14 facts, zero pending SDEs, and a complete empty staging inventory.
+- **Verification:** Directly inspected a live editor screenshot at 17:58 +07. The same view shows the 250 MiB staging threshold as warning-only with writes allowed, and says model/token use is not reported there. No tests were rerun; the existing focused extension tests cover the color-state branches. No checklist marker changed because the VS Code extension delivery item is already checked.
+- **Open gate:** This proves the configured consumer editor and its unknown/yellow hover state. A live pending-review/purple or healthy/green transition, complete token usage, and deployed monitoring remain unverified.
+- **Outcome:** Confirm the current visible version is 0.8.7 and close the rendered-tooltip check for this editor window.
+
+## 2026-10-27 — Recheck Hermes-profile Curator V2 access
+
+- **Intent:** Recheck the exact supported Hermes profile path behind the earlier direct-Codex `unauthenticated` response and distinguish profile access from new lifecycle delivery.
+- **Changed fact:** The `renew-ssl-coding` CLI connects to the installed Curator V2 stdio server with host-injected Hermes profile/session context and reads the bound `vhost-manager-alpha` ledger. It reports 41 processed receipts, 18 goals, 14 facts, zero pending review/purge work, and healthy project health with a complete empty staging inventory.
+- **Verification:** `/home/eaglesvn/.hermes/hermes-agent/.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` exits 0 and discovers 49 tools. The last processed event remains timestamped 2026-10-27 06:52 UTC; the probe created no new app-server lifecycle event.
+- **Open gate:** Direct Codex MCP without Hermes context remains unauthenticated by design; supported profile access is verified. This does not establish human identity or live event delivery. Slice G and production gates remain open; no checklist marker changed.
+- **Outcome:** Clarify the supported local access path without equating missing Codex caller context with a failed Curator ledger.
+
+## 2026-10-27 — Show bounded evidence details in the V2 dashboard
+
+- **Intent:** Let an authorized local user follow a visible verification fact to its evidence locator and immutable verifier receipt.
+- **Changed fact:** Added project-authorized `goal_fact_evidence`, limited to one fact on the requested bounded report page. Its response includes the report revision, evidence outcome/digest/locator, and matching verifier attestation. The V2 VS Code panel now fetches details per visible fact, binds responses to the current project, goal, fact, page, and revision, and renders all ledger values as text. Version advanced to 0.8.9 for this package change.
+- **Verification:** `test_goal_reporting.py` passes 11 tests; `test_api_goal_access.py` passes 13; the MCP client workflow passes and confirms the new read tool is discoverable/read-only; the VS Code extension suite passes 14; strict Pyright reports zero diagnostics; `node --check` and `git diff --check` pass. The extension test exercises the evidence read, checks its exact MCP arguments, and verifies stale report handling. VSIX 0.8.9 packages successfully and is installed locally; installed `extension.js` matches source at SHA-256 `6c2aa3a4376394e55a6eacd9f86f26c86eb6ea5085c95eda958bd0b61622af7b`.
+- **Open gate:** The extension is installed as 0.8.9, but the running VS Code window still needs **Developer: Reload Window** before its hover can show the new version. The dashboard acceptance also remains open for trust-root/revocation changes between pages, grant revocation, reopen/compaction transitions, and an approved real-consumer interaction. No checklist marker changed.
+- **Outcome:** Expose bounded evidence details in the local V2 plugin without claiming the remaining snapshot/trust lifecycle is complete.
+
+## 2026-10-27 — Deny V2 dashboard reads after project-grant revocation
+
+- **Intent:** Verify a previously rendered report does not authorize later evidence or page reads after the project grant changes.
+- **Changed fact:** Added an API regression that reads a report and one fact's evidence under an exact read grant, revokes that grant, and confirms subsequent report and evidence reads are denied. The existing extension test verifies stale rendered data is cleared after a denied fresh read. The dashboard acceptance note records this synthetic local coverage; its full item remains open.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_api_goal_access.py` passes 14 tests; `uv run pyright tests/test_api_goal_access.py` reports zero diagnostics; `git diff --check` passes.
+- **Open gate:** The toggle authorizer is a test fixture. Live editor grant changes, external trust/revocation versions, reopen/compaction transitions, and approved real-consumer evidence remain open. No checklist marker changed.
+- **Outcome:** Prove fresh V2 reads fail closed after grant revocation without claiming live grant-management integration.
+
+## 2026-10-27 — Invalidate a report after evidence revocation
+
+- **Intent:** Ensure report pages do not preserve a verified label after the configured verifier rejects the stored proof.
+- **Changed fact:** Added a reporting regression that accepts a proof for page one, changes the verifier to reject it, and requests a later page. The second report has a different revision and its criterion is open, which activates the extension's existing stale-page restart path. The plan now records this as synthetic local revocation coverage.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_goal_reporting.py` passes 12 tests; `uv run pyright tests/test_goal_reporting.py` reports zero diagnostics; `git diff --check` passes.
+- **Open gate:** The fixture does not change a deployed trust-root version or live source revocation state. External trust versioning, live revocation, grant changes in the editor, and real-consumer acceptance remain open. No checklist marker changed.
+- **Outcome:** Show that local evidence revocation changes the report revision and reopens its criterion without claiming deployed trust integration.
+
+## 2026-10-27 — Fail closed on future staging ages
+
+- **Intent:** Prevent a wall-clock rollback or future staged timestamp from resetting a transient artifact's retention age and authorizing deletion later.
+- **Changed fact:** Expiry discovery now samples its observation clock after taking the staging-root lock and rejects any staged timestamp later than that observation. The file contributes to `unknown_age_count`, makes the inventory incomplete, suppresses its purge manifest, and remains on disk.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_project_plugin_storage.py` passes 21 tests, including a staged timestamp five minutes ahead of the observation clock. Strict Pyright reports zero diagnostics, focused Pylint is 10.00/10, and `git diff --check` passes.
+- **Open gate:** This covers the local future-timestamp/clock-rollback case only. Missing or malformed timestamps, backup/restore age preservation, owner-approved production age anchors, measured budgets, and deployed growth alerts remain open. No checklist marker changed.
+- **Outcome:** Prevent future-dated staging metadata from becoming purge-eligible after time catches up.
+
+## 2026-10-27 — Preserve staging age across local database restore
+
+- **Intent:** Ensure a restored Curator ledger does not restart the retention clock for artifacts that remain in the consumer staging tree.
+- **Changed fact:** Added a restore-to-new-file regression for staging metadata. It backs up a project with one staged artifact, restores to another SQLite path, binds the same consumer config, and checks expiry against the original staged timestamp.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_project_plugin_storage.py` passes 22 tests; `uv run pyright tests/test_project_plugin_storage.py` reports zero diagnostics; focused Pylint is 10.00/10; `git diff --check` passes. The restored file remains present and becomes eligible only at the original 72-hour deadline.
+- **Open gate:** This is local SQLite metadata evidence. Production rollback, paired filesystem/database restore, measured storage budgets, and owner-approved retention policy remain open. No checklist marker changed.
+- **Outcome:** Verify the local restore path preserves the artifact's existing expiry age.
+
+## 2026-10-27 — Reject inherited staging age after path changes
+
+- **Intent:** Ensure copying or renaming a transient file cannot borrow another path's expiry timestamp and silently restart or advance its retention age.
+- **Changed fact:** Added a local regression that renames a staged artifact and makes a same-content copy under a second path. Neither path has its own durable age record, so both count as unknown age; discovery returns no complete manifest and deletes neither file.
+- **Verification:** `uv run python -m unittest discover -s tests -p test_project_plugin_storage.py` passes 23 tests; `uv run pyright tests/test_project_plugin_storage.py` reports zero diagnostics; focused Pylint is 10.00/10.
+- **Open gate:** This validates local path identity only. Artifact-tree restore and deployment rollback still require a paired filesystem/database drill; approved production age anchors, retention budgets, and growth alerts remain open. No checklist marker changed.
+- **Outcome:** Prevent path changes from inheriting a transient artifact's retention age.
+
+## 2026-10-27 — Refresh local V2 editor extension evidence
+
+- **Intent:** Keep the installed V2 editor plugin version, visible status behavior, and checklist evidence aligned.
+- **Changed fact:** The V2-owned VS Code extension is version `0.8.9`; its installed `extension.js` matches the repository source. The status item is ordered after Git Graph, explains gray/green/purple/yellow/red states in its versioned tooltip, and keeps the existing read-only dashboard behavior. Removed a stray `>wrap` line from the extension README.
+- **Verification:** `node --test extension.test.js` passes 14/14; installed and source `extension.js` SHA-256 both equal `6c2aa3a4376394e55a6eacd9f86f26c86eb6ea5085c95eda958bd0b61622af7b`; `code --list-extensions --show-versions` reports `curatormd.curatormd-v2-status@0.8.9`; `git diff --check` passes for these edits.
+- **Open gate:** The running `renew_ssl` VS Code window still has extension `0.8.7` loaded. Its reload with `0.8.9` and the current live color transitions remain unverified; installed-package and unit-test evidence do not prove that runtime behavior. The checked extension delivery item remains checked; no marker changed.
+- **Outcome:** Record the completed local extension package while keeping active-window validation precise.
+
+## 2026-10-27 — Clarify the official delivery-row count
+
+- **Intent:** Make the current progress denominator reproducible and distinguish it from reusable checklist templates.
+- **Changed fact:** The plan now states that delivery progress includes sections 0–10 and 12 plus Definition of done, while excluding section 11 reusable workflow templates. The raw checkbox count across all file sections is a different measure.
+- **Verification:** `python3 tools/count_curator_v2_delivery.py` reports 154/178 complete with 24 open; an independent section count agrees. The raw file contains 214 checkbox rows, including 36 section-11 template rows. `git diff --check` passes.
+- **Open gate:** The 24 delivery rows remain open; this documentation correction changes no checklist markers.
+- **Outcome:** Remove the plan's contradictory count-boundary statement.
+
+## 2026-10-27 — Reject malformed staging age metadata
+
+- **Intent:** Ensure invalid persisted staging timestamps cannot be treated as expired or authorize cleanup.
+- **Changed fact:** Added regressions for unparsable and timezone-naive staged timestamps. Both are unknown age, make inventory incomplete, suppress the purge manifest, and leave the file present.
+- **Verification:** The focused storage/expiry suite passes 24 tests; strict Pyright reports zero diagnostics; focused Pylint is 10.00/10; `git diff --check` passes. The delivery-count tool reports 154/178 complete and 24 open.
+- **Open gate:** Local invalid-age handling is covered. Paired artifact-tree/database restore, production retention policy, measured budgets, and deployed growth alerts remain open; no checklist marker changed.
+- **Outcome:** Keep malformed age metadata fail-closed without claiming production retention closure.
+
+## 2026-10-27 — Verify paired local staging recovery
+
+- **Intent:** Ensure restoring the transient staging tree and Curator database together preserves each artifact's original expiry age.
+- **Changed fact:** Extended the disposable restore regression to copy the staged file tree, restore the SQLite backup to a new path, restore the tree, and bind the consumer to the restored database. The artifact remains ineligible at 71h59m and becomes proposed at its original 72-hour deadline.
+- **Verification:** The focused storage/expiry suite passes 24 tests; strict Pyright reports zero diagnostics; focused Pylint is 10.00/10; `git diff --check` passes. Delivery count remains 154/178 complete with 24 open.
+- **Open gate:** This closes only the local paired restore fixture. Deployment-shaped recovery/rollback, production retention policy, measured budgets, and growth alerts remain open; no checklist marker changed.
+- **Outcome:** Prove local file-tree/database recovery does not reset artifact retention age.
+
+## 2026-10-27 — Correct paired staging restore result
+
+- **Intent:** Correct the preceding paired-restore record after its first regression run failed.
+- **Changed fact:** A copied staging tree receives a new file identity. Its restored database age is therefore unknown; both pre-deadline and deadline discovery remain incomplete, emit no purge manifest, and leave the file present. This supersedes the preceding claim that paired restore preserved expiry age.
+- **Verification:** The corrected focused storage/expiry suite passes 24 tests; strict Pyright reports zero diagnostics; focused Pylint is 10.00/10; `git diff --check` passes. The delivery count remains 154/178 complete, 24 open.
+- **Open gate:** A trusted restore procedure that verifies and rebinds original age to restored files remains unimplemented; deployment recovery and production retention gates remain open. No checklist marker changed.
+- **Outcome:** Record the actual fail-closed behavior without weakening the age-preservation requirement.
+
+## 2026-10-27 — Recheck disposable Vhost apply receipt route
+
+- **Intent:** Reconfirm the local Vhost bridge persists and retries the exact bounded Curator V2 request until a durable receipt is available.
+- **Changed fact:** The focused Vhost apply-route contract passes against a temporary project and database. It exercises persistence, receipt completion, and retry/replay without requiring a live utility process.
+- **Verification:** `test_vhost_apply_route_persists_and_retries_exact_curator_receipt` passed (1 test, 72.444 seconds) using `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/curator-v2-alpha-venv/bin/python`. No service was restarted and no live consumer data was changed.
+- **Open gate:** The real local Vhost workflow and owner-reviewed evidence remain unverified. This fixture does not close the Definition of done item; no checklist marker changed.
+- **Outcome:** Retain the route fixture result as local evidence and keep the live-consumer gate open.
+
+## 2026-10-27 — Record current status tooltip version report
+
+- **Intent:** Reconcile the extension-host version evidence with the user's current visible tooltip.
+- **Changed fact:** The user reports the tooltip currently displays `8.8`; the installed VS Code extension and repository package are `0.8.9`. The older `0.8.7` extension-host log is not current evidence.
+- **Verification:** `code --list-extensions --show-versions` reports `curatormd.curatormd-v2-status@0.8.9`; source `integrations/vscode-status/package.json` also declares `0.8.9`. No direct observation of the active window was available in this checkout.
+- **Open gate:** Reconcile the reported tooltip with the active extension host and confirm the rendered `0.8.9` tooltip. No checklist marker changed.
+- **Outcome:** Preserve the owner report and leave live-window verification open.

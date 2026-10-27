@@ -70,7 +70,7 @@ from .markdown_persistence import (
 )
 from .observability import render_project_metrics
 from .project_plugin import ProjectPlugin
-from .reporting import GoalReportPage
+from .reporting import GoalFactEvidence, GoalReportPage
 from .service import PurgeTargetStatus, SDEAssessmentRequest
 from .store import (
     FactCompactionApprovalRequest,
@@ -569,6 +569,20 @@ class _APIGoalMethods(_APIEventMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
         ).goal_report(goal_id, page)
+
+    def goal_fact_evidence(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        goal_id: str,
+        fact_id: str,
+        page: GoalReportPage | None = None,
+    ) -> GoalFactEvidence:
+        """Read bounded evidence references under the current exact project grant."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.READ
+        ).goal_fact_evidence(goal_id, fact_id, page)
 
     def fact_compaction_propose(
         self,

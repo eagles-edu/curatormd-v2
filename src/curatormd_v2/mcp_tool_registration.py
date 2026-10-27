@@ -30,13 +30,10 @@ from .events import (
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
 from .hermes_context import hermes_source_id, require_durable_hermes_context
 from .models import (
-    ArtifactCleanupAuthorizationRequest,
     FactKind,
     GoalChildrenPageRequest,
     GoalStatus,
     Materiality,
-    ReviewDecision,
-    SDEConfirmationRequest,
     SDECorrectionRequest,
     SDEQualityFeedbackRequest,
     SDEQualityFeedbackLabel,
@@ -51,6 +48,7 @@ from .mcp_tool_support import (
     parse_evidence,
     safe_tool_handler,
 )
+from .mcp_tool_cleanup_registration import register_cleanup_tools
 from .store import FactCompactionApprovalRequest
 
 class _McpToolRegistrar:
@@ -547,6 +545,34 @@ def _register_goal_reads_tools(registrar: _McpToolRegistrar) -> None:
         )
 
     @_read_tool()
+    def goal_fact_evidence(
+        goal_id: str,
+        fact_id: str,
+        fact_offset: int = 0,
+        fact_limit: int = 16,
+        child_offset: int = 0,
+        sde_offset: int = 0,
+        receipt_offset: int = 0,
+    ) -> str:
+        """Read exact evidence references for one fact on the current report page."""
+
+        return json_result(
+            api.goal_fact_evidence(
+                caller,
+                project_id,
+                goal_id,
+                fact_id,
+                GoalReportPage(
+                    fact_offset=fact_offset,
+                    fact_limit=fact_limit,
+                    child_offset=child_offset,
+                    sde_offset=sde_offset,
+                    receipt_offset=receipt_offset,
+                ),
+            )
+        )
+
+    @_read_tool()
     def fact_compaction_propose(goal_id: str, max_facts: int = 32) -> str:
         """Preview exact eligible routine bullets without modifying the ledger."""
 
@@ -891,120 +917,6 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
         )
 
 
-def _register_cleanup_tools(registrar: _McpToolRegistrar) -> None:
-    api, caller, project_id = registrar.api, registrar.caller, registrar.project_id
-    _safe_tool, _read_tool = registrar.safe_tool, registrar.read_tool
-
-    @_safe_tool(
-        annotations=ToolAnnotations(
-            destructive_hint=True, idempotent_hint=True, open_world_hint=False
-        )
-    )
-    def sde_confirm(
-        candidate_id: str,
-        decision: str,
-        artifacts: list[ArtifactInput],
-        artifact_inventory_complete: bool,
-        dependency_map_sha256: str,
-        rationale: str | None = None,
-    ) -> str:
-        """Record disposition and authorize purge of its exact complete manifest."""
-
-        return json_result(
-            api.sde_confirm(
-                caller,
-                project_id,
-                SDEConfirmationRequest(
-                    candidate_id=candidate_id,
-                    decision=ReviewDecision(decision),
-                    artifacts=parse_artifacts(artifacts),
-                    artifact_inventory_complete=artifact_inventory_complete,
-                    dependency_map_sha256=dependency_map_sha256,
-                    rationale=rationale,
-                ),
-            )
-        )
-
-    @_safe_tool(
-        annotations=ToolAnnotations(
-            destructive_hint=True, idempotent_hint=True, open_world_hint=False
-        )
-    )
-    def artifact_inventory_complete(
-        receipt_id: str,
-        artifacts: list[ArtifactInput],
-        dependency_map_sha256: str,
-    ) -> str:
-        """Finalize an exact artifact inventory after review authorization."""
-
-        return json_result(
-            api.artifact_inventory_complete(
-                caller,
-                project_id,
-                receipt_id,
-                parse_artifacts(artifacts),
-                dependency_map_sha256,
-            )
-        )
-
-    @_safe_tool(
-        annotations=ToolAnnotations(
-            destructive_hint=True, idempotent_hint=True, open_world_hint=False
-        )
-    )
-    def artifact_cleanup_approve(
-        receipt_id: str,
-        artifacts: list[ArtifactInput],
-        manifest_sha256: str,
-        dependency_map_sha256: str,
-        target: str,
-    ) -> str:
-        """Record compatibility cleanup approval for an exact manifest."""
-
-        authorization, receipt = api.authorize_artifact_cleanup(
-            caller,
-            project_id,
-            ArtifactCleanupAuthorizationRequest(
-                receipt_id=receipt_id,
-                artifacts=parse_artifacts(artifacts),
-                manifest_sha256=manifest_sha256,
-                dependency_map_sha256=dependency_map_sha256,
-                target=target,
-            ),
-        )
-        return json_result({"authorization": authorization, "receipt": receipt})
-
-    @_read_tool()
-    def artifact_purge_status(receipt_id: str) -> str:
-        """Read receipt-level and per-artifact purge state and retry metadata."""
-
-        return json_result(api.artifact_purge_status(caller, project_id, receipt_id))
-
-    @_safe_tool(
-        annotations=ToolAnnotations(
-            destructive_hint=True, idempotent_hint=True, open_world_hint=False
-        )
-    )
-    def release_artifact_hold(receipt_id: str, path: str, rationale: str) -> str:
-        """Audibly release one exact hold; eligible purge resumes immediately."""
-
-        return json_result(
-            api.release_artifact_hold(
-                caller, project_id, receipt_id, path, rationale
-            )
-        )
-
-    @_safe_tool(
-        annotations=ToolAnnotations(
-            destructive_hint=True, idempotent_hint=True, open_world_hint=False
-        )
-    )
-    def retry_pending_purges() -> str:
-        """Retry only project-local reviewed and canonically persisted manifests."""
-
-        return json_result(api.retry_pending_purges(caller, project_id))
-
-
 def register_mcp_tools(
     server: MCPServer,
     api: AuthenticatedCuratorAPI,
@@ -1024,4 +936,4 @@ def register_mcp_tools(
     _register_project_persistence_tools(registrar)
     _register_review_discovery_tools(registrar)
     _register_review_records_tools(registrar)
-    _register_cleanup_tools(registrar)
+    register_cleanup_tools(registrar)

@@ -2,7 +2,10 @@
 
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
 const Module = require('node:module');
+const os = require('node:os');
+const path = require('node:path');
 const { PassThrough, Writable } = require('node:stream');
 const test = require('node:test');
 const vm = require('node:vm');
@@ -19,17 +22,28 @@ const {
   defaultReviewCommand,
   hasWorkspaceSettingOverride,
   quotePosixShellArgument,
+  activate,
+  deactivate,
+  dashboardErrorMessage,
+  summarizeGoalStates,
+  summarizeEventFailureCategories,
+  summarizeOperationalAlerts,
+  summarizeOperationalQueues,
   showDashboard,
+  statusColorMeaning,
+  updateStatusBarHealth,
   validateReviewQueue,
 } = require('./extension');
 Module._load = originalLoad;
 
 class FakeMcpProcess extends EventEmitter {
-  constructor(reportRevision = 'a'.repeat(64), denyToolCall = false, denyToolName = null) {
+  constructor(reportRevision = 'a'.repeat(64), denyToolCall = false, denyToolName = null, reportFactId = null) {
     super();
     this.requests = [];
     this.denyToolCall = denyToolCall;
     this.denyToolName = denyToolName;
+    this.reportRevision = reportRevision;
+    this.reportFactId = reportFactId;
     this.stdout = new PassThrough();
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -75,6 +89,13 @@ class FakeMcpProcess extends EventEmitter {
               },
               staging_project_byte_limit: 262144000,
             }) }] };
+          } else if (request.params.name === 'project_metrics') {
+            result = { content: [{ type: 'text', text: [
+              '# TYPE curatormd_event_failures gauge',
+              'curatormd_event_failures{project_id="alpha",category="evidence_rejected"} 0',
+              'curatormd_event_failures{project_id="alpha",category="evidence_adapter_error"} 0',
+              'curatormd_event_failures{project_id="alpha",category="other"} 0',
+            ].join('\n') }] };
           } else if (request.params.name === 'goal_list_page') {
             result = { content: [{ type: 'text', text: JSON.stringify({
               project_id: 'alpha', total: 1, offset: 0, limit: 20,
@@ -94,8 +115,30 @@ class FakeMcpProcess extends EventEmitter {
               receipt: { receipt_id: 'PRIVATE_REVIEW_RECEIPT_CANARY' },
               }],
             }) }] };
+          } else if (request.params.name === 'goal_fact_evidence') {
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              project_id: 'alpha', goal_id: 'goal-1', fact_id: request.params.arguments.fact_id,
+              fact_kind: 'verification', criterion_id: 'criterion-1',
+              verification_status: 'verified_fact', report_revision: this.reportRevision,
+              evidence: [{
+                evidence_kind: 'repository_test', locator: 'git-test:runner-1:abc123',
+                sha256: 'a'.repeat(64), outcome: 'passed', occurrence_id: null,
+                attestation: {
+                  adapter_id: 'adapter-1', authenticated_subject: 'local-uid:1000',
+                  source_revision: 'git-test:runner-1:abc123',
+                  observed_at: '2026-10-27T00:00:00+00:00',
+                  valid_until: '2026-10-27T00:05:00+00:00',
+                  revocation_checked_at: '2026-10-27T00:00:00+00:00',
+                },
+              }],
+            }) }] };
+          } else if (request.params.name === 'goal_report') {
+            const facts = this.reportFactId
+              ? `\n## Facts to date (showing 1–1 of 1)\n### Verified facts\n- \`${this.reportFactId}\` — Verification: test passed; criterion \`criterion-1\`; 1 evidence reference(s)`
+              : '\n## Facts to date (showing 0–0 of 0)';
+            result = { content: [{ type: 'text', text: '- Report snapshot: `' + this.reportRevision + '`' + facts + '\n## Open TODOs' }] };
           } else {
-            result = { content: [{ type: 'text', text: '- Report snapshot: `' + reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
+            result = { content: [{ type: 'text', text: '- Report snapshot: `' + this.reportRevision + '`\n## Facts to date (showing 0–0 of 0)\n## Open TODOs' }] };
           }
           queueMicrotask(() => this.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`));
         }
@@ -133,8 +176,196 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.match(html, /Pending SDE review/);
   assert.match(html, /Review in terminal/);
   assert.match(html, /label\.textContent = candidate\.materiality/);
+  assert.match(html, /Evidence references/);
+  assert.match(html, /type: 'loadEvidence'/);
+  assert.match(html, /reference\.locator/);
+  assert.match(html, /paragraph\.textContent = fields\.filter\(Boolean\)\.join/);
   assert.doesNotMatch(html, /report\.innerHTML/);
   assert.doesNotMatch(html, /reviews\.innerHTML/);
+});
+
+test('status item follows Git Graph and uses project-bound health colors', () => {
+  const items = [];
+  const commands = [];
+  vscodeMock.StatusBarAlignment = { Left: 1, Right: 2 };
+  vscodeMock.window = {
+    createStatusBarItem: (alignment, priority) => {
+      const item = { alignment, priority, show() {}, dispose() {} };
+      items.push(item);
+      return item;
+    },
+  };
+  vscodeMock.commands = {
+    registerCommand: (name, handler) => {
+      const command = { name, handler, dispose() {} };
+      commands.push(command);
+      return command;
+    },
+  };
+  const subscriptions = [];
+  activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].alignment, vscodeMock.StatusBarAlignment.Left);
+  assert.equal(items[0].priority, 0);
+  assert.equal(items[0].text, '$(circle-filled) CuratorMD V2');
+  assert.equal(items[0].color, '#888888');
+  assert.match(items[0].tooltip, /CuratorMD V2 0\.8\.9/);
+  assert.match(items[0].tooltip, /Gray means no health read has been attempted/);
+  assert.equal(commands[0].name, 'curatormdV2.openDashboard');
+  assert.equal(subscriptions.length, 2);
+
+  assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
+  assert.equal(items[0].color, '#73d216');
+  assert.match(items[0].tooltip, /Project health: healthy/);
+  assert.match(items[0].tooltip, /no SDE reviews pending/);
+  assert.match(items[0].tooltip, /CuratorMD V2 0\.8\.9/);
+  assert.match(items[0].tooltip, /Green means health is healthy with no SDE reviews pending/);
+  const pendingReview = { candidate: { candidate_id: 'review-1' } };
+  assert.equal(updateStatusBarHealth(
+    { project_id: 'alpha', status: 'healthy' }, 'alpha', [pendingReview],
+  ), 'healthy');
+  assert.equal(items[0].color, '#ad7fa8');
+  assert.equal(items[0].text, '$(circle-filled) CuratorMD V2: review');
+  assert.match(items[0].tooltip, /1 pending SDE review/);
+  assert.match(items[0].tooltip, /Purple means an SDE review is pending/);
+  assert.equal(updateStatusBarHealth({
+    project_id: 'alpha', status: 'degraded', gate_codes: ['review_backlog'],
+  }, 'alpha', [pendingReview]), 'degraded');
+  assert.equal(items[0].color, '#ad7fa8');
+  assert.equal(updateStatusBarHealth({
+    project_id: 'alpha', status: 'degraded',
+    gate_codes: ['review_backlog', 'event_failures'],
+  }, 'alpha', [pendingReview]), 'degraded');
+  assert.equal(items[0].color, '#ef2929');
+  assert.match(items[0].tooltip, /Red means health is degraded beyond the review-only state/);
+  assert.equal(updateStatusBarHealth(
+    { project_id: 'alpha', status: 'healthy' }, 'alpha', null,
+  ), 'healthy');
+  assert.equal(items[0].color, '#fce94f');
+  assert.match(items[0].tooltip, /pending SDE review count unavailable/);
+  assert.match(items[0].tooltip, /Yellow means health or the SDE review count is unknown/);
+  assert.equal(updateStatusBarHealth(
+    { project_id: 'other', status: 'healthy' }, 'alpha', [],
+  ), 'unknown');
+  assert.equal(items[0].color, '#fce94f');
+  assert.match(items[0].tooltip, /Project health: unknown/);
+  assert.match(items[0].tooltip, /CuratorMD V2 0\.8\.9/);
+  assert.equal(statusColorMeaning('unknown'), 'Yellow means health or the SDE review count is unknown.');
+  deactivate();
+});
+
+test('dashboard maps Curator failures to actionable messages without backend details', () => {
+  assert.match(dashboardErrorMessage({ code: 'read-denied' }), /configured project and its active local read grant/);
+  assert.match(dashboardErrorMessage({ code: 'launcher-start' }), /serverCommand and the installed launcher/);
+  assert.match(dashboardErrorMessage({ code: 'timeout' }), /did not respond within 15 seconds/);
+  assert.match(dashboardErrorMessage(new Error('/private/path/secret traceback')), /Curator read failed/);
+  assert.doesNotMatch(dashboardErrorMessage(new Error('/private/path/secret traceback')), /private|secret/);
+});
+
+test('operational dashboard summaries require exact project-bound queue and goal-state totals', () => {
+  const goalStates = [
+    'planned', 'active', 'complete', 'open', 'blocked',
+    'deferred', 'cancelled', 'superseded',
+  ].map((status) => ({ status, count: status === 'active' ? 2 : 0 }));
+  const activity = { project_id: 'alpha', goal_count: 2, goal_status_counts: goalStates };
+  assert.equal(
+    summarizeGoalStates(activity, 'alpha'),
+    'Goal states: planned 0, active 2, complete 0, open 0, blocked 0, deferred 0, cancelled 0, superseded 0.',
+  );
+  assert.match(summarizeGoalStates(activity, 'other'), /unknown.*mismatched/);
+  assert.match(
+    summarizeGoalStates({ ...activity, goal_count: 3 }, 'alpha'),
+    /unknown.*incomplete/,
+  );
+
+  const health = {
+    project_id: 'alpha',
+    database_observation_complete: true,
+    event_received_count: 1,
+    event_failed_count: 2,
+    event_quarantined_count: 3,
+    event_claimed_count: 4,
+    event_expired_claim_count: 5,
+    oldest_pending_event_age_seconds: 60,
+    operational_counts: {
+      pending_review_count: 6,
+      pending_purge_receipt_count: 7,
+      pending_purge_artifact_count: 8,
+      pending_expiry_purge_receipt_count: 9,
+      pending_expiry_purge_artifact_count: 10,
+    },
+  };
+  assert.equal(
+    summarizeOperationalQueues(health, 'alpha'),
+    'Events received 1, failed 2, quarantined 3, active claims 4, expired claims 5; oldest pending age 60s. Reviews pending 6; purge pending 7 receipts / 8 artifacts; expiry pending 9 receipts / 10 artifacts.',
+  );
+  assert.match(summarizeOperationalQueues(health, 'other'), /unknown.*mismatched/);
+  assert.match(
+    summarizeOperationalQueues({ ...health, database_observation_complete: false }, 'alpha'),
+    /unknown.*incomplete/,
+  );
+});
+
+test('operational alert summary surfaces actionable queues and staging warnings without guessing on unknowns', () => {
+  const health = {
+    project_id: 'alpha',
+    status: 'degraded',
+    gate_codes: ['event_failures', 'review_backlog'],
+    database_observation_complete: true,
+    event_received_count: 2,
+    event_failed_count: 1,
+    event_quarantined_count: 0,
+    event_expired_claim_count: 0,
+    operational_counts: {
+      pending_review_count: 1,
+      pending_purge_receipt_count: 1,
+      pending_purge_artifact_count: 2,
+      pending_expiry_purge_receipt_count: 0,
+      pending_expiry_purge_artifact_count: 0,
+    },
+  };
+  const storage = {
+    project_id: 'alpha',
+    staging: { observed_file_bytes: 200, inventory_complete: true },
+    staging_project_byte_limit: 262,
+  };
+  const metrics = [
+    '# TYPE curatormd_event_failures gauge',
+    'curatormd_event_failures{project_id="alpha",category="evidence_rejected"} 1',
+    'curatormd_event_failures{project_id="alpha",category="evidence_adapter_error"} 0',
+    'curatormd_event_failures{project_id="alpha",category="other"} 0',
+  ].join('\n');
+  const summary = summarizeOperationalAlerts(health, storage, metrics, 'alpha');
+  assert.match(summary, /Readiness degraded: event_failures, review_backlog/);
+  assert.match(summary, /2 event receipt\(s\) waiting to process/);
+  assert.match(summary, /Event failures by category: evidence rejected 1, adapter errors 0, other 0/);
+  assert.match(summary, /1 SDE review\(s\) need a human decision/);
+  assert.match(summary, /Cleanup pending: 1 receipt\(s\), 2 artifact\(s\)/);
+  assert.match(summary, /Staging reached 75%/);
+  assert.match(summary, /writes remain allowed/);
+
+  const incomplete = summarizeOperationalAlerts(
+    { ...health, project_id: 'other' }, storage, metrics, 'alpha',
+  );
+  assert.match(incomplete, /Readiness and queues unknown/);
+  assert.doesNotMatch(incomplete, /No current queue or staging alerts/);
+  const unknownCounters = summarizeOperationalAlerts(
+    { ...health, event_failed_count: null, event_quarantined_count: null },
+    { ...storage, staging: { ...storage.staging, inventory_complete: false } },
+    metrics,
+    'alpha',
+  );
+  assert.match(unknownCounters, /Event failure categories unknown/);
+  assert.match(unknownCounters, /Staging inventory incomplete/);
+  const wrongMetrics = summarizeOperationalAlerts(
+    health, storage, metrics.replaceAll('project_id="alpha"', 'project_id="other"'), 'alpha',
+  );
+  assert.match(wrongMetrics, /category breakdown unknown/);
+  assert.deepEqual(summarizeEventFailureCategories(metrics, 'alpha', 1), {
+    evidence_rejected: 1, evidence_adapter_error: 0, other: 0,
+  });
+  assert.equal(summarizeEventFailureCategories(metrics, 'other', 1), null);
 });
 
 test('launcher, database, and profile settings reject workspace overrides', () => {
@@ -160,6 +391,48 @@ test('launcher, database, and profile settings reject workspace overrides', () =
     hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand']),
     true,
   );
+});
+
+test('dashboard explains a missing consumer project config before starting the launcher', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-unconfigured-'));
+  const errors = [];
+  const items = [];
+  const commands = [];
+  try {
+    vscodeMock.StatusBarAlignment = { Left: 1 };
+    vscodeMock.workspace = {
+      workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+      getConfiguration: assert.fail,
+    };
+    vscodeMock.window = {
+      createStatusBarItem: () => {
+        const item = { show() {}, dispose() {} };
+        items.push(item);
+        return item;
+      },
+      showWarningMessage: assert.fail,
+      showErrorMessage: (message) => errors.push(message),
+    };
+    vscodeMock.commands = {
+      registerCommand: (name, handler) => {
+        const command = { name, handler, dispose() {} };
+        commands.push(command);
+        return command;
+      },
+    };
+    activate({ subscriptions: { push() {} } });
+
+    await showDashboard(() => assert.fail('launcher must not start without project config'));
+
+    assert.deepEqual(errors, [
+      'This folder has no .curatormd-v2.toml. Open a configured Curator V2 consumer project with an active local read grant.',
+    ]);
+    assert.equal(items[0].color, '#888888');
+    assert.equal(items[0].text, '$(circle-filled) CuratorMD V2');
+  } finally {
+    deactivate();
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
 });
 
 test('POSIX command quoting keeps paths with spaces and quotes as one argument', () => {
@@ -196,8 +469,8 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   const messages = [];
   let receiveMessage;
   let disposePanel;
-  let reportReadCount = 0;
   let processCount = 0;
+  const processes = [];
   const userSettings = {
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
@@ -232,10 +505,14 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
 
   await showDashboard(() => {
     const current = processCount++;
-    return new FakeMcpProcess(
-      reportReadCount++ >= 2 ? 'b'.repeat(64) : 'a'.repeat(64),
-      current === 3,
+    const child = new FakeMcpProcess(
+      current >= 3 ? 'b'.repeat(64) : 'a'.repeat(64),
+      current === 4,
+      null,
+      'fact-1',
     );
+    processes.push(child);
+    return child;
   });
   assert.equal(typeof receiveMessage, 'function');
   assert.equal(typeof disposePanel, 'function');
@@ -260,12 +537,26 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);
+  await receiveMessage({
+    type: 'loadEvidence', goalId: 'goal-1', factId: 'fact-1',
+    reportRevision: 'a'.repeat(64), factOffset: 0,
+  });
+  const evidence = messages.find((message) => message.type === 'evidence');
+  assert.equal(evidence.evidence.project_id, 'alpha');
+  assert.equal(evidence.evidence.fact_id, 'fact-1');
+  assert.equal(evidence.evidence.report_revision, report.reportRevision);
+  assert.match(evidence.evidence.evidence[0].locator, /^git-test:/);
+  const evidenceRequest = processes[2].requests.find(
+    (request) => request.params?.name === 'goal_fact_evidence',
+  );
+  assert.equal(evidenceRequest.params.arguments.goal_id, 'goal-1');
+  assert.equal(evidenceRequest.params.arguments.fact_id, 'fact-1');
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 16 });
   assert.ok(messages.some((message) => message.type === 'reportStale'));
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 16 });
   assert.equal(
     messages.filter((message) => message.type === 'error').at(-1).message,
-    'Curator read failed. Check User settings, the local project grant, and the launcher.',
+    'Curator V2 denied this read. Check the configured project and its active local read grant.',
   );
   disposePanel();
 });
@@ -327,8 +618,12 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     goal_count: 1, fact_count: 2, pending_sde_count: 1,
     approved_sde_count: 0, rejected_sde_count: 0,
   },
+  goalStatesSummary: 'Goal states: planned 0, active 1, complete 0, open 0, blocked 0, deferred 0, cancelled 0, superseded 0.',
+  queueSummary: 'Events received 1, failed 0, quarantined 0, active claims 0, expired claims 0; oldest pending age none. Reviews pending 1; purge pending 0 receipts / 0 artifacts; expiry pending 0 receipts / 0 artifacts.',
   storage: storageSnapshot } });
   assert.match(elements.get('health').textContent, /Project health: healthy\. Open gates: none reported\./);
+  assert.equal(elements.get('goalStates').textContent, 'Goal states: planned 0, active 1, complete 0, open 0, blocked 0, deferred 0, cancelled 0, superseded 0.');
+  assert.equal(elements.get('queues').textContent, 'Events received 1, failed 0, quarantined 0, active claims 0, expired claims 0; oldest pending age none. Reviews pending 1; purge pending 0 receipts / 0 artifacts; expiry pending 0 receipts / 0 artifacts.');
   assert.match(elements.get('activity').textContent, /Retained receipts: 3 \(processed 2, received 1, failed 0, quarantined 0\); goals 1; facts 2; SDE candidates pending 1, approved 0, rejected 0\./);
   assert.match(elements.get('storage').textContent, /Project logical records 4\.0 KiB; retained event payload 256 B; facts 2\/10000 \(512 B\/16\.0 MiB\)\. Shared SQLite files: database 8\.0 KiB, WAL 1\.0 KiB\. Staging 128 B \/ 250\.0 MiB warning-only threshold; below warning level, and writes remain allowed\. Model\/token usage is not reported here\./);
   const stagingAtWarning = {

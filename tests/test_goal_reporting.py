@@ -16,6 +16,9 @@ from curatormd_v2 import (
     CriterionStatus,
     CuratorService,
     CuratorStore,
+    EvidenceAttestation,
+    EvidenceRef,
+    EvidenceVerificationContext,
     FactKind,
     GoalCard,
     GoalStatus,
@@ -176,6 +179,69 @@ class GoalReportingTests(LifecycleTestSupport):
             self.service.goal_report(
                 self.goal.goal_id, GoalReportPage(fact_limit=17)
             )
+
+    def test_fact_evidence_read_is_bound_to_the_visible_report_revision(self) -> None:
+        verified = self.verify("unit", "Unit suite passed")
+        page = GoalReportPage(fact_offset=0, fact_limit=16)
+        report = self.service.goal_report(self.goal.goal_id, page)
+        revision = report.split("Report snapshot: `", 1)[1].split("`", 1)[0]
+
+        result = self.service.goal_fact_evidence(
+            self.goal.goal_id, verified.fact_id, page
+        )
+        self.assertEqual(result.project_id, self.service.project_id)
+        self.assertEqual(result.goal_id, self.goal.goal_id)
+        self.assertEqual(result.fact_id, verified.fact_id)
+        self.assertEqual(result.report_revision, revision)
+        self.assertEqual(result.verification_status.value, "verified_fact")
+        self.assertEqual(len(result.evidence), 1)
+        self.assertEqual(result.evidence[0].locator, "test-proof:unit")
+        self.assertEqual(result.evidence[0].sha256, verified.evidence[0].sha256)
+        self.assertEqual(result.evidence[0].attestation, verified.verification_attestations[0])
+        with self.assertRaisesRegex(ValueError, "selected report page"):
+            self.service.goal_fact_evidence(
+                self.goal.goal_id,
+                verified.fact_id,
+                GoalReportPage(fact_offset=1, fact_limit=16),
+            )
+
+    def test_report_revision_changes_when_verifier_revokes_proof_between_pages(self) -> None:
+        """A page read must notice an evidence lease that is no longer current."""
+
+        verifier = TestVerifier()
+        revoked = False
+        original_attest = verifier.attest
+
+        def attest(
+            evidence: EvidenceRef,
+            context: EvidenceVerificationContext,
+        ) -> EvidenceAttestation | None:
+            return None if revoked else original_attest(evidence, context)
+
+        with patch.object(verifier, "attest", side_effect=attest):
+            self.service.evidence_verifier = verifier
+            verified = self.verify("unit", "Unit suite passed")
+            first_report = self.service.goal_report(
+                self.goal.goal_id, GoalReportPage(fact_offset=0, fact_limit=16)
+            )
+            first_revision = first_report.split(
+                "Report snapshot: `", 1
+            )[1].split("`", 1)[0]
+            self.assertIn("Verified facts", first_report)
+
+            revoked = True
+            second_page = self.service.goal_report(
+                self.goal.goal_id, GoalReportPage(fact_offset=16, fact_limit=16)
+            )
+
+        second_revision = second_page.split(
+            "Report snapshot: `", 1
+        )[1].split("`", 1)[0]
+        self.assertNotEqual(first_revision, second_revision)
+        self.assertIn("`unit` — open:", second_page)
+        self.assertEqual(
+            verified.verification_attestations[0].adapter_id, "test-fixture"
+        )
 
     def test_goal_report_uses_one_read_snapshot_for_database_records(self) -> None:
         writer_store = self.enterContext(CuratorStore(self.store.database))

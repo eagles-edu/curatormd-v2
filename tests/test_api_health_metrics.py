@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import errno
+import fcntl
+
 from test_api import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
@@ -364,6 +367,64 @@ class ApiHealthMetricsTests(_ApiTestSupport):
             'gate="staging_adapter_unavailable"} 1',
             metrics,
         )
+
+
+    def test_real_staging_lock_acquisition_failure_is_degraded_and_retryable(
+        self,
+    ) -> None:
+        """An OS lock failure degrades health, releases the root, and permits retry."""
+
+        api = self._api_with_healthy_dependencies(self.plugin)
+        private_path = "/srv/private/customer/staging-lock"
+        original_flock = fcntl.flock
+
+        def fail_only_lock_acquisition(fd: int, operation: int) -> None:
+            if operation == fcntl.LOCK_EX:
+                raise OSError(errno.EIO, f"cannot lock {private_path}")
+            original_flock(fd, operation)
+
+        with patch(
+            "curatormd_v2.project_plugin.fcntl.flock",
+            side_effect=fail_only_lock_acquisition,
+        ):
+            health = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertFalse(health.staging_inventory_complete)
+        self.assertIn("staging_inventory_incomplete", health.gate_codes)
+        self.assertIn("staging_adapter_unavailable", health.gate_codes)
+        self.assertNotIn(private_path, repr(health))
+
+        retried = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(retried.status.value, "healthy")
+        self.assertTrue(retried.staging_inventory_complete)
+        self.assertNotIn("staging_adapter_unavailable", retried.gate_codes)
+
+
+    def test_real_staging_root_open_failure_is_degraded_and_retryable(self) -> None:
+        """An OS root-open failure degrades health without leaking its path."""
+
+        api = self._api_with_healthy_dependencies(self.plugin)
+        private_path = "/srv/private/customer/staging-root"
+
+        with patch(
+            "curatormd_v2.project_plugin.os.open",
+            side_effect=PermissionError(f"cannot open {private_path}"),
+        ):
+            health = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(health.status.value, "degraded")
+        self.assertFalse(health.staging_inventory_complete)
+        self.assertIn("staging_inventory_incomplete", health.gate_codes)
+        self.assertIn("staging_adapter_unavailable", health.gate_codes)
+        self.assertNotIn(private_path, repr(health))
+
+        retried = api.project_health(self.caller, "project-a")
+
+        self.assertEqual(retried.status.value, "healthy")
+        self.assertTrue(retried.staging_inventory_complete)
+        self.assertNotIn("staging_adapter_unavailable", retried.gate_codes)
 
 
     def test_project_health_degrades_for_known_failure_or_local_backlog(self) -> None:

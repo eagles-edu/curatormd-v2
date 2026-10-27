@@ -34,7 +34,12 @@ from .read_models import artifact_dependency_map_sha256, build_artifact_review_d
 from .service import CuratorService
 from .staging_models import MAX_STAGING_SCAN_ENTRIES, StagingUsage
 from .staging_scan import StagingTreeScanner
-from .staging_write import StagingArtifactWriteRequest, StagingWriteLimits, write_staged_artifact
+from .staging_write import (
+    StagingArtifactWriteRequest,
+    StagingWriteCallbacks,
+    StagingWriteLimits,
+    write_staged_artifact,
+)
 from .store import ConflictError
 
 MAX_STAGING_HASH_BYTES = 8 * 1024**3
@@ -82,6 +87,7 @@ def _select_expiry_eligible_artifacts(
     timestamps: Mapping[str, str],
     readiness: Mapping[str, tuple[bool, bool, int]],
     cutoff: datetime,
+    observed_at: datetime,
 ) -> tuple[tuple[ArtifactRef, ...], int, int]:
     """Apply exact-age and post-stage record rules without mutating storage."""
 
@@ -90,7 +96,7 @@ def _select_expiry_eligible_artifacts(
     pending_sde_artifact_count = 0
     for artifact in artifacts:
         expiry_state = _artifact_expiry_state(
-            artifact.path, timestamps, readiness, cutoff
+            artifact.path, timestamps, readiness, cutoff, observed_at
         )
         if expiry_state is None:
             unknown_age_count += 1
@@ -117,8 +123,9 @@ def _artifact_expiry_state(
     timestamps: Mapping[str, str],
     readiness: Mapping[str, tuple[bool, bool, int]],
     cutoff: datetime,
+    observed_at: datetime,
 ) -> tuple[bool, bool, int, datetime] | None:
-    """Return age, post-stage readiness, and pending-SDE state for one file."""
+    """Return a trusted age and post-stage state for one file."""
 
     staged_at = timestamps.get(path)
     state = readiness.get(path)
@@ -132,6 +139,8 @@ def _artifact_expiry_state(
         return None
     fact_after_stage, review_after_stage, pending_sde_count = state
     staged_at_utc = parsed.astimezone(UTC)
+    if staged_at_utc > observed_at:
+        return None
     return (
         staged_at_utc <= cutoff,
         fact_after_stage or review_after_stage,
@@ -301,8 +310,8 @@ class ProjectStagingMixin(ABC):
         the snapshot incomplete and therefore unusable for a purge decision.
         """
 
-        observed_at = _aware_utc_now(now)
         with self._locked_staging_root() as root_fd:
+            observed_at = _aware_utc_now(now)
             return self._expiry_snapshot_locked(root_fd, observed_at)
 
     def _expiry_snapshot_locked(
@@ -325,7 +334,7 @@ class ProjectStagingMixin(ABC):
         )
         expired, unknown_age_count, pending_sde_artifact_count = (
             _select_expiry_eligible_artifacts(
-                inventory.artifacts, timestamps, readiness, cutoff
+                inventory.artifacts, timestamps, readiness, cutoff, observed_at
             )
         )
         complete = inventory.usage.inventory_complete and unknown_age_count == 0
@@ -591,13 +600,15 @@ class ProjectStagingMixin(ABC):
     ) -> ArtifactRef:
         """Publish a producer artifact while the project staging lock is held."""
 
-        existing_bytes, project_usage, existing_artifact = self._staging_budget_snapshot(
+        existing_bytes, existing_artifact = self._staging_budget_snapshot(
             root_fd, goal_id, artifact_class, artifact_id
         )
         return write_staged_artifact(
             self.config,
-            self.service.store.record_staging_artifact_time,
-            self.service.store.bind_staging_artifact_occurrences,
+            StagingWriteCallbacks(
+                self.service.store.record_staging_artifact_time,
+                self.service.store.bind_staging_artifact_occurrences,
+            ),
             StagingArtifactWriteRequest(
                 root_fd,
                 goal_id,
@@ -605,7 +616,6 @@ class ProjectStagingMixin(ABC):
                 artifact_id,
                 source,
                 existing_bytes,
-                project_usage,
                 existing_artifact,
             ),
             StagingWriteLimits(
@@ -620,7 +630,7 @@ class ProjectStagingMixin(ABC):
         goal_id: str,
         artifact_class: str,
         artifact_id: str,
-    ) -> tuple[int, StagingUsage | None, ArtifactRef | None]:
+    ) -> tuple[int, ArtifactRef | None]:
         """Check complete inventories and read optional project thresholds."""
 
         inventory = self._scan_staging_tree(
@@ -655,7 +665,6 @@ class ProjectStagingMixin(ABC):
             if existing_bytes >= MAX_GOAL_STAGING_BYTES:
                 raise ConflictError("goal staging byte ceiling reached")
 
-        project_usage = None
         if (
             self.config.staging_max_project_bytes is not None
             or self.config.staging_max_project_files is not None
@@ -667,8 +676,7 @@ class ProjectStagingMixin(ABC):
                 raise ConflictError(
                     "cannot enforce project staging budget with incomplete inventory"
                 )
-            project_usage = project_inventory.usage
-        return existing_bytes, project_usage, existing_artifact
+        return existing_bytes, existing_artifact
 
     @staticmethod
     def _artifact_size(path: str) -> int:

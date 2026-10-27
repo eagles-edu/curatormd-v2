@@ -10,6 +10,7 @@ import unittest
 from io import StringIO
 from unittest.mock import patch
 
+from store_test_support import temporary_store_database
 from curatormd_v2 import (
     ArtifactPurger,
     CuratorService,
@@ -156,11 +157,7 @@ class StorageCliTests(unittest.TestCase):
         self.assertNotIn(str(source), errors.getvalue())
 
     def test_existing_destination_is_preserved(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source = root / "source.sqlite3"
-            store = CuratorStore(source)
-            store.close()
+        with temporary_store_database() as (root, source):
             destination = root / "backup.sqlite3"
             sentinel = b"existing backup must be retained"
             destination.write_bytes(sentinel)

@@ -218,7 +218,9 @@ class StoreOperations1Part1(StoreOperations1Part0):
         self._validate_access_identity(project_id, "project_id")
         if not is_exact_int(expected_revision) or expected_revision < 1:
             raise ValueError("expected_revision must be a positive integer")
-        with self._transaction() as connection:
+        # Keep this transaction open across yield; contextlib exits it when
+        # the caller leaves the fence context.
+        with self._transaction() as connection:  # pylint: disable=contextmanager-generator-missing-cleanup
             registration = connection.execute(
                 "SELECT status, revision, config_sha256 FROM project_registry WHERE project_id = ?",
                 (project_id,),

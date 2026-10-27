@@ -38,6 +38,74 @@ class ApiGoalAccessTests(_ApiTestSupport):
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.goal_list(self.caller, "project-a")
 
+    def test_fact_evidence_read_requires_exact_project_read_grant(self) -> None:
+        goal = self.plugin.service.goal_start(
+            "Expose a bounded evidence page only to project readers.",
+            (SuccessCriterion("visible", "The fact is in the report."),),
+        )
+        fact, _ = self.plugin.service.goal_fact(
+            goal.goal_id, FactKind.CHANGE, "Recorded in the authorized project."
+        )
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+
+        result = api.goal_fact_evidence(
+            self.caller, "project-a", goal.goal_id, fact.fact_id
+        )
+
+        self.assertEqual(result.project_id, "project-a")
+        self.assertEqual(result.goal_id, goal.goal_id)
+        self.assertEqual(result.fact_id, fact.fact_id)
+        self.assertEqual(result.evidence, ())
+        denied = AuthenticatedCuratorAPI({"project-a": self.plugin})
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            denied.goal_fact_evidence(
+                self.caller, "project-a", goal.goal_id, fact.fact_id
+            )
+
+    def test_grant_revocation_between_report_and_evidence_reads_denies_next_page(self) -> None:
+        """A prior report read cannot carry authority across grant revocation."""
+
+        class MutableAuthorizer:
+            allowed = True
+
+            def authorize(
+                self,
+                caller: AuthenticatedCaller,
+                project_id: str,
+                action: ProjectAction,
+            ) -> bool:
+                return (
+                    self.allowed
+                    and caller.subject_id == "hermes-user-1"
+                    and project_id == "project-a"
+                    and action is ProjectAction.READ
+                )
+
+        goal = self.plugin.service.goal_start(
+            "Recheck the read grant before every report detail request.",
+            (SuccessCriterion("visible", "The fact appears on the report page."),),
+        )
+        fact, _ = self.plugin.service.goal_fact(
+            goal.goal_id, FactKind.CHANGE, "This fact is visible only while granted."
+        )
+        authorizer = MutableAuthorizer()
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, authorizer)
+
+        report = api.goal_report(self.caller, "project-a", goal.goal_id)
+        self.assertIn(fact.fact_id, report)
+        prior_evidence = api.goal_fact_evidence(
+            self.caller, "project-a", goal.goal_id, fact.fact_id
+        )
+        self.assertEqual(prior_evidence.fact_id, fact.fact_id)
+
+        authorizer.allowed = False
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.goal_report(self.caller, "project-a", goal.goal_id)
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.goal_fact_evidence(
+                self.caller, "project-a", goal.goal_id, fact.fact_id
+            )
+
 
     def test_retired_source_can_reconcile_only_its_exact_processed_receipt(self) -> None:
         """Retirement permits a lost-ack read without reopening source writes."""

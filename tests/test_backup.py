@@ -10,12 +10,14 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from store_test_support import temporary_store_database
 from curatormd_v2 import (
     ArtifactPurger,
     CuratorService,
     CuratorStore,
     FactKind,
     SuccessCriterion,
+    SQLITE_SCHEMA_VERSION,
     backup_database,
     restore_database,
 )
@@ -73,6 +75,62 @@ class DatabaseBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(FileExistsError, "refusing to overwrite"):
                 restore_database(backup_path, restored_path)
 
+    def test_backup_captures_committed_wal_state_while_reader_blocks_checkpoint(self) -> None:
+        """The online snapshot includes committed writes despite a held WAL reader."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_path = root / "live.sqlite3"
+            snapshot_path = root / "snapshot.sqlite3"
+            stage = root / "stage"
+            stage.mkdir()
+            source = CuratorStore(source_path)
+            service = CuratorService(
+                source,
+                ArtifactPurger(stage),
+                project_id="wal-backup-project",
+            )
+            goal = service.goal_start(
+                "Snapshot around a held reader",
+                (SuccessCriterion("saved", "Both committed facts are present"),),
+            )
+            service.goal_fact(goal.goal_id, FactKind.CHANGE, "Before reader snapshot")
+
+            reader = sqlite3.connect(source_path, isolation_level=None)
+            checkpoint = sqlite3.connect(source_path, isolation_level=None)
+            try:
+                reader.execute("BEGIN")
+                initial_count = reader.execute(
+                    "SELECT COUNT(*) FROM facts WHERE goal_id = ?", (goal.goal_id,)
+                ).fetchone()[0]
+                self.assertEqual(initial_count, 1)
+
+                service.goal_fact(goal.goal_id, FactKind.CHANGE, "Committed in WAL")
+                checkpoint_result = checkpoint.execute(
+                    "PRAGMA wal_checkpoint(TRUNCATE)"
+                ).fetchone()
+                self.assertIsNotNone(checkpoint_result)
+                assert checkpoint_result is not None
+                self.assertEqual(checkpoint_result[0], 1)
+
+                backup_database(source_path, snapshot_path)
+                with CuratorStore(snapshot_path) as snapshot:
+                    self.assertEqual(
+                        [fact.bullet for fact in snapshot.list_facts(goal.goal_id)],
+                        ["Before reader snapshot", "Committed in WAL"],
+                    )
+                self.assertEqual(
+                    reader.execute(
+                        "SELECT COUNT(*) FROM facts WHERE goal_id = ?",
+                        (goal.goal_id,),
+                    ).fetchone()[0],
+                    1,
+                )
+            finally:
+                reader.close()
+                checkpoint.close()
+                source.close()
+
     def test_corrupt_snapshot_is_rejected_without_creating_restore_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -87,6 +145,34 @@ class DatabaseBackupTests(unittest.TestCase):
             self.assertFalse(destination.exists())
             self.assertEqual(corrupt.read_bytes(), b"not a sqlite database")
             self.assertEqual(tuple(root.glob(".*.tmp")), ())
+
+    def test_restore_preserves_unsupported_schema_for_isolated_review(self) -> None:
+        """A valid future-schema snapshot stays intact and is not activated here."""
+
+        with temporary_store_database() as (root, source):
+            future_version = SQLITE_SCHEMA_VERSION + 1
+            connection = sqlite3.connect(source)
+            connection.execute(f"PRAGMA user_version = {future_version}")
+            connection.commit()
+            connection.close()
+
+            snapshot = root / "future-snapshot.sqlite3"
+            restored = root / "isolated-review.sqlite3"
+            backup_database(source, snapshot)
+            restore_database(snapshot, restored)
+
+            with self.assertRaisesRegex(RuntimeError, "newer than supported"):
+                CuratorStore(restored)
+
+            for database in (source, snapshot, restored):
+                connection = sqlite3.connect(database)
+                try:
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        future_version,
+                    )
+                finally:
+                    connection.close()
 
     def test_concurrent_destination_creation_preserves_winner_and_cleans_temp(self) -> None:
         """A destination race must not overwrite the concurrent file or leak a temp."""
@@ -114,6 +200,38 @@ class DatabaseBackupTests(unittest.TestCase):
                     backup_database(source_path, destination)
 
             self.assertEqual(destination.read_bytes(), concurrent_bytes)
+            self.assertEqual(tuple(root.glob(".*.tmp")), ())
+
+    def test_restore_destination_race_preserves_winner_and_cleans_temp(self) -> None:
+        """A concurrent restore target must survive verified snapshot installation."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_path = root / "source.sqlite3"
+            source = CuratorStore(source_path)
+            source.close()
+            snapshot = root / "snapshot.sqlite3"
+            backup_database(source_path, snapshot)
+
+            destination = root / "restored.sqlite3"
+            concurrent_bytes = b"created by the concurrent restore writer"
+            original_link = os.link
+
+            def create_destination_then_link(
+                source_temp: str | Path, target: str | Path
+            ) -> None:
+                Path(target).write_bytes(concurrent_bytes)
+                original_link(source_temp, target)
+
+            with patch(
+                "curatormd_v2.backup.os.link",
+                side_effect=create_destination_then_link,
+            ):
+                with self.assertRaises(FileExistsError):
+                    restore_database(snapshot, destination)
+
+            self.assertEqual(destination.read_bytes(), concurrent_bytes)
+            self.assertTrue(snapshot.is_file())
             self.assertEqual(tuple(root.glob(".*.tmp")), ())
 
     def test_backup_of_processed_event_contains_receipt_not_source_envelope(self) -> None:

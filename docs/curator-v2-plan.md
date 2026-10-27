@@ -191,12 +191,13 @@ Checkboxes describe verified repository state, not architectural intent:
 - `[ ]` Open: proposed, not implemented, or not yet verified end to end.
 - `[!]` Decision or external dependency required before the item can close.
 
-Progress counts refer only to top-level delivery rows in numbered sections
-0–10 and 12 of this **Delivery checklist**. Section 11 reusable templates and
-the later Definition of done acceptance prompts are not delivery rows and are
-excluded from the count. Current direct recount (2026-10-27): **154 of 178
-delivery rows are complete; 24 are open**. Historical narrative counts below
-are not current.
+Progress counts include top-level delivery rows in numbered sections 0–10 and
+12 plus the Definition of done acceptance rows. Section 11 reusable workflow
+templates are excluded. The authoritative recount is
+`python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
+also includes section 11 and is not the delivery-progress count. Current
+recount (2026-10-27): **154 of 178 delivery rows are complete; 24 are open**.
+Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove a running backend,
@@ -1848,12 +1849,15 @@ consumer plugin, Hermes integration, or production deployment.
       the private path. The focused staging suite passes 12 tests; strict
       Pyright and errors-only Pylint pass. This covers another local staging
       boundary only; the deployment-shaped failure matrix remains open.
-      Changing-file fault follow-up (2026-10-27): a disposable file is mutated
-      after its no-follow descriptor is opened but before its stable hash can
-      be accepted. Discovery returns `changed_during_scan`, no artifact, and no
-      manifest. The focused storage suite passes 18 tests; strict Pyright and
-      errors-only Pylint pass. This covers the local changing-file case;
-      external filesystem races and deployment-adapter recovery remain open.
+      Changing/unreadable-file fault follow-up (2026-10-27): the patched open
+      fixtures now preserve the `os.open` dir-fd capability check so they reach
+      the real descriptor-read path. A same-file mutation produces
+      `changed_during_scan`; an injected `EACCES` is separately classified as
+      `permission_denied`. Both leave the manifest absent and inventory
+      incomplete; after removing the fault, a fresh read returns a complete
+      manifest. The focused storage suite passes 20 tests; targeted Pyright and
+      errors-only Pylint pass. These local file-read cases do not prove external
+      filesystem races or deployment-adapter recovery.
       SQLite rollback/close failure follow-up (2026-10-27): injected commit and
       rollback errors preserve the original commit failure; connection close is
       attempted, and sanitized exception-type notes record both cleanup
@@ -1922,6 +1926,44 @@ consumer plugin, Hermes integration, or production deployment.
       suite passes four tests; strict Pyright, errors-only Pylint, and
       `git diff --check` pass. This verifies handled process interruption at a
       transaction boundary, not SIGKILL, power loss, or deployment recovery.
+      Restore-destination race follow-up (2026-10-27): a fault-injected
+      concurrent file creation at the restore install boundary now proves the
+      winning destination is not overwritten and the verified snapshot and
+      temporary-file cleanup are preserved. The focused backup suite passes
+      six tests. This closes the local restore-target race case only; the
+      deployment-shaped storage/staging matrix and owner-reviewed recovery
+      evidence remain open.
+      Unsupported-schema restore follow-up (2026-10-27): a structurally valid
+      snapshot with `user_version` newer than this build is copied only to a new
+      isolated review path. Opening that copy through `CuratorStore` fails with
+      the supported-schema error, and source, snapshot, and restored copy retain
+      the future version unchanged. The focused backup suite passes seven tests.
+      Production storage and owner-reviewed recovery remain open.
+      Held-reader WAL backup follow-up (2026-10-27): a real SQLite reader keeps
+      an earlier WAL snapshot open while a later committed fact remains in the
+      WAL and a truncate checkpoint reports busy. `backup_database` still
+      captures a consistent snapshot containing both committed facts, while
+      the held reader continues to observe its original snapshot. All eight
+      focused backup/restore tests pass. This is local SQLite evidence, not a
+      production filesystem or power-loss recovery drill.
+      Staging callback/rollback follow-up (2026-10-27): an unexpected runtime
+      error while saving the age receipt now removes the just-published file
+      before re-raising; a regression confirms no final or partial artifact
+      remains. A second injected fault makes rollback unlink fail as well: the
+      original receipt error remains primary with only the cleanup exception
+      type added as a note, and the surviving file remains visible in a
+      complete inventory. The focused staging suite passes 20 tests; strict
+      Pyright, focused Pylint, and `git diff --check` pass. This is local
+      adapter evidence only; production interruption and recovery remain open.
+      OS root/lock boundary follow-up (2026-10-27): health regressions now fail
+      the real staging-root `os.open` and `fcntl.flock(LOCK_EX)` calls rather
+      than replacing the complete lock context. Each failure yields degraded
+      health with incomplete inventory and omits the injected private path; the
+      lock path closes its descriptor, and a subsequent unpatched read returns
+      healthy with complete inventory. The focused health suite passes 18
+      tests; targeted Pyright and errors-only Pylint pass. These local boundary
+      checks do not close the production-adapter matrix or reviewed retry/stop
+      classifications.
 
 ### 5. Global backend, persistence, and operations
 
@@ -2433,6 +2475,68 @@ consumer plugin, Hermes integration, or production deployment.
       rendering, project binding, and graceful storage-read failure. This is
       local operator visibility only; it does not establish complete producer
       artifact coverage, token usage, or deployed scrape/alert infrastructure.
+      Local alert-summary progress (2026-10-27): the V2 editor now combines
+      project-matched health, queue, and staging snapshots into a concise
+      attention line for unknown/degraded readiness, event backlog/failures,
+      pending review/purge/expiry work, incomplete staging inventory, and the
+      warning-only staging byte threshold. Failed event counts direct the
+      operator to fixed `project_metrics` categories for evidence rejection vs
+      adapter errors. Missing counts remain unknown. The focused extension suite
+      passes 14 tests, including mismatch, incomplete-counter, queue, and
+      warning-only cases. Extension 0.8.4 is packaged and installed; its
+      `extension.js` hash matches source at
+      `d97a0d4134a8e6012c81f8cfc3edbc1628d5bea2e904735948a5ae9a5fba9319`, and
+      the VSIX SHA-256 is
+      `2b33577de7aa0b625e188a1afa271e7ddda08678b5157ce5da773a6d0d86b917`.
+      The prior 0.8.3 installation is preserved at
+      `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curatormd-v2-vscode-0.8.3-before-0.8.4-20261027/installed-0.8.3.tar.gz`
+      (SHA-256 `7f7b23a8cbd013bbe8bd44565973ccb1e0bce7fa891b675a15c49b03c13b1874`).
+      Existing editor hosts still load 0.8.0/0.8.1; 0.8.4 activation remains
+      unverified. This is a local snapshot alert, not external alert
+      delivery; the checklist item stays open for deployed alert routing,
+      producer coverage, and monitoring acceptance.
+      Follow-up (2026-10-27): the editor reads bounded project metrics and shows
+      evidence-rejected, adapter-error, and other failed-event counts only when
+      they reconcile with health receipt totals. Missing or inconsistent
+      metrics remain unknown. Status-bar tooltips include the installed V2
+      extension version in neutral and health states. Extension 0.8.6 is
+      packaged and installed; focused tests pass 14/14, `node --check` and
+      `git diff --check` pass, and installed/source `extension.js` hashes
+      match. At that checkpoint, editor-host activation and rendered tooltip
+      were unverified; no plan checkbox changed.
+      Activation refresh (2026-10-27): the current VS Code extension-host log
+      for workspace `renew_ssl` records module loading of
+      `/home/eaglesvn/.vscode/extensions/curatormd.curatormd-v2-status-0.8.6/extension.js`
+      at 15:17:28 +07. This confirms package activation in that window; the
+      owner reports the visible status-bar tooltip shows version 0.8.6. No
+      screenshot or automated UI capture was retained. Activation in the
+      unconfigured Curator backend workspace remains unverified. The plan
+      marker stays unchanged.
+      Latest status-item update (2026-10-27): the V2 extension is now 0.8.7.
+      After reloading the ordinary `renew_ssl` VS Code window, the status-item
+      hover rendered `CuratorMD V2 0.8.7. Project health has not been checked.
+      Click to open the dashboard.` The gray item and version are directly
+      visible in the editor. Package and source `extension.js` hashes match at
+      `6209202ed1fac1f5a73398b4c4625e882a71a957fae5a9c276fe5686ac860188`; the
+      VSIX SHA-256 is
+      `f26efef88fb0459c4338216dff7a09b5125d7e8fada32c5b20dae847be530834`.
+      Purple now marks pending SDE review only when no other degraded health
+      gate takes precedence; green, red, yellow, and gray retain their documented
+      meanings. The initial hover confirms only the pre-read version/gray state.
+      Post-hover read in the same window: clicking the status item
+      rendered project health `unknown` with seven unverified dependency gates;
+      the item changed from gray to yellow. Its hover then rendered `CuratorMD V2
+      0.8.7. Project health: unknown, no SDE reviews pending. Click to open the
+      project-scoped dashboard.` The dashboard showed 41 processed receipts, 18
+      goals, 14 facts, zero pending SDEs, and a complete empty staging inventory.
+      Purple was not exercised in the live editor because no real candidate is
+      pending; focused UI tests cover that branch. This local project read is not
+      deployment readiness evidence.
+      Direct hover recheck (2026-10-27 17:58 +07): the current `renew_ssl`
+      editor renders `CuratorMD V2 0.8.7. Project health: unknown, no SDE reviews
+      pending. Click to open the project-scoped dashboard.` The yellow item is
+      immediately right of Git Graph. This supersedes the earlier owner report
+      of 0.8.6 for this window; no production or pending-review color is inferred.
       Ordinary-window acceptance update (2026-10-27): after `Developer: Reload
       Window`, the installed 0.7.0 extension activated and opening its status
       item rendered the configured project's health, retained-activity, and
@@ -2442,6 +2546,54 @@ consumer plugin, Hermes integration, or production deployment.
       250 MiB warning threshold. Model/token usage was not reported. This proves
       the ordinary editor's live project read and truthful unknown state, not
       alert delivery, complete token coverage, or deployment readiness. No
+      checklist marker changed.
+      Status-bar follow-up (2026-10-27): V2 extension 0.8.1 now places its
+      item immediately to the right of Git Graph and uses green for healthy,
+      red for degraded, yellow for unknown, and gray before a health read.
+      It now explains when the workspace has no consumer `.curatormd-v2.toml`
+      and stops before launching the backend. Eleven focused extension tests
+      pass; the VSIX is installed and the installed extension source hash
+      matches this tree. The Curator V2 backend checkout has no consumer config
+      by design, so opening its dashboard cannot resolve a project. The
+      `renew_ssl` consumer config matches the active `vhost-manager-alpha`
+      registration and the `renew-ssl-coding` read grant; a direct read-only
+      launcher call there successfully read health, activity, storage, the
+      first goal page (18 goals), and review cards, all bound to
+      `vhost-manager-alpha`; health was `unknown` with seven missing dependency
+      observations. After reloading the `renew_ssl` window, its extension-host
+      log records activation from 0.8.1. The rendered dashboard shows the same
+      project-scoped health result; the yellow `CuratorMD V2: unknown` item is
+      immediately to the right of Git Graph. The separate backend window still
+      now also runs 0.8.1; its dashboard displays the missing-consumer-config
+      guidance before starting the launcher. No consumer configuration or grant
+      was changed; no checklist marker changed.
+      Error-message follow-up (2026-10-27): the dashboard now gives fixed
+      actionable guidance for denied reads, launcher start/exit, timeouts, and
+      malformed MCP responses. Backend exception text and process output remain
+      hidden. Focused extension tests cover the mapping and verify that a
+      private-path/traceback string is not exposed. Package 0.8.2 was installed;
+      see the subsequent 0.8.4 update for the current package and activation state.
+      Queue and status follow-up (2026-10-27): the dashboard now displays all
+      eight goal-state totals plus project-matched event age/counts and pending
+      review, purge, and expiry queues. Incomplete health/activity snapshots and
+      cross-project results display `unknown`. Before any health read—including
+      when consumer config or User settings are absent—the status item remains
+      gray; yellow is reserved for an attempted read that is unavailable,
+      mismatched, or reports unknown. Thirteen focused extension tests pass.
+      Current host check (2026-10-27): the installed extension list reports
+      0.8.4, but the two existing `curatormd-v2.0` extension-host logs still
+      load 0.8.0 and 0.8.1. No newer activation was observed after requesting
+      a new window. The visible backend-window color therefore is not verified
+      against the current package; reload/activation remains open.
+      Package 0.8.4 is installed and its `extension.js` hash matches source;
+      activation of 0.8.4 in existing editor hosts remains unverified. This adds
+      local dashboard visibility only; external alert delivery and the complete
+      operational dashboard gate remain open. A fresh direct read-only
+      `renew-ssl-coding` launcher call returned same-project health/activity
+      snapshots for `vhost-manager-alpha`; the new formatters rendered 5 planned
+      and 13 active goals, with zero event/review/purge/expiry queue work. Health
+      remained `unknown`. This validates the installed API data shape and
+      project binding, not the VS Code webview activation or alert delivery. No
       checklist marker changed.
       Host scrape endpoint, dashboards, alert rules/delivery, and
       operator budgets remain open. Proposed owner-gated deployment sequence:
@@ -2471,10 +2623,22 @@ consumer plugin, Hermes integration, or production deployment.
       exercise duplicate and dropped notifications and receiver outage, then
       reconcile scrape samples and alert receipts with the underlying bounded
       observations and confirm no private content appears in metrics, dashboard
-      labels, or notifications. Keep the item open until the deployed scrape,
-      dashboards, alert routes, cardinality budget, retention policy, and owner
-      runbooks are exercised together; the local exposition snapshot is not
-      scrape or delivery evidence.
+      labels, or notifications. Local-alpha progress (2026-10-27): the
+      installed single-user V2 editor dashboard and attention summary display
+      project-matched health, all goal states, event/review/purge/expiry queues, staging
+      completeness and the 250 MiB warning, storage measurements, and
+      reconciled evidence-rejection/adapter-error categories. Its attention
+      summary preserves unknown input and surfaces degraded/unknown readiness,
+      backlog, failed receipts, incomplete inventory, and threshold warnings.
+      The focused extension suite passes 14 cases, including queue, mismatch,
+      incomplete-counter, warning-only, and error-category behavior. Live
+      `renew-ssl-coding` access reads the bound alpha project; the six-hour
+      `eaglesvn` maintenance timer is active, its latest run exited 0 with no
+      work pending, and service output is journaled. This verifies the local
+      snapshot dashboard and journal output, not alert routing, notification
+      loss/recovery behavior, or deployment-wide monitoring. Keep this row open
+      until the existing end-to-end scrape, alert-route, and receiver-outage
+      acceptance is met; production scheduler and release gates remain open.
 - [x] Define local truthful health semantics: green requires every required
       host dependency explicitly healthy, a complete empty staging inventory,
       available event/fact capacity, and zero event/review/purge backlog or
@@ -2703,6 +2867,25 @@ consumer plugin, Hermes integration, or production deployment.
       printed. This refreshes local ledger evidence only; it is not a live
       provider API call or a runtime tool invocation, and it does not define
       owner-approved budgets, alert thresholds, or retention policy.
+      Freshness recheck (2026-10-27): a query-only read of the profile-local
+      Hermes ledger passes `PRAGMA quick_check` and still shows the same six
+      turns: five reported and one unknown, with the retained interval ending
+      at `2026-10-21T10:40:21.453664+00:00`. The unknown row has no provider/model route
+      labels. The last usage is six days old; no token counts, event IDs, or
+      session IDs were displayed, and no row was changed. The retained event
+      envelope excludes provider/model fields, so the missing route cannot be
+      reconstructed from that envelope without inventing attribution. Keep the
+      local usage report explicitly stale/partial; live capture, project-wide
+      coverage, budget policy, billing reconciliation, and alerting remain open.
+      Local freshness-measurement progress (2026-10-27): the Hermes
+      `project_usage` report now returns its UTC measurement time and the age in
+      seconds of the latest retained usage event. Empty or invalid timestamps
+      report a null age; no freshness cutoff is inferred. Five focused plugin
+      tests pass, the installed profile tool registers successfully, and its
+      read reports a latest-event age of 518,900 seconds while keeping
+      `coverage_complete=false` and `tokens_complete=false`. This makes staleness
+      measurable but does not supply missing usage, approve a budget, or close
+      this checklist item.
 - [ ] Verify restart recovery, duplicate delivery, delayed ordering, load,
       database locking, backup restore, and multi-project isolation. Local unit
       coverage now explicitly closes/reopens SQLite with a sequence-gap event
@@ -2903,11 +3086,27 @@ consumer plugin, Hermes integration, or production deployment.
       `CuratorMD V2`. Its local dashboard reads project health, retained
       activity, storage usage, and paged goals/reports. It does not prove capture
       completeness, canonical-write reconciliation, or human identity. The
-      current installed package is `0.5.0`, and its extension source hash
-      matches this repository. A
+      installed package is `0.8.9`; its `extension.js` hash matches this repository
+      at `6c2aa3a4376394e55a6eacd9f86f26c86eb6ea5085c95eda958bd0b61622af7b`.
+      The 2026-10-27 follow-up below records its current placement, color states,
+      active-color tooltip explanations, consumer-config guidance, and live
+      read verification. A
       previously captured screenshot visibly shows `CuratorMD V2` in the bottom
       status bar. This is a local editor label, not runtime or readiness
-      evidence.
+      evidence. The latest installed `0.8.9` tooltip states the active
+      color meaning. In the reloaded `renew_ssl` window, gray rendered
+      `Gray means no health read has been attempted`; after the project read,
+      yellow rendered `Yellow means health or the SDE review count is unknown`
+      with project health `unknown`. Source and installed extension hashes
+      match; the focused extension suite passes 14 tests. The currently running
+      VS Code extension host still logs version `0.8.7`; the newly installed
+      `0.8.9` has not yet been loaded in that window. This color explanation
+      does not change the separate deployed monitoring gate.
+      Owner hover follow-up (2026-10-27): the user reports that the visible
+      tooltip currently shows `8.8`. The installed package and source remain
+      `0.8.9`; the prior `0.8.7` host log is stale relative to this report.
+      The active window's exact extension version and the tooltip rendering
+      against the current package still need direct verification.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
@@ -4655,6 +4854,43 @@ unknown. The dashboard and live event-delivery gates remain open.
       hold placement/release. Unknown or untrustworthy age remains visible and
       cannot silently reset the clock or become a deletion authorization. This
       is a proposal, not a production policy or cleanup grant.
+      Local clock-skew follow-up (2026-10-27): expiry discovery now treats a
+      staged timestamp later than its locked inventory observation time as
+      unknown age. The complete inventory is unusable for purge and emits no
+      manifest; a wall-clock rollback cannot make that timestamp eligible when
+      time later catches up. The focused staging suite passes 21 tests, strict
+      Pyright reports zero diagnostics, and focused Pylint is 10.00/10. This
+      closes the local future-timestamp/clock-rollback case. A separate direct-
+      writer regression already proves missing age metadata blocks expiry.
+      Malformed and timezone-naive timestamps are now covered by a separate
+      follow-up below. Paired artifact-tree/database restore remains open, as
+      do production age policy, budgets, and growth alerts.
+      Local database-restore follow-up (2026-10-27): a disposable staging
+      artifact's metadata survives SQLite backup/restore to a new database path
+      while its file identity is unchanged. A copied staging tree has a new file
+      identity, so its restored age is deliberately unknown and cannot produce
+      a purge manifest; see the paired-restore follow-up below. The focused
+      storage/expiry suite now passes 24 tests; strict Pyright and focused
+      Pylint pass. A renamed file and same-content copy without their own age
+      records likewise remain unknown-age and produce no purge manifest.
+      Invalid-age follow-up (2026-10-27): unparsable and timezone-naive stored
+      timestamps now count as unknown age, make the inventory incomplete, and
+      produce no purge manifest; the artifact remains present. The focused
+      storage/expiry suite passes 24 tests, strict Pyright reports zero
+      diagnostics, focused Pylint is 10.00/10, and `git diff --check` passes.
+      This closes the local malformed-age case only; deployment-shaped recovery,
+      production age policy, budgets, and growth alerts remain open. The paired
+      local artifact-tree/database restore remains fail-closed but cannot yet
+      preserve trusted age across a changed file identity.
+      Paired-restore follow-up (2026-10-27): a disposable staging tree and its
+      SQLite backup are restored together to a new database path. The copied
+      file receives a new inode, so its saved path/hash age is treated as
+      unknown both before and at 72 hours; discovery returns no manifest and
+      leaves the file present. The 24-test storage/expiry suite, strict Pyright,
+      focused Pylint, and `git diff --check` pass. This proves safe rejection,
+      not age preservation; an owner-authorized restore procedure that can
+      verify and rebind original age remains open alongside deployment recovery
+      and production retention policy.
 - [x] Add dependency, static-analysis, type, and security checks to CI with
       pinned/reviewed tool versions and documented failure handling.
 
@@ -4666,6 +4902,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       concurrent connection completes that goal.
 - [x] Run strict Pyright, focused Pylint for the versioned event contract,
       the complete unit suite, and `git diff --check` for this work slice.
+      Current dirty-tree quality recheck (2026-10-27): the repository README/CI
+      commands pass on the present Curator V2 worktree: strict Pyright (zero
+      diagnostics), errors-only Pylint, Bandit, and `git diff --check`. The unit
+      suite was not rerun for this verification-only check. This confirms the
+      current local quality gate only; it does not close deployment or runtime
+      acceptance.
 - [x] Resolve existing repository-wide Pylint findings. Progress (2026-10-18):
       extracted the lifecycle test's loop-captured action helper, wrapped
       overlong lines, simplified one unnecessary `try/else`, and switched test
@@ -6245,6 +6487,49 @@ unknown. The dashboard and live event-delivery gates remain open.
       warning scan now reports only `src/curatormd_v2/store.py` at 9645/1000
       lines (10.00/10 score, exit 16); the repository-wide item stays open
       until that remaining module is decomposed and the full scan passes.
+      Fresh full-tree recheck (2026-10-27): `store.py` is now 88 lines, but
+      warning-level Pylint exits 28 at 9.99/10 with 22 findings across seven
+      modules: staging-write complexity, a 1,027-line MCP registration module,
+      two broad cleanup catches, one contextmanager warning, seven missing
+      test-helper docstrings, and one duplicate test-helper block. Strict
+      Pyright, errors-only Pylint, Bandit, and `git diff --check` pass; Bandit
+      reports reviewed `nosec` and test-comment notices without failing. This
+      refresh supersedes the stale store-size-only inventory; warning-level
+      cleanup remains open and no checklist marker changed.
+      Targeted cleanup (2026-10-27): added concise docstrings to the seven
+      injected helper methods identified by that scan. Focused Pylint now rates
+      `tests/test_store_resources.py` and
+      `tests/test_project_plugin_staging.py` 10.00/10, and `git diff --check`
+      passes. The full-tree warning count was not rerun, so its current total
+      remains unknown; other warning-level findings are unresolved and the
+      checklist marker stays open.
+      Cleanup follow-up (2026-10-27): transaction cleanup now catches
+      `sqlite3.Error` from rollback and connection close rather than arbitrary
+      `Exception`, preserving the original commit error while narrowing the
+      recovery boundary to SQLite failures. All five store-resource regressions
+      pass; focused Pylint on `store_operations_00.py` reports 10.00/10 and
+      `git diff --check` passes. The full warning inventory was not rerun; the
+      remaining warning-level findings and checklist marker stay open.
+      Registration-module cleanup (2026-10-27): moved the six reviewed artifact
+      cleanup handlers into `mcp_tool_cleanup_registration.py`, preserving
+      their names, annotations, and API calls. Focused Pyright and Pylint pass;
+      MCP server and hosted-MCP suites pass 17 tests. The refreshed whole-tree
+      Pylint inventory is down from 22 to 12 findings (exit 12, score 9.99/10):
+      ten staging-write design findings, one contextmanager warning, and one
+      duplicated test fixture. The previous module-size, broad-exception, and
+      missing-docstring findings are gone. Broad warning cleanup remains open.
+      Warning-level cleanup (2026-10-27): staging writes now group store
+      callbacks and retry/publish/occurrence inputs into typed requests, extract
+      stable retry-file comparisons, and omit the unused project-usage field
+      from the writer request while retaining the complete-inventory check.
+      The duplicate SQLite test setup now uses one shared fixture. The
+      project-revision fence's yielded transaction is intentionally held open
+      through caller work; a local Pylint suppression documents that
+      contextmanager lifetime. The staging suite passes 18 tests; backup and
+      storage CLI suites pass 12. Full-tree Pylint now passes at 10.00/10;
+      strict Pyright, errors-only Pylint, Bandit, and `git diff --check` pass.
+      Bandit emits only existing `nosec` and test-comment notices. This closes
+      local repository lint cleanup; no delivery checklist marker changed.
 - [x] Add pinned type/lint/test/dependency-security commands to CI with
       documented failure handling; see `docs/ci-v2.md`.
 - [x] Add producer/backend contract tests shared with real project plugins.
@@ -8214,10 +8499,18 @@ substitute for evidence at a later integration boundary.
       reconciliation, and privacy canaries. A read-only Hermes profile probe
       discovers 48 tools and reports 12 processed receipts, one goal, two facts,
       and project health `healthy` with no gates. The local timer is enabled at
-      the approved six-hour cadence; its first run on that cadence is pending.
+      the approved six-hour cadence; its first run on that cadence was pending
+      at this checkpoint.
       No live Vhost application request was run, and no Vhost source or project
       data was changed. This refresh updates package/runtime evidence only;
       Slice G and the live Vhost workflow item remain open.
+      Timer refresh (2026-10-27 12:00 +07): the owner-approved
+      `curatormd-v2-maintenance@vhost-manager-alpha.timer` is active and waiting
+      for its next six-hour run. The latest service invocation exited 0; its
+      journal summary reported zero due or pending expiry/purge targets. No
+      artifact was deleted. This confirms the local maintenance pass only;
+      production event routing, alert delivery, live workflow, and release
+      evidence remain open.
       Current profile-context recheck (2026-10-25): the supported
       `renew-ssl-coding` Hermes CLI probe connects to the installed Curator V2
       MCP, discovers 48 tools, and reads `vhost-manager-alpha`: 17/17 receipts
@@ -8448,6 +8741,55 @@ substitute for evidence at a later integration boundary.
       `scripts/check` checks pass. Commit `d2aac32b8` is pushed to the configured
       Hermes fork branch. Missing usage classes and real app-server coverage
       remain open; this does not close Slice G or the project token-usage gate.
+      Enabled-profile refresh (2026-10-27): the `renew-ssl-coding` profile had
+      an older `project-usage` plugin copy. It now matches the Hermes Core source
+      at SHA-256 `75ac7048626b3d274ed0d3b93fed2d2b9f91275d64394e1427bedcb7c1ad25f2`;
+      the prior copy is preserved under that profile's backups. A direct
+      read-only report for `vhost-manager-alpha` returns six retained turns
+      (five reported, one unknown), all from `codex_app_server`, with event
+      bounds 2026-10-20 through 2026-10-21. The ledger is stale as of this
+      observation and `coverage_complete` remains false with three exclusions.
+      This refresh fixes the installed plugin version and makes its retained
+      interval visible; it does not refresh historical usage or close token
+      coverage, budgets, retention, or alert requirements.
+      Hermes Core quality recheck (2026-10-27): the checkout has no local
+      `main` or `origin/main` ref, so the default `scripts/check` base cannot be
+      resolved. Re-running the same check with the current commit's parent
+      `49c13f030cc7c4151d85c85de855246c81dc81a1` as the explicit base passes all
+      12 checks, including code-health with zero blocking and advisory findings.
+      The Hermes checkout remains clean. This is repository-check evidence,
+      not active gateway or deployed app-server event evidence; Slice G remains
+      open.
+      Read-only profile refresh (2026-10-27 08:51 UTC): the Hermes development
+      CLI connects through the `renew-ssl-coding` profile to the installed
+      V2 stdio server and discovers 49 tools. It reads `vhost-manager-alpha`
+      with 41/41 processed receipts, 18 goals (13 active, five planned), 14
+      facts, and no pending review or purge work. The separate health snapshot
+      reports healthy, a complete empty staging inventory, and seven fresh
+      dependencies. The last processed event is from 06:52 UTC; this probe
+      creates no new app-server lifecycle event. Slice G remains open.
+      Trusted-profile status recheck (2026-10-27 10:52 UTC): the supported
+      `renew-ssl-coding` CLI path again connects with host-injected Hermes
+      profile/session context, discovers 49 tools, and reads the same
+      `vhost-manager-alpha` project: 41/41 processed receipts, 18 goals, 14
+      facts, and no pending review or purge work. The separate health read is
+      healthy with complete empty staging. The last event remains at 06:52 UTC,
+      so this confirms profile-bound ledger access, not a new app-server event
+      or human identity. A direct Codex MCP call without Hermes context remains
+      unauthenticated by design; it is not evidence that the supported Hermes
+      profile cannot access the ledger. Slice G remains open for live lifecycle
+      delivery and its remaining acceptance evidence.
+      Trusted-profile status recheck (2026-10-27 10:52 UTC): the supported
+      `renew-ssl-coding` CLI path connects with host-injected Hermes
+      profile/session context, discovers 49 tools, and reads the bound
+      `vhost-manager-alpha` project: 41/41 processed receipts, 18 goals, 14
+      facts, and no pending review or purge work. The separate health read is
+      healthy with complete empty staging. The last event remains at 06:52 UTC,
+      so this confirms profile-bound ledger access, not a new app-server event
+      or human identity. A direct Codex MCP call without Hermes context remains
+      unauthenticated by design; it is not evidence that the supported Hermes
+      profile cannot access the ledger. Slice G remains open for live lifecycle
+      delivery and its remaining acceptance evidence.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
@@ -8604,6 +8946,23 @@ substitute for evidence at a later integration boundary.
       evidence dispositions, receipt IDs, and before/after out-of-scope hashes.
       Keep this item open until the named real-consumer run and owner-reviewed
       evidence packet exist; synthetic API/MCP fixtures do not close it.
+      Focused recheck (2026-10-27): the disposable Vhost apply-route
+      persistence/retry contract passed again (1 test, 72.444 seconds) using
+      the alpha virtualenv. It exercised a temporary project/database and
+      receipt replay; no live utility run or service restart occurred. This
+      confirms the local bridge fixture only and does not close this item.
+      Local Vhost bridge progress (2026-10-27): the consumer plan response now
+      includes the exact bounded Curator V2 problem and fixed success criteria;
+      the Vhost review modal displays them before apply and labels every
+      criterion open. `/api/apply` sends the same problem and IDs. The Vhost
+      manifest durably retains only that bounded request while the Curator
+      receipt is pending, reuses it for retry/replay, and removes it after a
+      durable receipt. One focused browser preview test and the Vhost
+      apply/retry contract pass, including comparison of the preview with the
+      stored goal, exact criteria, and bounded outcome facts. The UI was built
+      into a temporary directory; the installed root Vhost process was not
+      restarted. This is test-fixture evidence, not the named owner-reviewed
+      real-consumer run; this checklist item remains open.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot
@@ -8757,6 +9116,32 @@ substitute for evidence at a later integration boundary.
       source is still needed for host health in this UI; do not synthesize it
       from the profile label. The profile-bound goal/activity reads themselves
       succeeded.
+      Evidence-detail follow-up (2026-10-27): the dashboard now offers an
+      evidence-reference read for one fact on the currently displayed page.
+      The V2 MCP tool returns the fact's bounded locators, digests, outcome,
+      verifier attestation, and the report revision under the current exact
+      project read grant. The extension checks project/goal/fact/revision/page
+      binding, drops stale results, and renders every value as text. Focused
+      goal-report, API authorization, and VS Code integration checks pass.
+      This adds independently resolvable evidence details to the local view;
+      it does not yet revalidate external trust/revocation versions between
+      page reads or cover grant revocation, reopen/compaction transitions, and
+      the approved real-consumer interaction. The full dashboard requirement
+      remains open.
+      Grant-revocation follow-up (2026-10-27): an API regression now reads a
+      report and its fact evidence under one exact project read grant, revokes
+      that grant, then confirms fresh report and evidence requests are both
+      denied. The existing webview denial test confirms rendered report data is
+      cleared when a fresh read fails. This covers the local authorization and
+      UI-clear paths with synthetic fixtures; it does not prove a live grant
+      change in the editor or close the remaining dashboard acceptance.
+      Evidence-revocation follow-up (2026-10-27): a reporting regression now
+      changes the test verifier to reject a stored proof between page reads.
+      The fresh report revision changes and the criterion returns to `open`,
+      so the extension's existing revision check restarts from page one rather
+      than joining the old verified page to the new state. This covers local
+      evidence revocation; owner trust-root version changes and live source
+      revocation remain open.
       Storage-panel follow-up (2026-10-27): the extension also requests the
       project-authorized `project_storage_usage` result on goal refresh and
       displays project logical bytes, retained event-payload bytes, fact
@@ -8803,17 +9188,24 @@ substitute for evidence at a later integration boundary.
       fact from another goal produces no review candidate, while a selected
       currently verified material fact produces one candidate bound to its
       goal and evidence. Present the bounded packet and exact current inventory
-      through the authenticated reviewer experience; identify the reviewer
-      from a verified subject/role mapping, not a local UID, profile assertion,
-      or synthetic test authorizer. Missing, expired, revoked, or wrong-project
-      authority must leave the candidate pending and record no decision. For an
+      through the attended local reviewer experience. For the approved
+      single-user alpha, identify the reviewer from the kernel-derived
+      `local-uid:1000` subject, verify the OS account is `eaglesvn`, require the
+      current process to run as that UID, and enforce the exact project `review`
+      grant against its owner-owned ledger. Hermes profile/session metadata is
+      routing context only; `Auth: none` does not block this local alpha path.
+      A shared or production deployment instead requires an authenticated
+      subject/role mapping and fresh deployment-owned authorization; neither a
+      profile assertion nor a synthetic test authorizer is sufficient. Missing,
+      expired, revoked, or wrong-project authority must leave the candidate
+      pending and record no decision. For an
       authorized approve or reject, persist the reviewer subject, bounded
       single-line rationale, disposition, decision time, candidate/evidence
       binding, and immutable receipt; repeat the exact request idempotently and
       reject a conflicting retry without rewriting the receipt. Confirm that a
       disposition does not itself claim goal completion, and that any cleanup
       remains bound only to the exact inventory shown in that review action as
-      specified by the next criterion. Keep this item open until an authenticated
+      specified by the next criterion. Keep this item open until the authorized
       human completes the review path in the real consumer and the receipt is
       independently checked; synthetic authorizers and profile metadata do not
       establish human identity.
@@ -8822,7 +9214,7 @@ substitute for evidence at a later integration boundary.
       receipts, and a cleanup-authorization receipt bound to that inventory are
       durable before deletion; every transient artifact is inventoried, safely
       purged or visibly pending, and retryable. Proposed acceptance, using the
-      authenticated reviewer path and approved pilot candidate above: show the
+      attended reviewer path and approved pilot candidate above: show the
       reviewer the selected fact/evidence packet, complete inventory digest,
       and dependency map from artifact occurrence through evidence and criterion
       to retention/hold, post-purge state, and reacquisition action. Show each
@@ -8839,13 +9231,19 @@ substitute for evidence at a later integration boundary.
       before and after receipt commit, projection write, first deletion, and final
       status commit; reopen and retry the same decision to prove no duplicate
       facts/receipts, no deletion outside the original approval, and truthful
-      per-target recovery. At decision submission, revalidate the same
-      authenticated reviewer subject and current project/action grant, including
-      expiry and revocation, and compare the candidate state, supporting
+      per-target recovery. At decision submission, revalidate the same reviewer
+      authority and current project/action grant, including expiry and
+      revocation. For local alpha, verify the invoking `eaglesvn` UID against
+      the owner-owned ledger; for shared or production use, verify the
+      authenticated deployment subject and role. Then compare the candidate
+      state, supporting
       fact/evidence digests, project/config binding, projection revision, and
       complete inventory and dependency-map digests and consequence dispositions
-      with the packet the reviewer saw. Bind a fresh,
-      short-lived authorization assertion to that exact action and packet. If
+      with the packet the reviewer saw. For local alpha, bind the attended
+      typed confirmation to the displayed action and packet and recheck the
+      current UID/grant at submission. For shared or production use, bind a
+      fresh, short-lived deployment authorization assertion to that exact
+      action and packet. If
       authority expires or is revoked, or any bound state changes after display,
       record neither a disposition nor cleanup authorization, perform no unlink,
       and require a newly rendered packet and explicit decision. Inject grant
@@ -8854,12 +9252,13 @@ substitute for evidence at a later integration boundary.
       durable transaction boundary; verify database, projection, and staging
       state remain unchanged on rejection. Owners must approve the assertion
       freshness and revocation-race semantics used by the deployment identity
-      provider. A changed or incomplete inventory must never be silently
-      substituted into the old approval. Keep this item open until a
-      real authenticated reviewer completes the one-action flow in the approved
-      consumer and the exact manifest, dependency map, pre-delete durability
-      proof, per-target outcomes, and recovery receipt are independently
-      reconciled. Local synthetic-reviewer tests do not satisfy that gate.
+      provider before shared or production use. A changed or incomplete
+      inventory must never be silently substituted into the old approval. Keep
+      this item open until the authorized human completes the one-action flow in
+      the approved consumer, and the exact manifest, dependency map, pre-delete
+      durability proof, per-target outcomes, and recovery receipt are
+      independently reconciled. Local synthetic-reviewer tests do not satisfy
+      that gate.
       Local safety progress (2026-10-23): new targets bind a persistent file
       occurrence ID; schema v28 marks unpurged legacy approvals without one as
       stale, leaves completed deletions intact and active holds in force, and

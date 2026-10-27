@@ -1,15 +1,275 @@
 'use strict';
 
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const path = require('node:path');
 const vscode = require('vscode');
+const EXTENSION_VERSION = require('./package.json').version;
 
 const STATUS_LABEL = 'CuratorMD V2';
+const STATUS_COLORS = Object.freeze({
+  healthy: '#73d216',
+  degraded: '#ef2929',
+  unknown: '#fce94f',
+  review: '#ad7fa8',
+  neutral: '#888888',
+});
+const STATUS_COLOR_MEANINGS = Object.freeze({
+  healthy: 'Green means health is healthy with no SDE reviews pending.',
+  review: 'Purple means an SDE review is pending and no other health gate is degraded.',
+  unknown: 'Yellow means health or the SDE review count is unknown.',
+  degraded: 'Red means health is degraded beyond the review-only state.',
+  neutral: 'Gray means no health read has been attempted.',
+});
 const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
 const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
+const REPORT_FACT_ID_PATTERN = /^- `([^`]{1,256})` — /;
+let dashboardStatusItem;
+
+function statusTooltip(message) {
+  return `${STATUS_LABEL} ${EXTENSION_VERSION}. ${message}`;
+}
+
+function statusColorMeaning(status) {
+  return STATUS_COLOR_MEANINGS[status] || STATUS_COLOR_MEANINGS.unknown;
+}
+
+function reportFactIds(report) {
+  if (typeof report !== 'string' || report.length > 40000) return new Set();
+  return new Set(report.split(/\r?\n/)
+    .map((line) => line.match(REPORT_FACT_ID_PATTERN))
+    .filter(Boolean)
+    .map((match) => match[1]));
+}
+
+function isBoundedFactEvidence(value, projectId, goalId, factId, reportRevision) {
+  const boundedText = (text, limit) => typeof text === 'string'
+    && text.length > 0 && text.length <= limit && !/[\r\n]/.test(text);
+  if (!value || value.project_id !== projectId || value.goal_id !== goalId
+    || value.fact_id !== factId || value.report_revision !== reportRevision
+    || !/^[a-f0-9]{64}$/.test(value.report_revision)
+    || !['intent', 'research', 'advice', 'proposal', 'change', 'verification',
+      'open_gate', 'completion_claim', 'outcome', 'reopened', 'criteria_amended',
+      'cancelled', 'superseded'].includes(value.fact_kind)
+    || !['verified_fact', 'recorded_fact', 'unverified_claim', 'open_gate'].includes(value.verification_status)
+    || !(value.criterion_id === null || boundedText(value.criterion_id, 128))
+    || !Array.isArray(value.evidence) || value.evidence.length > 16) return false;
+  return value.evidence.every((reference) => {
+    if (!reference || !boundedText(reference.evidence_kind, 64)
+      || !boundedText(reference.locator, 1000)
+      || !/^[a-f0-9]{64}$/.test(reference.sha256)
+      || !['passed', 'failed', 'observed'].includes(reference.outcome)
+      || !(reference.occurrence_id === null || /^[a-f0-9]{32}$/.test(reference.occurrence_id))) return false;
+    const attestation = reference.attestation;
+    if (attestation === null) return true;
+    return Boolean(attestation
+      && boundedText(attestation.adapter_id, 128)
+      && boundedText(attestation.authenticated_subject, 128)
+      && boundedText(attestation.source_revision, 256)
+      && boundedText(attestation.observed_at, 64)
+      && boundedText(attestation.valid_until, 64)
+      && boundedText(attestation.revocation_checked_at, 64));
+  });
+}
+
+function curatorError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function dashboardErrorMessage(error) {
+  switch (error && error.code) {
+    case 'launcher-start':
+      return 'Could not start Curator V2. Check the User setting serverCommand and the installed launcher.';
+    case 'launcher-exit':
+      return 'The Curator V2 launcher exited before replying. Check its installation and startup.';
+    case 'timeout':
+      return 'Curator V2 did not respond within 15 seconds. Check the local backend and try again.';
+    case 'read-denied':
+      return 'Curator V2 denied this read. Check the configured project and its active local read grant.';
+    case 'mcp-request':
+      return 'The Curator V2 MCP request failed. Check that the installed launcher and backend are compatible.';
+    case 'invalid-response':
+      return 'Curator V2 returned an invalid response. Check the installed launcher and backend.';
+    default:
+      return 'Curator read failed. Check User settings, the local project grant, and the launcher.';
+  }
+}
+
+const GOAL_STATES = Object.freeze([
+  'planned', 'active', 'complete', 'open', 'blocked',
+  'deferred', 'cancelled', 'superseded',
+]);
+
+function summarizeGoalStates(activity, projectId) {
+  if (!activity || activity.project_id !== projectId
+    || !Number.isSafeInteger(activity.goal_count) || activity.goal_count < 0
+    || !Array.isArray(activity.goal_status_counts)) {
+    return 'Goal states: unknown. Activity snapshot unavailable or mismatched.';
+  }
+  const counts = new Map();
+  for (const item of activity.goal_status_counts) {
+    if (!item || !GOAL_STATES.includes(item.status)
+      || !Number.isSafeInteger(item.count) || item.count < 0
+      || counts.has(item.status)) {
+      return 'Goal states: unknown. Activity snapshot is incomplete.';
+    }
+    counts.set(item.status, item.count);
+  }
+  if (counts.size !== GOAL_STATES.length
+    || GOAL_STATES.reduce((total, state) => total + counts.get(state), 0) !== activity.goal_count) {
+    return 'Goal states: unknown. Activity snapshot is incomplete.';
+  }
+  return `Goal states: ${GOAL_STATES.map((state) => `${state} ${counts.get(state)}`).join(', ')}.`;
+}
+
+function summarizeOperationalQueues(health, projectId) {
+  if (!health || health.project_id !== projectId) {
+    return 'Operational queues: unknown. Health snapshot unavailable or mismatched.';
+  }
+  if (health.database_observation_complete !== true) {
+    return 'Operational queues: unknown. Database observation is incomplete.';
+  }
+  const counts = health.operational_counts;
+  const queueFields = [
+    'pending_review_count', 'pending_purge_receipt_count',
+    'pending_purge_artifact_count', 'pending_expiry_purge_receipt_count',
+    'pending_expiry_purge_artifact_count',
+  ];
+  const eventFields = [
+    'event_received_count', 'event_failed_count', 'event_quarantined_count',
+    'event_claimed_count', 'event_expired_claim_count',
+    'oldest_pending_event_age_seconds',
+  ];
+  const exactCount = (value) => Number.isSafeInteger(value) && value >= 0;
+  if (!counts || !queueFields.every((field) => exactCount(counts[field]))
+    || !eventFields.every((field) => health[field] === null || exactCount(health[field]))) {
+    return 'Operational queues: unknown. Health snapshot is incomplete.';
+  }
+  const age = health.oldest_pending_event_age_seconds === null
+    ? 'none' : `${health.oldest_pending_event_age_seconds}s`;
+  return `Events received ${health.event_received_count ?? 'unavailable'}, failed ${health.event_failed_count ?? 'unavailable'}, quarantined ${health.event_quarantined_count ?? 'unavailable'}, active claims ${health.event_claimed_count ?? 'unavailable'}, expired claims ${health.event_expired_claim_count ?? 'unavailable'}; oldest pending age ${age}. Reviews pending ${counts.pending_review_count}; purge pending ${counts.pending_purge_receipt_count} receipts / ${counts.pending_purge_artifact_count} artifacts; expiry pending ${counts.pending_expiry_purge_receipt_count} receipts / ${counts.pending_expiry_purge_artifact_count} artifacts.`;
+}
+
+function summarizeEventFailureCategories(metrics, projectId, expectedCount) {
+  if (!Number.isSafeInteger(expectedCount) || expectedCount < 0) return null;
+  if (expectedCount === 0) return { evidence_rejected: 0, evidence_adapter_error: 0, other: 0 };
+  if (typeof metrics !== 'string' || metrics.length > 65536) return null;
+  const rows = metrics.split(/\r?\n/)
+    .filter((line) => line.startsWith('curatormd_event_failures{'));
+  if (!rows.length) return null;
+
+  const counts = new Map();
+  for (const row of rows) {
+    const match = row.match(/^curatormd_event_failures\{project_id="([^"\\]{1,128})",category="([a-z_]{1,64})"\} (0|[1-9][0-9]{0,14})$/);
+    if (!match || match[1] !== projectId
+      || !['evidence_rejected', 'evidence_adapter_error', 'other'].includes(match[2])
+      || counts.has(match[2])) return null;
+    const count = Number(match[3]);
+    if (!Number.isSafeInteger(count)) return null;
+    counts.set(match[2], count);
+  }
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  if (total !== expectedCount) return null;
+  return {
+    evidence_rejected: counts.get('evidence_rejected') || 0,
+    evidence_adapter_error: counts.get('evidence_adapter_error') || 0,
+    other: counts.get('other') || 0,
+  };
+}
+
+function summarizeOperationalAlerts(health, storage, metrics, projectId) {
+  const alerts = [];
+  const healthMatches = health && health.project_id === projectId;
+  const healthComplete = healthMatches && health.database_observation_complete === true;
+  const healthStatusValid = healthComplete
+    && ['healthy', 'degraded', 'unknown'].includes(health.status)
+    && Array.isArray(health.gate_codes)
+    && health.gate_codes.every((gate) => typeof gate === 'string'
+      && /^[a-z][a-z0-9_:.-]{0,127}$/.test(gate));
+  if (!healthStatusValid) {
+    alerts.push('Readiness and queues unknown (health snapshot unavailable, incomplete, or mismatched).');
+  } else if (health.status !== 'healthy' || health.gate_codes.length > 0) {
+    const gates = health.gate_codes.slice(0, 20);
+    alerts.push(`Readiness ${health.status}${gates.length ? `: ${gates.join(', ')}` : '.'}`);
+  }
+
+  if (healthComplete) {
+    const counts = health.operational_counts;
+    const eventFields = [
+      'event_received_count', 'event_failed_count', 'event_quarantined_count',
+      'event_expired_claim_count',
+    ];
+    const queueFields = [
+      'pending_review_count', 'pending_purge_receipt_count',
+      'pending_purge_artifact_count', 'pending_expiry_purge_receipt_count',
+      'pending_expiry_purge_artifact_count',
+    ];
+    const countValid = (value) => Number.isSafeInteger(value) && value >= 0;
+    if (!counts || !queueFields.every((field) => countValid(counts[field]))
+      || !eventFields.every((field) => health[field] === null || countValid(health[field]))) {
+      alerts.push('Queue details unknown (health snapshot is incomplete).');
+    } else {
+      if (health.event_received_count === null) {
+        alerts.push('Event intake status unknown.');
+      } else if (health.event_received_count > 0) {
+        alerts.push(`${health.event_received_count} event receipt(s) waiting to process.`);
+      }
+      const failuresUnknown = health.event_failed_count === null
+        || health.event_quarantined_count === null;
+      const failed = health.event_failed_count;
+      const quarantined = health.event_quarantined_count;
+      if (failuresUnknown) {
+        alerts.push('Event failure categories unknown.');
+      } else if (failed > 0 || quarantined > 0) {
+        const categories = summarizeEventFailureCategories(
+          metrics, projectId, failed + quarantined,
+        );
+        if (!categories) {
+          alerts.push(`${failed} failed and ${quarantined} quarantined event receipt(s); category breakdown unknown.`);
+        } else {
+          alerts.push(`Event failures by category: evidence rejected ${categories.evidence_rejected}, adapter errors ${categories.evidence_adapter_error}, other ${categories.other}.`);
+        }
+      }
+      if (health.event_expired_claim_count === null) {
+        alerts.push('Expired event-claim status unknown.');
+      } else if (health.event_expired_claim_count > 0) {
+        alerts.push(`${health.event_expired_claim_count} expired event claim(s) need retry/reconciliation.`);
+      }
+      if (counts.pending_review_count) alerts.push(`${counts.pending_review_count} SDE review(s) need a human decision.`);
+      if (counts.pending_purge_receipt_count || counts.pending_purge_artifact_count) {
+        alerts.push(`Cleanup pending: ${counts.pending_purge_receipt_count} receipt(s), ${counts.pending_purge_artifact_count} artifact(s).`);
+      }
+      if (counts.pending_expiry_purge_receipt_count || counts.pending_expiry_purge_artifact_count) {
+        alerts.push(`Expiry cleanup pending: ${counts.pending_expiry_purge_receipt_count} receipt(s), ${counts.pending_expiry_purge_artifact_count} artifact(s).`);
+      }
+    }
+  }
+
+  const staging = storage && storage.project_id === projectId ? storage.staging : null;
+  if (!staging || !Number.isSafeInteger(staging.observed_file_bytes)
+    || staging.observed_file_bytes < 0 || typeof staging.inventory_complete !== 'boolean') {
+    alerts.push('Staging status unknown (inventory read unavailable or mismatched).');
+  } else if (!staging.inventory_complete) {
+    alerts.push(`Staging inventory incomplete; observed at least ${staging.observed_file_bytes} bytes.`);
+  } else {
+    const limit = storage.staging_project_byte_limit;
+    if (Number.isSafeInteger(limit) && limit > 0) {
+      const ratio = staging.observed_file_bytes / limit;
+      if (ratio >= 1) alerts.push('Staging byte warning threshold reached; writes remain allowed.');
+      else if (ratio >= 0.75) alerts.push('Staging reached 75% of its warning threshold; writes remain allowed.');
+    } else if (limit === null) alerts.push('No staging byte warning threshold is configured.');
+    else alerts.push('Staging byte threshold status unknown.');
+  }
+
+  return alerts.length
+    ? `Attention: ${alerts.join(' ')}`
+    : 'No current queue or staging alerts in these snapshots; this does not prove capture completeness.';
+}
 
 class McpStdioClient {
   constructor(command, args, cwd, profileId, spawnProcess = spawn) {
@@ -26,10 +286,14 @@ class McpStdioClient {
     this.closed = false;
     this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', (chunk) => this._receive(chunk));
-    this.child.on('error', () => this._failAll(new Error('Curator MCP process could not start.')));
+    this.child.on('error', () => this._failAll(curatorError(
+      'launcher-start', 'Curator MCP process could not start.',
+    )));
     this.child.on('exit', () => {
       this.closed = true;
-      this._failAll(new Error('Curator MCP process exited before replying.'));
+      this._failAll(curatorError(
+        'launcher-exit', 'Curator MCP process exited before replying.',
+      ));
     });
   }
 
@@ -37,7 +301,7 @@ class McpStdioClient {
     await this._request('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'curatormd-v2-vscode-dashboard', version: '0.5.0' },
+      clientInfo: { name: 'curatormd-v2-vscode-dashboard', version: EXTENSION_VERSION },
     });
     this.child.stdin.write(`${JSON.stringify({
       jsonrpc: '2.0',
@@ -55,7 +319,7 @@ class McpStdioClient {
       },
     });
     if (response.isError) {
-      throw new Error('Curator rejected the read. Check project access and retry.');
+      throw curatorError('read-denied', 'Curator rejected the read.');
     }
     const text = (response.content || [])
       .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
@@ -80,7 +344,7 @@ class McpStdioClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('Curator did not respond within 15 seconds.'));
+        reject(curatorError('timeout', 'Curator did not respond within 15 seconds.'));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
@@ -99,14 +363,16 @@ class McpStdioClient {
       try {
         message = JSON.parse(line);
       } catch (_) {
-        this._failAll(new Error('Curator returned an invalid MCP response.'));
+        this._failAll(curatorError(
+          'invalid-response', 'Curator returned an invalid MCP response.',
+        ));
         continue;
       }
       const pending = this.pending.get(message.id);
       if (!pending) continue;
       clearTimeout(pending.timer);
       this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error('Curator MCP request failed.'));
+      if (message.error) pending.reject(curatorError('mcp-request', 'Curator MCP request failed.'));
       else pending.resolve(message.result || {});
     }
   }
@@ -121,10 +387,15 @@ class McpStdioClient {
 }
 
 function activate(context) {
-  const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 20);
+  // Git Graph uses Left priority 1; Left priority 0 places CuratorMD immediately after it.
+  const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  dashboardStatusItem = statusItem;
   statusItem.name = STATUS_LABEL;
-  statusItem.text = STATUS_LABEL;
-  statusItem.tooltip = 'Open the project-scoped CuratorMD V2 dashboard.';
+  statusItem.text = '$(circle-filled) CuratorMD V2';
+  statusItem.color = STATUS_COLORS.neutral;
+  statusItem.tooltip = statusTooltip(
+    `${statusColorMeaning('neutral')} Click to open the project dashboard.`,
+  );
   statusItem.command = 'curatormdV2.openDashboard';
   statusItem.show();
 
@@ -135,12 +406,64 @@ function activate(context) {
   context.subscriptions.push(statusItem, openDashboard);
 }
 
-function deactivate() {}
+function deactivate() {
+  dashboardStatusItem = undefined;
+}
+
+function updateStatusBarHealth(health, projectId, reviewItems = null) {
+  if (!dashboardStatusItem) return 'unknown';
+  const healthStatus = projectId
+    && health?.project_id === projectId
+    && ['healthy', 'degraded', 'unknown'].includes(health.status)
+    ? health.status
+    : 'unknown';
+  const reviewsKnown = Array.isArray(reviewItems);
+  const pendingReviews = reviewsKnown ? reviewItems.length : null;
+  const reviewBacklogOnly = healthStatus === 'degraded'
+    && Array.isArray(health.gate_codes)
+    && health.gate_codes.length === 1
+    && health.gate_codes[0] === 'review_backlog';
+  let displayStatus = healthStatus;
+  if (healthStatus === 'healthy' && !reviewsKnown) displayStatus = 'unknown';
+  else if (pendingReviews > 0 && (healthStatus === 'healthy' || reviewBacklogOnly)) {
+    displayStatus = 'review';
+  }
+  const reviewSummary = !reviewsKnown
+    ? 'pending SDE review count unavailable'
+    : pendingReviews === 0
+      ? 'no SDE reviews pending'
+      : `${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}`;
+  dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`;
+  dashboardStatusItem.color = STATUS_COLORS[displayStatus];
+  dashboardStatusItem.tooltip = statusTooltip(
+    `${statusColorMeaning(displayStatus)} Project health: ${healthStatus}. ${reviewSummary}. `
+      + 'Click to open the project-scoped dashboard.',
+  );
+  return healthStatus;
+}
+
+function resetStatusBarHealth() {
+  if (!dashboardStatusItem) return;
+  dashboardStatusItem.text = '$(circle-filled) CuratorMD V2';
+  dashboardStatusItem.color = STATUS_COLORS.neutral;
+  dashboardStatusItem.tooltip = statusTooltip(
+    `${statusColorMeaning('neutral')} Click to open the project dashboard.`,
+  );
+}
 
 async function showDashboard(spawnProcess = spawn) {
   const workspace = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
   if (!workspace) {
+    resetStatusBarHealth();
     vscode.window.showWarningMessage('Open a Curator-enabled project folder first.');
+    return;
+  }
+  const projectConfigPath = path.join(workspace.uri.fsPath, '.curatormd-v2.toml');
+  if (fs.existsSync(workspace.uri.fsPath) && !fs.existsSync(projectConfigPath)) {
+    resetStatusBarHealth();
+    vscode.window.showErrorMessage(
+      'This folder has no .curatormd-v2.toml. Open a configured Curator V2 consumer project with an active local read grant.',
+    );
     return;
   }
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
@@ -154,12 +477,14 @@ async function showDashboard(spawnProcess = spawn) {
   const configuredReviewCommand = configuration.get('reviewCommand', '');
   const reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
   if (workspaceOverride) {
+    resetStatusBarHealth();
     vscode.window.showErrorMessage(
       'Curator launcher, database, profile, and review CLI settings must be set in User settings, not the project.',
     );
     return;
   }
   if (!databasePath || !profileId || !serverCommand) {
+    resetStatusBarHealth();
     vscode.window.showErrorMessage(
       'Set CuratorMD V2 databasePath and profileId in VS Code settings before opening the dashboard.',
     );
@@ -175,12 +500,16 @@ async function showDashboard(spawnProcess = spawn) {
   panel.webview.html = dashboardHtml(panel.webview);
   let goalIds = new Set();
   let candidateIds = new Set();
+  let projectId = null;
   const reportRevisions = new Map();
+  const reportFacts = new Map();
+  const reportPages = new Map();
   let requestInProgress = false;
 
   const withClient = async (operation) => {
     if (requestInProgress) throw new Error('A Curator read is already in progress.');
     requestInProgress = true;
+    updateStatusBarHealth(null, null);
     const args = [
       '--project-root', workspace.uri.fsPath,
       '--database', databasePath,
@@ -207,6 +536,11 @@ async function showDashboard(spawnProcess = spawn) {
       if (!message || typeof message.type !== 'string') return;
       if (message.type === 'loadGoals') {
         candidateIds.clear();
+        reportRevisions.clear();
+        reportFacts.clear();
+        reportPages.clear();
+        goalIds.clear();
+        projectId = null;
         const offset = Number.isSafeInteger(message.offset) && message.offset >= 0
           ? message.offset : 0;
         const result = await withClient(async (client) => {
@@ -219,6 +553,8 @@ async function showDashboard(spawnProcess = spawn) {
           const storageRequest = client.callTool('project_storage_usage', {})
             .then((wire) => JSON.parse(wire))
             .catch(() => null);
+          const metricsRequest = client.callTool('project_metrics', {})
+            .catch(() => null);
           const pageRequest = client.callTool('goal_list_page', {
             offset,
             limit: GOAL_PAGE_SIZE,
@@ -226,23 +562,29 @@ async function showDashboard(spawnProcess = spawn) {
           const reviewRequest = client.callTool('sde_review_queue_cards', {
             limit: REVIEW_QUEUE_SIZE,
           }).then((wire) => JSON.parse(wire)).catch(() => null);
-          const [health, activity, storage, page, reviews] = await Promise.all([
+          const [health, activity, storage, metrics, page, reviews] = await Promise.all([
             healthRequest,
             activityRequest,
             storageRequest,
+            metricsRequest,
             pageRequest,
             reviewRequest,
           ]);
-          return { health, activity, storage, page, reviews };
+          return { health, activity, storage, metrics, page, reviews };
         });
-        const { page, health, activity, storage, reviews } = result;
+        const { page, health, activity, storage, metrics, reviews } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
+          projectId = page.project_id;
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
         const reviewItems = validateReviewQueue(reviews, page.project_id);
+        updateStatusBarHealth(health, page.project_id, reviewItems);
         candidateIds = new Set((reviewItems || []).map((item) => item.candidate.candidate_id));
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage, reviews: reviewItems,
+          goalStatesSummary: summarizeGoalStates(activity, page.project_id),
+          queueSummary: summarizeOperationalQueues(health, page.project_id),
+          alertSummary: summarizeOperationalAlerts(health, storage, metrics, page.project_id),
           reviewAvailable: Boolean(reviewCommand),
         });
       } else if (message.type === 'loadReport' && goalIds.has(message.goalId)) {
@@ -266,6 +608,12 @@ async function showDashboard(spawnProcess = spawn) {
         if (factOffset === 0 && reportRevision) {
           reportRevisions.set(message.goalId, reportRevision);
         }
+        const factIds = reportFactIds(report);
+        reportFacts.set(message.goalId, factIds);
+        reportPages.set(message.goalId, {
+          fact_offset: factOffset,
+          fact_limit: REPORT_PAGE_SIZE,
+        });
         panel.webview.postMessage({
           type: 'report',
           goalId: message.goalId,
@@ -274,6 +622,30 @@ async function showDashboard(spawnProcess = spawn) {
           reportRevision,
           report,
         });
+      } else if (message.type === 'loadEvidence'
+        && goalIds.has(message.goalId)
+        && typeof message.factId === 'string'
+        && reportFacts.get(message.goalId)?.has(message.factId)
+        && reportPages.get(message.goalId)?.fact_offset === message.factOffset
+        && reportRevisions.get(message.goalId) === message.reportRevision) {
+        const page = reportPages.get(message.goalId);
+        const evidence = await withClient(async (client) => JSON.parse(
+          await client.callTool('goal_fact_evidence', {
+            goal_id: message.goalId,
+            fact_id: message.factId,
+            ...page,
+          }),
+        ));
+        if (evidence.report_revision !== reportRevisions.get(message.goalId)) {
+          panel.webview.postMessage({ type: 'reportStale', goalId: message.goalId });
+          return;
+        }
+        if (!isBoundedFactEvidence(
+          evidence, projectId, message.goalId, message.factId, message.reportRevision,
+        )) {
+          throw curatorError('invalid-response', 'Curator returned an invalid MCP response.');
+        }
+        panel.webview.postMessage({ type: 'evidence', evidence, factOffset: message.factOffset });
       } else if (message.type === 'openReview'
         && typeof message.candidateId === 'string'
         && typeof reviewCommand === 'string' && reviewCommand.trim().length > 0
@@ -292,9 +664,10 @@ async function showDashboard(spawnProcess = spawn) {
         terminal.sendText(command, true);
       }
     } catch (error) {
+      updateStatusBarHealth(null, null);
       panel.webview.postMessage({
         type: 'error',
-        message: 'Curator read failed. Check User settings, the local project grant, and the launcher.',
+        message: dashboardErrorMessage(error),
       });
     }
   });
@@ -331,10 +704,16 @@ function dashboardHtml(webview) {
   <section aria-labelledby="healthHeading">
     <h2 id="healthHeading">Project health</h2>
     <p id="health" role="status">Loading an authorized health snapshot…</p>
+    <p id="alerts" role="status" aria-live="polite">Loading operational alerts…</p>
   </section>
   <section aria-labelledby="activityHeading">
     <h2 id="activityHeading">Retained activity</h2>
     <p id="activity" role="status">Loading authorized activity totals…</p>
+    <p id="goalStates" role="status">Loading goal states…</p>
+  </section>
+  <section aria-labelledby="queuesHeading">
+    <h2 id="queuesHeading">Operational queues</h2>
+    <p id="queues" role="status">Loading authorized queue counts…</p>
   </section>
   <section aria-labelledby="storageHeading">
     <h2 id="storageHeading">Storage usage</h2>
@@ -350,6 +729,11 @@ function dashboardHtml(webview) {
   <h2 id="selected"></h2>
   <div><button id="previousFacts">Previous facts</button> <button id="nextFacts">Next facts</button></div>
   <p id="factPage"></p><p id="error" role="alert"></p><pre id="report"></pre>
+  <section aria-labelledby="evidenceHeading">
+    <h3 id="evidenceHeading">Evidence references</h3>
+    <p id="evidenceStatus" role="status">Select a fact to inspect its bounded evidence references.</p>
+    <div id="evidenceButtons"></div><div id="evidenceRefs"></div>
+  </section>
   <script nonce="${nonce}">
     const api = acquireVsCodeApi();
     let goalOffset = 0;
@@ -360,9 +744,15 @@ function dashboardHtml(webview) {
     let reportRevision = null;
     const goals = document.getElementById('goals');
     const report = document.getElementById('report');
+    const evidenceStatus = document.getElementById('evidenceStatus');
+    const evidenceButtons = document.getElementById('evidenceButtons');
+    const evidenceRefs = document.getElementById('evidenceRefs');
     const error = document.getElementById('error');
     const health = document.getElementById('health');
+    const alertSummary = document.getElementById('alerts');
     const activitySummary = document.getElementById('activity');
+    const goalStatesSummary = document.getElementById('goalStates');
+    const queueSummary = document.getElementById('queues');
     const storageSummary = document.getElementById('storage');
     const reviewSummary = document.getElementById('reviewNote');
     const reviews = document.getElementById('reviews');
@@ -381,8 +771,14 @@ function dashboardHtml(webview) {
       reviews.replaceChildren();
       reviewSummary.textContent = 'Pending SDE review: unknown. Refresh to retry the authorized queue read.';
       report.textContent = '';
+      evidenceButtons.replaceChildren();
+      evidenceRefs.replaceChildren();
+      evidenceStatus.textContent = 'Select a fact to inspect its bounded evidence references.';
       health.textContent = 'Project health: unknown. Refresh to retry the health read.';
+      alertSummary.textContent = 'Operational alerts: unknown. Refresh to retry project snapshots.';
       activitySummary.textContent = 'Retained activity: unknown. Refresh to retry the activity read.';
+      goalStatesSummary.textContent = 'Goal states: unknown. Refresh to retry the activity read.';
+      queueSummary.textContent = 'Operational queues: unknown. Refresh to retry the health read.';
       storageSummary.textContent = 'Storage usage: unknown. Refresh to retry the storage read.';
       document.getElementById('selected').textContent = '';
       document.getElementById('goalPage').textContent = '';
@@ -397,6 +793,9 @@ function dashboardHtml(webview) {
       selectedGoal = null;
       reportRevision = null;
       report.textContent = '';
+      evidenceButtons.replaceChildren();
+      evidenceRefs.replaceChildren();
+      evidenceStatus.textContent = 'Select a fact to inspect its bounded evidence references.';
       goals.replaceChildren();
       reviews.replaceChildren();
       reviewSummary.textContent = 'Loading the authorized review queue…';
@@ -404,6 +803,7 @@ function dashboardHtml(webview) {
       document.getElementById('factPage').textContent = '';
       document.getElementById('goalPage').textContent = 'Loading a fresh authorized goal page…';
       health.textContent = 'Loading an authorized health snapshot…';
+      alertSummary.textContent = 'Loading operational alerts…';
       activitySummary.textContent = 'Loading authorized activity totals…';
       storageSummary.textContent = 'Loading authorized storage totals…';
       api.postMessage({ type: 'loadGoals', offset });
@@ -413,9 +813,72 @@ function dashboardHtml(webview) {
       if (!selectedGoal) return;
       factOffset = offset;
       report.textContent = 'Loading a fresh authorized report page…';
+      evidenceButtons.replaceChildren();
+      evidenceRefs.replaceChildren();
+      evidenceStatus.textContent = 'Evidence references are cleared while the report refreshes.';
       document.getElementById('factPage').textContent = '';
       api.postMessage({ type: 'loadReport', goalId: selectedGoal, factOffset: offset });
       error.textContent = '';
+    }
+    function renderEvidenceButtons() {
+      evidenceButtons.replaceChildren();
+      const delimiter = String.fromCharCode(96);
+      const ids = [];
+      for (const line of report.textContent.split(/\\r?\\n/)) {
+        const prefix = '- ' + delimiter;
+        if (!line.startsWith(prefix)) continue;
+        const end = line.indexOf(delimiter, prefix.length);
+        if (end <= prefix.length || line.slice(end + 1, end + 4) !== ' — ') continue;
+        ids.push(line.slice(prefix.length, end));
+      }
+      if (!ids.length) {
+        evidenceStatus.textContent = 'This report page has no facts with evidence references.';
+        return;
+      }
+      evidenceStatus.textContent = 'Choose a fact to read its source locator, digest, and verification receipt.';
+      for (const factId of ids) {
+        const button = document.createElement('button');
+        button.textContent = 'Evidence for ' + factId.slice(0, 16);
+        button.addEventListener('click', () => {
+          evidenceStatus.textContent = 'Loading an authorized evidence reference…';
+          evidenceRefs.replaceChildren();
+          api.postMessage({
+            type: 'loadEvidence', goalId: selectedGoal, factId, reportRevision, factOffset,
+          });
+        });
+        evidenceButtons.appendChild(button);
+      }
+    }
+    function renderEvidence(value) {
+      evidenceRefs.replaceChildren();
+      evidenceStatus.textContent = value.fact_kind + ' ' + value.verification_status
+        + '; criterion ' + (value.criterion_id || 'not applicable')
+        + '; report ' + value.report_revision.slice(0, 12) + '.';
+      if (!value.evidence.length) {
+        evidenceStatus.textContent += ' No evidence references recorded.';
+        return;
+      }
+      for (const reference of value.evidence) {
+        const paragraph = document.createElement('p');
+        const fields = [
+          'Kind: ' + reference.evidence_kind,
+          'Outcome: ' + reference.outcome,
+          'Locator: ' + reference.locator,
+          'SHA-256: ' + reference.sha256,
+          reference.occurrence_id ? 'Occurrence: ' + reference.occurrence_id : null,
+        ];
+        const attestation = reference.attestation;
+        if (attestation) {
+          fields.push('Verifier: ' + attestation.adapter_id);
+          fields.push('Subject: ' + attestation.authenticated_subject);
+          fields.push('Source revision: ' + attestation.source_revision);
+          fields.push('Observed: ' + attestation.observed_at);
+          fields.push('Valid until: ' + attestation.valid_until);
+          fields.push('Revocation checked: ' + attestation.revocation_checked_at);
+        }
+        paragraph.textContent = fields.filter(Boolean).join(' · ');
+        evidenceRefs.appendChild(paragraph);
+      }
     }
     document.getElementById('refresh').addEventListener('click', () => requestGoals(0));
     document.getElementById('previousGoals').addEventListener('click', () => requestGoals(Math.max(0, goalOffset - ${GOAL_PAGE_SIZE})));
@@ -432,6 +895,9 @@ function dashboardHtml(webview) {
       error.textContent = '';
       if (message.type === 'reportStale' && message.goalId === selectedGoal) {
         report.textContent = '';
+        evidenceButtons.replaceChildren();
+        evidenceRefs.replaceChildren();
+        evidenceStatus.textContent = 'Evidence references cleared because the report changed.';
         document.getElementById('factPage').textContent = 'The report changed. Restarting from the first page…';
         requestReport(0);
         return;
@@ -455,6 +921,12 @@ function dashboardHtml(webview) {
               : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string');
         health.textContent = 'Project health: ' + healthStatus + '. Open gates: '
           + (healthGates.length ? healthGates.join(', ') : 'none reported') + '.';
+        alertSummary.textContent = typeof message.alertSummary === 'string'
+          ? message.alertSummary : 'Operational alerts: unknown. Alert summary unavailable.';
+        queueSummary.textContent = typeof message.queueSummary === 'string'
+          ? message.queueSummary : 'Operational queues: unknown. Snapshot unavailable.';
+        goalStatesSummary.textContent = typeof message.goalStatesSummary === 'string'
+          ? message.goalStatesSummary : 'Goal states: unknown. Snapshot unavailable.';
         const activityFields = [
           'event_receipt_count', 'processed_event_count', 'received_event_count',
           'failed_event_count', 'quarantined_event_count', 'goal_count',
@@ -614,10 +1086,24 @@ function dashboardHtml(webview) {
         factOffset = message.factOffset;
         factTotal = message.factTotal;
         report.textContent = message.report;
+        evidenceRefs.replaceChildren();
+        renderEvidenceButtons();
         const revisionLabel = reportRevision ? ' Snapshot ' + reportRevision.slice(0, 12) + '.' : '';
         document.getElementById('factPage').textContent = 'Facts ' + (factTotal ? factOffset + 1 : 0) + '–' + Math.min(factOffset + ${REPORT_PAGE_SIZE}, factTotal) + ' of ' + factTotal + '.' + revisionLabel + ' This page is a fresh read; the previous page was cleared.';
         document.getElementById('previousFacts').disabled = factOffset === 0;
         document.getElementById('nextFacts').disabled = factOffset + ${REPORT_PAGE_SIZE} >= factTotal;
+      } else if (message.type === 'evidence' && message.evidence.goal_id === selectedGoal
+        && message.factOffset === factOffset) {
+        if (!reportRevision || message.evidence.report_revision !== reportRevision) {
+          report.textContent = '';
+          evidenceButtons.replaceChildren();
+          evidenceRefs.replaceChildren();
+          evidenceStatus.textContent = 'Evidence references cleared because the report changed.';
+          document.getElementById('factPage').textContent = 'The report changed. Restarting from the first page…';
+          requestReport(0);
+          return;
+        }
+        renderEvidence(message.evidence);
       }
     });
     requestGoals(0);
@@ -698,8 +1184,15 @@ module.exports = {
   McpStdioClient,
   dashboardHtml,
   defaultReviewCommand,
+  dashboardErrorMessage,
+  summarizeGoalStates,
+  summarizeEventFailureCategories,
+  summarizeOperationalQueues,
+  summarizeOperationalAlerts,
   hasWorkspaceSettingOverride,
   quotePosixShellArgument,
   showDashboard,
+  statusColorMeaning,
+  updateStatusBarHealth,
   validateReviewQueue,
 };

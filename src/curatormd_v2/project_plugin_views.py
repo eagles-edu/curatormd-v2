@@ -17,6 +17,7 @@ from .models import (
     GoalStatus,
 )
 from .reporting import (
+    GoalFactEvidence,
     GoalReportPage,
 )
 from .project_plugin_staging import ProjectStagingMixin
@@ -168,6 +169,16 @@ class ProjectGoalReadMixin(ProjectStagingMixin):  # pylint: disable=abstract-met
         """Render a bounded, user-readable report inside this project scope."""
 
         return self.service.goal_report(goal_id, page)
+
+    def goal_fact_evidence(
+        self,
+        goal_id: str,
+        fact_id: str,
+        page: GoalReportPage | None = None,
+    ) -> GoalFactEvidence:
+        """Read bounded evidence references for one fact on a report page."""
+
+        return self.service.goal_fact_evidence(goal_id, fact_id, page)
 
     def goal_list(
         self, statuses: tuple[GoalStatus, ...] = ()

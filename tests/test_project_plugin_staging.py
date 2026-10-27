@@ -184,6 +184,8 @@ class ProjectPluginStagingTests(ProjectPluginTestSupport):
                 self.stream.close()
 
             def write(self, content: bytes) -> int:
+                """Write a prefix, then simulate the filesystem running out of space."""
+
                 self.stream.write(content[:2])
                 self.stream.flush()
                 raise OSError(errno.ENOSPC, "injected storage exhaustion")
@@ -226,6 +228,8 @@ class ProjectPluginStagingTests(ProjectPluginTestSupport):
                 self.stream.close()
 
             def write(self, content: bytes) -> int:
+                """Return a short byte count after writing only a prefix."""
+
                 partial = content[:2]
                 self.stream.write(partial)
                 self.stream.flush()
@@ -346,6 +350,70 @@ class ProjectPluginStagingTests(ProjectPluginTestSupport):
         inventory = plugin.discover_staging_artifacts(goal_id)
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.artifacts, ())
+
+    def test_unexpected_staging_receipt_failure_removes_published_file(self) -> None:
+        """An unexpected callback interruption cannot leave an unreceipted file."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "unexpected-age-receipt-failure"
+        self._goal(plugin, goal_id)
+
+        with patch.object(
+            self.store,
+            "record_staging_artifact_time",
+            side_effect=RuntimeError("injected unexpected receipt failure"),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "injected unexpected receipt failure"
+            ):
+                plugin.stage_artifact(
+                    goal_id, "scratch", "not-recorded", io.BytesIO(b"payload")
+                )
+
+        goal_directory = self.stage / goal_id / "scratch"
+        self.assertFalse((goal_directory / "not-recorded.bin").exists())
+        self.assertFalse(
+            any(path.name.endswith(".partial") for path in self.stage.rglob("*"))
+        )
+        inventory = plugin.discover_staging_artifacts(goal_id)
+        self.assertTrue(inventory.usage.inventory_complete)
+        self.assertEqual(inventory.artifacts, ())
+
+    def test_staging_rollback_unlink_failure_preserves_primary_error(self) -> None:
+        """A rollback unlink error is noted without masking the receipt failure."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "staging-rollback-unlink-failure"
+        self._goal(plugin, goal_id)
+        original_unlink = os.unlink
+
+        def fail_final_unlink(path: str, *, dir_fd: int | None = None) -> None:
+            if path == "rollback-fails.bin":
+                raise PermissionError("injected staging rollback failure")
+            original_unlink(path, dir_fd=dir_fd)
+
+        with (
+            patch.object(
+                self.store,
+                "record_staging_artifact_time",
+                side_effect=RuntimeError("injected receipt failure"),
+            ),
+            patch("curatormd_v2.staging_write.os.unlink", side_effect=fail_final_unlink),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "injected receipt failure") as caught:
+                plugin.stage_artifact(
+                    goal_id, "scratch", "rollback-fails", io.BytesIO(b"payload")
+                )
+
+        self.assertIn("PermissionError", " ".join(caught.exception.__notes__))
+        goal_directory = self.stage / goal_id / "scratch"
+        self.assertTrue((goal_directory / "rollback-fails.bin").is_file())
+        self.assertFalse(
+            any(path.name.endswith(".partial") for path in self.stage.rglob("*"))
+        )
+        inventory = plugin.discover_staging_artifacts(goal_id)
+        self.assertTrue(inventory.usage.inventory_complete)
+        self.assertEqual(len(inventory.artifacts), 1)
 
     def test_project_staging_byte_threshold_warns_without_blocking_or_deleting(self) -> None:
         """The project byte threshold is advisory; writes remain bounded per goal."""

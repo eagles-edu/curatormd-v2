@@ -12,6 +12,8 @@ from .models import (
     AuditReceipt,
     CriterionProgress,
     CriterionStatus,
+    EvidenceAttestation,
+    EvidenceOutcome,
     Fact,
     FactCapacity,
     FactKind,
@@ -243,6 +245,32 @@ class GoalReportData:
     children: tuple[GoalCard, ...]
     dependencies: tuple[GoalCard, ...]
     receipts: tuple[AuditReceipt, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GoalFactEvidenceReference:
+    """One bounded evidence pointer and its immutable verifier receipt."""
+
+    evidence_kind: str
+    locator: str
+    sha256: str
+    outcome: EvidenceOutcome
+    occurrence_id: str | None
+    attestation: EvidenceAttestation | None
+
+
+@dataclass(frozen=True, slots=True)
+class GoalFactEvidence:  # pylint: disable=too-many-instance-attributes  # These fields bind one evidence result to its report context.
+    """Evidence references for one fact in a current bounded report revision."""
+
+    project_id: str
+    goal_id: str
+    fact_id: str
+    fact_kind: FactKind
+    criterion_id: str | None
+    verification_status: GoalBulletCategory
+    report_revision: str
+    evidence: tuple[GoalFactEvidenceReference, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -680,7 +708,7 @@ def _open_gate_lines(projection: GoalBulletProjection) -> list[str]:
     return lines
 
 
-def _validate_page(page: GoalReportPage) -> None:
+def validate_goal_report_page(page: GoalReportPage) -> None:
     """Reject malformed offsets and an overlarge fact page before rendering."""
 
     if not is_exact_int(page.fact_offset) or page.fact_offset < 0:
@@ -706,7 +734,7 @@ def render_goal_report(
     """Render a concise status-and-bullets report without inventing evidence."""
 
     selected_page = page or GoalReportPage()
-    _validate_page(selected_page)
+    validate_goal_report_page(selected_page)
     revision = goal_report_revision(data, intake=intake, summary=summary)
     lines = [f"- Report snapshot: `{revision}`"]
     lines.extend(_goal_header_lines(data.snapshot.goal, intake))

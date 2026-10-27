@@ -88,18 +88,28 @@ class StoreResourceTests(unittest.TestCase):
 
             @property
             def in_transaction(self) -> bool:
+                """Expose the wrapped connection's active transaction state."""
+
                 return self.connection.in_transaction
 
             def execute(self, statement: str) -> sqlite3.Cursor:
+                """Run setup SQL against the wrapped SQLite connection."""
+
                 return self.connection.execute(statement)
 
             def commit(self) -> None:
+                """Inject the commit failure under test."""
+
                 raise sqlite3.OperationalError("injected commit failure")
 
             def rollback(self) -> None:
+                """Inject rollback failure after the commit error."""
+
                 raise sqlite3.OperationalError("injected rollback failure")
 
             def close(self) -> None:
+                """Optionally fail close, otherwise close the real connection."""
+
                 if self.fail_close:
                     raise sqlite3.OperationalError("injected close failure")
                 self.closed = True

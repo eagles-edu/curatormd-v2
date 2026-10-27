@@ -81,10 +81,10 @@ class StoreOperations0Part0:
                 except BaseException as commit_error:
                     try:
                         self._connection.rollback()
-                    except Exception as rollback_error:
+                    except sqlite3.Error as rollback_error:
                         try:
                             self._connection.close()
-                        except Exception as close_error:
+                        except sqlite3.Error as close_error:
                             commit_error.add_note(
                                 "transaction rollback and connection close failed "
                                 f"({type(rollback_error).__name__}, "

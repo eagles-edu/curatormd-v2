@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
 import os
+import shutil
 import stat
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,7 +18,12 @@ from store_test_support import patch_store_symbol
 from project_plugin_test_support import ProjectPluginTestSupport
 from purge_fixtures import TestReviewAuthorizer, approved_empty_inventory_request
 
-from curatormd_v2 import CuratorStore, ProjectStatusChangeRequest
+from curatormd_v2 import (
+    CuratorStore,
+    ProjectStatusChangeRequest,
+    backup_database,
+    restore_database,
+)
 from curatormd_v2.models import FactKind, Materiality, SDECandidate, SDEStatus
 from curatormd_v2.project_config import ProjectConfig
 from curatormd_v2.project_plugin import ProjectPlugin
@@ -142,16 +149,72 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
                 artifact.write_bytes(b"changed")
             return descriptor
 
+        supported_dir_fd = os.supports_dir_fd
         with patch(
             "curatormd_v2.project_plugin_staging.os.open",
             side_effect=open_then_mutate,
-        ):
-            inventory = plugin.discover_staging_artifacts(goal_id)
+        ) as patched_open:
+            with patch(
+                "curatormd_v2.project_plugin_staging.os.supports_dir_fd",
+                supported_dir_fd | {patched_open},
+            ):
+                inventory = plugin.discover_staging_artifacts(goal_id)
 
         self.assertFalse(inventory.usage.inventory_complete)
         self.assertEqual(inventory.usage.error_code, "changed_during_scan")
         self.assertIsNone(inventory.manifest_sha256)
         self.assertEqual(inventory.artifacts, ())
+
+
+    def test_unreadable_staged_file_is_incomplete_and_retryable(self) -> None:
+        """Report a fixed permission code when an enumerated file cannot be read."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "unreadable-staged-file"
+        self._goal(plugin, goal_id)
+        artifact = self.stage / goal_id / "scratch" / "private.bin"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_bytes(b"private payload")
+        private_path = "/srv/private/customer/staging/private.bin"
+        original_open = os.open
+
+        def fail_only_artifact_open(
+            path: str,
+            flags: int,
+            mode: int = 0o777,
+            *,
+            dir_fd: int | None = None,
+        ) -> int:
+            if path == artifact.name and dir_fd is not None:
+                raise PermissionError(errno.EACCES, f"cannot read {private_path}")
+            return original_open(path, flags, mode, dir_fd=dir_fd)
+
+        supported_dir_fd = os.supports_dir_fd
+        with patch(
+            "curatormd_v2.project_plugin_staging.os.open",
+            side_effect=fail_only_artifact_open,
+        ) as patched_open:
+            with patch(
+                "curatormd_v2.project_plugin_staging.os.supports_dir_fd",
+                supported_dir_fd | {patched_open},
+            ):
+                inventory = plugin.discover_staging_artifacts(goal_id)
+
+        self.assertFalse(inventory.usage.inventory_complete)
+        self.assertEqual(inventory.usage.error_code, "permission_denied")
+        self.assertIsNone(inventory.manifest_sha256)
+        self.assertEqual(inventory.artifacts, ())
+        self.assertNotIn(private_path, repr(inventory))
+
+        retried = plugin.discover_staging_artifacts(goal_id)
+
+        self.assertTrue(retried.usage.inventory_complete)
+        self.assertIsNotNone(retried.manifest_sha256)
+        self.assertEqual(len(retried.artifacts), 1)
+        self.assertEqual(
+            retried.artifacts[0].sha256,
+            hashlib.sha256(b"private payload").hexdigest(),
+        )
 
     def test_discovery_includes_temporary_artifact_classes_and_duplicates(self) -> None:
         """Inventory each temporary class, retaining same-content file paths."""
@@ -666,3 +729,127 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
         self.assertIsNone(snapshot.manifest_sha256)
         self.assertEqual(snapshot.eligible_artifacts, ())
         self.assertTrue(Path(tracked.path).is_file())
+
+
+class ProjectPluginExpiryClockTests(ProjectPluginTestSupport):
+    """Keep invalid staging timestamps out of expiry authorization."""
+
+    def test_future_staging_timestamp_keeps_expiry_inventory_unknown(self) -> None:
+        """A wall-clock rollback cannot turn a future age into a fresh lease."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-future-age-goal"
+        self._goal(plugin, goal_id)
+        observed_at = datetime(2026, 10, 27, tzinfo=UTC)
+        future_staged_at = observed_at + timedelta(minutes=5)
+        with patch_store_symbol("utc_now", return_value=future_staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "future-timestamp", io.BytesIO(b"temporary")
+            )
+
+        snapshot = plugin.discover_expired_staging_artifacts(observed_at)
+
+        self.assertFalse(snapshot.inventory_complete)
+        self.assertEqual(snapshot.unknown_age_count, 1)
+        self.assertIsNone(snapshot.manifest_sha256)
+        self.assertEqual(snapshot.eligible_artifacts, ())
+        self.assertTrue(Path(artifact.path).is_file())
+
+    def test_malformed_or_timezone_naive_staging_timestamp_is_unknown(self) -> None:
+        """Invalid age metadata cannot produce an expiry purge manifest."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-invalid-age-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch_store_symbol("utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "invalid-timestamp", io.BytesIO(b"temporary")
+            )
+
+        observed_at = staged_at + timedelta(hours=73)
+        invalid_timestamps = ("not-a-timestamp", "2026-10-01T00:00:00")
+        for invalid_timestamp in invalid_timestamps:
+            with self.subTest(timestamp=invalid_timestamp):
+                with patch.object(
+                    plugin.service.store,
+                    "staging_artifact_times",
+                    return_value={artifact.path: invalid_timestamp},
+                ), patch.object(
+                    plugin.service.store,
+                    "staging_artifact_expiry_readiness",
+                    return_value={artifact.path: (False, False, 0)},
+                ):
+                    snapshot = plugin.discover_expired_staging_artifacts(observed_at)
+
+                self.assertFalse(snapshot.inventory_complete)
+                self.assertEqual(snapshot.unknown_age_count, 1)
+                self.assertIsNone(snapshot.manifest_sha256)
+                self.assertEqual(snapshot.eligible_artifacts, ())
+                self.assertTrue(Path(artifact.path).is_file())
+
+    def test_paired_restore_fails_closed_for_unverified_file_identity(self) -> None:
+        """A copied restore tree cannot borrow age without its file identity."""
+
+        config = ProjectConfig.load(self.root)
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal_id = "expiry-restore-age-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch_store_symbol("utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "restore-age", io.BytesIO(b"temporary source")
+            )
+
+        backup_path = Path(self.temporary) / "staging-age-backup.sqlite3"
+        restored_path = Path(self.temporary) / "staging-age-restored.sqlite3"
+        staging_backup = Path(self.temporary) / "staging-tree-backup"
+        backup_database(self.store.database, backup_path)
+        shutil.copytree(self.stage, staging_backup)
+        shutil.rmtree(self.stage)
+        restore_database(backup_path, restored_path)
+        shutil.copytree(staging_backup, self.stage)
+        restored_store = CuratorStore(restored_path)
+        self.addCleanup(restored_store.close)
+        restored_plugin = ProjectPlugin.bind(config, restored_store)
+
+        for observed_at in (
+            staged_at + timedelta(hours=71, minutes=59),
+            staged_at + timedelta(hours=72),
+        ):
+            with self.subTest(observed_at=observed_at):
+                snapshot = restored_plugin.discover_expired_staging_artifacts(
+                    observed_at
+                )
+                self.assertFalse(snapshot.inventory_complete)
+                self.assertEqual(snapshot.unknown_age_count, 1)
+                self.assertIsNone(snapshot.manifest_sha256)
+                self.assertEqual(snapshot.eligible_artifacts, ())
+                self.assertTrue(Path(artifact.path).is_file())
+
+    def test_renamed_or_copied_artifact_does_not_inherit_expiry_age(self) -> None:
+        """A new path cannot borrow age metadata from a same-content source."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "expiry-copy-age-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime(2026, 10, 1, tzinfo=UTC)
+        with patch_store_symbol("utc_now", return_value=staged_at.isoformat()):
+            artifact = plugin.stage_artifact(
+                goal_id, "cue", "original-source", io.BytesIO(b"same bytes")
+            )
+
+        renamed_path = Path(artifact.path).with_name("renamed.tmp")
+        copied_path = Path(artifact.path).with_name("copied.tmp")
+        Path(artifact.path).rename(renamed_path)
+        shutil.copyfile(renamed_path, copied_path)
+        snapshot = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(hours=73)
+        )
+
+        self.assertFalse(snapshot.inventory_complete)
+        self.assertEqual(snapshot.unknown_age_count, 2)
+        self.assertIsNone(snapshot.manifest_sha256)
+        self.assertEqual(snapshot.eligible_artifacts, ())
+        self.assertTrue(renamed_path.is_file())
+        self.assertTrue(copied_path.is_file())

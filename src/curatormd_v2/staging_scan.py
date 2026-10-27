@@ -329,7 +329,11 @@ def _scan_regular_file(
             metadata,
             state.options.root.joinpath(*entry.relative_parts, entry.name),
         )
-    except (OSError, ValueError):
+    except OSError as exc:
+        state.discovery.hashing_enabled = False
+        _mark_scan_error(state, exc)
+        return
+    except ValueError:
         state.discovery.hashing_enabled = False
         _mark_incomplete(state, "changed_during_scan")
         return
