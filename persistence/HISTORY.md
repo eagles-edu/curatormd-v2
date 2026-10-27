@@ -8713,3 +8713,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Captured the activation log and rendered window. The temporary window closed before a stable dashboard response was confirmed. No app source edit or reviewer/cleanup action occurred.
 - **Open gate:** Dashboard read/rendering, reviewer interaction, cleanup, and acceptance in the ordinary editor window remain open. No checklist marker changed.
 - **Outcome:** Confirm real extension activation and status-bar rendering without claiming full dashboard acceptance.
+
+## 2026-10-27 — Reload the ordinary V2 editor window
+
+- **Intent:** Activate the installed V2-owned status-bar extension in the normal VS Code window for the `renew_ssl` workspace.
+- **Changed fact:** Ran the VS Code `Developer: Reload Window` command. The current extension-host log for workspace `renew_ssl` records `curatormd.curatormd-v2-status` activation from the installed 0.7.0 extension at 14:01:26 local time; the `CuratorMD V2` status item is visible in the ordinary window.
+- **Verification:** Inspected `/home/eaglesvn/.config/Code/logs/20261026T201215/window1/exthost/exthost.log` and the rendered ordinary VS Code window. No project source, ledger, or artifact was changed.
+- **Open gate:** A stable dashboard response and project reads from the ordinary window are not confirmed. Reviewer interaction, receipt, purge, and alpha acceptance remain open; no checklist marker changed.
+- **Outcome:** Clear the editor reload/activation gate for the installed extension without overstating dashboard acceptance.

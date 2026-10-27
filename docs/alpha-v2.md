@@ -21,8 +21,10 @@ dashboard, bounded review-queue display, and attended review handoff. Its
 profile-bound MCP read path is verified locally. In an isolated VS Code 1.143.1
 profile opened on the Vhost workspace, the extension-host log recorded 0.7.0
 activation and the `CuratorMD V2` status item rendered. The ordinary running
-window still shows the older label-only tooltip. A stable dashboard response
-from the new UI has not been verified.
+window was reloaded with `Developer: Reload Window`; its current
+extension-host log records activation of 0.7.0 at 14:01:26 local time. The
+status item is visible in that window. A stable dashboard response from the
+new UI has not been verified.
 
 ## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
 
