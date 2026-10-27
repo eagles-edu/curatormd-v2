@@ -8790,17 +8790,16 @@ substitute for evidence at a later integration boundary.
       unauthenticated by design; it is not evidence that the supported Hermes
       profile cannot access the ledger. Slice G remains open for live lifecycle
       delivery and its remaining acceptance evidence.
-      Trusted-profile status recheck (2026-10-27 10:52 UTC): the supported
-      `renew-ssl-coding` CLI path connects with host-injected Hermes
-      profile/session context, discovers 49 tools, and reads the bound
-      `vhost-manager-alpha` project: 41/41 processed receipts, 18 goals, 14
-      facts, and no pending review or purge work. The separate health read is
-      healthy with complete empty staging. The last event remains at 06:52 UTC,
-      so this confirms profile-bound ledger access, not a new app-server event
-      or human identity. A direct Codex MCP call without Hermes context remains
-      unauthenticated by design; it is not evidence that the supported Hermes
-      profile cannot access the ledger. Slice G remains open for live lifecycle
-      delivery and its remaining acceptance evidence.
+      Current runtime evidence (2026-10-27 20:38 +07): systemd reports the
+      Hermes gateway active as PID `444545` since 06:13 +07. A read-only query
+      of the configured `renew-ssl-coding` outbox found 11 acknowledged
+      lifecycle events (five `codex:turn:start`, six `codex:turn:end`); the
+      latest event is `2026-10-21T10:40:21Z`. No event payload was read. The
+      project-usage ledger has five reported turns and one unknown turn, with
+      the same latest timestamp. The gateway process is active, but the
+      profile-bound lifecycle and usage ledgers are stale; this does not prove
+      current app-server delivery or complete token coverage. Slice G remains
+      open pending a fresh approved real-route event and its receipt.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
