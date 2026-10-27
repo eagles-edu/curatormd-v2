@@ -3105,8 +3105,11 @@ consumer plugin, Hermes integration, or production deployment.
       Owner hover follow-up (2026-10-27): the user reports that the visible
       tooltip currently shows `8.8`. The installed package and source remain
       `0.8.9`; the prior `0.8.7` host log is stale relative to this report.
-      The active window's exact extension version and the tooltip rendering
-      against the current package still need direct verification.
+      The latest `renew_ssl` window extension-host log loads
+      `curatormd-v2-status-0.8.8/extension.js`; it has not loaded the installed
+      `0.8.9` package. Reload that window, then verify the rendered tooltip
+      against `0.8.9`. The version mismatch is confirmed; current rendered
+      tooltip behavior remains unverified.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
