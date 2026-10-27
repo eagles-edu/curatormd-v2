@@ -8732,6 +8732,14 @@ substitute for evidence at a later integration boundary.
       is below the warning threshold, so the warning was not exercised against
       actual staging usage. External journal/alert delivery and Slice G's real
       app-server-turn acceptance remain open.
+      Documentation reconciliation (2026-10-27): the reference-plugin guide and
+      example config now describe `max_project_bytes` and
+      `max_project_files` as warning thresholds. Crossing either threshold
+      leaves staging writes enabled; configured thresholds still require a
+      complete project scan, while per-artifact and per-goal safety ceilings
+      remain enforced. This aligns the consumer contract with the existing
+      staging and health behavior. The broader budget, token-coverage, and alert
+      checklist remains open.
       Hermes usage-progress report (2026-10-27): the `project-usage` plugin now
       labels its measurement as all retained project-usage rows and returns the
       first and last retained event timestamps. An empty ledger reports null

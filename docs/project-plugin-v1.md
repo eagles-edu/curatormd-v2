@@ -93,13 +93,14 @@ returns a bounded error code. A completed traversal is a best-effort measurement
 not an immutable snapshot while files are concurrently changing. This
 observation is not a purge manifest and never authorizes deletion.
 The repository config may additionally set `staging.max_project_bytes` and/or
-`staging.max_project_files` as consumer-owned budgets. When either is set, new
-staging fails closed if the bounded project scan is incomplete, and writes stop
-before crossing the configured limit. `project_storage_usage` reports the
-configured limits alongside observed totals and Prometheus metrics. Budgets are
-admission controls, not retention rules: existing artifacts are not
-automatically deleted, and age-based retention still requires a separate
-owner-approved policy.
+`staging.max_project_files` as consumer-owned warning thresholds. Crossing a
+threshold does not block staging or delete existing artifacts. When either
+threshold is configured, staging still requires a complete bounded project
+scan; an incomplete scan fails closed because the configured usage cannot be
+measured reliably. `project_storage_usage` reports the configured thresholds
+alongside observed totals and Prometheus metrics. Per-artifact and per-goal
+safety ceilings remain enforced independently. These thresholds are not
+retention rules; age-based retention requires a separate owner-approved policy.
 Staging usage additionally attributes regular-file counts and observed bytes to
 the fixed classes `raw-chat`, `cue`, `import`, `scratch`, `generated`,
 `duplicate`, or `other`. Attribution uses the path segment immediately beneath

@@ -1,5 +1,22 @@
 # Curator V2 history
 
+## 2026-10-27 — Reconcile project staging threshold documentation
+
+- **Intent:** Continue the local V2 plan by correcting repository guidance that
+  contradicted the approved warning-only staging threshold behavior.
+- **Changed fact:** The reference-plugin guide and example consumer config now
+  state that project byte/file thresholds warn but do not block writes or
+  delete artifacts; complete-scan requirements and per-artifact/per-goal safety
+  ceilings are documented separately.
+- **Verification:** Source and regression coverage show writes remain allowed
+  above project thresholds; `git diff --check` passes. No tests ran because the
+  change is documentation-only.
+- **Open gate:** Complete scan, token-source coverage, measured budgets, alert
+  delivery, and production retention evidence remain open; no plan marker was
+  changed.
+- **Outcome:** Keep repository instructions aligned with the warning-only
+  local-alpha policy without overstating broader budget completion.
+
 ## 2026-10-24 — Verify the Curator V2 CI quality commands
 
 - **Intent:** Complete the pending verification of Curator V2's current

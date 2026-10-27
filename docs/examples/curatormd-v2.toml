@@ -19,8 +19,10 @@ adapters = []
 [staging]
 # Temporary artifacts for one goal belong under root/<goal-id>/.
 root = ".curatormd-v2/staging"
-# Optional consumer-owned project budgets (unset means no project-wide cap).
-# Reaching either budget blocks new staging; it never deletes existing files.
+# Optional consumer-owned warning thresholds (unset means no project warning).
+# Crossing a threshold warns but does not block staging or delete existing files.
+# A complete project scan is still required when a threshold is configured.
+# Per-artifact and per-goal safety ceilings apply independently.
 # max_project_bytes = 1073741824
 # max_project_files = 10000
 
