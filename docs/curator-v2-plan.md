@@ -8963,6 +8963,19 @@ substitute for evidence at a later integration boundary.
       into a temporary directory; the installed root Vhost process was not
       restarted. This is test-fixture evidence, not the named owner-reviewed
       real-consumer run; this checklist item remains open.
+      Consumer evidence reconciliation (2026-10-27): the Vhost Manager
+      checkout's `docs/curatormd-v2-alpha.md` already records live local apply
+      and rollback runs for two disposable `.test` sites, five operation goals
+      saved by the authorized `eaglesvn` reviewer, and read-only reconciliation
+      of their Markdown hashes with SQLite. It also records a fake-ACME cron
+      bridge receipt. These are real local utility and canonical-write results,
+      so the earlier wording that no live consumer run or canonical write
+      occurred is stale. The records predate the current request-bound problem
+      and fixed-criteria preview/retry contract; there is no content-free
+      acceptance packet binding that exact request, criteria, fingerprints,
+      report, replay/restart, and out-of-scope hashes. This checklist item
+      therefore remains open pending that exact current-contract run and its
+      reviewed evidence packet.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot

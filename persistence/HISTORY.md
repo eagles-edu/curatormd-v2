@@ -9123,3 +9123,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** `code --list-extensions --show-versions` reports `curatormd.curatormd-v2-status@0.8.9`; source `integrations/vscode-status/package.json` also declares `0.8.9`. No direct observation of the active window was available in this checkout.
 - **Open gate:** Reconcile the reported tooltip with the active extension host and confirm the rendered `0.8.9` tooltip. No checklist marker changed.
 - **Outcome:** Preserve the owner report and leave live-window verification open.
+
+## 2026-10-27 — Reconcile live Vhost utility evidence
+
+- **Intent:** Correct the Curator plan's claim that no real local Vhost request or canonical write had occurred.
+- **Changed fact:** The Vhost Manager alpha guide records live local apply/rollback runs for two disposable `.test` sites, five operation goals saved by the authorized `eaglesvn` reviewer, and read-only Markdown/SQLite hash reconciliation. It also records a fake-ACME scheduled-result receipt. These establish real local utility and canonical-write evidence.
+- **Verification:** Read the current Vhost checkout's `docs/curatormd-v2-alpha.md` sections “Vhost apply receipt bridge” and “SSL renewal receipt bridge”; the consumer documentation identifies the runs as local utility operations and distinguishes the fake ACME path from real renewal.
+- **Open gate:** Those operations predate the current request-bound exact problem/criteria preview and retry contract. No packet yet binds that current request and criteria to fingerprints, a bounded report, replay/restart, and out-of-scope hashes. Keep the Definition of done item open; no checklist marker changed.
+- **Outcome:** Preserve the verified local runs while narrowing the remaining evidence gap to the current request contract and its reviewed acceptance packet.
