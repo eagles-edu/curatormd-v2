@@ -8763,6 +8763,14 @@ substitute for evidence at a later integration boundary.
       This refresh fixes the installed plugin version and makes its retained
       interval visible; it does not refresh historical usage or close token
       coverage, budgets, retention, or alert requirements.
+      Usage freshness source update (2026-10-27): Hermes Core commit `707c64a58`
+      adds a UTC measurement timestamp and latest-retained-event age to the
+      read-only report. Invalid, timezone-naive, and future event timestamps
+      leave age unknown rather than reporting a negative or misleading value.
+      The six-test project-usage file and Hermes `scripts/check --base
+      d2aac32b8` (12 checks) pass. This source change has not been installed into the
+      profile plugin copy. The current outbox snapshot below remains stale and
+      coverage incomplete; no token-coverage or deployment checkbox changes.
       Hermes Core quality recheck (2026-10-27): the checkout has no local
       `main` or `origin/main` ref, so the default `scripts/check` base cannot be
       resolved. Re-running the same check with the current commit's parent
