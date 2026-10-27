@@ -2433,7 +2433,16 @@ consumer plugin, Hermes integration, or production deployment.
       rendering, project binding, and graceful storage-read failure. This is
       local operator visibility only; it does not establish complete producer
       artifact coverage, token usage, or deployed scrape/alert infrastructure.
-      No checklist marker changed.
+      Ordinary-window acceptance update (2026-10-27): after `Developer: Reload
+      Window`, the installed 0.7.0 extension activated and opening its status
+      item rendered the configured project's health, retained-activity, and
+      storage panels. Health was `unknown` with seven unverified dependency
+      gates; activity showed 41 processed receipts, 18 goals, 14 facts, and no
+      pending SDEs. Storage showed a complete empty staging scan below the
+      250 MiB warning threshold. Model/token usage was not reported. This proves
+      the ordinary editor's live project read and truthful unknown state, not
+      alert delivery, complete token coverage, or deployment readiness. No
+      checklist marker changed.
       Host scrape endpoint, dashboards, alert rules/delivery, and
       operator budgets remain open. Proposed owner-gated deployment sequence:
       choose an authenticated scrape path and service identity, define its
@@ -8779,8 +8788,14 @@ substitute for evidence at a later integration boundary.
       matches. The previous 0.4.0 installation is archived with SHA-256
       `d0f16c7cdfda2a66f3b8fce16e1bf83f202b61c06d6aea32ec844dc7fd479189`;
       VSIX SHA-256 is `c4f98ab77a2d5465d114f3f8597b520a684a99375f59fd4dc48e6924c7434bee`.
-      The running VS Code window has not been reloaded. Token coverage and
-      deployed monitoring remain open; no checklist marker changed.
+      The ordinary VS Code window has now been reloaded with the `0.7.0`
+      extension. Opening its status item rendered the health, activity, and
+      storage panels from the configured V2 project: health was `unknown` with
+      seven unverified dependency gates; the UI showed 41 processed receipts,
+      18 goals, 14 facts, zero pending SDEs, and an empty staging scan below
+      250 MiB. Model/token use remains unreported. Reviewer interaction,
+      grant-revocation behavior, cleanup, token coverage, and deployed
+      monitoring remain open; no checklist marker changed.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

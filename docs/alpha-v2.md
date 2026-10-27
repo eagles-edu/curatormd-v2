@@ -23,8 +23,13 @@ profile opened on the Vhost workspace, the extension-host log recorded 0.7.0
 activation and the `CuratorMD V2` status item rendered. The ordinary running
 window was reloaded with `Developer: Reload Window`; its current
 extension-host log records activation of 0.7.0 at 14:01:26 local time. The
-status item is visible in that window. A stable dashboard response from the
-new UI has not been verified.
+status item is visible in that window. Opening it rendered the project health,
+activity, and storage panels from the configured V2 database. Health was
+truthfully `unknown` with seven unverified dependency gates; activity showed
+41 processed receipts, 18 goals, 14 facts, and no pending SDEs. Storage showed
+an empty staging inventory below the approved warning threshold. Model/token
+usage was not reported. This verifies the ordinary-window dashboard read, not
+review, purge, complete token coverage, or deployed monitoring.
 
 ## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
 

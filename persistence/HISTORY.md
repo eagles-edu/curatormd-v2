@@ -8721,3 +8721,11 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Inspected `/home/eaglesvn/.config/Code/logs/20261026T201215/window1/exthost/exthost.log` and the rendered ordinary VS Code window. No project source, ledger, or artifact was changed.
 - **Open gate:** A stable dashboard response and project reads from the ordinary window are not confirmed. Reviewer interaction, receipt, purge, and alpha acceptance remain open; no checklist marker changed.
 - **Outcome:** Clear the editor reload/activation gate for the installed extension without overstating dashboard acceptance.
+
+## 2026-10-27 — Read the V2 dashboard in the ordinary editor
+
+- **Intent:** Verify that the activated local editor plugin can render project-scoped health, activity, and storage data.
+- **Changed fact:** Opened `CuratorMD V2: Open Project Dashboard` in the ordinary VS Code window. The webview rendered the configured project's health, retained activity, and storage; it showed 41 processed receipts, 18 goals, 14 facts, zero pending SDEs, and a complete empty staging inventory below the warning threshold. Health remained `unknown` with seven unverified dependency gates, and model/token usage was not reported.
+- **Verification:** Observed the rendered 0.7.0 dashboard at 14:05 local time. The health, activity, and storage panels were populated from the local Curator V2 MCP reads. No decision, purge, or application-source change occurred.
+- **Open gate:** This confirms the ordinary-window project read/render path only. Reviewer action, grant revocation, cleanup, token coverage, deployed scrape/alert delivery, and the broader pilot remain open; no checklist marker changed.
+- **Outcome:** Verify the local plugin's live dashboard read while preserving unknown dependency state and remaining release gates.
