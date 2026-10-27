@@ -8984,6 +8984,19 @@ substitute for evidence at a later integration boundary.
       report, replay/restart, and out-of-scope hashes. This checklist item
       therefore remains open pending that exact current-contract run and its
       reviewed evidence packet.
+      Request-bound static-site follow-up (2026-10-27): the loopback Vhost UI
+      previewed, applied, and rolled back one reserved static `.test` site with
+      no firewall changes. The preview and stored project-scoped goal matched
+      the bounded problem and mode-specific criteria; both apply and rollback
+      receipts processed. After a Vhost service restart, operation history
+      persisted, the test site/account/home were absent, and Nginx/OpenLiteSpeed
+      remained active and config-valid. The created goal remained active with
+      all criteria open and a human-review next action. The consumer-owned
+      content-free acceptance record is in
+      [`../../renew_ssl/docs/curatormd-v2-alpha.md`](../../renew_ssl/docs/curatormd-v2-alpha.md).
+      Same-event replay, before/after hashes for out-of-scope targets, bounded
+      Hermes `goal_report`, and owner-reviewed packet remain open; this does not
+      close the checklist item.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot

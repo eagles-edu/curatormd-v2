@@ -1,5 +1,21 @@
 # Curator V2 history
 
+## 2026-10-27 — Record request-bound Vhost acceptance progress
+
+- **Intent:** Continue the real-consumer acceptance work in Slice I with a
+  request whose criteria are fixed before the Vhost utility applies changes.
+- **Changed fact:** The consumer-owned static-site run preserved the exact
+  mode-specific problem and criteria in a scoped Vhost goal; apply and rollback
+  receipts processed, and post-restart inspection confirmed rollback cleanup.
+- **Verification:** The focused consumer contract passed; the active Vhost
+  service retained operation history, the test site/account/home were absent,
+  and Nginx/OpenLiteSpeed remained active and configuration-valid. See the
+  consumer-owned record at `../../renew_ssl/docs/curatormd-v2-alpha.md`.
+- **Open gate:** Direct bounded Hermes `goal_report`, same-event live replay,
+  out-of-scope before/after hashes, and owner review remain unverified. No
+  checklist marker changed.
+- **Outcome:** Keep the pilot item open while retaining this local progress.
+
 ## 2026-10-27 — Reconcile project staging threshold documentation
 
 - **Intent:** Continue the local V2 plan by correcting repository guidance that
