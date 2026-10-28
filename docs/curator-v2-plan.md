@@ -8835,10 +8835,15 @@ substitute for evidence at a later integration boundary.
       separate health snapshot is healthy with all seven required dependencies
       freshly observed and a complete empty staging scan. This confirms current
       profile-bound ledger and health reads, not a new app-server lifecycle
-      event or human identity. The VS Code launcher still supplies no trusted
-      `hermes/readiness` context and correctly remains `unknown`; direct MCP
-      without Hermes context remains `unauthenticated`. Slice G remains open
-      pending live lifecycle delivery and its remaining acceptance evidence.
+      event or human identity. A read-only metadata-only SQLite check shows
+      the latest two processed receipts are `goal.started` and `fact.recorded`
+      from `hermes-profile:renew-ssl-coding`; neither is a Codex turn event.
+      The Hermes Codex outbox cursor remains at sequence 11 from
+      `2026-10-21T10:40:21Z`. No event payload was read. The VS Code launcher
+      still supplies no trusted `hermes/readiness` context and correctly
+      remains `unknown`; direct MCP without Hermes context remains
+      `unauthenticated`. Slice G remains open pending live lifecycle delivery
+      and its remaining acceptance evidence.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
