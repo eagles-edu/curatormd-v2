@@ -1,5 +1,20 @@
 # Curator V2 history
 
+## 2026-10-28 — Approve transient payload retention in daily backups
+
+- **Intent:** Resolve whether verified rolling backups may retain event payloads
+  that remain pending retry or quarantine beyond the live 72-hour limit.
+- **Changed fact:** `eaglesvn` approved retaining those payloads in the seven
+  daily SQLite backups. The exception applies only to backup copies; live
+  expiry and purge behavior is unchanged.
+- **Verification:** Confirmed the local maintenance policy retains the newest
+  seven verified daily snapshots and restores only to a new path by explicit
+  owner action. No backup was restored or modified for this decision.
+- **Open gate:** Full per-class storage, retention, and recovery budgets remain
+  open; this decision does not close their broader acceptance criteria.
+- **Outcome:** Recorded the owner-approved backup exception without changing a
+  checklist marker.
+
 ## 2026-10-27 — Record request-bound Vhost acceptance progress
 
 - **Intent:** Continue the real-consumer acceptance work in Slice I with a

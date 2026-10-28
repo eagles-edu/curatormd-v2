@@ -2105,7 +2105,11 @@ plugin or Hermes integration is installed and working end to end.
       needed, retains the newest seven verified daily copies in a private
       directory, and prunes older dated backups only after a successful new
       snapshot. A backup failure stops the purge pass and leaves older backups
-      untouched. Restore remains an explicit `eaglesvn` command to a new path;
+      untouched. **Owner decision (2026-10-28):** seven retained daily snapshots
+      may contain pending retry/quarantine event payloads, even when that keeps
+      a backup copy beyond the live-ledger 72-hour transient limit. This is a
+      backup-retention exception only; it does not delay live expiry or purge.
+      Restore remains an explicit `eaglesvn` command to a new path;
       it never replaces or switches the live database automatically. Existing
       migration rollback, integrity, destination-race, and isolated-restore
       tests remain in place. New daily-rotation tests cover seven-copy retention,
