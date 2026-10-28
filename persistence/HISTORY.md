@@ -9745,6 +9745,25 @@ while preserving explicit criteria and same-project parent validation.
 - **Outcome:** Install the local safeguard with rollback evidence while keeping
   broader host crash and data-flow claims bounded.
 
+## 2026-10-28 — Align final acceptance rows with the approved local alpha
+
+- **Intent:** Remove production-only roles and deployment gates from the final
+  acceptance criteria for this one-user, one-repository development utility.
+- **Changed fact:** The final operations row now asks for one content-free
+  evidence record bound to the local package, project, config, and database;
+  the sign-off row assigns review to `eaglesvn`. Both keep local backup,
+  retention, token, privacy, workflow, and owner-review evidence explicit.
+  Multi-user identity, public endpoints, hosted CI, production deployment, and
+  separate production owners are no longer acceptance requirements.
+- **Verification:** Compared the rewritten rows with the owner-approved scope
+  and policy already recorded in the plan. `git diff --check` passes. No
+  checklist marker or count changed.
+- **Open gate:** The local evidence record still needs the applicable package,
+  recovery, Vhost, privacy, and usage checks reconciled; `eaglesvn` must review
+  the resulting packet before alpha sign-off.
+- **Outcome:** Make the remaining finish line match the approved development
+  scope without claiming the remaining local evidence is complete.
+
 ## 2026-10-28 — Verify rolling retry payload backup retention
 
 - **Intent:** Check whether seven retained daily backups also establish a

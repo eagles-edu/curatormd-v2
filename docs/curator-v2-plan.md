@@ -9201,96 +9201,37 @@ substitute for evidence at a later integration boundary.
       recovery, and release evidence; live deployment identity and runtime remain
       separate gates. Concurrent or shared multi-consumer support is outside the
       approved alpha scope and is deferred unless the owner expands scope.
-- [ ] Operational, security, retention, disk, token, upgrade, backup, restore,
-      and rollback gates have evidence from deployment-like testing. Proposed
-      closure: maintain one content-free deployment evidence manifest that maps
-      every applicable release-gate row and Section 9 deployment scenario to
-      the exact package/build, configuration and project fingerprints, identity
-      source, storage/staging/backup adapters, and environment used. For each
-      scenario, record its ID, preconditions, expected result, observed result,
-      receipt or artifact digest, owner, approval reference, and recovery/rollback
-      outcome; reconcile the result with the corresponding open criterion and
-      gate status in [`release-gates-v2.md`](release-gates-v2.md). Mark a gate
-      verified only when its required deployment-boundary evidence and owner
-      decisions are present. Failed, missing, stale, or inconclusive observations
-      remain open with an owner and next action; local tests, profile discovery,
-      and synthetic identities cannot substitute for a deployment result.
-      Completeness acceptance: version and hash the required-gate/scenario
-      catalog before the run by cross-checking every applicable deployment-bound
-      criterion and embedded proposed acceptance case in this plan against the
-      release-gate rows and Section 9 scenarios. Assign stable IDs to embedded
-      cases too, and reject orphan criteria or scenarios instead of silently
-      omitting them. The final manifest must contain exactly one
-      disposition for every catalog entry, with no missing or duplicate IDs.
-      A `not applicable` disposition requires a scoped reason and approval from
-      the owner responsible for that requirement; it cannot be inferred from a
-      missing adapter or absent test. Reject evidence whose package, build,
-      configuration, identity, project, or target fingerprints do not match the
-      scenario binding, and prevent one observation from closing multiple gates
-      unless the catalog explicitly authorizes that reuse. When the catalog or a
-      binding changes, create a new manifest version and re-evaluate affected
-      entries; retain the earlier manifest as history rather than overwriting
-      its results. Independently reconcile catalog and manifest digests, counts,
-      dispositions, and evidence references before release review.
-      Review the complete manifest against the intended release scope before
-      product sign-off, and preserve the recovery snapshot and rollback point
-      until the deployment owner accepts the outcome. This criterion does not
-      itself authorize capture, production activation, data migration, or
-      destructive cleanup.
-- [ ] Product owner signs off the pilot and residual risks after reviewing the
-      proposed evidence packet in Slice I. The pilot owner separately authorizes
-      only the named one-run capture under the approved local-alpha policy; the
-      policy owner approves any changes for broader capture, retention, or
-      destructive-cleanup policy; the deployment owner approves rollback; and
-      the release owner approves the runbook and release. Verify each decision
-      against its own scoped approval reference and evidence. No approval stands
-      in for another, and no one-run authorization permits a different source,
-      project, target, or later run. Keep this item open until all required
-      owners have recorded their independent decisions and the packet matches
-      the exact pilot bindings and release-gate evidence. Proposed sign-off
-      acceptance: present the product owner with a content-free residual-risk
-      register tied to the packet digest; for each open risk, state its scope,
-      observed evidence, impact/likelihood assessment, mitigation or explicit
-      acceptance, accountable owner, and review/expiry trigger. Distinguish
-      risks accepted for the single local-alpha run from unresolved production
-      risks; local pilot sign-off must not imply production readiness or approve
-      an unreviewed policy change. Record the verified approver subject/role,
-      exact decision, bounded rationale, time, packet digest, approved scope,
-      and any expiry in a durable approval reference. The pilot owner, product
-      owner, policy owner, deployment owner, and release owner must each decide
-      only within their stated authority. A change to the package/build,
-      repository/config binding, source inventory, project, or target, or a
-      triggered stop condition, invalidates the affected approval and requires a
-      new packet review before the affected action resumes. Bind the packet to
-      its exact evidence/observation revisions, verifier and trust-root or
-      revocation versions, observation times, freshness limits, and gate
-      snapshot. Revalidate those bindings at each decision submission. If proof
-      expires or is revoked, a required source becomes unavailable, or a gate
-      changes after display, reject the stale decision and require a newly
-      rendered packet; an earlier approval cannot authorize capture, policy
-      change, rollback, or release against changed evidence. Inject expiry,
-      revocation, source outage, and gate changes between display and submit for
-      each approval scope, and verify the old packet remains historical and
-      non-authorizing. Missing owners,
-      unclassified risks, or an approval that cannot be matched to the packet
-      leave sign-off open; no verbal or implied assent closes the gate.
-      Before any authorized action begins, recheck approval expiry/revocation,
-      current approver grant, packet and target fingerprints, evidence freshness,
-      and stop conditions. Inject changes after the approval receipt commits but
-      before the first effect; stale approval must produce no capture, purge,
-      rollback, or release side effect and requires a newly rendered packet and
-      scoped decision. Consume the one-run capture authorization atomically with
-      a durable action intent bound to a run ID: an exact retry resumes that run
-      idempotently, while a different run cannot reuse the consumed approval.
-      Define crash/restart recovery for the interval between intent, first
-      effect, and outcome receipt; when the effect is ambiguous, reconcile its
-      exact target state before retrying rather than starting a second run.
-      Authorization consumption is permanent even if the run stops, fails, or
-      has an unknown outcome; do not refund, transfer, or reuse it. After
-      restart, recover the durable intent and run ID before considering an
-      exact retry, and never automatically replay. A retry may resume the same
-      run only while its approval remains valid and no stop condition has
-      invalidated it. After a triggered stop, reconcile any ambiguous effect
-      and require a fresh, explicitly scoped resume decision bound to the
-      reconciled state; continuation keeps the same run ID. Any new run ID
-      requires a new one-run capture authorization.
+- [ ] The single-user local alpha has evidence for the operating and recovery
+      behavior that this development utility actually uses. Acceptance scope is
+      the approved OS account `eaglesvn`, one active repository, the configured
+      `vhost-manager-alpha` project, and its local Curator V2/Hermes/Vhost
+      integration. Keep one content-free evidence record bound to the source
+      commit, installed wheel hash, repository/config fingerprint, project ID,
+      local database, and evidence time. Record the result and evidence for each
+      applicable local check: focused/full quality gates; local service and
+      profile probes; loopback Vhost preview/apply/rollback with exact receipt
+      replay and out-of-scope target checks; the 250 MiB staging warning
+      boundary (warning only, writes allowed); 72-hour live transient-file
+      expiry; the approved seven-copy SQLite backup rotation and restore to a
+      new path; and package upgrade rollback. Keep missing, stale, or failed
+      checks open with their next action. The configured token report is
+      report-only and explicitly incomplete until real profile usage refreshes
+      it and its known coverage gaps are resolved; it must not enforce an
+      invented budget. Do not require a multi-user identity service, public
+      endpoint, hosted CI, production deployment, or separate deployment,
+      policy, and release owners for this local alpha. This row remains open
+      until the applicable checks are reconciled against the same package and
+      project binding; a unit test or an unrelated profile probe cannot stand
+      in for a local workflow check.
+- [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
+      one explicit accept/reject decision for the named V2 alpha scope. The
+      record must list the exact local package/project/config binding, the
+      verified results, and each remaining local issue, including stale or
+      incomplete token usage, unresolved backup-tree retention, and any
+      unverified source-to-sink path. An acceptance applies only to this
+      single-user, one-repository development utility and the reviewed package
+      and evidence snapshot. It does not silently approve a new retention rule,
+      cleanup inventory, or changed target; those keep their existing explicit
+      review requirements. Preserve a rejected or incomplete review as open and
+      record the next action. Keep this item open until the owner has reviewed
+      the actual packet and the decision is durably recorded against its digest.
