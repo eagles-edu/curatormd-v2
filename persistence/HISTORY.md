@@ -9705,6 +9705,25 @@ while preserving explicit criteria and same-project parent validation.
 - **Outcome:** Record the explicit retention exception and keep retry recovery
   possible from the approved daily snapshots.
 
+## 2026-10-28 — Apply process-local privacy limits to the Curator MCP launcher
+
+- **Intent:** Reduce crash-dump and newly-created file exposure for the local
+  Curator V2 hosted MCP process without changing Hermes Core's process policy.
+- **Changed fact:** The launcher source sets `RLIMIT_CORE` to zero and applies
+  umask `0077` before constructing its runtime. If the POSIX controls are
+  unavailable or cannot be applied, startup fails closed with a generic
+  message. The updated launcher has not been installed into Hermes yet.
+- **Verification:** A subprocess regression observes core limit `(0, 0)` and
+  umask `0077`; 13 hosted MCP tests and the evidence-config CLI test pass.
+  Strict Pyright reports zero diagnostics, errors-only Pylint passes, and
+  `git diff --check` passes.
+- **Open gate:** Runtime installation is unverified. Even when installed, this
+  does not protect Hermes itself, Apport, host journals, upstream crash
+  reporting, or other producer paths. The broad source-to-sink privacy
+  checklist remains open; no checklist marker changed.
+- **Outcome:** Add a local safeguard at the Curator child-process boundary and
+  keep system-wide crash-sink claims unverified.
+
 ## 2026-10-28 — Verify rolling retry payload backup retention
 
 - **Intent:** Check whether seven retained daily backups also establish a

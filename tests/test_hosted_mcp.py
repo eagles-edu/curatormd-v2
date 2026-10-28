@@ -9,6 +9,8 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 from threading import Event
 from typing import Callable, TypedDict, cast
@@ -881,6 +883,8 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
                 with patch(
                     "curatormd_v2.hosted_mcp.build_local_profile_mcp",
                     side_effect=startup_exception,
+                ), patch(
+                    "curatormd_v2.hosted_mcp.set_process_privacy_limits"
                 ), redirect_stderr(stderr):
                     exit_code = hosted_mcp.main(arguments)
 
@@ -890,6 +894,25 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
                 self.assertNotIn("private-database.sqlite3", stderr.getvalue())
                 self.assertNotIn("private SQL fragment", stderr.getvalue())
                 self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_launcher_privacy_limits_apply_in_child_process(self) -> None:
+        script = """
+import json, os, resource
+from curatormd_v2.hosted_mcp import set_process_privacy_limits
+set_process_privacy_limits()
+observed_umask = os.umask(0o077)
+print(json.dumps({"umask": observed_umask, "core": resource.getrlimit(resource.RLIMIT_CORE)}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+        )
+        observed = json.loads(completed.stdout)
+        self.assertEqual(observed["umask"], 0o077)
+        self.assertEqual(observed["core"], [0, 0])
 
 
 

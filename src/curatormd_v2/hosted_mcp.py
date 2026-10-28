@@ -52,6 +52,22 @@ def _local_account_subject() -> str:
     return f"local-uid:{effective_uid}"
 
 
+def set_process_privacy_limits() -> None:
+    """Restrict files and core dumps created by this local MCP process."""
+
+    if os.name != "posix":
+        raise RuntimeError("local MCP privacy limits are unavailable")
+    try:
+        import resource
+    except ImportError:
+        raise RuntimeError("local MCP privacy limits are unavailable") from None
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        os.umask(0o077)
+    except (OSError, ValueError):
+        raise RuntimeError("local MCP privacy limits could not be applied") from None
+
+
 def validate_host_evidence_config_path(
     path: str | Path, project_root: Path
 ) -> Path:
@@ -226,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = _parser().parse_args(argv)
     try:
+        set_process_privacy_limits()
         runtime = build_local_profile_mcp(
             project_root=args.project_root,
             database=args.database,

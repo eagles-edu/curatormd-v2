@@ -4519,6 +4519,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       Apport, whose service is enabled. No crash canary was generated. This
       proves the maintenance-unit safeguard does not protect the gateway or
       its Curator MCP child, so host crash-report capture remains unverified.
+      Local launcher follow-up (2026-10-28): the Curator hosted-MCP launcher
+      source now sets its core-dump limit to zero and its file-creation umask
+      to `0077` before initializing the runtime. A child-process regression
+      verifies both settings without changing the test runner. The updated
+      launcher has not been installed into the Hermes runtime yet. These limits
+      would protect only files and core dumps created by a process started from
+      that launcher; they do not establish how Hermes, Apport, journals, other
+      producers, or upstream crash reporting handle data. Keep the full
+      source-to-sink item open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.

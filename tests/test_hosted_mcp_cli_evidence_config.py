@@ -32,6 +32,8 @@ class HostedMcpEvidenceConfigCliTests(
         ]
 
         with patch.object(
+            hosted_mcp, "set_process_privacy_limits"
+        ), patch.object(
             hosted_mcp, "build_local_profile_mcp", return_value=runtime
         ) as builder:
             exit_code = hosted_mcp.main(arguments)
