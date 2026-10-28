@@ -657,6 +657,11 @@ plugin or Hermes integration is installed and working end to end.
       remains incomplete at 21 entries and 4,636,672 allocated bytes. This
       refreshes current measurements only; durable-class retention, recovery
       horizons, and permanent-storage warning thresholds remain open.
+      Metadata-only `lstat` at 2026-10-28 05:34 UTC found the SQLite main file
+      at 524,288 bytes, WAL at 457,352 bytes, and SHM at 32,768 bytes; each is a
+      UID-1000-owned regular file with mode 0600. The backup directory is
+      UID-1000-owned mode 0700. No file contents were read. WAL and SHM sizes
+      are dynamic and this measurement does not establish per-class budgets.
       Progress (2026-10-23): project-authorized `ProjectStorageUsage` now reports
       project-scoped event cursor count and logical UTF-8 bytes, includes those
       bytes in `logical_record_bytes`, and exports aggregate-only cursor metrics.
