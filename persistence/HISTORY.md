@@ -9326,3 +9326,18 @@ while preserving explicit criteria and same-project parent validation.
   recovery budgets, and physical SQLite/WAL/backup allocation are still open.
 - **Outcome:** Verify two additional local control-plane accounting classes
   without treating logical bytes as a complete storage budget.
+
+## 2026-10-28 — Verify project-administration storage attribution
+
+- **Intent:** Check logical storage measurements for populated project access
+  and audit records.
+- **Changed fact:** The project-access regression now compares the measured
+  logical bytes with UTF-8 lengths read from the stored binding, registry,
+  grant, revocation, audit, and request-rate rows.
+- **Verification:** The focused project-access suite passes 12 tests; targeted
+  Pyright reports zero diagnostics, errors-only Pylint exits 0, and
+  `git diff --check` passes.
+- **Open gate:** Owner-approved data budgets, retention/recovery horizons, and
+  physical index/WAL/backup allocation remain unresolved.
+- **Outcome:** Verify exact local logical accounting for populated access
+  classes without closing the permanent-data budget item.

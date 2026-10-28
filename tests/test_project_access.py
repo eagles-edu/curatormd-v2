@@ -6,6 +6,7 @@ import hashlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 import json
+import sqlite3
 import unittest
 
 from store_test_support import patch_store_symbol
@@ -445,6 +446,101 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
         self.assertTrue(
             all(count == 0 or logical_bytes[name] > 0 for name, count in counts.items())
         )
+        with self.store.transaction() as connection:
+            byte_rows = {
+                "consumer_bindings": (
+                    connection.execute(
+                        """SELECT project_id, status, revision, source_epoch,
+                                  updated_by, updated_at FROM consumer_bindings
+                           WHERE project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    ("project_id", "status", "revision", "source_epoch", "updated_by", "updated_at"),
+                ),
+                "consumer_binding_audit": (
+                    connection.execute(
+                        """SELECT audit_id, project_id, actor_id, action,
+                                  from_status, to_status, source_epoch, revision,
+                                  transition_id, rationale, created_at
+                           FROM consumer_binding_audit WHERE project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    (
+                        "audit_id", "project_id", "actor_id", "action", "from_status",
+                        "to_status", "source_epoch", "revision", "transition_id",
+                        "rationale", "created_at",
+                    ),
+                ),
+                "project_registry": (
+                    connection.execute(
+                        """SELECT project_id, repository_fingerprint, config_sha256,
+                                  backend_api_version, status, registered_by,
+                                  registered_at, updated_by, updated_at, revision
+                           FROM project_registry WHERE project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    (
+                        "project_id", "repository_fingerprint", "config_sha256",
+                        "backend_api_version", "status", "registered_by",
+                        "registered_at", "updated_by", "updated_at", "revision",
+                    ),
+                ),
+                "project_registry_audit": (
+                    connection.execute(
+                        """SELECT audit_id, project_id, actor_id, action,
+                                  repository_fingerprint, config_sha256,
+                                  backend_api_version, rationale, created_at, revision,
+                                  transition_id FROM project_registry_audit
+                           WHERE project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    (
+                        "audit_id", "project_id", "actor_id", "action",
+                        "repository_fingerprint", "config_sha256", "backend_api_version",
+                        "rationale", "created_at", "revision", "transition_id",
+                    ),
+                ),
+                "project_grants": (
+                    connection.execute(
+                        """SELECT grant_id, project_id, subject_id, action, granted_by,
+                                  rationale, granted_at FROM project_grants
+                           WHERE project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    (
+                        "grant_id", "project_id", "subject_id", "action", "granted_by",
+                        "rationale", "granted_at",
+                    ),
+                ),
+                "project_grant_revocations": (
+                    connection.execute(
+                        """SELECT r.grant_id, r.revoked_by, r.rationale, r.revoked_at
+                           FROM project_grant_revocations AS r
+                           JOIN project_grants AS g ON g.grant_id = r.grant_id
+                           WHERE g.project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    ("grant_id", "revoked_by", "rationale", "revoked_at"),
+                ),
+                "request_rate_buckets": (
+                    connection.execute(
+                        """SELECT subject_id, project_id, tokens, updated_at, touched_at
+                           FROM request_rate_buckets WHERE project_id = ?""",
+                        (self.project_id,),
+                    ).fetchall(),
+                    ("subject_id", "project_id", "tokens", "updated_at", "touched_at"),
+                ),
+            }
+
+        def stored_text_bytes(rows: list[sqlite3.Row], fields: tuple[str, ...]) -> int:
+            return sum(
+                len((str(row[field]) if row[field] is not None else "").encode("utf-8"))
+                for row in rows
+                for field in fields
+            )
+
+        for class_name, (rows, fields) in byte_rows.items():
+            self.assertEqual(logical_bytes[class_name], stored_text_bytes(rows, fields))
         self.assertEqual(usage.logical_record_bytes, sum(logical_bytes.values()))
         self.assertEqual(usage.project_id, self.project_id)
         self.assertNotIn("subject_id", usage.__dataclass_fields__)

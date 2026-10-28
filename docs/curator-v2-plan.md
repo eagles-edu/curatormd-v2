@@ -860,6 +860,13 @@ consumer plugin, Hermes integration, or production deployment.
       errors-only Pylint, and `git diff --check` pass. These checks validate two
       more local control-plane classes; the owner-approved budget, retention,
       recovery, and physical allocation decisions remain open.
+      Project-administration accounting follow-up (2026-10-28): the scoped
+      access-storage regression now compares reported bytes with the UTF-8
+      lengths of persisted fields for consumer bindings and audit, project
+      registry and audit, grants, revocations, and request-rate buckets. The
+      access suite, targeted Pyright, errors-only Pylint, and `git diff --check`
+      pass. This validates local logical accounting for the populated access
+      classes; it does not establish owner-approved limits or physical budgets.
       Owner-approved retention horizons, recovery sources, per-class capacity
       thresholds, and physical index/WAL/
       backup allocation remain open.
