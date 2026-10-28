@@ -9263,8 +9263,9 @@ substitute for evidence at a later integration boundary.
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the
       verified results, and each remaining local issue, including stale or
-      incomplete token usage, unresolved backup-tree retention, and any
-      unverified source-to-sink path. An acceptance applies only to this
+      incomplete token usage, the incomplete backup-tree inventory and
+      class-specific retention horizons, and any unverified source-to-sink
+      path. An acceptance applies only to this
       single-user, one-repository development utility and the reviewed package
       and evidence snapshot. It does not silently approve a new retention rule,
       cleanup inventory, or changed target; those keep their existing explicit
