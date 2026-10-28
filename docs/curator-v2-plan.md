@@ -7903,6 +7903,16 @@ substitute for evidence at a later integration boundary.
       degraded gates. The direct Codex MCP call remains unauthenticated because
       it does not carry host-injected profile context; this is a different
       caller path, not a failed profile ledger read.
+      Read-only local-path recheck (2026-10-28): the direct Curator tool
+      connector still returns `unauthenticated` without Hermes metadata. The
+      installed alpha stdio server, launched as `eaglesvn` with the exact
+      Vhost project root, alpha database, and `renew-ssl-coding` profile, accepts
+      a profile-scoped `goal_list` call with a per-request session and returns
+      25 project goal snapshots. This verifies local OS-account/profile-grant
+      access and the installed ledger read path; the client supplied the
+      profile/session metadata, so it is not host-attested Hermes context and
+      does not verify managed-gateway delivery. No goal or project data was
+      changed. Slice G remains open for the actual Hermes-managed lifecycle.
       Proposed Hermes-owned acceptance sequence, separate from the Vhost
       application pilot in Slices F and I: approve the exact lifecycle event
       classes and bounded fields; confirm the approved local-alpha retention

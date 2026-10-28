@@ -9895,3 +9895,22 @@ while preserving explicit criteria and same-project parent validation.
   Checklist progress is unchanged.
 - **Outcome:** Update the dedicated local V2 package and record a measured
   baseline without altering recovery files.
+
+## 2026-10-28 — Verify local profile-scoped Curator reads
+
+- **Intent:** Resolve whether the unauthenticated direct tool connector also
+  prevents the installed single-user V2 profile from reading its project.
+- **Changed fact:** The direct connector still rejects calls that lack Hermes
+  profile metadata. The installed local stdio server, launched as `eaglesvn`
+  with the exact Vhost project root, alpha database, and `renew-ssl-coding`
+  profile, accepted a read-only `goal_list` call with a per-request session
+  and returned 25 project goal snapshots.
+- **Verification:** The server help confirms the local profile-bound entrypoint;
+  the read used no write/review flags and changed no project records. The client
+  supplied the profile/session metadata, so this is local OS-account and grant
+  evidence, not host-attested Hermes context or managed-gateway proof.
+- **Open gate:** The direct connector remains unauthenticated; use the local
+  profile-bound runtime for alpha reads. Real Hermes managed-gateway lifecycle
+  delivery remains open. No checklist marker changed.
+- **Outcome:** Separate the unavailable connector context from the working local
+  V2 ledger read path without claiming the Hermes integration complete.
