@@ -610,7 +610,11 @@ plugin or Hermes integration is installed and working end to end.
       files and two are directories, and two regular files plus both directories
       are not owner-only. No entries were moved, changed, or deleted. This is a
       baseline, not complete permanent-data accounting or an approved warning
-      threshold; the unclassified recovery material and its retention still
+      threshold. By name/type only, the 20 unclassified entries are three older
+      SQLite snapshots, eight WAL/SHM sidecars, five package rollback archives,
+      one YAML profile-config snapshot, one VS Code settings snapshot, and two
+      prior VS Code extension-backup directories; archive/settings contents were
+      not opened. The recovery material's retention and warning threshold still
       need owner review.
       Progress (2026-10-23): project-authorized `ProjectStorageUsage` now reports
       project-scoped event cursor count and logical UTF-8 bytes, includes those

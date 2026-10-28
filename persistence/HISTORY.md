@@ -9887,7 +9887,11 @@ while preserving explicit criteria and same-project parent validation.
   content-free aggregates. No service was restarted, and no files were moved,
   changed, or deleted.
 - **Open gate:** The unclassified entries include recovery material with
-  unresolved classification/retention; local permanent-data warning levels
-  and complete storage accounting remain open. Checklist progress is unchanged.
+  unresolved retention. A name/type-only inventory groups them as three older
+  SQLite snapshots, eight WAL/SHM sidecars, five package rollback archives, one
+  profile-config YAML, one VS Code settings JSON, and two prior extension
+  backup directories; archive and settings contents were not opened. Local
+  permanent-data warning levels and complete storage accounting remain open.
+  Checklist progress is unchanged.
 - **Outcome:** Update the dedicated local V2 package and record a measured
   baseline without altering recovery files.
