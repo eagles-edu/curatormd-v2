@@ -2446,6 +2446,13 @@ plugin or Hermes integration is installed and working end to end.
       false. No synthetic or live usage event was added. The source is installed
       and honest about its age, but current capture and complete token coverage
       remain unverified, so this requirement stays open.
+      Active-install source check (2026-10-28): `/usr/local/lib/hermes-agent`
+      records this usage table from `codex:turn:end`; the enabled profile plugin
+      currently sees only `codex_app_server` rows. A read-only ledger query
+      confirms six turns (five reported, one unknown), with the latest still
+      `2026-10-21T10:40:21Z`. This Codex session has not generated a new event
+      in that Hermes profile. Do not insert synthetic usage to refresh it; the
+      next proof must come from a real turn through the bound profile.
       Provider/model token usage is not collected by Curator. It belongs to
       Hermes Core's local project-usage accounting; Host Steward remains a
       separate root-account host-disk concern and must not own project token

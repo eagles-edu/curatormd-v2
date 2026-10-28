@@ -9914,3 +9914,21 @@ while preserving explicit criteria and same-project parent validation.
   delivery remains open. No checklist marker changed.
 - **Outcome:** Separate the unavailable connector context from the working local
   V2 ledger read path without claiming the Hermes integration complete.
+
+## 2026-10-28 — Reconcile the report-only Hermes usage source
+
+- **Intent:** Find why the enabled profile usage report remains stale and
+  incomplete without fabricating a measurement.
+- **Changed fact:** The active Hermes install writes project usage on
+  `codex:turn:end`; the configured profile ledger contains only
+  `codex_app_server` rows. Its aggregate is six turns, five reported and one
+  unknown, with the latest event at `2026-10-21T10:40:21Z`.
+- **Verification:** Read the active writer and plugin source, then query the
+  profile SQLite ledger read-only. The plugin continues to report
+  `coverage_complete=false` and exposes the latest-event age. No synthetic
+  event, billable turn, or data write was created.
+- **Open gate:** Current use from the bound Hermes profile and complete source
+  coverage remain unverified. A real profile turn is needed to refresh its
+  report; Codex-session activity here is not evidence of that event.
+- **Outcome:** Identify the missing live capture boundary and preserve the
+  report's incomplete status.
