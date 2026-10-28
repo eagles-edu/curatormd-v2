@@ -631,13 +631,18 @@ plugin or Hermes integration is installed and working end to end.
       supported byte measurement below it, and `unknown` when the bounded size
       measurement is incomplete or allocation units are unsupported. A reached
       threshold remains a warning even when backup classification is incomplete
-      because observed bytes are a lower bound. The earlier installed read
-      reported 21 entries and 4,636,672 observed allocated bytes, but skipped
-      two group-writable directories and returned `incomplete`/`unknown`. The
-      13 focused backup tests passed, including threshold and keep-files
-      behavior. This implemented the local warning rule and legacy-file
-      deletion boundary; long-term class retention/recovery horizons and
-      permanent-data accounting remain open. By top-level name/type only, the
+      because observed bytes are a lower bound. The refreshed installed read
+      (2026-10-28 12:03 UTC) traversed all 29 entries, including both
+      group-writable directories, using descriptor-relative no-follow opens.
+      It measured 4,642,256 logical file bytes and 4,685,824 allocated bytes
+      including the root directory. One daily SQLite snapshot was recognized;
+      28 entries remain unclassified. Classification is `incomplete`, while
+      the separate byte `warning_status` is `below_threshold` because that
+      bounded measurement completed under 262,144,000 bytes. The 13 focused
+      backup tests passed, including threshold and keep-files behavior. This
+      implements the approved local warning rule and legacy-file deletion
+      boundary; long-term class retention/recovery horizons and permanent-data
+      accounting remain open. By top-level name/type only, the
       20 unclassified entries are
       three older SQLite snapshots, eight WAL/SHM sidecars, five package
       rollback archives, one YAML profile-config snapshot, one VS Code settings
@@ -2909,6 +2914,14 @@ plugin or Hermes integration is installed and working end to end.
       needs a reload before its hover can show the new gate details. Yellow
       remains the correct state while health is unknown; the gate list explains
       the backend result and does not change readiness.
+      Final plugin verification (2026-10-28): the installed extension is
+      `0.9.2`; its `extension.js` SHA-256 matches this repository at
+      `1f863844c655c0ddd9bb76ecbb8f609fb61f4b9ade920896065def34525551bf`.
+      The focused Node suite passes all 16 tests, including Git Graph placement,
+      all five colors, versioned color explanations, project-bound reads, and
+      dashboard failure handling; `git diff --check` passes. The already
+      recorded current-window hover/read check confirms the `0.9.2` tooltip and
+      unknown-health explanation. No status-extension checklist work remains.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
