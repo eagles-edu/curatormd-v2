@@ -546,6 +546,25 @@ tree without reading file contents or following symlinks. No service was
 restarted and no backup entry was moved, changed, or deleted. Retention and
 warning levels for the unclassified recovery material remain open.
 
+The owner approved a warning-only whole-tree limit of 262,144,000 allocated
+bytes (250 MiB); files are retained above the limit. Updated wheel
+`curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
+`fbe39c5dc6ee0abe459e97fc7cc156527a110d1ca563d9036371e516ef3574b2`) was
+installed in the alpha virtualenv. Its scanner reports `incomplete`, 21 entries,
+4,636,672 observed allocated bytes, and warning state `unknown`; it cannot
+establish whole-tree usage while two group-writable directories are skipped.
+Before replacement, 192 installed package, metadata, and launcher entries were
+hash-verified in
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-backup-budget-20261028T0520.tar.gz`
+(SHA-256
+`693b5f0f89499359acb1d4a971caa5e492263eb7abd2b2b4b4fb05e57e692447`; manifest
+SHA-256
+`52f6e7206b330e4f04b949421f5fa5526c3c57035a93d16548fdcec61ecde037`). The 88
+installed Python modules match source, `pip check` and launcher `--help` pass.
+No files were removed and no Hermes service was restarted. The 13 focused backup
+tests pass, including threshold behavior and retention of files above the
+warning level.
+
 ## 2026-10-28 Curator MCP process privacy limits
 
 Wheel `curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256

@@ -627,9 +627,14 @@ plugin or Hermes integration is installed and working end to end.
       supported scan below it, and `unknown` for incomplete or unsupported
       measurements below threshold. A reached threshold remains a warning
       even when the inventory is incomplete because observed bytes are a lower
-      bound. This implements the local warning rule only; backup inventory,
-      retention decisions for older classes, and permanent-data accounting
-      remain open. By top-level name/type only, the 20 unclassified entries are
+      bound. The updated wheel is installed in the local alpha environment;
+      its current read reports 21 entries and 4,636,672 observed allocated
+      bytes, but remains `incomplete`/`unknown` because it skips two
+      group-writable directories. The 13 focused backup tests pass, including
+      threshold and keep-files behavior. This implements the local warning
+      rule only; backup inventory, retention decisions for older classes, and
+      permanent-data accounting remain open. By top-level name/type only, the
+      20 unclassified entries are
       three older SQLite snapshots, eight WAL/SHM sidecars, five package
       rollback archives, one YAML profile-config snapshot, one VS Code settings
       snapshot, and two prior VS Code extension-backup directories;

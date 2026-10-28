@@ -69,6 +69,37 @@ class DatabaseBackupTests(unittest.TestCase):
             self.assertEqual(incomplete.unclassified_entry_count, 2)
             self.assertTrue(unrelated.exists())
 
+            loose_directory = Path(temporary) / "loose-backups"
+            loose_directory.mkdir(mode=0o700)
+            loose_file = loose_directory / "curator-v2-2026-10-30.sqlite3"
+            loose_file.write_bytes(b"not-private")
+            loose_file.chmod(0o644)
+            loose = measure_backup_directory(loose_directory)
+            self.assertEqual(loose.status, "incomplete")
+            self.assertEqual(loose.warning_status, "unknown")
+            self.assertEqual(loose.backup_count, 1)
+            self.assertEqual(loose.file_bytes, len(b"not-private"))
+            self.assertIsNone(loose.allocated_bytes)
+            self.assertEqual(loose.unclassified_entry_count, 1)
+
+            oversized_directory = Path(temporary) / "oversized"
+            oversized_directory.mkdir(mode=0o700)
+            for index in range(257):
+                (oversized_directory / f"note-{index}").write_bytes(b"x")
+            oversized = measure_backup_directory(oversized_directory)
+            self.assertEqual(oversized.status, "incomplete")
+            self.assertIsNone(oversized.allocated_bytes)
+            self.assertEqual(oversized.observed_entry_count, 256)
+            self.assertEqual(oversized.observed_file_count, 256)
+            self.assertEqual(oversized.observed_file_bytes, 256)
+            self.assertEqual(oversized.unclassified_entry_count, 256)
+
+            unsafe_directory = Path(temporary) / "unsafe-backups"
+            unsafe_directory.symlink_to(backup_directory, target_is_directory=True)
+            unsafe = measure_backup_directory(unsafe_directory)
+            self.assertEqual(unsafe.status, "unavailable")
+            self.assertIsNone(unsafe.backup_count)
+
     def test_backup_tree_warning_is_warning_only_at_allocated_byte_threshold(self) -> None:
         """Warn at the measured threshold without removing backup files."""
 
@@ -95,36 +126,6 @@ class DatabaseBackupTests(unittest.TestCase):
                 below_threshold = measure_backup_directory(backup_directory)
             self.assertEqual(below_threshold.warning_status, "below_threshold")
             self.assertTrue(snapshot.is_file())
-
-            loose_directory = Path(temporary) / "loose-backups"
-            loose_directory.mkdir(mode=0o700)
-            loose_file = loose_directory / "curator-v2-2026-10-30.sqlite3"
-            loose_file.write_bytes(b"not-private")
-            loose_file.chmod(0o644)
-            loose = measure_backup_directory(loose_directory)
-            self.assertEqual(loose.status, "incomplete")
-            self.assertEqual(loose.backup_count, 1)
-            self.assertEqual(loose.file_bytes, len(b"not-private"))
-            self.assertIsNone(loose.allocated_bytes)
-            self.assertEqual(loose.unclassified_entry_count, 1)
-
-            oversized_directory = Path(temporary) / "oversized"
-            oversized_directory.mkdir(mode=0o700)
-            for index in range(257):
-                (oversized_directory / f"note-{index}").write_bytes(b"x")
-            oversized = measure_backup_directory(oversized_directory)
-            self.assertEqual(oversized.status, "incomplete")
-            self.assertIsNone(oversized.allocated_bytes)
-            self.assertEqual(oversized.observed_entry_count, 256)
-            self.assertEqual(oversized.observed_file_count, 256)
-            self.assertEqual(oversized.observed_file_bytes, 256)
-            self.assertEqual(oversized.unclassified_entry_count, 256)
-
-            unsafe_directory = Path(temporary) / "unsafe-backups"
-            unsafe_directory.symlink_to(backup_directory, target_is_directory=True)
-            unsafe = measure_backup_directory(unsafe_directory)
-            self.assertEqual(unsafe.status, "unavailable")
-            self.assertIsNone(unsafe.backup_count)
 
     def test_backup_directory_usage_measures_nested_files_without_following_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
