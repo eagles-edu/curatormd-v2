@@ -4547,11 +4547,18 @@ unknown. The dashboard and live event-delivery gates remain open.
       covers local retired-project disposition only, not the complete
       source-to-sink review.
       Host crash-sink check (2026-10-28): the Curator maintenance service has
-      `LimitCORE=0` and `UMask=0077`, but the active Hermes gateway has
-      `LimitCORE=infinity` and `UMask=0022`; the kernel routes core dumps to
-      Apport, whose service is enabled. No crash canary was generated. This
-      proves the maintenance-unit safeguard does not protect the gateway or
-      its Curator MCP child, so host crash-report capture remains unverified.
+      `LimitCORE=0` and `UMask=0077`; the active Hermes gateway initially had
+      `LimitCORE=infinity` and `UMask=0022`. The kernel routes core dumps to
+      Apport, whose service is enabled. No crash canary was generated.
+      Gateway follow-up (2026-10-28 05:13 UTC): Hermes Core's root-owned systemd
+      drop-in `/etc/systemd/system/hermes-gateway.service.d/90-local-privacy.conf`
+      now sets `LimitCORE=0` and `UMask=0077`. After daemon reload and gateway
+      restart, `systemctl show` reports the unit active/running with those
+      effective settings; `/proc/3469938/status` reports umask `0077` and
+      `/proc/3469938/limits` reports a zero core-file limit for the running
+      process. This covers the gateway process on this host. Apport retention,
+      journals, other producers, upstream crash reporting, and crash-canary
+      handling remain unverified; keep the full source-to-sink item open.
       Local launcher follow-up (2026-10-28): the Curator hosted-MCP launcher
       source now sets its core-dump limit to zero and its file-creation umask
       to `0077` before initializing the runtime. A child-process regression
@@ -4587,8 +4594,9 @@ unknown. The dashboard and live event-delivery gates remain open.
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
       require separate release; purge requires human approval of the exact
       complete inventory. Staging has a warning-only 250 MiB byte threshold and
-      no file-count cap. Private SQLite backups retain seven daily copies, and
-      restore requires human approval to a new path. Dashboard and maintenance
+      no file-count cap. Private SQLite backups retain seven daily copies;
+      owner-approved pending retry/quarantine event text may remain in those
+      copies. Restore requires human approval to a new path. Dashboard and maintenance
       status report local staging and purge/backup conditions without deleting
       by budget. These rules are implemented and covered by expiry, purge,
       staging, backup, and maintenance evidence below. Permanent SQLite/WAL
