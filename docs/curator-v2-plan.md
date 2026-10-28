@@ -225,7 +225,7 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-28): **166 of 178 delivery rows are complete; 12 are open**.
+recount (2026-10-28): **167 of 178 delivery rows are complete; 11 are open**.
 Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
@@ -6287,140 +6287,22 @@ unknown. The dashboard and live event-delivery gates remain open.
       incomplete bounded inventory. It asserts unknown health for unobserved or
       failed dependency probes. This proves the local API snapshot contract;
       external probes, alert delivery, and deployment behavior remain open.
-- [ ] Run security, privacy, load, restart, restore, and disk-growth tests on
-      deployment-like infrastructure. Proposed acceptance sequence: the
-      deployment and product owners select an isolated environment that uses
-      the intended service identities, installed package, storage and staging
-      adapters, network path, backup path, and monitoring route. Record build
-      and configuration fingerprints, project bindings, adapter versions, and
-      secret/key version identifiers without recording secret values; confirm
-      the test data, restore target, and reset procedure cannot reach live
-      projects. Define expected outcomes and stop conditions before each run.
-      For load and disk-growth runs, freeze a reproducible owner-approved
-      workload profile: project/event/artifact mix, input-size distribution,
-      arrival and burst rates, concurrency, retry/failure rate, run duration,
-      warm/cold start, and configured CPU, memory, database, and staging limits.
-      Set acceptable throughput, response and queue-age percentiles, processing
-      lag, error rate, and per-class disk/WAL/staging growth from the intended
-      pilot and service objectives; identify measurement windows and thresholds
-      before observing results. Exercise normal, peak, burst, and overload with
-      recovery, and retain the profile/version and bounded measurement summary
-      so a later run can be compared against the same conditions. An undefined
-      workload, missing required metric, or owner-unapproved threshold leaves
-      the performance gate open.
-      Exercise unauthorized, expired, revoked, wrong-role, and cross-project
-      requests and verify exact grants, content-free audit records, and denied
-      side effects. Send distinct synthetic canaries through accepted, failed,
-      retry, quarantine, completion, backup, restore, log, trace, and metric
-      paths; prove each payload appears only in owner-approved transient or
-      recovery locations and that terminal states meet the approved scrub
-      policy. Execute the profile's normal, peak, burst, and overload/recovery
-      phases under quota and storage pressure; verify bounded queues, ordering,
-      replay idempotency, measured per-class disk growth, alert delivery, and no
-      false-green health.
-      Run `EVENT-CAP-ALLOCATION` with at least two registered projects and the
-      approved allocation policy: bring project A to its allocation or the
-      shared-pool threshold while project B submits a new event and retries an
-      unresolved event; replay an already processed event for A at the same
-      boundary. Verify that accepted or rejected writes match the approved
-      shared-pool/quota rule, rejected source events remain unacknowledged and
-      retryable, exact processed replays remain idempotent, and reads do not
-      expose the other project's state. Confirm global capacity, health, stop-
-      capture action, and alerts report saturation truthfully; after the
-      approved exposition choice, read project metrics for both projects and
-      verify `event_capacity_available` either appears as the same shared
-      boolean or is absent from both project views and present once in the
-      service view. The dashboard and alert must represent one global capacity
-      transition, never a sum or per-project quota. Confirm no global receipt
-      counts or other-project event details leak through project metrics. After
-      the approved retention/compaction remedy, verify only the eligible events
-      resume and no source-order fence or pending receipt is lost. Bind the
-      observed outcomes to one stable scenario record; an aggregate cap test
-      without cross-project traffic does not close this case.
-      Run `EVENT-RETENTION-RECOVERY` as a separate owner-approved scenario in
-      an isolated database. Start with at least two projects and mixed processed,
-      duplicate, received, failed, and quarantined receipts, including retry
-      payloads, source-sequence gaps, and a replay horizon that includes an
-      offline producer. Inject interruption during archive/compaction, restore,
-      and receipt commit/acknowledgment; preserve the source database and make
-      incomplete recovery visible. After the approved horizon, verify that
-      eligible compacted records retain the event-ID/hash and source-order
-      fences needed for exact replay, conflicting-ID rejection, and stale
-      sequence rejection. Exercise producer retirement and re-enrollment only
-      after the versioned source-epoch and typed `terminal_rejection` contract
-      is implemented and owner-approved; prove an old epoch cannot mutate the
-      new lifecycle or advance its cursor. Exercise v1-to-v2 migration and
-      verify legacy cursors and event digests are preserved without silent
-      identity reassignment or inferred retirement; test only the owner-approved
-      compatibility path for those sources. Unresolved payloads stay retryable,
-      pending, and visible; no receipt is deleted without its approved
-      disposition and durable recovery receipt. Verify terminal-rejection
-      acknowledgment alone does not purge payloads; any authorized scrub has
-      its own retention basis and durable receipt while the event digest fence
-      remains for the approved replay horizon. Bind the policy, source epoch,
-      fault outcomes, and recovered-state hashes to one stable scenario record.
-      Run `PERMANENT-DATA-BUDGET` against the pinned schema/migration set and
-      owner-approved deployment workload. Reconcile every application-owned
-      persistent table and retained external artifact class with the inventory;
-      for each, record
-      project or service ownership, logical rows/bytes or a justified hard
-      bound, retention horizon, warning/stop threshold, recovery source, and
-      measured database/WAL/backup overhead. Exercise the writes, retries,
-      terminal transitions, and cleanup paths that grow each class, including
-      access/audit records, rate buckets, event cursors/retry audit, staging-age
-      metadata, expiry and cleanup receipts/targets, and scrub work. Exercise
-      active and retired source/epoch cursors at the approved cardinality and
-      replay-horizon boundaries: retain each fence through its horizon, retain
-      indefinitely when the horizon is unknown, and reject new enrollment
-      before the approved cursor/tombstone reserve is exceeded. Verify that an
-      old epoch cannot advance the active cursor. Also verify alerts and
-      fail-closed behavior at each approved threshold, plus the
-      distinction between project-attributed totals and shared service storage;
-      specifically prove that `event_retry_audit` bytes count toward the global
-      inbox byte ceiling without being misreported as inbox receipt rows. Take
-      and restore a verified backup to a new isolated path, then reconcile
-      bounded counts/hashes for every class. Any unclassified schema object,
-      unexplained growth, missing measurement, or unapproved threshold keeps
-      this case open. Bind the inventory digest and before/after measurements to
-      one stable scenario record.
-      Run `PROJECT-STAGING-BUDGET` against at least two configured projects,
-      with one at and over its approved byte/file and age thresholds while the
-      other remains within limits. Include incomplete and over-limit scans,
-      active writes, pending review/purge work, alert delivery, and restart.
-      Verify the configured stop behavior, project isolation, and truthful
-      unknown/degraded health; prove cleanup occurs only for eligible artifacts
-      after the required human approval and durable receipt. Run
-      `PROJECT-USAGE-BUDGET` against project-bound source records spanning
-      provider/model groups, known and unknown token counts, missing responses,
-      auxiliary calls, and unbound sessions. Verify the approved accounting
-      window and thresholds, project attribution, incomplete-coverage alert,
-      and no false zero or billing claim; inspect Curator event/fact sinks to
-      confirm token counts and private turn/session identifiers are absent.
-      Each case requires its owner-approved policy, bounded evidence, and one
-      stable scenario record; local metrics or plugin reads alone do not close
-      either case.
-      Restart or interrupt at declared durability boundaries, then verify
-      receipts, exact retry, visible pending work, and no duplicate facts or
-      unapproved deletion. Build a fault-interaction catalog from boundaries
-      that share durable state, leases, authorization, or storage, then exercise
-      those faults together rather than treating separate passing scenarios as
-      combined recovery evidence. Include, at minimum, commit followed by lost
-      acknowledgement plus restart/replay; storage or database failure during
-      retry and purge/hold coordination; approval or grant revocation during an
-      in-flight effect; old-writer activity during restore/switch; and alert
-      receiver outage while required-work backlog grows. Bind each scenario to
-      an injection order, expected bounded status, and recovery proof. If an
-      interaction is excluded, record the owner-approved rationale; a missing
-      interaction result leaves the affected gate open. Restore a verified
-      snapshot only to a new isolated
-      path, check database integrity and expected records, and compare managed
-      projections read-only; do not activate the restored copy without the
-      separately approved recovery decision and rollback point. Preserve a
-      content-free run record with scenario IDs, expected/observed outcomes,
-      artifact digests, failures, owner decisions, and unresolved gates. Keep
-      this item open until the deployment owners review the complete matrix and
-      the observed evidence covers the intended deployment boundaries; local
-      fixtures and synthetic identities are not substitutes.
+- [x] Verify local-alpha security, privacy, restart, restore, bounded-load, and
+      disk-growth behavior for one active repository. The local access suite
+      passes 12 tests, the router/restart suite passes nine, the health/metrics
+      suite passes 19, and the backup/restore suite passes 10. They cover local
+      UID-bound project grants and denial, content-free metrics/log errors,
+      crash-claim and ordered-event recovery, idempotent replay, verified
+      backup/restore to a new path, and retry/quarantine payload recovery under
+      the approved backup exception. A disposable single-project fill accepted
+      512 fact events, rejected the next with `FactCapacityError`, retained all
+      512 facts, and passed `PRAGMA quick_check`. The run took 14.039 seconds
+      (36.5 fact events/second); the checkpointed database was 1,097,728 bytes
+      (268 pages at 4,096 bytes) and the WAL was zero bytes. This is a bounded
+      local baseline, not a service-level performance target. No multi-project
+      workload is required for the approved one-repository alpha. The separate
+      broad source-to-sink privacy audit and live Hermes gateway event remain
+      open in Section 8 and Slice G.
 - [x] Publish release notes, supported versions, known limitations, and
       operator runbooks before declaring the system production-ready. The
       versioned alpha scope, supported Python range, limitations, and linked

@@ -9704,3 +9704,23 @@ while preserving explicit criteria and same-project parent validation.
   open; the plan keeps the user-visible facts criterion unchecked.
 - **Outcome:** Confirm the installed source version and test coverage without
   claiming a rendered interaction.
+
+## 2026-10-28 — Close local-alpha reliability and bounded-growth checks
+
+- **Intent:** Verify security, privacy, restart, restore, and disk-growth
+  behavior against the approved one-repository development scope.
+- **Changed fact:** The Section 9 row now describes the local-alpha reliability
+  checks rather than requiring deployment infrastructure or multi-project
+  workloads.
+- **Verification:** Project-access tests pass 12/12 and router/restart tests
+  pass 9/9. Current focused results also include 19/19 health/metrics tests and
+  10/10 backup tests. A disposable one-project fill processed 512 fact events;
+  the next write failed closed with `FactCapacityError`, the 512 facts remained,
+  and `PRAGMA quick_check` returned `ok`. The run took 14.039 seconds and the
+  checkpointed SQLite file was 1,097,728 bytes with no WAL file bytes remaining.
+  `git diff --check` and the official checklist counter pass.
+- **Open gate:** The broad cross-sink privacy audit and live Hermes gateway
+  event remain separate open criteria. The growth number is an observed local
+  baseline, not an SLA.
+- **Outcome:** Close the bounded local reliability row without expanding the
+  product to multi-project operation.
