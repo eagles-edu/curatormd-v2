@@ -251,9 +251,10 @@ plugin or Hermes integration is installed and working end to end.
       alpha policy records the eaglesvn UID-bound reviewer, same-action exact-
       inventory cleanup authorization, 72-hour maximum and prompt expiry, artifact
       holds, privacy/canonical-data boundary, fail-closed missing identity, and
-      Hermes Core root-account ownership of Host Steward. Production identity,
-      retention, external hold discovery, deployment recovery, and live runtime
-      remain separate open gates.
+      Hermes Core root-account ownership of Host Steward. Shared identity and
+      remote hold discovery are outside the one-user alpha; local retention,
+      recovery, and runtime evidence are tracked in the open storage, privacy,
+      and alpha acceptance items below.
 - [x] Record boundary-changing decisions in architecture decision records.
       [`ADR 0001`](adr/0001-managed-markdown-projection-integrity.md) documents
       the managed Markdown checksum, legacy behavior, and why it does not settle
@@ -1109,9 +1110,11 @@ plugin or Hermes integration is installed and working end to end.
       authenticated human subject currently reaches Curator MCP. Therefore
       `Auth: none` on the local profile does not mean the approved `eaglesvn`
       UID-bound alpha reviewer is unassigned; that local grant is separate.
-      Production identity remains open until trusted per-request subjects are
-      forwarded and bound to project/review permissions, with an authenticated
-      transport call proving the path.
+      Scope amendment (2026-10-28): the approved alpha uses the OS UID-bound
+      `eaglesvn` reviewer and one local repository. Shared subject forwarding
+      and remote role mapping are outside this scope. A direct Codex tool call
+      without Hermes context is denied; the supported local profile call is
+      verified below.
       Additional verification (2026-10-22): the current Codex client attempted
       the read-only Curator V2 `goal_list` tool without Hermes profile context;
       the server returned `unauthenticated` / trusted Hermes context required,
@@ -2466,8 +2469,8 @@ plugin or Hermes integration is installed and working end to end.
       reads the alpha ledger with `healthy` project health and a complete empty
       staging inventory. Backend-wide budgets, measured growth,
       threshold alert delivery/windows, complete temporary-data classes,
-      token-usage source completeness, retention horizons, and production policy remain
-      open; the checklist row stays unchecked.
+      token-usage source completeness and retention horizons remain open for
+      this local alpha; the checklist row stays unchecked.
       Warning-only install (2026-10-27): owner clarification changed the local
       250 MiB project byte value from a write ceiling to a warning threshold
       and removed the project file-count setting. The replacement alpha wheel
@@ -7878,7 +7881,7 @@ substitute for evidence at a later integration boundary.
       one-repository local alpha. The Section 6 source-to-artifact audit was
       still open at this 2026-10-25 snapshot; it was closed for the approved
       local alpha on 2026-10-26 (see the Section 6 audit entry below). Release
-      Gate F, Slice I, and production/release acceptance remain open.
+      Gate F and Slice I remain open for local human disposition and alpha sign-off.
 - [ ] **G. Integrate Hermes Core:** map real app-server lifecycle events through
       the global router and managed gateway; prove profile/project authorization
       and that no raw session transcript is retained. Local diagnostic progress
