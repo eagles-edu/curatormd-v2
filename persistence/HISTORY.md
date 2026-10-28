@@ -9863,3 +9863,31 @@ while preserving explicit criteria and same-project parent validation.
   warning levels remain open; checklist progress is unchanged.
 - **Outcome:** Remove the stale claim that the installed daily-backup path is
   unverified while keeping broader storage-policy work open.
+
+## 2026-10-28 — Refresh the local V2 storage view
+
+- **Intent:** Make the current backup-directory measurement available in the
+  approved local Curator V2 environment and capture a content-free storage
+  baseline.
+- **Changed fact:** Rebuilt and installed wheel SHA-256
+  `3dcd2e577b8cf6c9f068720dd49035e0203f6ca96c6726c65a48c2947accc149` in the
+  dedicated profile virtualenv. Before replacement, the 188 package, metadata,
+  and launcher files were archived with per-file hashes; the rollback archive
+  SHA-256 is
+  `dadd754c36b5005ef852d848604ee0e588290315e1805715572c4f181b959b13`.
+  The host-authorized storage view now reports the backup directory, but marks
+  it incomplete because of 20 unclassified entries. It sees one recognized
+  daily snapshot (524,288 bytes); the full directory measures 4,618,625
+  logical and 4,636,672 allocated bytes across 21 entries. SQLite main is
+  524,288 bytes, WAL 168,952 bytes, and logical control-plane records total
+  3,145 bytes across 11 classes.
+- **Verification:** All 88 installed Python module hashes match source;
+  `uv pip check` and imports of `backup_daily`, `measure_backup_directory`,
+  and `CuratorStore` pass. A read-only attended Vhost access view confirms the
+  content-free aggregates. No service was restarted, and no files were moved,
+  changed, or deleted.
+- **Open gate:** The unclassified entries include recovery material with
+  unresolved classification/retention; local permanent-data warning levels
+  and complete storage accounting remain open. Checklist progress is unchanged.
+- **Outcome:** Update the dedicated local V2 package and record a measured
+  baseline without altering recovery files.

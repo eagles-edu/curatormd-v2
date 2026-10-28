@@ -15,6 +15,6 @@
 ## Still open
 
 - Remaining local SQLite/staging failure cases.
-- Complete permanent-data size accounting and local warning levels beyond the approved staging threshold.
+- Complete permanent-data size accounting and local warning levels beyond the approved staging threshold. The 2026-10-28 attended view measured the SQLite main file at 524,288 bytes and WAL at 168,952 bytes, but its backup-directory inventory is incomplete: one recognized daily snapshot plus 20 unclassified entries. The directory total is 4,618,625 logical / 4,636,672 allocated bytes; two directories and two regular files are not owner-only. No files were changed. Retention and warning thresholds for the unclassified recovery files still need owner review.
 
 The approved values above define the supported local development utility. No multi-user or public-service behavior is required.

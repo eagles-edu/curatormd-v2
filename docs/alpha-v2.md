@@ -497,3 +497,26 @@ another degraded health gate; yellow means unknown, unavailable, or incomplete
 status. Activation in the unconfigured backend workspace remains unverified.
 This package install does not change the Vhost application or backend project
 configuration.
+
+## 2026-10-28 local storage-view package refresh
+
+The current source wheel
+`curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
+`3dcd2e577b8cf6c9f068720dd49035e0203f6ca96c6726c65a48c2947accc149`)
+was installed only in the dedicated `renew-ssl-coding` Curator V2 virtualenv.
+Before replacement, 188 installed package, metadata, and launcher files were
+archived at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-before-storage-metrics-20261028.tar.gz`
+(SHA-256
+`dadd754c36b5005ef852d848604ee0e588290315e1805715572c4f181b959b13`);
+its sidecar manifest was verified against every archived file. All 88
+installed Python modules now match source, the backup measurement import
+succeeds, and `uv pip check` passes. No service was restarted.
+
+The attended, read-only Vhost access view reports a 524,288-byte SQLite main
+file, a 168,952-byte WAL, and 3,145 logical control-plane bytes across 11
+classes. The backup-directory scan remains incomplete: it recognizes one
+524,288-byte daily snapshot but reports 20 unclassified entries. The full
+directory has 21 entries and measures 4,618,625 logical / 4,636,672 allocated
+bytes; no files were changed or deleted. Retention and local warning thresholds
+for those unclassified recovery files remain open.

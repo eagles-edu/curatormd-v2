@@ -600,6 +600,18 @@ plugin or Hermes integration is installed and working end to end.
       the content-free result. This closes the previously identified class
       measurement omission only; data ownership, retention/recovery horizons,
       physical overhead, thresholds, and approval remain open.
+      Local-alpha measurement (2026-10-28): the attended Vhost access view
+      reports 3,145 logical control-plane bytes across 11 classes, zero
+      unassigned scrub-queue bytes, a 524,288-byte SQLite main file, a 168,952-
+      byte WAL, and 32,768 unattributed database bytes. The sibling backup
+      inventory is incomplete: one recognized 524,288-byte daily snapshot and
+      20 unclassified entries. A content-free filesystem scan measured 21 total
+      entries at 4,618,625 logical / 4,636,672 allocated bytes; 19 are regular
+      files and two are directories, and two regular files plus both directories
+      are not owner-only. No entries were moved, changed, or deleted. This is a
+      baseline, not complete permanent-data accounting or an approved warning
+      threshold; the unclassified recovery material and its retention still
+      need owner review.
       Progress (2026-10-23): project-authorized `ProjectStorageUsage` now reports
       project-scoped event cursor count and logical UTF-8 bytes, includes those
       bytes in `logical_record_bytes`, and exports aggregate-only cursor metrics.
