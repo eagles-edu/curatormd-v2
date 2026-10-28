@@ -8827,6 +8827,18 @@ substitute for evidence at a later integration boundary.
       profile-bound lifecycle and usage ledgers are stale; this does not prove
       current app-server delivery or complete token coverage. Slice G remains
       open pending a fresh approved real-route event and its receipt.
+      Fresh local-profile verification (2026-10-28 01:01 UTC): the Hermes Core
+      checkout command exits 0, connects with host-injected
+      `renew-ssl-coding` profile/session context, and discovers 49 Curator V2
+      tools. The bound `vhost-manager-alpha` read reports 51/51 processed event
+      receipts, 23 goals, 19 facts, and no pending reviews or purge work. Its
+      separate health snapshot is healthy with all seven required dependencies
+      freshly observed and a complete empty staging scan. This confirms current
+      profile-bound ledger and health reads, not a new app-server lifecycle
+      event or human identity. The VS Code launcher still supplies no trusted
+      `hermes/readiness` context and correctly remains `unknown`; direct MCP
+      without Hermes context remains `unauthenticated`. Slice G remains open
+      pending live lifecycle delivery and its remaining acceptance evidence.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
