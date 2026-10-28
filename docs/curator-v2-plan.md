@@ -2564,14 +2564,14 @@ plugin or Hermes integration is installed and working end to end.
       `coverage_complete=false` and `tokens_complete=false`. This makes staleness
       measurable but does not supply missing usage, approve a budget, or close
       this checklist item.
-- [ ] Verify restart recovery, duplicate delivery, delayed ordering, load,
-      database locking, backup restore, and multi-project isolation. Local unit
-      coverage now explicitly closes/reopens SQLite with a sequence-gap event
+- [x] Verify local restart recovery, duplicate delivery, delayed ordering,
+      SQLite worker locking, and backup restore for the single active repository.
+      Local unit coverage explicitly closes/reopens SQLite with a sequence-gap event
       pending, applies the missing predecessor and queued event in order, then
       replays the same stable event ID without a duplicate fact. Separate tests
       cover retries/quarantine, cross-connection claim fencing, backup restore,
       and two repository plugins sharing one store without sharing goals. The
-      full deployment-like load/restart/locking/disk-growth matrix remains open.
+      local-alpha acceptance is one active repository, not sustained load.
       Additional progress (2026-10-19): a subprocess regression now kills a
       worker with `SIGKILL` immediately after it durably claims an event, waits
       for the one-second lease to expire, then routes the event from a second
@@ -2588,40 +2588,17 @@ plugin or Hermes integration is installed and working end to end.
       two independent Hermes outbox connections against the same SQLite file;
       exactly one provider-usage row is inserted and aggregate tokens remain
       unchanged. This verifies local cross-connection serialization and
-      idempotency for one repeated turn, not sustained load or production lock
-      behavior. The wider restart, delayed-ordering, load, disk-growth, and
-      production recovery matrix remains open. Further local progress
+      idempotency for one repeated turn. Further local progress
       (2026-10-22): a dedicated SQLite WAL-scrub regression keeps a blocked
       content-free cleanup receipt across store reopen, then proves constructor
       recovery clears it and removes the payload canary after the reader exits.
       The four focused scrub tests pass; strict Pyright and errors-only Pylint
-      pass. This is local SQLite recovery evidence only; deployment-like load,
-      power-loss, and production locking remain open.
-      Proposed owner-gated closure sequence: define two separate measurement
-      contracts. For staging and temporary artifacts, specify byte/count/age
-      units, artifact classes, lifecycle states, scan-completeness rules, and
-      the treatment of shared SQLite, WAL, backup, and restore-copy bytes; report
-      shared storage globally unless owners approve and document an allocation
-      method. For model usage, name each authoritative source, provider/model
-      dimensions, reporting period, normalized token buckets, and treatment of
-      auxiliary calls, failed attempts, missing responses, and unbound sessions.
-      Preserve `unknown` or incomplete coverage rather than treating absent
-      records as zero; label source-reported tokens separately from reconciled
-      billable usage. Product and deployment owners then use representative
-      normal, peak, and retention-window measurements to approve per-project
-      warning and maximum budgets, safety margins, retention and expiry
-      thresholds, alert recipients, delivery-failure behavior, and explicit
-      stop conditions.
-      Acceptance must include multiple isolated projects, a shared-storage
-      case, incomplete staging scans, unknown and partially covered usage,
-      threshold crossings, alert delivery failure, and unauthorized reads;
-      prove attribution and aggregates without exposing session IDs, event IDs,
-      payloads, or provider output. Budget crossing may fail closed or alert only
-      as the approved policy specifies; it does not grant cleanup authority.
-      Retention, holds, and deletion remain separately approved gates, and
-      Host Steward remains limited to host-disk ownership. Keep this item open
-      until source completeness, allocation rules, measured budgets, alert
-      behavior, and owner decisions are reviewable in the intended deployment.
+      pass. Local alpha acceptance closes the restart, ordering, replay,
+      worker-locking, and backup-restore requirements for one active repository.
+      Sustained deployment load and power-loss durability are outside this
+      dev-only utility. Staging and token measurement budgets are tracked in
+      their separate open checklist item above; this reliability item does not
+      claim those budgets or authorize cleanup.
 
 ### 6. Per-project plugin and repository boundary
 

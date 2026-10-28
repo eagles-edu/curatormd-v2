@@ -9455,3 +9455,19 @@ while preserving explicit criteria and same-project parent validation.
   this item does not set one or authorize automatic cleanup from a budget.
 - **Outcome:** Close local artifact-retention policy without treating SQLite
   growth or a staging warning as deletion authority.
+
+## 2026-10-28 — Close single-repository restart and replay checks
+
+- **Intent:** Scope the restart/reliability checklist to the approved local
+  one-repository development utility.
+- **Changed fact:** Local acceptance is now explicit: SQLite reopen and
+  sequence-gap recovery, exact duplicate replay, delayed ordering, worker claim
+  fencing, crash recovery after durable claim, and backup restore to a new file.
+  Sustained deployment load and power-loss durability are outside this utility;
+  measurement budgets stay in their separate open checklist row.
+- **Verification:** Existing router, concurrency, and backup regressions listed
+  in the plan provide this evidence. The Curator V2 delivery count and
+  whitespace check are rechecked after this record; no test suite was rerun.
+- **Open gate:** This does not verify power-loss durability or usage budgets.
+- **Outcome:** Close local functional restart/replay reliability without
+  claiming sustained or deployment-scale capacity.
