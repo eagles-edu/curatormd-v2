@@ -617,8 +617,10 @@ plugin or Hermes integration is installed and working end to end.
       SQLite snapshots, eight WAL/SHM sidecars, five package rollback archives,
       one YAML profile-config snapshot, one VS Code settings snapshot, and two
       prior VS Code extension-backup directories; archive/settings contents were
-      not opened. The recovery material's retention and warning threshold still
-      need owner review.
+      not opened. A content-free size breakdown by these classes is recorded in
+      [`Curator V2 Pilot Default Policy.md`](Curator%20V2%20Pilot%20Default%20Policy.md).
+      The recovery material's retention and warning threshold still need owner
+      review.
       Progress (2026-10-23): project-authorized `ProjectStorageUsage` now reports
       project-scoped event cursor count and logical UTF-8 bytes, includes those
       bytes in `logical_record_bytes`, and exports aggregate-only cursor metrics.

@@ -17,4 +17,19 @@
 - Remaining local SQLite/staging failure cases.
 - Complete permanent-data policy and local warning levels beyond the approved staging threshold. The installed bounded V2 scanner measures the current backup tree without reading contents or following symlinks: 21 observed entries, 19 regular files, 4,618,625 observed logical bytes, and 4,636,672 observed allocated bytes. It recognizes one 524,288-byte daily snapshot and reports 20 unclassified entries; two regular files and both directories are not owner-only, so inventory status remains incomplete. By name/type only, the other entries are three older SQLite snapshots, eight SQLite WAL/SHM sidecars, five package rollback archives, one YAML profile-config snapshot, one VS Code settings snapshot, and two prior VS Code extension-backup directories. Archive and settings contents were not opened. No entries were moved, changed, or deleted. Retention and warning thresholds for this recovery material still need owner review.
 
+The following breakdown uses entry type and filename suffix only. File contents
+were not read; directory entries have no regular files beneath them in this
+bounded scan.
+
+| Class | Entries | Logical file bytes | Allocated bytes | Entries not owner-only |
+| --- | ---: | ---: | ---: | ---: |
+| Daily SQLite snapshot | 1 | 524,288 | 524,288 | 0 |
+| Other SQLite snapshots | 3 | 1,060,864 | 1,060,864 | 0 |
+| SQLite WAL/SHM sidecars | 8 | 131,072 | 131,072 | 0 |
+| Package rollback archives | 5 | 2,893,904 | 2,908,160 | 1 |
+| YAML configuration snapshot | 1 | 3,264 | 4,096 | 0 |
+| VS Code settings snapshot | 1 | 5,233 | 8,192 | 1 |
+| Prior extension-backup directories | 2 | 0 | 0 | 2 |
+| **Total** | **21** | **4,618,625** | **4,636,672** | **4** |
+
 The approved values above define the supported local development utility. No multi-user or public-service behavior is required.

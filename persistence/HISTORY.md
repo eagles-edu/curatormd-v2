@@ -9951,7 +9951,12 @@ while preserving explicit criteria and same-project parent validation.
   archive's 183 files were hash-verified before installation. The attended
   Vhost view reports 21 entries, 19 regular files, 4,618,625 observed file
   bytes, and 4,636,672 allocated bytes; one daily snapshot is recognized and
-  20 entries remain unclassified.
+  20 entries remain unclassified. A separate metadata-only grouping by
+  filename suffix and entry type measured three other SQLite snapshots at
+  1,060,864 bytes, eight sidecars at 131,072 bytes, five package archives at
+  2,893,904 logical / 2,908,160 allocated bytes, a 3,264-byte YAML file, a
+  5,233-byte settings file, and two empty extension-backup directories. Four
+  entries are not owner-only. No names or file contents were retained.
 - **Open gate:** The complete byte observation does not assign retention or
   warning policies to old recovery material. Its contents and dispositions
   remain unreviewed; no backup entries were changed or removed. No checklist
