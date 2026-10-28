@@ -2123,9 +2123,14 @@ plugin or Hermes integration is installed and working end to end.
       tests remain in place. New daily-rotation tests cover seven-copy retention,
       same-day idempotency, unrelated-file preservation, and failure-before-prune.
       Focused backup (9), maintenance CLI (5), and purge lifecycle (15) suites,
-      strict Pyright, errors-only Pylint, and `git diff --check` pass. The active
-      local timer still needs a post-update runtime check to prove it uses this
-      code.
+      strict Pyright, errors-only Pylint, and `git diff --check` pass. The updated
+      wheel is installed in the dedicated local Curator environment; all 88
+      installed modules match source and `uv pip check` passes. The prior
+      190-file package/entrypoint snapshot is preserved with SHA-256
+      `9ed9abb956dbf5212d901afa9f4b0183527966a02318a55502f06f6472651ebc`.
+      The active local systemd service exited 0 after the refresh, reported a
+      verified backup and zero due purge/expiry work, and produced one owner-
+      private SQLite backup dated 2026-10-28 that passes `integrity_check`.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.

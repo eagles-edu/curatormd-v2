@@ -37,7 +37,7 @@ commands refuse existing destinations and report only the operation and
 verification status. A successful restore creates an isolated review copy; it
 does not authorize switching the live system to that copy.
 
-The updated six-hour local maintenance command creates one online backup per
+The six-hour local maintenance service creates one online backup per
 UTC day under `<database-directory>/backups/`. The directory and backup files
 are private to the Curator OS account. After a new backup passes both SQLite
 integrity checks, older dated backups are pruned so the newest seven daily copies remain. A

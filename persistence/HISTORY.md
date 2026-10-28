@@ -9404,9 +9404,13 @@ while preserving explicit criteria and same-project parent validation.
   command that creates a new path and cannot replace the live database.
 - **Verification:** Backup suite passes nine tests, maintenance CLI suite passes
   five, and purge lifecycle suite passes 15. Strict Pyright reports zero
-  diagnostics, errors-only Pylint exits 0, and `git diff --check` passes.
-- **Open gate:** The enabled local timer has not yet been run against the updated
-  package; confirm its next run creates a private daily backup and records the
-  sanitized status.
+  diagnostics, errors-only Pylint exits 0, and `git diff --check` passes. The
+  updated wheel is installed in the dedicated local environment; all 88 module
+  hashes match source and `uv pip check` passes. The local systemd maintenance
+  service exits 0, emits `backup_status=verified`, processes zero due
+  purge/expiry items, and creates one owner-private `2026-10-28` SQLite backup
+  with `integrity_check=ok`. The six-hour timer remains enabled.
+- **Open gate:** Permanent-data warning levels and the remaining local storage
+  failure cases are still open.
 - **Outcome:** Implement seven-copy local retention and require explicit
   approval before restoring to an isolated path.
