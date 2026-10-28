@@ -225,7 +225,7 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-28): **158 of 178 delivery rows are complete; 20 are open**.
+recount (2026-10-28): **165 of 178 delivery rows are complete; 13 are open**.
 Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
@@ -2404,6 +2404,13 @@ plugin or Hermes integration is installed and working end to end.
       report-only and does not define or enforce a budget. This confirms the
       local usage read works while coverage remains incomplete; it does not
       support complete project token totals, billing, or alert claims.
+      Fresh read-only recheck (2026-10-28): the profile-installed plugin matches
+      the Hermes source copy and returns the same six turns, five reported and
+      one unknown. The latest retained event is 2026-10-21, 576,123 seconds old
+      at measurement time; `coverage_complete` and `tokens_complete` remain
+      false. No synthetic or live usage event was added. The source is installed
+      and honest about its age, but current capture and complete token coverage
+      remain unverified, so this requirement stays open.
       Provider/model token usage is not collected by Curator. It belongs to
       Hermes Core's local project-usage accounting; Host Steward remains a
       separate root-account host-disk concern and must not own project token

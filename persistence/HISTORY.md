@@ -9585,3 +9585,20 @@ while preserving explicit criteria and same-project parent validation.
   marker changed.
 - **Outcome:** Confirm the already-implemented local backup default; keep the
   independent permanent-data budget item open.
+
+## 2026-10-28 — Recheck report-only project token usage
+
+- **Intent:** Verify the enabled local Hermes project-usage plugin and its
+  freshness/completeness labels without creating a usage event.
+- **Changed fact:** The profile-installed plugin matches the Hermes source copy.
+  Its read-only report contains six retained turns, five with usage and one
+  unknown; the newest event is from 2026-10-21 and was 576,123 seconds old at
+  measurement time.
+- **Verification:** The plugin reports only `codex_app_server`, sets both
+  `coverage_complete` and `tokens_complete` to false, and does not expose turn,
+  session, or goal identifiers. The official delivery counter returns
+  165/178 complete; `git diff --check` passes.
+- **Open gate:** The data is stale and incomplete. No current capture or
+  complete provider/auxiliary usage coverage was verified; no usage event was
+  fabricated. MCP goal persistence returned `unauthenticated` in this session.
+- **Outcome:** Preserve report-only behavior and leave token coverage open.
