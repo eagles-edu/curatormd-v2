@@ -1979,6 +1979,12 @@ consumer plugin, Hermes integration, or production deployment.
       The focused Markdown persistence suite passes 19 tests; targeted Pyright,
       errors-only Pylint, and `git diff --check` pass. This covers the local
       writer boundary only; production filesystem fault injection remains open.
+      Canonical file-sync fault follow-up (2026-10-28): an injected `fsync`
+      failure on the unpublished temporary Markdown file leaves the prior
+      target byte-identical and removes the temporary file. The focused
+      Markdown persistence suite passes 20 tests; targeted Pyright,
+      errors-only Pylint, and `git diff --check` pass. This is local failure
+      evidence only; deployment storage and power-loss behavior remain open.
 
 ### 5. Global backend, persistence, and operations
 

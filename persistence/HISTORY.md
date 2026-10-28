@@ -9230,3 +9230,16 @@ while preserving explicit criteria and same-project parent validation.
   the broader failure-injection matrix; no checklist marker changed.
 - **Outcome:** Preserve the existing projection and fail visibly when the
   temporary canonical write is incomplete.
+
+## 2026-10-28 — Verify canonical temporary-file sync failure
+
+- **Intent:** Cover the canonical writer's file-data sync boundary in the
+  local failure-injection matrix.
+- **Changed fact:** A failed temporary-file `fsync` leaves the prior Markdown
+  target unchanged and removes the unpublished temporary file.
+- **Verification:** The focused Markdown persistence suite passes 20 tests.
+  Strict Pyright reports zero diagnostics, errors-only Pylint exits 0, and
+  `git diff --check` passes.
+- **Open gate:** Deployment storage and power-loss recovery remain unverified;
+  the broader failure matrix remains open and no checklist marker changed.
+- **Outcome:** Record fail-closed local file-sync behavior before publication.

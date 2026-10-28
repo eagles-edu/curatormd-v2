@@ -924,6 +924,25 @@ raise SystemExit(0)
             tuple(self.target.parent.glob(".curatormd-v2-write-*")), ()
         )
 
+    def test_file_sync_failure_preserves_target_and_removes_temporary(self) -> None:
+        """A temporary-file sync failure cannot publish or damage the target."""
+
+        original_target = self.target.read_bytes()
+        with patch(
+            "curatormd_v2.markdown_persistence.os.fsync",
+            side_effect=OSError("injected file sync failure"),
+        ):
+            with self.assertRaisesRegex(
+                MarkdownPersistenceError,
+                "atomic canonical Markdown replacement failed",
+            ):
+                self.plugin.persist_goal(self.goal.goal_id, self.target)
+
+        self.assertEqual(self.target.read_bytes(), original_target)
+        self.assertEqual(
+            tuple(self.target.parent.glob(".curatormd-v2-write-*")), ()
+        )
+
 
 
 if __name__ == "__main__":
