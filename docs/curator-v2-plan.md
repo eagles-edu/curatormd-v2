@@ -6966,34 +6966,36 @@ because the system reports healthy.
 
 #### Repeatable work-cycle checklist
 
+The following bullets are reusable workflow instructions, not implementation-status items; they are excluded from progress counts.
+
 Run this small cycle at intake, after each meaningful work batch, and at
 handoff. It makes partial completion and remaining work visible without
 replaying the full session:
 
-- [ ] **State the task.** Show the source checklist/request item, a concise
+- **State the task.** Show the source checklist/request item, a concise
       problem statement, repository/project, owner, and whether this is a new or
       reopened goal.
-- [ ] **Define success.** List stable, observable success criteria and how each
+- **Define success.** List stable, observable success criteria and how each
       one can be verified before implementation begins. Preserve the original
       wording/source revision; make later changes explicit amendments.
-- [ ] **Plan bounded work.** Break work into accepted tasks/subtasks with a
+- **Plan bounded work.** Break work into accepted tasks/subtasks with a
       named result, dependencies, and verifier. Separate research, advice,
       proposed actions, and decisions; label estimates and hypotheses as such.
-- [ ] **Record only useful deltas.** At each update, append deduplicated,
+- **Record only useful deltas.** At each update, append deduplicated,
       provenance-linked bullets for new research, decisions/advice, changes,
       verification results, and blockers. Do not repeat unchanged context or
       retain raw chats, command dumps, imports, or scratch material as facts.
-- [ ] **Reconcile success criteria.** For every criterion, show `verified` with
+- **Reconcile success criteria.** For every criterion, show `verified` with
       linked proof, or `open` with the exact missing proof, blocker/owner, and
       next action. A claim, recommendation, expected result, or user report is
       not independent verification.
-- [ ] **Set the honest outcome.** At handoff state `complete` only if all
+- **Set the honest outcome.** At handoff state `complete` only if all
       criteria pass; otherwise state `open`, `blocked`, `deferred`, `cancelled`,
       or `superseded`, summarize
       facts completed to date, name the remaining checklist/TODO item, and give a
       concrete next action. Do not erase partial progress or mark the source
       checklist item done merely because the agent stopped.
-- [ ] **Resolve review and cleanup separately.** Show SDE state, cleanup
+- **Resolve review and cleanup separately.** Show SDE state, cleanup
       authorization, canonical write/receipt state, artifact-inventory
       completeness, artifact-to-criterion dependencies and their retention or
       reacquisition consequences, and purge state as independent fields. One
@@ -7003,7 +7005,7 @@ replaying the full session:
       deletion. Leave unapproved cleanup visibly awaiting authorization and
       failed cleanup visibly `purge_pending`, with a safe retry owner/action.
       Cleanup success must not mark unfinished development complete.
-- [ ] **Keep the update efficient.** Emit a bounded bullet delta and current
+- **Keep the update efficient.** Emit a bounded bullet delta and current
       status, not another narrative recap. Apply configured per-event, per-goal,
       evidence, staging-byte, and retention limits; report budget/limit pressure
       and request an explicit compaction or retention decision before discarding
@@ -7019,48 +7021,48 @@ filled from an unsupported inference.
 #### Per-request execution checklist
 
 Apply this checklist to each captured request, checklist item, or accepted
-subtask. These boxes are a task-instance template, not implementation-status
-checkboxes. The goal outcome, SDE review decision, and artifact-cleanup state
+subtask. These entries are a task-instance template, not implementation-status
+items. The goal outcome, SDE review decision, and artifact-cleanup state
 are independent: approving an SDE does not complete a goal, rejecting one does
 not erase verified facts, and a purge failure does not invalidate already
 verified work.
 
-- [ ] **Intake and preserve scope.** Record the source request/checklist item,
+- **Intake and preserve scope.** Record the source request/checklist item,
       repository/project, owner, parent and stable source IDs, concise problem,
       and initial state. Preserve original success-criterion wording and source
       revision/hash; do not silently rewrite intent.
-- [ ] **Define success before implementation.** Give each criterion a stable ID,
+- **Define success before implementation.** Give each criterion a stable ID,
       observable pass condition, allowed verifier/evidence kind, and expected
       result. Identify external or human gates separately from code/test work.
-- [ ] **Decompose transparently.** List proposed subtasks with their own problem,
+- **Decompose transparently.** List proposed subtasks with their own problem,
       criteria, dependencies, owner, and expected result. Keep agent-proposed
       work visibly proposed until accepted; link accepted children to the parent
       and do not let an unaccepted proposal expand authorized scope.
-- [ ] **Record work as typed, compact facts.** Distinguish research findings
+- **Record work as typed, compact facts.** Distinguish research findings
       (source and date/reference), advice/recommendations (not decisions), plan
       or intent, implementation/change, verification result, open gate, and
       outcome. Keep each fact a deduplicated bullet with provenance; do not copy
       chats, transcript passages, large command output, or raw artifacts.
-- [ ] **Track criterion evidence as work proceeds.** Link each criterion to
+- **Track criterion evidence as work proceeds.** Link each criterion to
       proof facts and record verifier, exact check/probe identifier, result, and
       evidence hash/reference. Separate observed results from inference,
       expected impact, user report, and unverified claims.
-- [ ] **Keep the live task list truthful.** Show each goal/child as planned,
+- **Keep the live task list truthful.** Show each goal/child as planned,
       active, complete, open, blocked, deferred, cancelled, or superseded; expose unmet criteria,
       dependency/blocker, owner, and next action. Partial progress remains
       visible as completed facts plus open work; never check off a source item
       solely because its agent session ended.
-- [ ] **Decide the task outcome independently of review/cleanup.** Mark
+- **Decide the task outcome independently of review/cleanup.** Mark
       `completed` only when every required criterion has passing evidence.
       Otherwise record `open`, `blocked`, or `deferred`, the exact remaining
       criterion/reason, and a concrete next action. A completion claim is not
       verification; SDE approval/rejection and purge success are not goal
       criteria unless explicitly declared as such at intake.
-- [ ] **Assess significance from supported facts.** Deduplicate facts first;
+- **Assess significance from supported facts.** Deduplicate facts first;
       keep routine updates on the goal. For a candidate SDE, select only
       material, durable facts and passing evidence, with concise impact and
       retrieval value. Label planned, inferred, and measured impact distinctly.
-- [ ] **Present review and cleanup consequences together.** Show the proposed
+- **Present review and cleanup consequences together.** Show the proposed
       bullet record, selected fact/evidence references, project scope, decision
       consequences, and complete exact eligible artifact inventory with hashes
       and target. Before the one explicit review action, map each inventoried
@@ -7070,7 +7072,7 @@ verified work.
       only for the displayed manifest and its stated consequences. Record SDE
       and cleanup authorization in distinct immutable receipts; no purge is allowed
       until both are durable and canonically projected.
-- [ ] **Persist before purging.** Write the approved compact facts (or the
+- **Persist before purging.** Write the approved compact facts (or the
       required rejection/goal facts) and disposition receipt to the configured
       canonical target, verify the resulting projection/hash, then persist the
       cleanup-authorization receipt from the same review action, bound to the
@@ -7082,14 +7084,14 @@ verified work.
       requires preserving that source, keep it held and cleanup pending until a
       valid retention or release decision exists. Never delete source, canonical,
       or unrelated user files.
-- [ ] **Close the cleanup loop.** Report per-artifact deleted, already absent,
+- **Close the cleanup loop.** Report per-artifact deleted, already absent,
       held, changed, or failed state. Retry safe failures idempotently. Any
       missing, rejected, or stale cleanup approval prevents deletion and stays
       visible as awaiting authorization. An incomplete inventory,
       persistence/receipt failure, or failed deletion remains visible as
       `purge_pending` with owner and recovery action; it must not be hidden by a
       green service-health indicator.
-- [ ] **Reconcile and report.** Compare the final user-facing summary with the
+- **Reconcile and report.** Compare the final user-facing summary with the
       stored goal, criteria, verified fact IDs, open gates, SDE decision, receipt,
       checklist state, and purge status. Include what is done, what remains,
       evidence available, and the next action; do not imply unverified deployment
@@ -7101,9 +7103,9 @@ verified work.
 Goal / source checklist ID / parent / project:
 Problem (preserved source wording or faithful concise statement):
 Success criteria:
-  - [ ] Criterion ID — observable result — verifier/evidence kind
+  - Criterion ID — observable result — verifier/evidence kind
 Accepted subtasks and dependencies:
-  - [ ] Child ID — acceptance — owner — state
+  - Child ID — acceptance — owner — state
 Facts (compact bullets, typed and linked to source/evidence IDs):
   - Research | Advice | Intent | Change | Verification | Open gate | Outcome | Cancelled | Superseded:
 Criterion status:
