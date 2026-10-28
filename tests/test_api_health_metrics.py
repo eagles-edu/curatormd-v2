@@ -273,6 +273,32 @@ class ApiHealthMetricsTests(_ApiTestSupport):
         self.assertEqual(health.event_received_count, 1)
 
 
+    def test_retry_payload_text_is_not_exposed_in_project_metrics(self) -> None:
+        """Aggregate failed-event metrics never include retained event text."""
+
+        canary = "PRIVATE_RETRY_METRIC_CANARY"
+        event = EventEnvelope(
+            "metrics-retry-event",
+            "project-a",
+            GoalStarted(
+                "metrics-retry-goal",
+                f"Retry request detail {canary}",
+                (SuccessCriterion("done", "Keep metrics content-free"),),
+            ),
+        )
+        self.store.ingest_event(event)
+        self.store.mark_event_failed(
+            "project-a", event.event_id, "temporary_adapter_error"
+        )
+
+        metrics = self._api_with_healthy_dependencies(
+            self.plugin
+        ).project_prometheus_metrics(self.caller, "project-a")
+
+        self.assertIn('curatormd_event_queue_failed{project_id="project-a"} 1', metrics)
+        self.assertNotIn(canary, metrics)
+
+
     def test_project_health_degrades_while_event_payload_scrub_is_pending(self) -> None:
         """Keep a blocked privacy scrub visible in project readiness."""
 

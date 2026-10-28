@@ -4144,6 +4144,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       canonical Markdown target for the marker. The focused API suite and full
       303-test suite pass. This covers one rejected-event path only; logs,
       traces, other artifact classes, and cross-boundary flow remain open.
+      Retry-payload metrics check (2026-10-28): project metrics expose only
+      aggregate failed-event counts while the failed inbox row retains its raw
+      retry payload. A canary regression proves the event text is absent from
+      Prometheus output. This covers one metrics boundary only; logs/traces in
+      every producer path, backups outside the approved retry exception, host
+      crash sinks, and broad source coverage remain open.
       Additional progress (2026-10-20): malformed event JSON and invalid UTF-8
       no longer retain request source through chained decoder exceptions, and
       duplicate-key errors no longer echo attacker-controlled field names.

@@ -9654,3 +9654,17 @@ while preserving explicit criteria and same-project parent validation.
   explicit owner limit or an explicit decision to retain it while unresolved.
 - **Outcome:** Clarify seven-copy retention as a rolling count policy, not a
   seven-day maximum age for pending event text.
+
+## 2026-10-28 — Keep retry payloads out of project metrics
+
+- **Intent:** Verify that retaining a failed event for retry does not expose its
+  raw content through Prometheus project metrics.
+- **Changed fact:** Project metrics report aggregate failed-event counts and do
+  not include the event's retained retry text.
+- **Verification:** A canary regression creates a failed event whose problem
+  contains a private marker, confirms the aggregate failure metric is present,
+  and confirms the marker is absent from the metrics output.
+- **Open gate:** This covers the failed-event metrics path only; it does not
+  prove every log, trace, backup, crash sink, or producer path is content-free.
+- **Outcome:** Add direct evidence for the metrics sink while retaining the
+  broader privacy audit as open.
