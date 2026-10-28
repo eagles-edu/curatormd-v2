@@ -9570,3 +9570,18 @@ while preserving explicit criteria and same-project parent validation.
   outside the approved alpha. Host volume encryption is not claimed.
 - **Outcome:** Close the applicable local access-control requirement with its
   actual boundary and limitations documented.
+
+## 2026-10-28 — Recheck approved backup maintenance
+
+- **Intent:** Verify the owner-approved six-hour maintenance run and seven-copy
+  backup policy on the local development host.
+- **Changed fact:** The `eaglesvn` user timer is enabled and waiting for
+  `vhost-manager-alpha`; its 09:20 +07 run exited successfully and reported
+  `backup_status=verified` with zero due purge or expiry targets.
+- **Verification:** `systemctl --user status` confirmed the timer is active,
+  the service exited `0/SUCCESS`, and its journal contains the bounded result.
+- **Open gate:** This verifies the local scheduled backup path, not power-loss
+  durability, full permanent-data budgets, or inbox compaction. No checklist
+  marker changed.
+- **Outcome:** Confirm the already-implemented local backup default; keep the
+  independent permanent-data budget item open.
