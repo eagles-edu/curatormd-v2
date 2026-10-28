@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 from typing import TextIO
 
+from .backup import backup_daily
 from .cli_args import positive_integer_limit
 from .models import PurgeStatus
 from .project_config import ProjectConfig
@@ -25,8 +26,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="curatormd-v2-maintenance",
         description=(
-            "Process only due, previously reviewed and canonically persisted "
-            "artifact purges for one configured project."
+            "Create the daily local database backup and process only due, "
+            "previously reviewed artifact purges for one configured project."
         ),
     )
     parser.add_argument("--project-root", required=True, type=Path)
@@ -46,8 +47,9 @@ def _execute_retry_pass(
     batch_limit: int,
     output: TextIO,
 ) -> int:
-    """Run both bounded retry queues and emit their aggregate receipt counts."""
+    """Back up the ledger, retry bounded purge queues, and report safe counts."""
 
+    backup_daily(database, database.parent / "backups")
     with CuratorStore(database) as store:
         plugin = ProjectPlugin.bind(config, store)
         receipts, expiry_receipts = plugin.retry_due_purge_pass(batch_limit)
@@ -62,6 +64,7 @@ def _execute_retry_pass(
         output.write(
             json.dumps(
                 {
+                    "backup_status": "verified",
                     "project_id": config.project_id,
                     "processed": len(receipts),
                     "complete": completed,

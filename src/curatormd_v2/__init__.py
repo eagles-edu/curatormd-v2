@@ -13,7 +13,7 @@ from .api import (
     RateLimitExceeded,
     RejectAllProjectAccess,
 )
-from .backup import backup_database, restore_database
+from .backup import backup_daily, backup_database, restore_database
 from .browser_evidence import LocalBrowserProofResolver, LocalBrowserProofSpec
 from .human_observation import LocalHumanObservationResolver, LocalHumanObservationSpec
 from .evidence import (
@@ -228,6 +228,7 @@ __all__ = [
     "ArtifactPurger",
     "ArtifactCleanupAuthorizationRequest",
     "backup_database",
+    "backup_daily",
     "ArtifactRef",
     "ArtifactStatus",
     "PurgeOutcome",

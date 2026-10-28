@@ -2,22 +2,20 @@
 
 ## Approved for local alpha
 
-- **Local reviewer/admin:** `eaglesvn` is the sole local project admin and SDE reviewer through the attended CLI bound to the current Linux UID. The CLI also requires the active account to own the ledger database before opening it, so another local account cannot review the shared alpha ledger by invoking the CLI under its own UID. This does not establish a Hermes-authenticated subject. The `renew-ssl-coding` profile reports `auth=none` and cannot approve, reject, release holds, or purge through a trusted Hermes identity until Hermes supplies an authenticated human identity.
+- **Local reviewer/admin:** `eaglesvn` is the sole local project admin and SDE reviewer through the attended CLI bound to the current Linux UID. The CLI requires the active account to own the ledger database. This is the complete identity requirement for the local, single-user utility; no separate Hermes person identity is required.
 - **Review and purge:** One explicit human review action records the SDE disposition and authorizes purge of the complete exact inventory displayed with that decision. Curator stores a distinct cleanup-authorization receipt for audit and projects both receipts canonically before deletion. The same action cannot authorize a changed or incomplete inventory. Retries may repeat only the previously approved inventory; they cannot create a new approval.
 - **Retention:** Raw chat/transcript, cue, import, scratch, generated intermediate, and duplicate artifacts become eligible promptly after compact facts are recorded and any related SDE is approved or rejected. **72 hours is the hard maximum age**, even if an SDE is still pending; at that point the transient source can be purged while the SDE remains reviewable from canonical facts. Pending SDE review delays prompt expiry but does not extend the 72-hour limit. Explicit legal or operational artifact holds require a separate release and are the only local-alpha exception.
 - **Privacy:** Canonical knowledge consists of compact deduplicated fact bullets and auditable decisions. Raw chats/transcripts, cues, imports, and scratch files stay temporary and are not copied into canonical facts. Missing trusted identity, incomplete inventory, or stale approval fails closed. The profile's `auth=none` state is not treated as a person or permission.
 - **Hold handling:** Hold placement and release are attached to the exact artifact inventory and recorded with reviewer, time, and rationale. Held artifacts stay visible and excluded from purge/retry until a separate authorized release.
 - **Staging budget:** For `vhost-manager-alpha`, monitor Curator's configured temporary staging area at 262,144,000 bytes (250 MiB); this is a warning threshold, not a write limit, and there is no project file-count limit. This does not limit Vhost's normal application writes or renewal operations. At 75% of the byte threshold, project health emits `staging_budget_warning`; at or above the threshold it emits `staging_budget_reached` as a critical warning. Curator continues accepting staged files above the threshold, subject to independent per-artifact and per-goal hard limits. A complete inventory is still required to report threshold status. Warnings do not delete or overwrite artifacts. FIFO means oldest-first ordering for a cleanup proposal only; it never authorizes deletion. Purge still requires approval of the exact complete inventory and honors artifact holds. External alert delivery is not configured by this policy.
+- **Database backup:** The six-hour local maintenance run must create one verified SQLite snapshot per UTC day in the private Curator state directory and retain the newest seven daily copies. It may prune older copies only after the new snapshot passes integrity checks. Restore is manual: `eaglesvn` selects the exact backup and approves restoring it to a new path. Curator never replaces the active database or switches to a restored copy automatically.
+- **System of record:** SQLite is authoritative for structured goals, facts, and receipts. Consumer `persistence/HISTORY.md` is a readable projection. On mismatch, preserve both and wait for `eaglesvn` to review; only then may Markdown be regenerated from SQLite. Never restore SQLite from Markdown automatically.
 - **Host Steward:** Host Steward administration and host cleanup remain under the Hermes Core root account; CuratorMD does not execute host cleanup.
-
-The approved values apply to local alpha only. They do not approve production
-identity mapping, production retention periods, external hold discovery,
-deployment recovery, or live runtime behavior.
 
 ## Still open
 
-- Hermes-authenticated user/project identity and production role provisioning. Missing identity or `auth=none` is denied for trusted Hermes review actions. Hermes keeps authenticated subjects separate from profile IDs in [session_identity.py](/home/eaglesvn/.hermes/hermes-agent/gateway/session_identity.py).
-- Production retention policy, hold discovery from deployment-owned sources, scheduled purge operations, alerting, and live-runtime evidence.
-- Exact project/profile grant provisioning for a production deployment; no wildcard grants or self-registration are proposed.
+- Remaining local SQLite/staging failure cases and a restart/retry smoke check for the updated maintenance command.
+- Complete permanent-data size accounting and local warning levels beyond the approved staging threshold.
+- Verification that the installed local maintenance run is using the updated daily-backup code.
 
-The approved values above apply to local alpha only and do not close production release gates. The Curator V2 goal remains active.
+The approved values above define the supported local development utility. No multi-user or public-service behavior is required.

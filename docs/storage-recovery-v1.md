@@ -1,8 +1,9 @@
 # Curator V2 local SQLite recovery procedure, version 1
 
-**Status: local-library procedure only.** This is not an approved production
-runbook. It does not reconcile SQLite with canonical project Markdown or
-authorize switching a live service to a restored database.
+**Status: approved local development procedure.** SQLite is authoritative;
+consumer Markdown is a readable projection. On mismatch, preserve both and
+require `eaglesvn` to review before rebuilding Markdown from SQLite. Never
+restore SQLite from Markdown automatically.
 
 ## Guarantees of the helper
 
@@ -35,6 +36,17 @@ Restore requires the explicit `--restore-to-new-path` confirmation. Both
 commands refuse existing destinations and report only the operation and
 verification status. A successful restore creates an isolated review copy; it
 does not authorize switching the live system to that copy.
+
+The updated six-hour local maintenance command creates one online backup per
+UTC day under `<database-directory>/backups/`. The directory and backup files
+are private to the Curator OS account. After a new backup passes both SQLite
+integrity checks, older dated backups are pruned so the newest seven daily copies remain. A
+failed backup leaves existing copies untouched and stops that maintenance pass.
+The pass reports only `backup_status: verified`; it never prints the path.
+
+Restore is never scheduled. `eaglesvn` must select the exact backup and run the
+explicit restore command to a new path. Curator does not replace the active
+database or switch the local service to the restored copy.
 
 Example from a Python maintenance process:
 

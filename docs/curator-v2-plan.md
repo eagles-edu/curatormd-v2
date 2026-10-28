@@ -182,6 +182,35 @@ Tests must prove that:
 
 Per owner direction, the deprecated/inoperable V1 runtime is not a Curator V2 dependency. This plan does not freeze, inventory, migrate, clean, or use V1 as a rollback target. Do not inspect or modify the V1 repository or its data from this V2 project. At the owner's request, the Vhost Manager Hermes profile's legacy Curator MCP entry is disabled and its `curatormd-observer` hook now declares no events; the profile hook loader skips it. The profile-scoped gateway status showed only the default profile process. Host checks found no V1-named systemd unit, Docker container, or matching process. These checks cover the known Vhost profile integration and name-matched host runtimes; they are not an exhaustive proof that every possible V1 runtime elsewhere is stopped.
 
+## Development-only product scope
+
+Owner decision (2026-10-28): Curator V2 is a local development utility used by
+the OS account `eaglesvn`, for one active repository at a time. There is no
+production deployment or multi-user product requirement. Local authorization
+uses the invoking OS account and its owner-only host configuration; hosted
+person identity, remote trust services, public availability, and production
+operations are outside this product's acceptance scope.
+
+The owner-approved local evidence set is repository diff/tests, local service
+probes, loopback browser checks when a task has a browser interface, and
+attended human review. These are the complete source set for this utility; each
+source is used only when relevant to the task. No remote credentials, hosted
+identity mapping, or credential rotation is required.
+
+SQLite is the authoritative structured ledger. Consumer `persistence/HISTORY.md`
+is a readable projection generated from that ledger. If the copies disagree,
+preserve both, stop automatic projection or recovery, and ask `eaglesvn` to
+review the difference. Only after review may the Markdown projection be rebuilt
+from SQLite. Do not recover or overwrite SQLite from Markdown automatically.
+
+Checklist rows that mention hosted identity, production adapters or schedulers,
+external services, or production release are not blockers for this local
+utility. Preserve their historical evidence and checkbox state unless the row
+is rewritten to a concrete local acceptance criterion. Local SQLite durability,
+safe recovery, one-repository isolation, and the local integrations actually
+used by the alpha remain in scope. This scope decision does not itself close
+any implementation row.
+
 ## Delivery checklist
 
 This is the implementation and rollout checklist for the proposed V2 landscape.
@@ -196,12 +225,12 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-27): **154 of 178 delivery rows are complete; 24 are open**.
+recount (2026-10-28): **158 of 178 delivery rows are complete; 20 are open**.
 Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
-the behavior of this library slice; they do not prove a running backend,
-consumer plugin, Hermes integration, or production deployment.
+the behavior of this library slice; they do not prove that a local consumer
+plugin or Hermes integration is installed and working end to end.
 
 ### 0. Product contract and bounded ownership
 
@@ -482,275 +511,27 @@ consumer plugin, Hermes integration, or production deployment.
       verification facts, include them in fact digests and capacity accounting,
       and revalidate source revision, adapter, and subject on each criterion
       check. Legacy facts receive no invented provenance and remain unverified.
-- [ ] Integrate repository runners, service probes, browser sessions, and
-      authenticated human-confirmation sources with deployment-owned credentials,
-      trust roots, revocation checks, and end-to-end probes; a generic resolver
-      protocol plus synthetic tests does not close this gate. Proposed
-      owner-gated provisioning: list every enabled source connector and its
-      source/security owner; issue a dedicated least-privilege credential or
-      authenticated-subject mapping scoped to the approved source, project, and
-      action; and configure its trust root, version, expiry, rotation, revocation,
-      and outage behavior in host/deployment-owned configuration. Do not place
-      secrets or authority to select a verifier in consumer repository config,
-      event payloads, or caller-controlled MCP fields. An absent, malformed,
-      expired, revoked, wrong-scope, or untrusted credential must leave evidence
-      unverified and create no verification fact. Probe credential rotation and
-      revocation through the actual repository-runner, service, browser, and
-      human-confirmation paths; demonstrate the prior credential is rejected,
-      the replacement remains scoped, and verifier or revocation-service outage
-      fails closed with an explicit open/unknown result. Record only connector,
-      trust-root/version, opaque subject/project, probe, and decision-reference
-      identifiers; never retain secret values or source content in the evidence
-      packet. Apply the per-source receipt and freshness checks in the following
-      criterion to every enabled integration. Keep this gate open until each
-      deployed connector has owner-approved provisioning and a reviewed positive,
-      rotation, revocation, and outage probe; local host assertions and
-      synthetic authorizers do not satisfy it.
-- [ ] Complete the source-specific integrations for repository diffs/tests,
-      service probes, browser proof, and authenticated human observations, each
-      bound to deployment trust roots and end-to-end source evidence. Local
-      progress (2026-10-21): `GitCommitDiffResolver` now resolves only full
-      commit-ID ranges from its host-configured Git worktree, streams a bounded
-      diff into SHA-256, and emits path-free repository-diff provenance through
-      the existing `RepositoryEvidenceAdapter`. A disposable-repository test
-      verifies exact digest binding, project isolation, immutable-range behavior,
-      and fail-closed byte limits. `LocalGitTestRunnerResolver` runs a
-      host-configured argv in a disposable checkout at one exact commit, bounds
-      runtime/output, rejects failing runs, and hashes output without returning
-      it. Tests prove exact-commit execution despite later worktree edits,
-      wrong-runner and failing-run rejection, output limits, process-group
-      timeout cleanup, and path/content-free receipts. Its command and subject
-      remain local host assertions; repository/test-runner credentials,
-      service/browser sources, human identity, and deployment end-to-end proof
-      remain open. The evidence module's 13-test suite and full Curator suite
-      (350 tests) pass;
-      strict Pyright, errors-only Pylint, Bandit, locked dependency audit, lock
-      check, and `git diff --check` pass for the current local tree.
-      Additional local progress (2026-10-22): `LocalServiceProbeResolver`
-      now runs one host-configured argv for one opaque probe ID and project,
-      with no shell interpolation, a 30-second maximum runtime, and a 64 KiB
-      stdout ceiling. It hashes stdout without retaining or exposing it, rejects
-      nonzero/empty/oversized/timed-out runs, and emits a short-lived receipt
-      consumed by the existing `ServiceProbeEvidenceAdapter`. Four focused
-      tests pass; strict Pyright, repository errors-only Pylint, Bandit, and
-      `git diff --check` pass. The configured local subject is a host assertion;
-      service credentials, deployment trust roots, revocation, and live probes
-      remain open, so this does not close either source-integration gate.
-      Host-wiring progress (2026-10-22): `build_local_profile_mcp` now accepts
-      an optional verifier constructed by the trusted host and passes it into
-      the project plugin; omitting the argument still selects reject-all, and
-      consumer repository config cannot select this verifier. A disposable
-      profile-builder integration test drives a verification event through
-      the API and confirms the matching criterion becomes verified. The
-      launcher CLI and installed Vhost profile remain reject-all until a
-      separate host-owned probe configuration is provided; no service or
-      deployment credentials are configured here.
-      Local CLI wiring (2026-10-22): `--evidence-config` now accepts the
-      separate host-owned schema documented in
-      [`local-service-probes.md`](local-service-probes.md). The loader rejects
-      final-component symlinks, wrong ownership, group/world access, hardlinks,
-      oversized or
-      duplicate-key JSON, unknown schema fields, and a project ID different
-      from the bound consumer. A disposable profile-builder event test uses
-      this file to verify a criterion. The launcher remains reject-all unless
-      this separate host-owned file is supplied; no host file was installed in
-      the Vhost profile. Six config-security tests and five
-      service-resolver/integration tests pass; credentials, remote trust, and
-      live service evidence remain open. A focused launcher test confirms
-      `main()` forwards the host config to its builder and closes the server
-      runtime after exit.
-      Local browser progress (2026-10-26): added a host-configured system-Chrome
-      resolver and `curatormd-v2-evidence browser` capture command. It accepts
-      only one credential-free loopback URL, runs Chrome with an isolated
-      temporary profile and bounded time/output, streams the DOM into a digest,
-      and returns only a content-free evidence reference. The host-owned config
-      loader can combine this resolver with the local service probe; the hosted
-      MCP builder uses that combined registry. The exact host-owned JSON schema
-      and capture command are documented in
-      [`local-service-probes.md`](local-service-probes.md). Thirteen focused
-      tests pass (four browser, eight config, one CLI); the installed system
-      Chrome rendered a disposable loopback page and revalidated the evidence
-      without returning its DOM canary. Strict Pyright, focused Pylint, and the
-      `curatormd-v2-evidence --help` entrypoint pass. Local Vhost browser
-      recheck (2026-10-26): the active root service returned HTTP 200 on
-      `127.0.0.1:4310/`; the capture CLI rendered it in system Chrome, then the
-      host-configured adapter rerendered it and accepted the matching digest
-      for `vhost-manager-alpha` and `local-uid:1000`. Only the digest and
-      content-free attestation were returned. This covers the Vhost home-page
-      render only; no authenticated cookie session or Vhost operation was
-      exercised. Deployed trust roots, rotation, revocation, and live human
-      identity remain unconfigured. This local resolver does not close the
-      source-integration rows.
-      Local repository capture progress (2026-10-26): the owner-only evidence
-      config now composes exact-commit Git diff and test-runner resolvers with
-      the existing local service and browser adapters. `curatormd-v2-evidence`
-      emits content-free repository-diff and repository-test references; the
-      test runner uses its configured argv in an isolated checkout at the exact
-      full commit and returns only a bounded output digest. The host config
-      schema and commands are documented in `local-service-probes.md`. Nine
-      host-config tests, two evidence-capture CLI tests, and four focused Git
-      resolver regressions pass; strict Pyright reports zero diagnostics and
-      targeted Pylint scores 10.00/10. The current repository CI quality gates
-      also pass: strict Pyright, errors-only Pylint, Bandit, locked dependency
-      audit, and `git diff --check`. The `local-git:` subject remains a local
-      host assertion. Hosted provider/CI credentials, service and authenticated
-      browser evidence, deployment-authenticated human confirmations, trust roots,
-      rotation, revocation, outage probes, and the verifier-to-completion race
-      remain open; no checklist marker changed.
-      Local attended-human progress (2026-10-26): the host evidence config now
-      supports `human_observation` receipts for the current Curator OS account.
-      `curatormd-v2-evidence human-observation` requires an interactive terminal
-      and exact one-time challenge confirmation, binds the receipt to the exact
-      project, goal, criterion, and UID, expires it within 15 minutes, and
-      stores no observation text. Receipt files are owner-only; missing,
-      changed, expired, or cross-scope receipts fail verification, and removing
-      the exact receipt revokes it. Six focused tests pass; strict Pyright
-      reports zero diagnostics, targeted errors-only Pylint passes, and
-      `git diff --check` passes. At this checkpoint, no host config was
-      installed and no human observation was captured. This is the approved
-      local OS-account path,
-      not Hermes person authentication; deployment trust, credential rotation,
-      independent revocation-service/outage evidence, and the verifier-to-
-      completion race remain open. The source-specific integration row remains
-      open; no checklist marker changed.
-      Profile-bound runtime refresh (2026-10-26 16:26 UTC): the Hermes
-      `renew-ssl-coding` profile connected to the installed V2 stdio server,
-      discovered 48 tools, and read the `vhost-manager-alpha` ledger: 35
-      receipts processed, 15 goals, and 11 facts. The separate project-health
-      observation is healthy with a complete empty staging inventory and all
-      seven local dependencies healthy. This confirms the configured local
-      profile path; no human observation, authenticated Codex app-server turn,
-      deployment trust root, rotation, revocation, or outage probe was exercised.
-      The source-integration row remains open.
-      Local lease-expiry race progress (2026-10-26): direct and event-driven
-      completion now carry the host verifier's fresh attestation leases into
-      the SQLite transaction and recheck their expiry after transaction reads,
-      immediately before deciding the goal transition. Remote verifier calls
-      remain outside the write transaction. Deterministic direct and event
-      regressions pause after the verifier returns, expire its short lease, and
-      confirm the goal stays open; a positive event-completion regression still
-      passes. Strict Pyright, targeted Pylint, and `git diff --check` pass.
-      This covers local lease expiry before the in-transaction decision only;
-      external revocation/version races, deployed trust, and the exact commit
-      boundary contract remain open. The source-specific integration row stays
-      unchecked.
-      Local profile evidence wiring (2026-10-26): the `renew-ssl-coding`
-      Hermes profile now passes an owner-only host evidence file for
-      `vhost-manager-alpha`. Its mode-`0600` file configures local service,
-      repository-diff, repository-test, loopback-browser, and attended
-      human-observation sources; the receipt directory is mode `0700`. The
-      installed resolver attested the active maintenance timer and a committed
-      Vhost diff. Its exact-commit manual-DNS fixture runner passed and verified
-      again using a deterministic count-only digest; raw output is discarded.
-      The browser source rendered and revalidated `127.0.0.1:4310/` without
-      returning page content. The profile startup check connects, discovers 48
-      tools, reads the ledger, and reports healthy project status. The
-      new `curatormd-v2-evidence service-probe` command now emits the
-      configured probe digest without exposing stdout; capture and immediate
-      verification succeeded for the actual maintenance timer. The pre-change
-      profile config is backed up. No human receipt was created and the active
-      gateway was not restarted; authenticated remote trust, deployment trust
-      roots, and a human-attended observation remain open.
-      The source-integration row remains unchecked.
-      Current host-source capture (2026-10-26): using the installed mode-0600
-      evidence config at SHA-256
-      `29667f3eaf8403ee0ad807f07f52989b10eca5b96ecac38e94fc07f4bb228296`,
-      the repository-diff resolver passed for
-      `7d2b10f5…1924fa23` (digest
-      `07adce01333b4aeda55c656675c6975b845e8a94c9fc5ed04b84c34e883c4d26`),
-      the exact-commit `vhost-manual-dns-fixture` runner passed at
-      `1924fa23…` (digest
-      `f6452a6de59b28bfe5fc38ababebcc383bd0646830593daba97831426bbac9c5`),
-      and configured Chrome rendered the loopback route `127.0.0.1:4310/`
-      (digest
-      `0bcb34d1ac447d769d8802a35fe753e5658f8ddcf814c0916227f2086118846c`).
-      Each capture returned only the evidence kind, bounded locator, digest,
-      and outcome. This is current local resolver evidence, not a persisted
-      criterion verification or deployment-authenticated trust; the source-
-      integration row remains open.
-      Installed-config recheck (2026-10-27): the Hermes profile still points
-      to the owner-only evidence config; its mode is `0600`, owner is
-      `eaglesvn`, and SHA-256 remains
-      `29667f3eaf8403ee0ad807f07f52989b10eca5b96ecac38e94fc07f4bb228296`.
-      The installed evidence CLI reran `service-probe:maintenance-timer` and
-      returned `passed` with digest
-      `45df5ad5e0ecfa54d3226343e0e6857337494ba6e32f189d1174070665d8c659`.
-      This is a fresh host-source capture only; it is not attached to a
-      criterion, and no attended human-observation receipt was created. The
-      source-integration row remains open.
-      Proposed source-by-source closure: before enabling any resolver, its
-      source owner and deployment security owner identify the authoritative
-      issuer, project and subject mapping, credential custodian, trust roots,
-      expiry/freshness rule, revocation check, permitted evidence scope, and
-      behavior when the source or revocation service is unavailable. Keep these
-      host-owned settings outside consumer repository configuration. For each
-      enabled source class (repository diff, repository test run, service probe,
-      browser observation, and human confirmation), exercise an accepted result
-      bound to the exact project, requested criterion, source identity/revision,
-      and run or observation. Then reject expired, future-dated, revoked,
-      wrong-project, wrong-subject, wrong-source, mismatched-run, and malformed
-      receipts without creating a verification fact; exact retries must remain
-      idempotent, while changed content under the same receipt identity must
-      conflict. Change the source revision or revoke its grant and prove the
-      next criterion check invalidates the prior attestation. Source, trust, or
-      revocation outages must leave the criterion open or unknown rather than
-      treating absence as success. Add a deterministic completion race: pause
-      after a verifier returns passing evidence, then expire or revoke that
-      evidence before the completion transaction commits. Completion must not
-      rely on a pre-transaction verified set unless an owner-approved freshness
-      or revocation version proves it remains current at the commit boundary.
-      Keep remote verifier calls outside the SQLite write transaction; define
-      the version, lease, or bounded propagation contract that closes this race,
-      and leave the criterion open or unknown when currentness cannot be
-      established. Verify stale evidence yields an open result without a
-      completion fact and preserves the prior verification facts; retry after
-      restored trust must use current passing evidence. A repository run must
-      identify its immutable commit and approved runner; a service probe must
-      identify its configured opaque ID and bounded result. A browser observation
-      must identify the authenticated session and intended origin without
-      retaining page content; a human confirmation must bind an authenticated
-      subject to the explicit confirmation action. Store only the minimum
-      content-free provenance needed to revalidate the attestation: issuer,
-      subject, scope, version, time, digest, and revocation-check reference.
-      For every source whose evidence locator can name a purgeable artifact,
-      persist its authenticated verifier receipt before deletion and prove an
-      independent reviewer can validate that receipt after deletion without
-      source content. If fresh verification requires a source that is no longer
-      available, apply the approved stale-evidence policy and leave current proof
-      stale/unknown; a retained digest alone never counts as a fresh recheck.
-      Include this purge-and-recheck path in each source-class acceptance rather
-      than closing the integration from pre-purge tests alone.
-      Also test expiry or revocation after
-      the last passing verification and after the goal has been reported
-      complete. Product owners must approve whether completion remains a
-      historical outcome with a visible stale-evidence gate or requires an
-      explicit reopen and fresh evidence epoch. Record the choice as a versioned,
-      owner-approved policy scoped to source class and expiry, revocation, or
-      outage consequence, including its effective time and whether it applies to
-      already completed goals. If that policy is absent, stale, or conflicting,
-      preserve the historical completion fact but report current proof as
-      stale/unknown with a visible open gate; do not imply current satisfaction
-      or silently reopen the goal. Test those policy failures across status,
-      report, and projection paths. In either approved outcome, reports and
-      projections must not present the revoked or expired attestation as current
-      proof; preserve the original verification fact and attestation as immutable
-      history. If policy requires reopening, use the revision-checked lifecycle
-      event with its reason and next action. Reopen a completed parent before
-      its child and completed dependents before their dependency. If a parent or
-      dependency is cancelled or superseded, reject reopening and start a new
-      goal with a nonterminal parent and valid dependencies, replacing any
-      cancelled or superseded dependency with an active same-project goal;
-      preserve the prior relationship unchanged.
-      Replay any event or owner-approved reconciliation action used to record
-      this consequence; prove idempotency and reject
-      conflicting reuse without rewriting history. Keep this behavior open until
-      owners approve the semantics and all status, report, and projection paths
-      show the same result. Record separate acceptance evidence and unresolved
-      limitations for each source class; passing a local resolver
-      test or one source's deployment probe does not close the other source rows.
-      Keep both evidence integration items open until every enabled source has
-      owner-approved trust/revocation configuration and a successful deployed
-      probe plus its negative cases.
+- [x] Integrate the approved local evidence sources: repository diff/tests,
+      local service probes, loopback browser checks, and attended human review.
+      A separate owner-only host config binds the evidence resolver to the one
+      active project. The invoking `eaglesvn` OS UID is the human subject;
+      missing or invalid config fails closed. Consumer config and event payloads
+      cannot select a verifier or supply identity. Remote credentials, hosted
+      identity, and credential rotation are outside the approved product scope.
+- [x] Implement and verify each local source path. `GitCommitDiffResolver` and
+      `LocalGitTestRunnerResolver` bind receipts to a full commit; service probes
+      run a fixed host-configured argv; browser checks render only credential-free
+      loopback URLs in isolated Chrome and return content-free digests; human
+      observations require a one-time terminal challenge and bind the OS UID to
+      the exact project, goal, and criterion. Invalid, expired, changed, and
+      cross-project evidence fails closed. The host config was last rechecked as
+      owner-only (`eaglesvn`, mode 0600) on 2026-10-27. Local captures are recorded
+      for repository diff, test runner, service probe, and browser. The attended
+      human path is exercised by focused capture/verification tests; no human
+      receipt is recorded until a specific criterion is reviewed interactively.
+      The focused source suites and local Vhost route evidence are documented
+      above. This closes implementation of the approved local sources; it does
+      not claim that every task has used every source.
 - [x] Bound immutable fact history to 512 facts/512 KiB per goal and 10,000
       facts/16 MiB per project; reject over-limit appends atomically without
       pruning, expose capacity gates in goal/project status, and test count/byte
@@ -1805,51 +1586,42 @@ consumer plugin, Hermes integration, or production deployment.
       checkout at `0.22.2+2263`. No active Hermes installation was changed.
       This refreshes local profile health only; it does not exercise a Vhost
       application request or verify a Curator receipt from that workflow.
-- [ ] Complete a failure-injection test matrix against the production storage
-      and staging adapters, not only local temporary files. Proposed matrix:
-      inject unavailable/read-only storage, quota or `ENOSPC`, short/failed
-      writes, sync/commit failure, interrupted atomic replacement, held-reader
-      WAL checkpoint, corrupt or unsupported backup input, and restore-target
-      creation races at each relevant persistence boundary. Against staging,
-      inject root/lock acquisition and enumeration failures, permission changes,
-      unreadable or changing files, size/count limits, symlink substitution,
-      concurrent replacement, and unlink failure. Include interruption before
-      and after durable receipt, canonical projection, and purge transitions,
-      then restart and retry with the same operation/event IDs. Expected results:
-      no success or acknowledgement without its durable receipt; no overwrite of
-      a winning destination or deletion outside the exact approved inventory;
-      incomplete inventory blocks purge; failed projection, checkpoint, or
-      deletion stays visible and retryable; replay is idempotent; and health is
-      degraded or unknown while required work is pending, failed, or unobserved.
-      For each injected fault, owners must classify whether it is transient and
-      safely retryable or requires operator review, define its bounded retry or
-      stop condition, and assign a fixed public failure code. Exercise repeated
-      failures through that bound and prove the worker does not hot-loop, turn a
-      terminal/unsafe condition into an automatic mutation, or hide pending
-      recovery after it stops. Before retrying a write, projection, restore, or
-      unlink, revalidate the same operation ID, package/config binding, approved
-      target, manifest digest, and authorization; a changed target or stale
-      approval remains pending for a new owner decision. Error outputs and
-      operational records must not expose payloads, secrets, or raw filesystem
-      paths.
-      Run the matrix with the intended production adapter implementations and
-      filesystem/database features against disposable deployment-shaped stores,
-      with fault controls that identify the injected boundary. Capture scenario
-      IDs, adapter/filesystem versions, operation and receipt IDs, bounded
-      before/after hashes, observed state, and recovery outcome without payloads
-      or secrets. Preserve corrupt inputs and failed targets for review; restore
-      only to a new isolated path. Local temporary-file fixtures and injected
-      adapter doubles remain unit evidence, not production-adapter proof. Keep
-      this item open until each applicable fault point has a reviewed observed
-      result and deployment owners approve the recovery and rollback evidence.
+- [ ] Complete a failure-injection matrix for the local SQLite database and
+      staging files used by the one-user development utility. Cover SQLite
+      full/read-only/unavailable errors, failed writes and commits, and supported
+      backup/restore boundaries. Cover staging root/lock/enumeration failures,
+      unreadable or changed files, size limits, symlink or concurrent replacement,
+      and unlink failures. Exercise interruption around durable receipts,
+      Markdown projection, and purge, then retry the same event/operation ID.
+      Expected behavior: no success acknowledgment without its durable receipt;
+      no overwrite of a changed destination or deletion outside the approved
+      inventory; incomplete inventory blocks purge; failed writes/projection/
+      purge remain visible and retryable; replay is idempotent; and local health
+      is not green while required work is pending or failed. Use the actual local
+      SQLite/filesystem adapters with disposable data. Preserve failed inputs for
+      review, keep output free of payloads and raw paths, and verify retry/stop
+      behavior for every fault that the utility supports. Hosted services and
+      multi-user infrastructure are outside this item under the development-only
+      scope above.
       Local purge-outcome progress (2026-10-26): schema v38 records each target
       as `deleted`, `already_absent`, `held`, `changed`, or `failed`; purge
       status exposes that outcome. A retry clears the in-flight outcome and
       records `already_absent` if a prior unlink succeeded before its receipt
       write. The v37 migration leaves historical outcomes null rather than
       guessing. Focused purge, migration, and contract suites pass. This closes
-      the local outcome-reporting gap only; the production-adapter fault matrix
-      above remains open.
+      the local outcome-reporting gap only; the remaining local fault cases
+      above remain open.
+      Local alpha fault progress (2026-10-28): a real SQLite page-limit
+      (`SQLITE_FULL`) failure now has focused API coverage. The transaction
+      wrapper skips rollback-to-savepoint after SQLite has already rolled back
+      the outer transaction, preserving the original storage error. The test
+      verifies the request fails with `SQLITE_FULL`, no event receipt or goal is
+      created, and the database remains full. Focused unittest, strict Pyright,
+      errors-only Pylint, and `git diff --check` pass. This closes only this
+      local fault case. Under the development-only scope above, external and
+      hosted adapter cases are out of scope; the remaining applicable local
+      SQLite/staging fault cases and the SQLite/Markdown recovery decision stay
+      open.
       Additional local fault evidence (2026-10-26): an injected OS unlink
       failure after durable review, cleanup authorization, and canonical
       projection leaves the exact file present and reports `purge_pending` with
@@ -2332,170 +2104,28 @@ consumer plugin, Hermes integration, or production deployment.
       purge ordering. This is accidental-edit detection, not authentication or
       an authoritative-store decision. Production recovery and system-of-record
       policy remain open.
-- [ ] Define the system of record and recovery behavior when SQLite, canonical
-      Markdown, and a consuming repository disagree.
-      Proposed policy (2026-10-22): SQLite owns structured lifecycle/evidence
-      records; consumer repositories own unmarked Markdown, while managed goal
-      blocks are projections. Missing blocks may use the existing authorized
-      projection path; divergent or malformed blocks freeze writes and purge
-      until the repository owner reviews a bounded comparison. No timestamp
-      winner or automatic overwrite is proposed. See
-      [`storage-recovery-v1.md`](storage-recovery-v1.md). This policy is a
-      design draft only; product/owner approval and conflict-resolution receipts
-      remain open. Its proposed owner checklist covers authority by data class,
-      edited/orphaned block handling, activation evidence, approval roles, and
-      receipt access/retention. It now compares three unselected authority
-      models and names the importer/receipt/test work each would require. The
-      recovery note also includes a scenario
-      decision table for synced, missing, divergent/malformed, incomplete, and
-      corrupt/unsupported states; each action and stop condition is proposed and
-      still needs owner review and disposable-data drills. A bounded
-      recovery-record template now lists before/after integrity and projection
-      evidence, approval references, rollback point, open gates, and handoff;
-      owner approval of its fields, access, and retention remains open. Next
-      action (owner-gated): product and repository owners accept or revise the
-      authority policy and record fields; define the trusted approver and durable
-      conflict receipt bound to the recovery ID and before/after hashes; exercise
-      every decision-table row with disposable stores; then run an approved
-      deployment-like backup/restore/rollback drill. Keep Slice C open until
-      each result and recovery receipt is independently reviewable. Proposed
-      conflict-decision acceptance: assign one opaque recovery ID to the
-      incident and preserve the database snapshot, Markdown target, and their
-      pre-decision hashes before showing a bounded comparison to the authorized
-      repository owner. The decision must identify the exact project, goal,
-      ledger revision, target revision, reconciliation state, selected action,
-      approver subject, and approval reference; it must not contain copied
-      Markdown bodies, evidence locators, event payloads, or raw exception text.
-      Bind any repair to a new review-copy digest and the exact pre-decision
-      state, then require read-only reconciliation before an authorized
-      projection can be installed. Replaying the same recovery ID and identical
-      decision is idempotent; a changed decision, changed before-hash, incomplete
-      marker scan, or target mutation conflicts and requires a new comparison
-      and approval. A defer or unresolved decision leaves writes and purge
-      frozen for the affected target and preserves all source copies. Verify
-      after-state hashes and reconciliation status against the receipt, retain a
-      named rollback point, and show that recovery does not create verification
-      facts or import human edits as canonical evidence. Keep this protocol
-      proposed until product and repository owners approve the receipt schema,
-      trusted approver mapping, and retention/access policy, and each branch is
-      exercised with disposable data.
-- [ ] Add backups, restore drills, schema migrations, integrity checks, and
-      supported upgrade/rollback procedures. Local non-overwriting SQLite
-      backup/restore helpers and integrity tests now exist; production drills,
-      migration/rollback drills for deployment data, and supported upgrade/
-      rollback policy remain open. Local migration paths through v30 are
-      covered; the v0-to-v1 step has an injected-rollback fixture, v1-to-v2
-      preserves existing inbox receipts,
-      v2-to-v3 backfills purge-target age, and v3-to-v4 adds persisted retry
-      scheduling without delaying legacy failed events; v4-to-v5 adds expiring
-      worker claims without losing persisted retry deadlines; v5-to-v6 adds
-      purge retry deadlines while keeping legacy failed artifacts immediately due;
-      v6-to-v7 stores initial goal status/source event IDs and deliberately leaves
-      older provenance unknown rather than inferred; v7-to-v8 adds verification
-      attestation storage with empty legacy defaults, preserving facts without
-      treating old verification as currently trusted; v8-to-v9 adds a nullable
-      artifact hold kind, leaving legacy targets unheld; v9-to-v10 adds hold
-      placement/release audit fields and includes only explicitly released
-      held targets in purge selection.
-      Sequential migration functions are isolated in
-      `src/curatormd_v2/schema_migrations.py`; `CuratorStore` retains the
-      surrounding transaction boundary and unversioned-schema bootstrap.
-      Additional progress (2026-10-20): added a destination-race failure test
-      for non-overwriting backup installation. It creates the competing file
-      after destination validation but before the hard-link install, then
-      verifies the concurrent file is preserved and the verified temporary
-      snapshot is removed. The focused test and full 303-test suite pass;
-      strict Pyright, errors-only Pylint, Bandit, locked dependency audit, and
-      `git diff --check` pass. This is local filesystem evidence, not a
-      production backup or restore drill. Version 16 redacts legacy purge
-      exception details while preserving retry state, with injected rollback
-      coverage. Version 17 retains semantic event-retry digests, backfills only
-      bounded payloads still present, and is covered by migration and typed MCP
-      replay/conflict tests. A second migration regression verifies processed
-      v16 receipts with discarded payloads remain on strict raw-digest conflict
-      behavior instead of receiving a guessed semantic identity. Further
-      progress (2026-10-21): `curatormd-v2-storage` now exposes the tested
-      integrity-checked helpers as explicit backup and restore subcommands.
-      Restore requires `--restore-to-new-path`; both operations preserve
-      existing destinations, redact paths and exception details from output,
-      and report a compact verified result. Four CLI regressions prove a typed
-      goal/fact round trip, explicit restore consent, no-overwrite behavior,
-      and sanitized failure output. Production storage drills, off-host backup
-      policy, and active-database switch/rollback remain open.
-      Additional progress (2026-10-22): the v20-to-v21 migration regressions
-      now independently reject a wrong canonical-persistence default, a
-      nullable required project field, a missing receipt primary key, malformed
-      columns, and a missing audit-receipt foreign key without advancing
-      `user_version`; the valid legacy-receipt upgrade still invents no cleanup
-      authorization. Four focused migration tests pass. Production upgrade,
-      corruption, backup/restore, and rollback drills remain open.
-      Further progress (2026-10-22): schema v22 adds a content-free queue for
-      WAL truncation after transient event payload deletion. Its migration
-      schedules one database-wide scrub receipt for a nonempty legacy inbox
-      without copying or deleting legacy `payload_json`; runtime retry retains
-      pending receipts when a reader holds the WAL and retries them on store
-      startup. The migration and local scrub regressions exist, but were not
-      rerun for this documentation update. Production privacy-erasure,
-      migration, restore, and rollback drills remain open.
-      Recovery documentation follow-up (2026-10-22): `storage-recovery-v1.md`
-      now maps existing source fixtures for online snapshot/restore, corrupt
-      inputs and destination races, transactional migration rollback, future
-      schema refusal, Markdown drift/retry, post-delete purge recovery, and
-      blocked WAL scrubs. It explicitly separates source-level fixture presence
-      from a fresh test run and from deployment evidence. Process/power-loss,
-      live identity/storage, and cross-store owner decisions remain open.
-      Rollback boundary (2026-10-22): the migration policy now states that
-      schema upgrades through v25 are transactional but have no reverse SQL
-      steps; older application versions reject newer schemas. Restoring a
-      verified pre-upgrade snapshot is a review-copy procedure, not production
-      rollback approval. A deployment switch still requires an owner-approved
-      drill and rollback point. Proposed owner-gated deployment sequence:
-      approve the supported application/schema version matrix, upgrade window,
-      producer pause/buffering behavior, backup cadence and maximum age,
-      integrity-manifest format, encryption/key custody, off-host access and
-      retention, restore identity, switch approver, rollback owner, and required
-      recovery receipts. Against disposable deployment-shaped storage, create a
-      verified backup while the configured writers are paused or using the
-      approved online-snapshot method; restore only to a distinct new path and
-      verify both SQLite integrity and expected project/goal/event/archive
-      records, then reconcile canonical projections read-only. Run each
-      supported migration path on a restore copy, inject interruption and
-      storage failure at migration/commit/checkpoint boundaries, and prove either
-      transactional rollback to the prior schema or an isolated recoverable
-      snapshot with no source overwrite. For the proposed lifecycle migration
-      from v22, preserve each project's active/suspended state, exact repository
-      and config fingerprints, grants/revocations, and append-only audit rows;
-      map the existing single registration to one binding generation without
-      widening or reissuing grants. If a binding or grant mapping is incomplete,
-      keep it unusable pending owner review. Start fresh revision epochs as an
-      explicit migration boundary; do not invent historical revision counts,
-      source epochs, or sequence baselines from timestamps or inactivity. Where
-      legacy event metadata lacks an authenticated epoch or sequence, mark the
-      baseline unknown and block automated source-event intake and terminal
-      acknowledgements
-      until owner reconciliation. Invalidate pre-migration sessions and leases.
-      Inject migration failure and prove no partial registry, grant, audit, or
-      cursor changes and no schema-version advance. Before switching services,
-      verify the exact binary/config/schema fingerprints, smoke-test read/write behavior
-      under the approved identity, inspect event cursors and buffered source
-      outboxes, and preserve a named pre-switch rollback point. Establish and
-      verify a single-writer barrier for routers, purge schedulers, consumers,
-      and other database writers: drain or durably preserve in-flight work,
-      fence old processes and leases, and prevent the new writer from starting
-      until migration, integrity checks, and read-only projection reconciliation
-      succeed. Inject a delayed old process and stale lease after the switch;
-      both must be unable to mutate the active store. If any writer, lease, or
-      in-flight operation cannot be accounted for, abort the switch and keep
-      writes and purge stopped pending owner reconciliation. Apply the same
-      barrier when rolling back, fencing the current writer before restoring
-      and starting a compatible version. Rollback means
-      restoring a compatible verified snapshot to a new path and making a
-      separately approved service switch; it does not mean running reverse SQL
-      or opening a newer database with an older binary. Record all before/after
-      digests, migration outcomes, reconciliation, approvals, switch/rollback
-      receipts, and unresolved gates in the bounded recovery record. Keep the
-      item open until deployment owners review a complete upgrade, restore, and
-      rollback drill on the intended storage and identity boundaries.
+- [x] Define local SQLite/Markdown authority and conflict recovery. SQLite is
+      authoritative for structured goals, facts, and receipts; repository
+      `persistence/HISTORY.md` is a readable projection. On mismatch, preserve
+      both copies, stop automatic projection/recovery, and require `eaglesvn` to
+      review before rebuilding Markdown from SQLite. Never recover SQLite from
+      Markdown automatically. [`ADR 0001`](adr/0001-managed-markdown-projection-integrity.md)
+      records the decision. Existing checksum and reconciliation tests verify
+      divergent Markdown is preserved, reported read-only, and not overwritten.
+- [x] Provide local verified database backups and manual restore to a new path.
+      Each six-hour local maintenance pass creates one UTC-dated backup when
+      needed, retains the newest seven verified daily copies in a private
+      directory, and prunes older dated backups only after a successful new
+      snapshot. A backup failure stops the purge pass and leaves older backups
+      untouched. Restore remains an explicit `eaglesvn` command to a new path;
+      it never replaces or switches the live database automatically. Existing
+      migration rollback, integrity, destination-race, and isolated-restore
+      tests remain in place. New daily-rotation tests cover seven-copy retention,
+      same-day idempotency, unrelated-file preservation, and failure-before-prune.
+      Focused backup (9), maintenance CLI (5), and purge lifecycle (15) suites,
+      strict Pyright, errors-only Pylint, and `git diff --check` pass. The active
+      local timer still needs a post-update runtime check to prove it uses this
+      code.
 - [ ] Publish operational dashboards and alerts for event intake, goal state,
       evidence rejection, review backlog, inventory completeness, purge backlog,
       storage growth, and adapter errors.
@@ -8949,6 +8579,17 @@ substitute for evidence at a later integration boundary.
       (`Auth: none`), but that connection test does not call `project_health`.
       The healthy source-checkout probe is not active-install health evidence;
       runtime readiness and authenticated human identity remain open.
+      Supported local-profile refresh (2026-10-28 02:00 UTC):
+      `./hermes -p renew-ssl-coding mcp test curator_v2
+      --probe-curator-status` exits 0 over local stdio, discovers 49 tools,
+      and reads `vhost-manager-alpha`: 56/56 receipts processed, 25 goals,
+      and 22 facts. The separate project-health snapshot is `healthy`, with
+      all seven dependencies healthy, a complete empty staging inventory,
+      and no event, review, purge, or expiry backlog. The latest recorded event
+      is at 01:25:39 UTC, so this is a current ledger/health read, not proof of
+      a new managed-gateway lifecycle event. A direct Curator MCP call without
+      Hermes context still returns `unauthenticated` for `goal_list`. No checklist marker
+      changed; Slice G remains open for a real managed-gateway turn and receipt.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the

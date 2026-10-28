@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import sqlite3
+import stat
 import tempfile
+from datetime import date, datetime, timezone
 
 
 def _database_path(path: str | Path, *, must_exist: bool) -> Path:
@@ -90,3 +93,70 @@ def restore_database(backup: str | Path, destination: str | Path) -> Path:
     destination_path = _database_path(destination, must_exist=False)
     _copy_verified(backup_path, destination_path)
     return destination_path
+
+
+_DAILY_BACKUP_NAME = re.compile(r"^curator-v2-(\d{4}-\d{2}-\d{2})\.sqlite3$")
+
+
+def _verify_existing_backup(path: Path) -> None:
+    """Verify an existing dated backup before reusing or pruning beside it."""
+
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("daily backup entry is not a regular file")
+    metadata = path.stat(follow_symlinks=False)
+    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise PermissionError("daily backup file is not private and owner-owned")
+    connection = sqlite3.connect(
+        f"{path.as_uri()}?mode=ro", uri=True, timeout=30
+    )
+    try:
+        _verify_database(connection)
+    finally:
+        connection.close()
+
+
+def backup_daily(
+    source: str | Path,
+    directory: str | Path,
+    *,
+    today: date | None = None,
+    keep: int = 7,
+) -> Path:
+    """Create today's verified snapshot and retain the newest seven daily files."""
+
+    if keep != 7:
+        raise ValueError("local alpha policy retains exactly seven daily backups")
+    backup_directory = Path(directory).expanduser()
+    if backup_directory.is_symlink():
+        raise ValueError("backup directory must not be a symlink")
+    backup_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    metadata = backup_directory.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("backup destination must be a directory")
+    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise PermissionError("backup directory must be private and owner-owned")
+
+    backup_day = today or datetime.now(timezone.utc).date()
+    destination = backup_directory / f"curator-v2-{backup_day.isoformat()}.sqlite3"
+    try:
+        backup_database(source, destination)
+    except FileExistsError:
+        # A concurrent scheduled run may have installed today's backup first.
+        _verify_existing_backup(destination)
+
+    dated: list[tuple[date, Path]] = []
+    for candidate in backup_directory.iterdir():
+        match = _DAILY_BACKUP_NAME.fullmatch(candidate.name)
+        if match is None:
+            continue
+        try:
+            candidate_day = date.fromisoformat(match.group(1))
+        except ValueError:
+            continue
+        _verify_existing_backup(candidate)
+        dated.append((candidate_day, candidate))
+
+    dated.sort(key=lambda item: item[0], reverse=True)
+    for _, expired in dated[keep:]:
+        expired.unlink()
+    return destination

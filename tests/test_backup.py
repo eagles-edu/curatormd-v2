@@ -8,6 +8,7 @@ import sqlite3
 import stat
 import tempfile
 import unittest
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from store_test_support import temporary_store_database
@@ -18,6 +19,7 @@ from curatormd_v2 import (
     FactKind,
     SuccessCriterion,
     SQLITE_SCHEMA_VERSION,
+    backup_daily,
     backup_database,
     restore_database,
 )
@@ -302,3 +304,57 @@ class DatabaseBackupTests(unittest.TestCase):
                 backup_database(alias, root / "backup.sqlite3")
             with self.assertRaisesRegex(ValueError, "must not be a symlink"):
                 backup_database(database_path, alias)
+
+    def test_daily_backup_keeps_seven_verified_copies_and_prunes_after_success(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database_path = root / "state" / "curator.sqlite3"
+            backup_directory = database_path.parent / "backups"
+            database = CuratorStore(database_path)
+            database.close()
+            backup_day = date(2026, 10, 1)
+
+            for offset in range(8):
+                current_day = backup_day + timedelta(days=offset)
+                backup_daily(database_path, backup_directory, today=current_day)
+
+            retained = sorted(
+                path.name for path in backup_directory.glob("curator-v2-*.sqlite3")
+            )
+            self.assertEqual(len(retained), 7)
+            self.assertEqual(
+                retained,
+                [
+                    f"curator-v2-{(backup_day + timedelta(days=offset)).isoformat()}.sqlite3"
+                    for offset in range(1, 8)
+                ],
+            )
+            self.assertFalse(
+                (backup_directory / f"curator-v2-{backup_day.isoformat()}.sqlite3").exists()
+            )
+            self.assertEqual(stat.S_IMODE(backup_directory.stat().st_mode), 0o700)
+            unrelated = backup_directory / "keep-this-note.txt"
+            unrelated.write_text("not a Curator backup", encoding="utf-8")
+
+            today_path = backup_directory / retained[-1]
+            before = today_path.read_bytes()
+            backup_daily(database_path, backup_directory, today=backup_day + timedelta(days=7))
+            self.assertEqual(today_path.read_bytes(), before)
+            self.assertEqual(unrelated.read_text(encoding="utf-8"), "not a Curator backup")
+
+            with patch(
+                "curatormd_v2.backup.backup_database",
+                side_effect=sqlite3.OperationalError("injected backup failure"),
+            ):
+                with self.assertRaises(sqlite3.OperationalError):
+                    backup_daily(
+                        database_path,
+                        backup_directory,
+                        today=backup_day + timedelta(days=8),
+                    )
+            self.assertEqual(
+                sorted(path.name for path in backup_directory.glob("curator-v2-*.sqlite3")),
+                retained,
+            )

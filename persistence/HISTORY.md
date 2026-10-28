@@ -9188,6 +9188,18 @@ while preserving explicit criteria and same-project parent validation.
 
 **Outcome:** Confirm profile-bound persistence and current local health while preserving the live lifecycle gate.
 
+## 2026-10-28 — Refresh the profile-bound Curator V2 ledger
+
+**Intent:** Recheck current local persistence and project health through the supported Hermes profile after the earlier 01:20 UTC observation.
+
+**Changed fact:** The `renew-ssl-coding` profile now reads 56/56 processed receipts, 25 goals, and 22 facts for `vhost-manager-alpha`. Its separate project-health snapshot is healthy, all seven dependencies are healthy, the staging inventory is complete and empty, and event/review/purge/expiry backlogs are zero. The latest recorded event is at 01:25:39 UTC.
+
+**Verification:** `./hermes -p renew-ssl-coding mcp test curator_v2 --probe-curator-status` exits 0 over local stdio and discovers 49 tools. A direct Curator V2 `goal_list` call without Hermes profile context returns `unauthenticated`; this does not invalidate the successful supported-profile read.
+
+**Open gate:** The read does not create a new managed-gateway lifecycle event. Slice G remains open for a real event and durable receipt; active Hermes-install readiness and production identity remain separate gates. No checklist marker changed.
+
+**Outcome:** Refresh local ledger and health evidence without overstating live lifecycle or deployment readiness.
+
 ## 2026-10-28 — Exercise the Vhost Manager local alpha route
 
 **Intent:** Use the ready local Curator V2 integration in the Vhost Manager utility to exercise one disposable request through preview, apply, Curator persistence, exact-event replay, and rollback.
@@ -9357,3 +9369,44 @@ while preserving explicit criteria and same-project parent validation.
   authenticated human identity, and lifecycle delivery remain unverified.
 - **Outcome:** Keep source-checkout probe capability separate from active
   runtime evidence.
+
+## 2026-10-28 — Set Curator V2 development-only scope
+
+- **Intent:** Resolve which open integration and policy work is required for
+  the Curator V2 alpha.
+- **Changed fact:** The owner confirms Curator V2 is a local development utility
+  for OS account `eaglesvn`, used with one active repository at a time. The
+  complete local evidence set is repository diff/tests, local service probes,
+  loopback browser checks when relevant, and attended human review. Remote
+  credentials, hosted identity, and credential rotation are not required.
+  SQLite is the authoritative structured ledger; consumer `HISTORY.md` is its
+  readable projection. On mismatch, preserve both copies and wait for the
+  owner's review before rebuilding Markdown from SQLite. Do not recover SQLite
+  from Markdown automatically.
+- **Verification:** Recorded the scope and recovery authority in the plan and
+  ADR 0001. The local SQLite-full fault regression passes; strict Pyright,
+  errors-only Pylint, and `git diff --check` pass for the changed implementation
+  and test.
+- **Open gate:** Other local storage/retention budgets and fault cases remain
+  open. The active six-hour timer still needs a post-update run to confirm it
+  uses the daily-backup implementation. Checklist progress is now 158/178.
+- **Outcome:** Narrow the alpha to the approved local workflow and make recovery
+  require owner review without overwriting either copy automatically.
+
+## 2026-10-28 — Add seven-day local SQLite backup rotation
+
+- **Intent:** Implement the owner-approved local backup schedule and keep restore
+  under explicit human control.
+- **Changed fact:** The daily backup helper creates one private UTC-dated SQLite
+  snapshot, verifies it before pruning, and retains the newest seven daily
+  copies. The six-hour maintenance command runs it before purge retries and
+  reports only a content-free verification status. Restore remains an explicit
+  command that creates a new path and cannot replace the live database.
+- **Verification:** Backup suite passes nine tests, maintenance CLI suite passes
+  five, and purge lifecycle suite passes 15. Strict Pyright reports zero
+  diagnostics, errors-only Pylint exits 0, and `git diff --check` passes.
+- **Open gate:** The enabled local timer has not yet been run against the updated
+  package; confirm its next run creates a private daily backup and records the
+  sanitized status.
+- **Outcome:** Implement seven-copy local retention and require explicit
+  approval before restoring to an isolated path.

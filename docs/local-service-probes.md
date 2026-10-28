@@ -199,17 +199,13 @@ same OS account as the Curator process. Only place commands here that the
 operator explicitly trusts.
 
 Repository subjects use the `local-git:` namespace. This records a local host
-assertion about the worktree and runner; it does not authenticate a Git hosting
-provider, hosted CI runner, or human author. Keep provider credentials, trust
-roots, and deployed rotation/revocation evidence as separate release gates.
+assertion about the worktree and runner. The approved Curator V2 use is local
+development, so Git hosting accounts and hosted CI are not evidence sources.
 
 `source_subject` must use the `local-probe:` namespace. It is a configured
-local host assertion; it is not a Hermes-authenticated person, remote service
-identity, credential, revocation source, or production trust root. Do not put
-credentials in command arguments. The verifier rejects malformed, duplicate,
-oversized, cross-project, or broadly readable configuration and remains
-reject-all when the option is omitted. The browser's local UID assertion and
-loopback restriction are also host-local controls, not authenticated browser
-identity or a deployment trust root. These local alpha paths do not establish
-deployment identity, production service authentication, or live runtime
-readiness.
+local host assertion. Do not put credentials in command arguments. The
+verifier rejects malformed, duplicate, oversized, cross-project, or broadly
+readable configuration and remains reject-all when the option is omitted. The
+browser's local UID assertion and loopback restriction keep this evidence
+local; authenticated remote browser sessions are outside the approved source
+set.

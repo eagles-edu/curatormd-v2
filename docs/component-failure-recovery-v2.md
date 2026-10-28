@@ -1,17 +1,16 @@
 # Component failure and recovery boundaries, version 1
 
-**Status: local implementation guidance.** These paths describe the checked-in
-library and Hermes Core source. They do not authorize production recovery,
-identity changes, destructive cleanup, or switching a deployed service.
+**Status: local development guidance.** These paths describe the checked-in
+library and Hermes Core source for the single-user Curator utility.
 
 | Component | Detect and contain | Recovery path | Authority and open evidence |
 | --- | --- | --- | --- |
 | Hermes Core event delivery | Inspect the profile-local outbox and the bounded delivery receipt. An event is acknowledged only after the Curator adapter returns a processed or duplicate receipt. Keep the exact queued envelope when delivery fails. | Repair the profile binding or consumer, then allow the outbox to retry at gateway startup or the next profile `agent:start`. Preserve event IDs and source order; do not synthesize a replacement event or discard a backlog to restore green status. | Hermes Core owns profiles, hooks, and the outbox. The local retry tests do not prove cross-process deployment recovery, authenticated identity, or a running gateway. |
-| Curator backend and SQLite | Treat failed or stale required work as degraded/unknown. Preserve the database, WAL/SHM files, receipts, and canonical Markdown. Do not infer which store is authoritative from a health result. | Follow [`storage-recovery-v1.md`](storage-recovery-v1.md): take a verified online snapshot, restore only to a new review path, check SQLite integrity and application records, and compare Markdown read-only. A repository owner must decide any conflict before a service-path switch or manual repair. | Curator V2 owns the backend. Production authority, backup policy, corruption drills, and authenticated restore approval remain open. |
+| Curator backend and SQLite | Treat failed or stale required work as degraded/unknown. Preserve the database, WAL/SHM files, receipts, and Markdown when a conflict appears. SQLite is authoritative; Markdown is a readable projection. | Follow [`storage-recovery-v1.md`](storage-recovery-v1.md): create a verified daily snapshot, restore only to a new review path, check SQLite integrity and application records, and compare Markdown read-only. Ask `eaglesvn` to review a mismatch before rebuilding Markdown from SQLite. | The approved policy retains seven verified daily copies. Restore is an explicit `eaglesvn` action to a new path; the live database is never replaced automatically. |
 | Repository project plugin | Keep access fail-closed when config, project registration, fingerprint, grant, path, or API-version checks fail. Preserve project state and staged evidence; do not broaden paths or grants to bypass a denial. | Follow [`consumer-operations-v1.md`](consumer-operations-v1.md): repair the repository-owned config and exact grants, validate the binding, and retry in an isolated local process. For rollback, disable only that profile binding and retain the database, receipts, staged evidence, and canonical records. | The consumer repository owns its plugin config and persistence targets. Live identity, installed consumer isolation, and owner-approved rollout remain open. |
 | Hermes Core Host Steward | A failed, partial, or interrupted cleanup remains visible in its Hermes receipt. If a receipt is `running`, reconcile only after an operator confirms the original process has stopped. | Use `host_cleanup_reconcile`, then take fresh inventory and verify target contents, free space, and configured service health. Reconciliation never retries deletion; another cleanup needs a new proposal and fresh approval. See `/home/eaglesvn/.hermes/hermes-agent/plugins/host-steward/README.md` in the source checkout. | Host Steward belongs to the Hermes Core root account and never writes Curator project knowledge. Authenticated approver identity, live installation, host attribution, and deployment recovery drills remain open. |
 
-Across components, preserve receipts and raw evidence until the owning operator
-reviews recovery. Local tests and documentation are not deployment evidence;
-production runbooks still require the respective owners to approve identity,
-retention, backup, alerting, and rollback policy.
+Across components, preserve receipts and evidence until `eaglesvn` reviews
+recovery. Only the approved local evidence sources are required: repository
+diff/tests, local service probes, loopback browser checks when relevant, and
+attended human review.

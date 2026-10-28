@@ -70,7 +70,7 @@ class StoreOperations0Part0:
                 self._transaction_depth -= 1
                 if outermost:
                     self._connection.rollback()
-                else:
+                elif self._connection.in_transaction:
                     self._connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
                     self._connection.execute(f"RELEASE SAVEPOINT {savepoint}")
                 raise

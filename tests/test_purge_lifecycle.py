@@ -597,7 +597,7 @@ class PurgeLifecycleTests(PurgeTestSupport):
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             output.getvalue(),
-            '{"complete":1,"expiry_complete":0,"expiry_pending":0,'
+            '{"backup_status":"verified","complete":1,"expiry_complete":0,"expiry_pending":0,'
             '"expiry_processed":0,"pending":0,"processed":1,'
             '"project_id":"default"}\n',
         )
