@@ -8402,9 +8402,12 @@ substitute for evidence at a later integration boundary.
       Their block hashes are recorded in
       [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
       Remaining checks: compare the approved out-of-scope target hashes before
-      and after the run; verify a package rollback to its archived version; and
-      refresh the token report through a real profile turn rather than synthetic
-      data. Preserve any
+      and after the run; refresh the token report through a real profile turn
+      rather than synthetic data; and reconcile applicable evidence against the
+      exact package/config binding. Rollback rehearsal (2026-10-28 04:37 UTC):
+      in a temporary site-packages copy, the installed package tree was replaced
+      by the verified archive; both versions loaded and the MCP launcher
+      `--help` passed. The active profile install was untouched. Preserve any
       operation or cleanup work as open until its exact reviewer action and
       receipts exist. Stop if the project/config binding changes, a receipt is
       missing or not `processed`/exact `duplicate`, an out-of-scope target
