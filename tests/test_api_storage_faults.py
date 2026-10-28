@@ -18,6 +18,36 @@ from test_api import (
 class ApiStorageFaultTests(_ApiTestSupport):
     """Exercise durable event behavior under SQLite page exhaustion."""
 
+    def test_read_only_sqlite_never_acknowledges_an_unwritten_event(self) -> None:
+        """A read-only store cannot report an event as processed."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        connection = cast(sqlite3.Connection, getattr(self.store, "_connection"))
+        connection.execute("PRAGMA query_only = ON")
+        event = EventEnvelope(
+            "sqlite-read-only-event",
+            "project-a",
+            GoalStarted(
+                "sqlite-read-only-goal",
+                "Do not acknowledge an event when the ledger cannot be written.",
+                (SuccessCriterion("durable", "The receipt must be committed"),),
+            ),
+            source_id="sqlite-read-only-source",
+            source_sequence=1,
+        )
+
+        with self.assertRaises(sqlite3.OperationalError) as raised:
+            api.process_event_json(self.caller, "project-a", event.to_json())
+        self.assertEqual(
+            raised.exception.sqlite_errorcode & 0xFF,
+            sqlite3.SQLITE_READONLY,
+        )
+        with self.assertRaises(NotFoundError):
+            self.store.event_receipt("project-a", event.event_id)
+        with self.assertRaises(NotFoundError):
+            self.store.get_goal("sqlite-read-only-goal")
+        self.assertFalse(connection.in_transaction)
+
     def test_sqlite_full_never_returns_a_processed_event_without_a_receipt(self) -> None:
         """A real SQLITE_FULL fault rolls back processing and cannot acknowledge it."""
 

@@ -9488,3 +9488,18 @@ while preserving explicit criteria and same-project parent validation.
   behavior; those are outside the approved dev-only scope.
 - **Outcome:** Close local event routing without carrying production scheduling
   requirements into Curator V2 alpha.
+
+## 2026-10-28 — Reject event writes to a read-only SQLite connection
+
+- **Intent:** Cover the local storage-fault case where SQLite is readable but
+  refuses writes.
+- **Changed fact:** The authenticated event API now has a regression using the
+  real store connection with SQLite `query_only` enabled. A write raises
+  `SQLITE_READONLY`; no processed receipt or goal is returned or persisted.
+- **Verification:** The focused `test_api_storage_faults.py` suite passes two
+  tests; targeted Pyright reports zero diagnostics, errors-only Pylint exits
+  zero, and `git diff --check` passes.
+- **Open gate:** SQLite-unavailable handling and the remaining applicable local
+  staging/filesystem fault cases have not all been covered. No fault-matrix
+  checklist marker changed.
+- **Outcome:** Close the local read-only SQLite fault case only.

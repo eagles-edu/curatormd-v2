@@ -1622,6 +1622,13 @@ plugin or Hermes integration is installed and working end to end.
       hosted adapter cases are out of scope; the remaining applicable local
       SQLite/staging fault cases and the SQLite/Markdown recovery decision stay
       open.
+      SQLite read-only follow-up (2026-10-28): a read-only SQLite connection
+      injected under the authenticated API rejects event processing with
+      `SQLITE_READONLY`; the exact event has no receipt or goal and the
+      connection has no open transaction afterward. The focused storage-fault
+      suite passes both the `SQLITE_FULL` and read-only cases; targeted Pyright,
+      errors-only Pylint, and `git diff --check` pass. Unavailable-database and
+      remaining local filesystem fault cases stay open.
       Additional local fault evidence (2026-10-26): an injected OS unlink
       failure after durable review, cleanup authorization, and canonical
       projection leaves the exact file present and reports `purge_pending` with
