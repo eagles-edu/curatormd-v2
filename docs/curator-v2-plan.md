@@ -9329,10 +9329,13 @@ substitute for evidence at a later integration boundary.
       extension consumes it only after exact project, seven-probe, freshness,
       and gate validation. The extension probe returned `vhost-manager-alpha`,
       all seven dependencies healthy, and zero gates. Its 17 focused Node tests
-      and Hermes Core's 49 focused CLI tests pass. The current VS Code window
-      extension-host log records Curator V2 activation at 12:17:49 UTC; a
-      rendered panel refresh has not been observed, so no visible-state claim
-      is made.
+      and Hermes Core's 49 focused CLI tests pass. The VS Code `window3`
+      extension-host log records Curator V2 activation at 12:17:49 UTC. An
+      end-to-end data-path check (12:25 UTC) invoked `showDashboard` with the
+      actual Vhost workspace, User settings, Curator launcher, and Hermes CLI
+      under a stubbed VS Code host. The real goal page loaded with all seven
+      dependencies healthy and zero gates. The host and webview were stubbed,
+      so the desktop rendering and status-bar color remain unverified.
       This repairs the reported unknown status source; it does not close
       unrelated acceptance checks. This row
       remains open until the applicable checks are reconciled against the same package and
