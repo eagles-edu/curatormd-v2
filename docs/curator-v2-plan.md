@@ -8954,22 +8954,18 @@ substitute for evidence at a later integration boundary.
       `local-uid:1000` subject, verify the OS account is `eaglesvn`, require the
       current process to run as that UID, and enforce the exact project `review`
       grant against its owner-owned ledger. Hermes profile/session metadata is
-      routing context only; `Auth: none` does not block this local alpha path.
-      A shared or production deployment instead requires an authenticated
-      subject/role mapping and fresh deployment-owned authorization; neither a
-      profile assertion nor a synthetic test authorizer is sufficient. Missing,
-      expired, revoked, or wrong-project authority must leave the candidate
-      pending and record no decision. For an
+      routing context only. Missing, expired, revoked, or wrong-project
+      authority must leave the candidate pending and record no decision. For an
       authorized approve or reject, persist the reviewer subject, bounded
       single-line rationale, disposition, decision time, candidate/evidence
       binding, and immutable receipt; repeat the exact request idempotently and
       reject a conflicting retry without rewriting the receipt. Confirm that a
       disposition does not itself claim goal completion, and that any cleanup
       remains bound only to the exact inventory shown in that review action as
-      specified by the next criterion. Keep this item open until the authorized
-      human completes the review path in the real consumer and the receipt is
-      independently checked; synthetic authorizers and profile metadata do not
-      establish human identity.
+      specified by the next criterion. Keep this item open until `eaglesvn`
+      completes the review path in the real local consumer and the receipt is
+      independently checked; synthetic tests do not establish the local human
+      decision.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are
@@ -8994,32 +8990,26 @@ substitute for evidence at a later integration boundary.
       facts/receipts, no deletion outside the original approval, and truthful
       per-target recovery. At decision submission, revalidate the same reviewer
       authority and current project/action grant, including expiry and
-      revocation. For local alpha, verify the invoking `eaglesvn` UID against
-      the owner-owned ledger; for shared or production use, verify the
-      authenticated deployment subject and role. Then compare the candidate
-      state, supporting
-      fact/evidence digests, project/config binding, projection revision, and
-      complete inventory and dependency-map digests and consequence dispositions
-      with the packet the reviewer saw. For local alpha, bind the attended
-      typed confirmation to the displayed action and packet and recheck the
-      current UID/grant at submission. For shared or production use, bind a
-      fresh, short-lived deployment authorization assertion to that exact
-      action and packet. If
+      revocation. Verify the invoking `eaglesvn` UID against the owner-owned
+      ledger. Then compare the candidate state, supporting fact/evidence
+      digests, project/config binding, projection revision, and complete
+      inventory and dependency-map digests and consequence dispositions with the
+      packet the reviewer saw. Bind the attended typed confirmation to
+      the displayed action and packet and recheck the current UID/grant at
+      submission. If
       authority expires or is revoked, or any bound state changes after display,
       record neither a disposition nor cleanup authorization, perform no unlink,
       and require a newly rendered packet and explicit decision. Inject grant
       revocation, expiry, target mutation, candidate disposition, and evidence
       revision changes between packet display and submit, including at the
       durable transaction boundary; verify database, projection, and staging
-      state remain unchanged on rejection. Owners must approve the assertion
-      freshness and revocation-race semantics used by the deployment identity
-      provider before shared or production use. A changed or incomplete
-      inventory must never be silently substituted into the old approval. Keep
-      this item open until the authorized human completes the one-action flow in
-      the approved consumer, and the exact manifest, dependency map, pre-delete
-      durability proof, per-target outcomes, and recovery receipt are
-      independently reconciled. Local synthetic-reviewer tests do not satisfy
-      that gate.
+      state remain unchanged on rejection. A changed or incomplete inventory
+      must never be silently substituted into the old approval. Keep this item
+      open until `eaglesvn` completes the one-action flow in the approved local
+      consumer, and the exact manifest, dependency map, pre-delete durability
+      proof, per-target outcomes, and recovery receipt are
+      independently reconciled. Synthetic-reviewer tests do not satisfy that
+      local human-review gate.
       Local safety progress (2026-10-23): new targets bind a persistent file
       occurrence ID; schema v28 marks unpurged legacy approvals without one as
       stale, leaves completed deletions intact and active holds in force, and
