@@ -4860,6 +4860,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       unit and timer. This safeguard applies only to the uninstalled maintenance
       template and is not evidence about other process dumps or the global
       source/sink paths.
+      Terminal-disposition canary follow-up (2026-10-28): the local
+      consumer-binding regression now sends a unique payload canary through
+      owner-authorized terminal disposition. The returned receipt and decision
+      contain no canary; the inbox payload is cleared, the audit retains only
+      its digest and rationale, and the SQLite main/WAL/SHM/journal files contain
+      no canary after the scrub pass. The focused lifecycle suite passes nine
+      tests; targeted Pyright, errors-only Pylint, and `git diff --check` pass.
+      This covers the local approved-terminal path only; blocked-scrub and
+      deployment sink behavior remain open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.

@@ -9243,3 +9243,21 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** Deployment storage and power-loss recovery remain unverified;
   the broader failure matrix remains open and no checklist marker changed.
 - **Outcome:** Record fail-closed local file-sync behavior before publication.
+
+## 2026-10-28 — Verify terminal event payload scrubbing
+
+- **Intent:** Advance the privacy source-to-sink review for an owner-approved
+  terminal event disposition.
+- **Changed fact:** The local lifecycle regression now routes a distinct
+  payload canary through terminal disposition and verifies the returned receipt,
+  decision record, event row, audit row, and SQLite main/WAL/SHM/journal files
+  contain no raw canary after the scrub pass. The audit retains the digest and
+  approved rationale.
+- **Verification:** The focused consumer-binding lifecycle suite passes nine
+  tests. Strict Pyright reports zero diagnostics, errors-only Pylint exits 0,
+  and `git diff --check` passes.
+- **Open gate:** This does not cover scrub blocked by a held reader, other
+  payload lifecycle states, or deployed sinks. The privacy item remains open;
+  no checklist marker changed.
+- **Outcome:** Preserve a content-free terminal disposition record while
+  verifying local payload erasure.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from threading import Barrier
 import unittest
 
@@ -290,10 +291,13 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         """A fenced source can close one failed event without losing its receipt."""
 
         self._register()
+        payload_canary = "terminal-disposition-private-payload-canary"
         event = EventEnvelope(
             "failed-event-1",
             self.project_id,
-            GoalActivityObserved("goal-1", "fact-1", FactKind.CHANGE, "Done."),
+            GoalActivityObserved(
+                "goal-1", "fact-1", FactKind.CHANGE, payload_canary
+            ),
             source_id="source-generation-1",
             source_sequence=1,
         )
@@ -346,6 +350,29 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         self.assertEqual(result.disposition, "terminal_authorized")
         self.assertEqual(disposition.prior_status.value, "quarantined")
         self.assertEqual(disposition.payload_sha256, received.payload_sha256)
+        self.assertNotIn(payload_canary, repr(result))
+        self.assertNotIn(payload_canary, repr(disposition))
+        with self.store.transaction() as connection:
+            event_row = connection.execute(
+                "SELECT status, payload_json, disposition FROM event_inbox "
+                "WHERE project_id = ? AND event_id = ?",
+                (self.project_id, event.event_id),
+            ).fetchone()
+            audit_row = connection.execute(
+                "SELECT payload_sha256, rationale FROM terminal_event_dispositions "
+                "WHERE project_id = ? AND event_id = ?",
+                (self.project_id, event.event_id),
+            ).fetchone()
+        self.assertEqual(event_row["status"], "processed")
+        self.assertIsNone(event_row["payload_json"])
+        self.assertEqual(event_row["disposition"], "terminal_authorized")
+        self.assertEqual(audit_row["payload_sha256"], received.payload_sha256)
+        self.assertNotIn(payload_canary, repr(audit_row))
+        database = Path(self.store.database)
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            candidate = Path(f"{database}{suffix}")
+            if candidate.exists():
+                self.assertNotIn(payload_canary.encode(), candidate.read_bytes())
         self.assertEqual(self.store.consumer_drain_inventory(self.project_id)[0], 0)
         replay, replayed_disposition = self.manager.terminally_dispose_event(
             self.operator,
