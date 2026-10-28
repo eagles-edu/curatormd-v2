@@ -9845,3 +9845,21 @@ while preserving explicit criteria and same-project parent validation.
   tooltip. No checklist marker changed.
 - **Outcome:** Explain same-project unknown health without changing its color or
   readiness result.
+
+## 2026-10-28 — Verify the installed daily backup path
+
+- **Intent:** Confirm the scheduled local maintenance command uses the approved
+  seven-copy daily backup implementation.
+- **Changed fact:** The enabled six-hour user timer points through its owner-only
+  environment file to the dedicated Curator V2 virtualenv. The installed
+  `backup_daily` implementation and maintenance CLI entrypoint exactly match
+  the current source. The latest service run at 09:20 +07 exited 0 and reported
+  `backup_status=verified`.
+- **Verification:** Read-only systemd state shows the timer enabled and active,
+  and the service has `Result=success`, `ExecMainStatus=0`, and journal-only
+  output. Source/installed function text digests match. No new service run or
+  project-data change was made.
+- **Open gate:** Remaining SQLite/staging failure cases and permanent-data
+  warning levels remain open; checklist progress is unchanged.
+- **Outcome:** Remove the stale claim that the installed daily-backup path is
+  unverified while keeping broader storage-policy work open.

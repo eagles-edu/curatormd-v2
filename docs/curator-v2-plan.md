@@ -4521,6 +4521,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       it roll out within seven days. These payloads remain recovery data, not
       canonical facts; backup regressions verify failed/quarantined restore and
       rolling seven-copy retention.
+      Maintenance-code refresh (2026-10-28): the enabled six-hour timer is
+      active, and the latest local service run exited 0 with
+      `backup_status=verified`. The installed `backup_daily` function and
+      maintenance CLI entrypoint match the current source byte-for-byte; the
+      service environment points to that dedicated Curator V2 virtualenv.
+      This confirms the scheduled backup path uses the seven-copy rotation.
       Additional design notes, not required for local-alpha completion: measure
       content-free bytes, counts, and age by artifact class and lifecycle state;
       keep unknown age visible and never let a retry, rename, copy, restore,
