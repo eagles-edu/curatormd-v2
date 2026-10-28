@@ -542,3 +542,22 @@ unclassified, so status remains incomplete. The scanner traversed the bounded
 tree without reading file contents or following symlinks. No service was
 restarted and no backup entry was moved, changed, or deleted. Retention and
 warning levels for the unclassified recovery material remain open.
+
+## 2026-10-28 Curator MCP process privacy limits
+
+Wheel `curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256
+`f422a3f11749a6b519c39da8de60e22018cb7b9c3b6cdeedad2babd7ec7e7b55`) was
+installed in the dedicated `renew-ssl-coding` Curator V2 virtualenv. Before
+replacement, 182 package, metadata, and launcher files were archived and
+hash-verified at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-mcp-privacy-20261028T041838Z.tar.gz`
+(SHA-256
+`89133debfb12cb7a02cfc1476e019b0fd067d23752c95f7b8137757aeb75221b`). All
+88 installed Python modules match source and `pip check` passes.
+
+A child started with the installed virtualenv Python observes core limit
+`(0, 0)` and umask `0077`; the installed MCP launcher accepts `--help`. No
+Hermes process or service was restarted, and an active Hermes-launched MCP
+session was not checked. These limits apply only to Curator processes started
+from this launcher; Hermes, Apport, journals, and other crash or log sinks
+remain outside this check. The full source-to-sink privacy review stays open.

@@ -4522,12 +4522,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       Local launcher follow-up (2026-10-28): the Curator hosted-MCP launcher
       source now sets its core-dump limit to zero and its file-creation umask
       to `0077` before initializing the runtime. A child-process regression
-      verifies both settings without changing the test runner. The updated
-      launcher has not been installed into the Hermes runtime yet. These limits
-      would protect only files and core dumps created by a process started from
-      that launcher; they do not establish how Hermes, Apport, journals, other
-      producers, or upstream crash reporting handle data. Keep the full
-      source-to-sink item open.
+      verifies both settings without changing the test runner. The rebuilt
+      wheel is installed in the dedicated `renew-ssl-coding` alpha virtualenv;
+      88 installed modules match source and a child launched from that Python
+      environment observes umask `0077` and core limit `(0, 0)`. No existing
+      Hermes process was restarted or tested. These limits protect only files
+      and core dumps created by a process started from the updated launcher;
+      they do not establish how Hermes, Apport, journals, other producers, or
+      upstream crash reporting handle data. Keep the full source-to-sink item
+      open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.

@@ -9724,6 +9724,27 @@ while preserving explicit criteria and same-project parent validation.
 - **Outcome:** Add a local safeguard at the Curator child-process boundary and
   keep system-wide crash-sink claims unverified.
 
+## 2026-10-28 — Install the Curator MCP process privacy limits in local alpha
+
+- **Intent:** Exercise the updated launcher from the dedicated local alpha
+  environment with a recoverable package rollback point.
+- **Changed fact:** Wheel SHA-256
+  `f422a3f11749a6b519c39da8de60e22018cb7b9c3b6cdeedad2babd7ec7e7b55` is
+  installed in the `renew-ssl-coding` Curator V2 virtualenv. Before replacement,
+  182 package, metadata, and launcher files were archived and verified at
+  `~/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-mcp-privacy-20261028T041838Z.tar.gz`
+  (SHA-256 `89133debfb12cb7a02cfc1476e019b0fd067d23752c95f7b8137757aeb75221b`).
+- **Verification:** All 88 installed Python modules match source; `pip check`
+  passes; the installed launcher accepts `--help`; and a child process using
+  the installed interpreter observes umask `0077` and core limit `(0, 0)`.
+  Focused hosted-MCP tests, full Pyright, errors-only Pylint, Bandit, and
+  `git diff --check` pass. No Hermes process was restarted.
+- **Open gate:** No active Hermes-launched MCP session was checked. Hermes,
+  Apport, journals, and other sinks are not covered; the full source-to-sink
+  privacy criterion remains open and no checklist marker changed.
+- **Outcome:** Install the local safeguard with rollback evidence while keeping
+  broader host crash and data-flow claims bounded.
+
 ## 2026-10-28 — Verify rolling retry payload backup retention
 
 - **Intent:** Check whether seven retained daily backups also establish a
