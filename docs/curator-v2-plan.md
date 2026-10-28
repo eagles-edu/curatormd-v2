@@ -8797,6 +8797,14 @@ substitute for evidence at a later integration boundary.
       path for the current project; live grant revocation, verified-fact
       evidence resolution, SDE disposition, exact cleanup review, and the full
       dashboard acceptance matrix remain open. No consumer files were changed.
+      Snapshot validation update (2026-10-28): the dashboard now rejects
+      `goal_report` responses missing a valid 64-character revision or fact
+      total, so a malformed report cannot be rendered as a complete page. The
+      focused Node suite passes 15 tests; VSIX 0.9.1 is packaged and installed.
+      `code --list-extensions` confirms the installed version, but the open
+      editor has not been reloaded for a rendered 0.9.1 check. This closes only
+      the malformed-report handling slice; the broader dashboard acceptance
+      matrix remains open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

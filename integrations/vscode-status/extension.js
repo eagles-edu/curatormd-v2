@@ -613,6 +613,9 @@ async function showDashboard(spawnProcess = spawn) {
         const match = report.match(/Facts to date \(showing\s+\d+–\d+\s+of\s+(\d+)\)/);
         const revisionMatch = report.match(/^- Report snapshot: `([a-f0-9]{64})`$/m);
         const reportRevision = revisionMatch ? revisionMatch[1] : null;
+        if (!match || !reportRevision) {
+          throw curatorError('invalid-response', 'Curator V2 returned an incomplete goal report.');
+        }
         if (factOffset > 0 && reportRevision) {
           const priorRevision = reportRevisions.get(message.goalId);
           if (priorRevision && priorRevision !== reportRevision) {

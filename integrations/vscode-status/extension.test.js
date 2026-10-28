@@ -568,6 +568,44 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   disposePanel();
 });
 
+test('dashboard rejects goal reports without a valid snapshot revision', async () => {
+  const messages = [];
+  let receiveMessage;
+  const userSettings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showWarningMessage: assert.fail,
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => { messages.push(message); },
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+
+  await showDashboard(() => new FakeMcpProcess('invalid-revision'));
+  await receiveMessage({ type: 'loadGoals', offset: 0 });
+  await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
+
+  assert.equal(messages.filter((message) => message.type === 'report').length, 0);
+  assert.equal(messages.at(-1).type, 'error');
+  assert.equal(messages.at(-1).message, 'Curator V2 returned an invalid response. Check the installed launcher and backend.');
+});
+
 test('dashboard clears previously rendered data when a fresh read is denied', () => {
   class Element {
     constructor() {
