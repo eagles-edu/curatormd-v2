@@ -425,6 +425,17 @@ class SQLitePhysicalStorageUsage:
 
 
 @dataclass(frozen=True, slots=True)
+class BackupDirectoryUsage:
+    """Bounded aggregate size of private daily SQLite snapshots."""
+
+    status: Literal["available", "incomplete", "unavailable"]
+    backup_count: int | None
+    file_bytes: int | None
+    allocated_bytes: int | None
+    unclassified_entry_count: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectControlPlaneStorageUsage:
     """Admin-only project storage plus separate unassigned global classes."""
 
@@ -434,6 +445,7 @@ class ProjectControlPlaneStorageUsage:
     global_classes: tuple[StorageClassUsage, ...] = ()
     global_logical_bytes: int = 0
     sqlite_physical: SQLitePhysicalStorageUsage | None = None
+    backup_storage: BackupDirectoryUsage | None = None
 
 
 @dataclass(frozen=True, slots=True)

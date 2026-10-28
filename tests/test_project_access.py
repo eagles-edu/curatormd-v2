@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 import json
 import sqlite3
 import unittest
+from pathlib import Path
 
 from store_test_support import patch_store_symbol
 
@@ -423,8 +424,23 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             self.manager.storage_usage(self.reader, self.project_id)
 
+        database_path = Path(self.store.database)
+        backup_directory = database_path.parent / "backups"
+        backup_directory.mkdir(mode=0o700)
+        backup_file = backup_directory / "curator-v2-2026-10-28.sqlite3"
+        backup_file.write_bytes(b"verified-snapshot")
+        backup_file.chmod(0o600)
         self._allow_admin(ProjectAdministrationAction.VIEW)
         usage = self.manager.storage_usage(self.operator, self.project_id)
+        self.assertIsNotNone(usage.backup_storage)
+        assert usage.backup_storage is not None
+        self.assertEqual(usage.backup_storage.status, "available")
+        self.assertEqual(usage.backup_storage.backup_count, 1)
+        self.assertEqual(usage.backup_storage.file_bytes, len(b"verified-snapshot"))
+        self.assertEqual(
+            usage.backup_storage.allocated_bytes,
+            backup_file.stat().st_blocks * 512,
+        )
         counts = {item.class_name: item.record_count for item in usage.classes}
         logical_bytes = {item.class_name: item.logical_bytes for item in usage.classes}
         self.assertEqual(

@@ -3,12 +3,92 @@
 from __future__ import annotations
 
 import os
+from datetime import date, datetime, timezone
 from pathlib import Path
 import re
 import sqlite3
 import stat
 import tempfile
-from datetime import date, datetime, timezone
+
+from .read_models import BackupDirectoryUsage
+
+_MAX_BACKUP_DIRECTORY_ENTRIES = 32
+
+
+def measure_backup_directory(directory: str | Path | None) -> BackupDirectoryUsage:
+    """Measure recognized backup files without following or reading contents."""
+
+    if directory is None:
+        return BackupDirectoryUsage("unavailable", None, None, None, None)
+    backup_directory = Path(directory).expanduser()
+    if any(
+        ancestor.is_symlink()
+        for ancestor in (backup_directory, *backup_directory.parents)
+    ):
+        return BackupDirectoryUsage("unavailable", None, None, None, None)
+    try:
+        metadata = backup_directory.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return BackupDirectoryUsage("available", 0, 0, 0, 0)
+    except OSError:
+        return BackupDirectoryUsage("unavailable", None, None, None, None)
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o077
+    ):
+        return BackupDirectoryUsage("unavailable", None, None, None, None)
+
+    backup_count = file_bytes = allocated_bytes = unclassified = 0
+    inspected = 0
+    incomplete = False
+    allocation_supported = True
+    try:
+        with os.scandir(backup_directory) as entries:
+            for entry in entries:
+                inspected += 1
+                if inspected > _MAX_BACKUP_DIRECTORY_ENTRIES:
+                    incomplete = True
+                    break
+                match = _DAILY_BACKUP_NAME.fullmatch(entry.name)
+                if match is None:
+                    unclassified += 1
+                    incomplete = True
+                    continue
+                try:
+                    date.fromisoformat(match.group(1))
+                    file_stat = entry.stat(follow_symlinks=False)
+                except (OSError, ValueError):
+                    unclassified += 1
+                    incomplete = True
+                    continue
+                if not stat.S_ISREG(file_stat.st_mode):
+                    unclassified += 1
+                    incomplete = True
+                    continue
+                backup_count += 1
+                file_bytes += file_stat.st_size
+                if (
+                    file_stat.st_uid != os.getuid()
+                    or stat.S_IMODE(file_stat.st_mode) & 0o077
+                ):
+                    unclassified += 1
+                    incomplete = True
+                if not hasattr(file_stat, "st_blocks"):
+                    incomplete = True
+                    allocation_supported = False
+                else:
+                    allocated_bytes += file_stat.st_blocks * 512
+    except OSError:
+        return BackupDirectoryUsage("unavailable", None, None, None, None)
+
+    return BackupDirectoryUsage(
+        "incomplete" if incomplete else "available",
+        backup_count,
+        file_bytes,
+        allocated_bytes if allocation_supported and not incomplete else None,
+        unclassified,
+    )
 
 
 def _database_path(path: str | Path, *, must_exist: bool) -> Path:

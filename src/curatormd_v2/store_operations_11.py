@@ -4,6 +4,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from .backup import measure_backup_directory
+
 # Continuation bases preserve the original method override order.
 # The old single module hid cross-version duplicate-code diagnostics.
 # pylint: disable=too-many-ancestors,duplicate-code
@@ -633,6 +637,12 @@ class StoreOperations4Part1(StoreOperations4Part0):
             )
             scrub_usage = self._event_payload_scrub_usage(self._connection)
             sqlite_physical = self._sqlite_physical_storage_usage()
+        backup_directory = (
+            Path(self.database).parent / "backups"
+            if self.database != ":memory:"
+            else None
+        )
+        backup_storage = measure_backup_directory(backup_directory)
         global_classes = (
             StorageClassUsage(
                 class_name="event_payload_scrub_queue_unassigned",
@@ -647,6 +657,7 @@ class StoreOperations4Part1(StoreOperations4Part0):
             global_classes=global_classes,
             global_logical_bytes=sum(item.logical_bytes for item in global_classes),
             sqlite_physical=sqlite_physical,
+            backup_storage=backup_storage,
         )
 
     def list_child_goals_compat(

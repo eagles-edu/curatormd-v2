@@ -31,6 +31,15 @@ copies and removes older copies only after the new snapshot passes SQLite
 integrity checks. A backup failure leaves existing copies intact and stops that
 maintenance pass before purge retries.
 
+The host-authorized attended storage view also measures the sibling `backups`
+directory without opening snapshot contents. It reports recognized daily-file
+count, logical file bytes, and allocated disk bytes. The scan examines at most
+32 entries and follows no symlinks. An unexpected entry, non-owner or
+non-private snapshot, unsafe directory, read error, or scan overflow makes the
+inventory incomplete or unavailable;
+partial measurements must not be treated as a full total. This view is
+observational only and never prunes, repairs, or verifies snapshots.
+
 `curatormd_v2.backup_database(source, destination)` makes a consistent SQLite
 online snapshot, verifies `integrity_check` and `foreign_key_check`, and installs
 it at a new path with owner-only permissions. It refuses to overwrite an
@@ -79,6 +88,7 @@ status, not paths or raw SQLite errors.
 | Case | Evidence | Result |
 | --- | --- | --- |
 | Online backup, private restore, existing destination, corrupt backup, symlink, destination race, and retry/quarantine payload recovery | [`tests/test_backup.py`](../tests/test_backup.py) | Snapshot is consistent and verified; failed and quarantined payloads survive restore and remain in each of the newest seven snapshots while pending; processed payloads are scrubbed, restore never overwrites, and invalid inputs remain available for review. |
+| Bounded backup-directory accounting and authorized storage-view exposure | [`tests/test_backup.py`](../tests/test_backup.py), [`tests/test_project_access.py`](../tests/test_project_access.py) | Recognized backup count and file/allocated bytes are reported; unexpected entries are surfaced as incomplete; a read grant alone cannot access the host storage view. |
 | SQLite/Markdown comparison, projection retry, and interruption before receipt commit | [`tests/test_markdown_persistence.py`](../tests/test_markdown_persistence.py) | Comparison is read-only; retries reconcile the projection and receipt after reopen. |
 | Purge interruption and retry after deletion before receipt update | [`tests/test_purge_lifecycle.py`](../tests/test_purge_lifecycle.py) | Pending work remains visible and exact retry records the already-absent target. |
 | Blocked WAL cleanup across restart | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py) | Cleanup stays pending while a reader blocks truncation and is retried after restart. |

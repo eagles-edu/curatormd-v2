@@ -9742,3 +9742,23 @@ while preserving explicit criteria and same-project parent validation.
   the remaining dashboard acceptance matrix. No checklist marker changed.
 - **Outcome:** Replace the stale no-window observation with current rendered
   evidence while keeping the full dashboard and review criteria open.
+
+## 2026-10-28 — Measure local backup storage in attended view
+
+- **Intent:** Fill the backup-file measurement gap in the permanent-data
+  inventory without changing retention or restore behavior.
+- **Changed fact:** The host-authorized storage view now measures recognized
+  daily backup count, logical file bytes, and allocated bytes. Its directory
+  walk is bounded to 32 entries, does not read snapshot contents or follow
+  symlinks, checks owner-only file modes, and reports incomplete/unavailable
+  inventory explicitly.
+- **Verification:** Backup tests pass 11/11 and project-access tests pass
+  12/12. Strict Pyright passes with zero diagnostics, errors-only Pylint passes
+  on changed files, Bandit exits 0 with existing source warnings, and
+  `git diff --check` passes.
+- **Open gate:** This measures backup storage only. It does not choose a
+  maximum live retry-payload age, retention horizon for receipts/cursors, a
+  threshold per permanent class, or backup creation-rate policy. The permanent
+  data budget item remains open.
+- **Outcome:** Add the local backup storage measurement and its verification
+  evidence without changing the approved seven-copy policy.

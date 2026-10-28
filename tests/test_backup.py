@@ -22,12 +22,78 @@ from curatormd_v2 import (
     backup_daily,
     backup_database,
     restore_database,
+    measure_backup_directory,
 )
 from curatormd_v2.events import EventEnvelope, EventInboxStatus, GoalStarted
 
 
 class DatabaseBackupTests(unittest.TestCase):
     """Exercise consistent, private, and non-overwriting database backups."""
+
+    def test_backup_directory_usage_is_bounded_and_reports_incomplete_inventory(self) -> None:
+        """Measure only private dated snapshots and surface unknown entries."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            backup_directory = Path(temporary) / "backups"
+            backup_directory.mkdir(mode=0o700)
+            first = backup_directory / "curator-v2-2026-10-27.sqlite3"
+            second = backup_directory / "curator-v2-2026-10-28.sqlite3"
+            first.write_bytes(b"snapshot-one")
+            second.write_bytes(b"snapshot-two")
+            first.chmod(0o600)
+            second.chmod(0o600)
+
+            usage = measure_backup_directory(backup_directory)
+            self.assertEqual(usage.status, "available")
+            self.assertEqual(usage.backup_count, 2)
+            self.assertEqual(usage.file_bytes, len(b"snapshot-one") + len(b"snapshot-two"))
+            self.assertEqual(
+                usage.allocated_bytes,
+                first.stat().st_blocks * 512 + second.stat().st_blocks * 512,
+            )
+            self.assertEqual(usage.unclassified_entry_count, 0)
+
+            unrelated = backup_directory / "keep-this-note.txt"
+            unrelated.write_bytes(b"preserve")
+            external = Path(temporary) / "outside.sqlite3"
+            external.write_bytes(b"do-not-follow")
+            (backup_directory / "curator-v2-2026-10-29.sqlite3").symlink_to(external)
+            incomplete = measure_backup_directory(backup_directory)
+            self.assertEqual(incomplete.status, "incomplete")
+            self.assertEqual(incomplete.backup_count, 2)
+            self.assertEqual(incomplete.file_bytes, usage.file_bytes)
+            self.assertIsNone(incomplete.allocated_bytes)
+            self.assertEqual(incomplete.unclassified_entry_count, 2)
+            self.assertTrue(unrelated.exists())
+
+            loose_directory = Path(temporary) / "loose-backups"
+            loose_directory.mkdir(mode=0o700)
+            loose_file = loose_directory / "curator-v2-2026-10-30.sqlite3"
+            loose_file.write_bytes(b"not-private")
+            loose_file.chmod(0o644)
+            loose = measure_backup_directory(loose_directory)
+            self.assertEqual(loose.status, "incomplete")
+            self.assertEqual(loose.backup_count, 1)
+            self.assertEqual(loose.file_bytes, len(b"not-private"))
+            self.assertIsNone(loose.allocated_bytes)
+            self.assertEqual(loose.unclassified_entry_count, 1)
+
+            oversized_directory = Path(temporary) / "oversized"
+            oversized_directory.mkdir(mode=0o700)
+            for index in range(33):
+                (oversized_directory / f"note-{index}").write_bytes(b"x")
+            oversized = measure_backup_directory(oversized_directory)
+            self.assertEqual(oversized.status, "incomplete")
+            self.assertIsNone(oversized.allocated_bytes)
+            self.assertIsNotNone(oversized.unclassified_entry_count)
+            assert oversized.unclassified_entry_count is not None
+            self.assertLessEqual(oversized.unclassified_entry_count, 32)
+
+            unsafe_directory = Path(temporary) / "unsafe-backups"
+            unsafe_directory.symlink_to(backup_directory, target_is_directory=True)
+            unsafe = measure_backup_directory(unsafe_directory)
+            self.assertEqual(unsafe.status, "unavailable")
+            self.assertIsNone(unsafe.backup_count)
 
     def test_backup_and_restore_are_consistent_private_and_non_overwriting(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

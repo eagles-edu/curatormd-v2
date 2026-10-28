@@ -13,7 +13,12 @@ from .api import (
     RateLimitExceeded,
     RejectAllProjectAccess,
 )
-from .backup import backup_daily, backup_database, restore_database
+from .backup import (
+    backup_daily,
+    backup_database,
+    measure_backup_directory,
+    restore_database,
+)
 from .browser_evidence import LocalBrowserProofResolver, LocalBrowserProofSpec
 from .human_observation import LocalHumanObservationResolver, LocalHumanObservationSpec
 from .evidence import (
@@ -118,6 +123,7 @@ from .models import (
     EventFailureCategory,
     EventFailureCategoryUsage,
     ProjectControlPlaneStorageUsage,
+    BackupDirectoryUsage,
     ProjectStorageUsage,
     SQLiteDatabaseFileUsage,
     SQLiteDatabasePageUsage,
@@ -229,6 +235,7 @@ __all__ = [
     "ArtifactCleanupAuthorizationRequest",
     "backup_database",
     "backup_daily",
+    "measure_backup_directory",
     "ArtifactRef",
     "ArtifactStatus",
     "PurgeOutcome",
@@ -380,6 +387,7 @@ __all__ = [
     "SQLiteTokenBucket",
     "ProjectStorageUsage",
     "ProjectControlPlaneStorageUsage",
+    "BackupDirectoryUsage",
     "StorageClassUsage",
     "StoragePhysicalClassUsage",
     "SQLiteDatabasePageUsage",

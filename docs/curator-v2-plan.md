@@ -694,6 +694,21 @@ plugin or Hermes integration is installed and working end to end.
       3.45.1. Backup files and retention/recovery policy are not measured or
       approved by this probe; per-class thresholds and production growth/restore
       evidence remain open.
+      Backup-size accounting progress (2026-10-28): the host-authorized
+      attended storage view now reports the count, file bytes, and allocated
+      bytes for recognized daily SQLite backups in the private sibling
+      `backups` directory. It inspects at most 32 directory entries, reads no
+      snapshot contents, follows no symlink, checks owner-only file modes, and
+      returns `incomplete` or
+      `unavailable` rather than a clean total when entries are unexpected,
+      unsafe, unreadable, or over the scan bound. The authorized project-access
+      test verifies a denied caller cannot read the view and the owner view's
+      backup totals match the files; the backup suite covers clean and
+      incomplete inventories. The seven-copy retention and manual new-path
+      restore policy remain as already approved. Pending inbox-payload age,
+      replay-horizon retirement, and budgets for every permanent class are
+      still unresolved; no permanent-data budget
+      marker changes here.
       Schema-coverage guard (2026-10-26): the attended storage-view regression
       now compares the current SQLite application-table inventory with the
       `dbstat` physical-class results when that extension is available. The
