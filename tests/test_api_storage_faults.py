@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import cast
 
+from curatormd_v2 import CuratorStore
 from test_api import (
     AuthenticatedCuratorAPI,
     EventEnvelope,
@@ -16,7 +17,35 @@ from test_api import (
 
 
 class ApiStorageFaultTests(_ApiTestSupport):
-    """Exercise durable event behavior under SQLite page exhaustion."""
+    """Exercise durable event behavior under SQLite storage faults."""
+
+    def test_unavailable_sqlite_never_acknowledges_an_unwritten_event(self) -> None:
+        """A closed SQLite handle cannot accept or acknowledge an event."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        connection = cast(sqlite3.Connection, getattr(self.store, "_connection"))
+        database = self.store.database
+        connection.close()
+        event = EventEnvelope(
+            "sqlite-unavailable-event",
+            "project-a",
+            GoalStarted(
+                "sqlite-unavailable-goal",
+                "Do not acknowledge an event when the ledger handle is unavailable.",
+                (SuccessCriterion("durable", "The receipt must be committed"),),
+            ),
+            source_id="sqlite-unavailable-source",
+            source_sequence=1,
+        )
+
+        with self.assertRaises(sqlite3.ProgrammingError):
+            api.process_event_json(self.caller, "project-a", event.to_json())
+
+        with CuratorStore(database) as reopened:
+            with self.assertRaises(NotFoundError):
+                reopened.event_receipt("project-a", event.event_id)
+            with self.assertRaises(NotFoundError):
+                reopened.get_goal("sqlite-unavailable-goal")
 
     def test_read_only_sqlite_never_acknowledges_an_unwritten_event(self) -> None:
         """A read-only store cannot report an event as processed."""

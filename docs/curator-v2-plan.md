@@ -1627,8 +1627,15 @@ plugin or Hermes integration is installed and working end to end.
       `SQLITE_READONLY`; the exact event has no receipt or goal and the
       connection has no open transaction afterward. The focused storage-fault
       suite passes both the `SQLITE_FULL` and read-only cases; targeted Pyright,
-      errors-only Pylint, and `git diff --check` pass. Unavailable-database and
-      remaining local filesystem fault cases stay open.
+      errors-only Pylint, and `git diff --check` pass. Remaining local SQLite
+      boundary and filesystem fault cases stay open.
+      SQLite-unavailable follow-up (2026-10-28): after the real store
+      connection is closed, the authenticated API raises before acknowledging
+      the event. Reopening the same SQLite file confirms neither the receipt nor
+      the goal was persisted. The focused storage-fault suite passes all three
+      storage exhaustion/read-only/unavailable cases; targeted Pyright,
+      errors-only Pylint, and `git diff --check` pass. The full matrix remains
+      open for the listed local filesystem fault cases.
       Additional local fault evidence (2026-10-26): an injected OS unlink
       failure after durable review, cleanup authorization, and canonical
       projection leaves the exact file present and reports `purge_pending` with

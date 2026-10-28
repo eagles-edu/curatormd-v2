@@ -9503,3 +9503,18 @@ while preserving explicit criteria and same-project parent validation.
   staging/filesystem fault cases have not all been covered. No fault-matrix
   checklist marker changed.
 - **Outcome:** Close the local read-only SQLite fault case only.
+
+## 2026-10-28 — Reject event writes when SQLite is unavailable
+
+- **Intent:** Verify the local event API does not acknowledge a write when its
+  SQLite connection is unavailable.
+- **Changed fact:** A closed real SQLite connection makes authenticated event
+  processing fail. Reopening the same database confirms no receipt or goal was
+  created.
+- **Verification:** The focused `test_api_storage_faults.py` suite passes all
+  three `SQLITE_FULL`, read-only, and unavailable cases; targeted Pyright
+  reports zero diagnostics, errors-only Pylint exits zero, and
+  `git diff --check` passes.
+- **Open gate:** The failure matrix remains open for the local filesystem fault
+  cases not yet covered as a complete matrix. No checklist marker changed.
+- **Outcome:** Close the local unavailable-SQLite event-acknowledgment case.
