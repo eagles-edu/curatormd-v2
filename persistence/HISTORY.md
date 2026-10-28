@@ -9829,3 +9829,19 @@ while preserving explicit criteria and same-project parent validation.
   data budget item remains open.
 - **Outcome:** Add the local backup storage measurement and its verification
   evidence without changing the approved seven-copy policy.
+
+## 2026-10-28 — Explain unknown health in the editor tooltip
+
+- **Intent:** Make the yellow V2 status-bar state point to its reported cause.
+- **Changed fact:** Extension 0.9.0 adds up to 12 valid health gate codes to the
+  tooltip only when the health snapshot belongs to the configured project.
+  Invalid strings and codes from another project are omitted. The status remains
+  yellow when health is unknown; the tooltip does not imply readiness.
+- **Verification:** The focused VS Code suite passes 14/14 tests; `node --check`
+  and `git diff --check` pass. VSIX packaging and local installation succeed;
+  installed and source `extension.js` hashes both equal
+  `c23b8bfa5138ef7709a1bd7ab233c737bff10b594fa04897f47ba9fc06d57aae`.
+- **Open gate:** Reload the active VS Code window to verify the new rendered
+  tooltip. No checklist marker changed.
+- **Outcome:** Explain same-project unknown health without changing its color or
+  readiness result.

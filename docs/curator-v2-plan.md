@@ -2783,6 +2783,14 @@ plugin or Hermes integration is installed and working end to end.
       This closes the local editor extension acceptance. It does not close
       deployment monitoring, runtime dependency probes, or any other open
       Definition-of-Done gate.
+      Tooltip reason follow-up (2026-10-28): extension 0.9.0 lists up to 12
+      syntactically valid health gate codes only when the health result matches
+      the configured project; malformed and cross-project codes are omitted.
+      The focused 14-test suite passes, the VSIX packages and installs, and the
+      installed/source JavaScript hashes match. The active editor window still
+      needs a reload before its hover can show the new gate details. Yellow
+      remains the correct state while health is unknown; the gate list explains
+      the backend result and does not change readiness.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects

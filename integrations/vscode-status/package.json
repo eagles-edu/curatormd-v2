@@ -2,7 +2,7 @@
   "name": "curatormd-v2-status",
   "displayName": "CuratorMD V2 Status",
   "description": "A local, project-scoped CuratorMD V2 dashboard and status bar integration.",
-  "version": "0.8.9",
+  "version": "0.9.0",
   "publisher": "curatormd",
   "repository": {
     "type": "git",

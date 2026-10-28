@@ -8,6 +8,9 @@ red for other degraded health, and yellow when health or the review queue is
 unknown.
 The tooltip shows the installed extension version, health, the pending review
 count or its unavailable state, and a short explanation of the active color.
+For a same-project health result it also lists up to 12 valid gate codes, so a
+yellow unknown state points to the reported reason without exposing arbitrary
+server text.
 Other degraded health gates take priority over
 purple so a review queue cannot hide an operational problem. Gray means no
 health read has been attempted; yellow means an attempted read was unavailable,

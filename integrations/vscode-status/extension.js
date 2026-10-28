@@ -37,6 +37,19 @@ function statusColorMeaning(status) {
   return STATUS_COLOR_MEANINGS[status] || STATUS_COLOR_MEANINGS.unknown;
 }
 
+function healthGateSummary(health, projectId) {
+  if (!health || health.project_id !== projectId || !Array.isArray(health.gate_codes)) {
+    return '';
+  }
+  const codes = health.gate_codes
+    .filter((code) => typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code))
+    .slice(0, 12);
+  const omitted = health.gate_codes.length - codes.length;
+  if (codes.length === 0) return '';
+  const suffix = omitted > 0 ? `; ${omitted} additional or invalid gate(s)` : '';
+  return ` Health gates: ${codes.join(', ')}${suffix}.`;
+}
+
 function reportFactIds(report) {
   if (typeof report !== 'string' || report.length > 40000) return new Set();
   return new Set(report.split(/\r?\n/)
@@ -436,7 +449,9 @@ function updateStatusBarHealth(health, projectId, reviewItems = null) {
   dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`;
   dashboardStatusItem.color = STATUS_COLORS[displayStatus];
   dashboardStatusItem.tooltip = statusTooltip(
-    `${statusColorMeaning(displayStatus)} Project health: ${healthStatus}. ${reviewSummary}. `
+    `${statusColorMeaning(displayStatus)} Project health: ${healthStatus}.`
+      + healthGateSummary(health, projectId)
+      + ` ${reviewSummary}. `
       + 'Click to open the project-scoped dashboard.',
   );
   return healthStatus;
