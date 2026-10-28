@@ -853,6 +853,13 @@ consumer plugin, Hermes integration, or production deployment.
       `git diff --check` pass. This verifies local logical attribution for this
       receipt class; retention horizons, recovery sources, capacity thresholds,
       and physical index/WAL/backup allocation remain open.
+      Drain-record accounting follow-up (2026-10-28): the consumer drain
+      lifecycle regression now verifies exact logical-byte totals and record
+      counts for a persisted drain authorization session and its reviewed event
+      inventory entry. The focused lifecycle suite, targeted Pyright,
+      errors-only Pylint, and `git diff --check` pass. These checks validate two
+      more local control-plane classes; the owner-approved budget, retention,
+      recovery, and physical allocation decisions remain open.
       Owner-approved retention horizons, recovery sources, per-class capacity
       thresholds, and physical index/WAL/
       backup allocation remain open.

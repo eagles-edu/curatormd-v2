@@ -9311,3 +9311,18 @@ while preserving explicit criteria and same-project parent validation.
   checklist remains open.
 - **Outcome:** Confirm one additional class's local logical accounting without
   implying a complete storage budget.
+
+## 2026-10-28 — Verify drain-record storage attribution
+
+- **Intent:** Check local logical accounting for consumer drain authorizations
+  and their reviewed event inventory.
+- **Changed fact:** The consumer-drain lifecycle regression now verifies each
+  persisted session and drain-event count and compares measured bytes with the
+  UTF-8 lengths of their stored fields.
+- **Verification:** The focused consumer-binding lifecycle suite passes nine
+  tests; targeted Pyright reports zero diagnostics, errors-only Pylint exits 0,
+  and `git diff --check` passes.
+- **Open gate:** Remaining class accounting, approved capacity/retention and
+  recovery budgets, and physical SQLite/WAL/backup allocation are still open.
+- **Outcome:** Verify two additional local control-plane accounting classes
+  without treating logical bytes as a complete storage budget.

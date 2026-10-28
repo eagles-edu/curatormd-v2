@@ -287,6 +287,53 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         self.assertEqual(retry.event_id, event.event_id)
         with self.assertRaisesRegex(ConflictError, "does not accept new events"):
             self.store.ingest_event(replace(event, event_id="new-event"))
+        usage = self.store.project_control_plane_storage_usage(self.project_id)
+        classes = {item.class_name: item for item in usage.classes}
+        with self.store.transaction() as connection:
+            session_row = connection.execute(
+                "SELECT * FROM consumer_drain_sessions WHERE project_id = ?",
+                (self.project_id,),
+            ).fetchone()
+            drain_event_row = connection.execute(
+                """SELECT * FROM consumer_drain_events
+                   WHERE project_id = ? AND event_id = ?""",
+                (self.project_id, event.event_id),
+            ).fetchone()
+        self.assertIsNotNone(session_row)
+        self.assertIsNotNone(drain_event_row)
+        assert session_row is not None
+        assert drain_event_row is not None
+
+        def stored_text_bytes(row: sqlite3.Row, fields: tuple[str, ...]) -> int:
+            return sum(
+                len((str(row[field]) if row[field] is not None else "").encode("utf-8"))
+                for field in fields
+            )
+
+        self.assertEqual(classes["consumer_drain_sessions"].record_count, 1)
+        self.assertEqual(
+            classes["consumer_drain_sessions"].logical_bytes,
+            stored_text_bytes(
+                session_row,
+                (
+                    "project_id", "transition_id", "actor_id", "caller_subject",
+                    "caller_profile", "binding_revision", "source_epoch",
+                    "config_sha256", "inventory_sha256", "created_at", "expires_at",
+                    "revoked_at",
+                ),
+            ),
+        )
+        self.assertEqual(classes["consumer_drain_events"].record_count, 1)
+        self.assertEqual(
+            classes["consumer_drain_events"].logical_bytes,
+            stored_text_bytes(
+                drain_event_row,
+                (
+                    "project_id", "transition_id", "event_id", "payload_sha256",
+                    "idempotency_sha256", "source_id", "source_sequence",
+                ),
+            ),
+        )
 
     def test_retired_project_terminal_event_disposition_scrubs_and_replays(self) -> None:
         """Scrub an approved terminal event after project retirement and retry."""
