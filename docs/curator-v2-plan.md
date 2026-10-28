@@ -4452,6 +4452,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       payload digest; replay after reader release completes the scrub. This
       covers local retired-project disposition only, not the complete
       source-to-sink review.
+      Host crash-sink check (2026-10-28): the Curator maintenance service has
+      `LimitCORE=0` and `UMask=0077`, but the active Hermes gateway has
+      `LimitCORE=infinity` and `UMask=0022`; the kernel routes core dumps to
+      Apport, whose service is enabled. No crash canary was generated. This
+      proves the maintenance-unit safeguard does not protect the gateway or
+      its Curator MCP child, so host crash-report capture remains unverified.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.

@@ -9602,3 +9602,19 @@ while preserving explicit criteria and same-project parent validation.
   complete provider/auxiliary usage coverage was verified; no usage event was
   fabricated. MCP goal persistence returned `unauthenticated` in this session.
 - **Outcome:** Preserve report-only behavior and leave token coverage open.
+
+## 2026-10-28 — Check active local crash-dump boundary
+
+- **Intent:** Verify whether local Curator and Hermes processes can write raw
+  process memory into crash-reporting sinks.
+- **Changed fact:** The Curator maintenance unit has `LimitCORE=0` and
+  `UMask=0077`; the active Hermes gateway has `LimitCORE=infinity` and
+  `UMask=0022`. The kernel core pattern pipes to Apport, and `apport.service`
+  is enabled.
+- **Verification:** Read-only `systemctl show`, `/proc/sys/kernel/core_pattern`,
+  and service-status queries returned these settings. No crash or canary was
+  created.
+- **Open gate:** Core-dump privacy for the active Hermes gateway and its Curator
+  MCP child is not proven. The broad source-to-sink privacy item stays open.
+- **Outcome:** Record the actual host boundary rather than claiming that the
+  maintenance-unit core limit protects all local processes.
