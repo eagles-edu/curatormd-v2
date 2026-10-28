@@ -62,7 +62,7 @@ class DatabaseBackupTests(unittest.TestCase):
             (backup_directory / "curator-v2-2026-10-29.sqlite3").symlink_to(external)
             incomplete = measure_backup_directory(backup_directory)
             self.assertEqual(incomplete.status, "incomplete")
-            self.assertEqual(incomplete.warning_status, "unknown")
+            self.assertEqual(incomplete.warning_status, "below_threshold")
             self.assertEqual(incomplete.backup_count, 2)
             self.assertEqual(incomplete.file_bytes, usage.file_bytes)
             self.assertIsNone(incomplete.allocated_bytes)
@@ -76,7 +76,7 @@ class DatabaseBackupTests(unittest.TestCase):
             loose_file.chmod(0o644)
             loose = measure_backup_directory(loose_directory)
             self.assertEqual(loose.status, "incomplete")
-            self.assertEqual(loose.warning_status, "unknown")
+            self.assertEqual(loose.warning_status, "below_threshold")
             self.assertEqual(loose.backup_count, 1)
             self.assertEqual(loose.file_bytes, len(b"not-private"))
             self.assertIsNone(loose.allocated_bytes)
@@ -109,7 +109,10 @@ class DatabaseBackupTests(unittest.TestCase):
             snapshot = backup_directory / "curator-v2-2026-10-28.sqlite3"
             snapshot.write_bytes(b"verified-snapshot")
             snapshot.chmod(0o600)
-            allocated = snapshot.stat().st_blocks * 512
+            allocated = (
+                backup_directory.stat().st_blocks * 512
+                + snapshot.stat().st_blocks * 512
+            )
 
             with patch(
                 "curatormd_v2.backup.BACKUP_TREE_WARNING_THRESHOLD_BYTES",
@@ -137,7 +140,8 @@ class DatabaseBackupTests(unittest.TestCase):
             snapshot.chmod(0o600)
 
             old_packages = backup_directory / "extension-backups"
-            old_packages.mkdir(mode=0o700)
+            old_packages.mkdir(mode=0o775)
+            old_packages.chmod(0o775)
             old_package = old_packages / "old.vsix"
             old_package.write_bytes(b"prior package")
             old_package.chmod(0o600)
@@ -151,6 +155,7 @@ class DatabaseBackupTests(unittest.TestCase):
             usage = measure_backup_directory(backup_directory)
 
             self.assertEqual(usage.status, "incomplete")
+            self.assertEqual(usage.warning_status, "below_threshold")
             self.assertEqual(usage.backup_count, 1)
             self.assertEqual(usage.file_bytes, len(b"snapshot"))
             self.assertEqual(usage.observed_entry_count, 4)

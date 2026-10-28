@@ -55,105 +55,153 @@ def measure_backup_directory(directory: str | Path | None) -> BackupDirectoryUsa
     backup_count = file_bytes = allocated_bytes = unclassified = 0
     observed_entries = observed_files = observed_file_bytes = observed_allocated = 0
     inspected = 0
-    incomplete = False
+    inventory_incomplete = False
+    measurement_complete = True
     allocation_supported = True
+    pending: list[tuple[int, int]] = []
     try:
-        pending = [(backup_directory, 0)]
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        root_fd = os.open(backup_directory, directory_flags)
+        pending.append((root_fd, 0))
+        root_stat = os.fstat(root_fd)
+        if (
+            not stat.S_ISDIR(root_stat.st_mode)
+            or root_stat.st_uid != os.getuid()
+            or stat.S_IMODE(root_stat.st_mode) & 0o077
+        ):
+            raise PermissionError("backup directory ownership or mode changed")
+        observed_allocated = (
+            root_stat.st_blocks * 512 if hasattr(root_stat, "st_blocks") else 0
+        )
+        if not hasattr(root_stat, "st_blocks"):
+            allocation_supported = False
+            measurement_complete = False
         while pending:
-            current_directory, depth = pending.pop()
-            if current_directory.is_symlink():
-                incomplete = True
-                continue
-            with os.scandir(current_directory) as entries:
-                for entry in entries:
-                    inspected += 1
-                    if inspected > _MAX_BACKUP_DIRECTORY_ENTRIES:
-                        incomplete = True
-                        break
-                    observed_entries += 1
-                    try:
-                        entry_stat = entry.stat(follow_symlinks=False)
-                    except OSError:
-                        unclassified += 1
-                        incomplete = True
-                        continue
-                    if hasattr(entry_stat, "st_blocks"):
-                        observed_allocated += entry_stat.st_blocks * 512
-                    else:
-                        incomplete = True
-                        allocation_supported = False
-
-                    is_top_level = depth == 0
-                    match = (
-                        _DAILY_BACKUP_NAME.fullmatch(entry.name)
-                        if is_top_level else None
-                    )
-                    if match is None:
-                        unclassified += 1
-                        incomplete = True
-                    elif not stat.S_ISREG(entry_stat.st_mode):
-                        unclassified += 1
-                        incomplete = True
-                    else:
+            current_fd, depth = pending.pop()
+            try:
+                try:
+                    entries_context = os.scandir(current_fd)
+                except OSError:
+                    inventory_incomplete = True
+                    measurement_complete = False
+                    continue
+                with entries_context as entries:
+                    for entry in entries:
+                        inspected += 1
+                        if inspected > _MAX_BACKUP_DIRECTORY_ENTRIES:
+                            inventory_incomplete = True
+                            measurement_complete = False
+                            break
+                        observed_entries += 1
                         try:
-                            date.fromisoformat(match.group(1))
-                        except ValueError:
+                            entry_stat = entry.stat(follow_symlinks=False)
+                        except OSError:
                             unclassified += 1
-                            incomplete = True
+                            inventory_incomplete = True
+                            measurement_complete = False
+                            continue
+                        if hasattr(entry_stat, "st_blocks"):
+                            observed_allocated += entry_stat.st_blocks * 512
                         else:
-                            backup_count += 1
-                            file_bytes += entry_stat.st_size
-                            allocated_bytes += (
-                                entry_stat.st_blocks * 512
-                                if hasattr(entry_stat, "st_blocks") else 0
-                            )
-                            if (
-                                entry_stat.st_uid != os.getuid()
-                                or stat.S_IMODE(entry_stat.st_mode) & 0o077
-                            ):
-                                unclassified += 1
-                                incomplete = True
+                            measurement_complete = False
+                            allocation_supported = False
 
-                    if stat.S_ISREG(entry_stat.st_mode):
-                        observed_files += 1
-                        observed_file_bytes += entry_stat.st_size
-                    if (
-                        entry_stat.st_uid != os.getuid()
-                        or stat.S_IMODE(entry_stat.st_mode) & 0o077
-                    ):
-                        incomplete = True
-                    if stat.S_ISDIR(entry_stat.st_mode):
-                        if depth >= _MAX_BACKUP_DIRECTORY_DEPTH:
-                            incomplete = True
-                        elif entry_stat.st_uid != os.getuid() or (
-                            stat.S_IMODE(entry_stat.st_mode) & 0o022
-                        ):
-                            incomplete = True
+                        is_top_level = depth == 0
+                        match = (
+                            _DAILY_BACKUP_NAME.fullmatch(entry.name)
+                            if is_top_level else None
+                        )
+                        if match is None:
+                            unclassified += 1
+                            inventory_incomplete = True
+                        elif not stat.S_ISREG(entry_stat.st_mode):
+                            unclassified += 1
+                            inventory_incomplete = True
                         else:
-                            pending.append((Path(entry.path), depth + 1))
-                    elif not stat.S_ISREG(entry_stat.st_mode):
-                        # A symlink's own allocation is counted, but its target
-                        # and all special-file contents remain outside the walk.
-                        incomplete = True
+                            try:
+                                date.fromisoformat(match.group(1))
+                            except ValueError:
+                                unclassified += 1
+                                inventory_incomplete = True
+                            else:
+                                backup_count += 1
+                                file_bytes += entry_stat.st_size
+                                allocated_bytes += (
+                                    entry_stat.st_blocks * 512
+                                    if hasattr(entry_stat, "st_blocks") else 0
+                                )
+                                if (
+                                    entry_stat.st_uid != os.getuid()
+                                    or stat.S_IMODE(entry_stat.st_mode) & 0o077
+                                ):
+                                    unclassified += 1
+                                    inventory_incomplete = True
+
+                        if stat.S_ISREG(entry_stat.st_mode):
+                            observed_files += 1
+                            observed_file_bytes += entry_stat.st_size
+                        if (
+                            entry_stat.st_uid != os.getuid()
+                            or stat.S_IMODE(entry_stat.st_mode) & 0o077
+                        ):
+                            inventory_incomplete = True
+                        if stat.S_ISDIR(entry_stat.st_mode):
+                            if depth >= _MAX_BACKUP_DIRECTORY_DEPTH:
+                                inventory_incomplete = True
+                                measurement_complete = False
+                            else:
+                                try:
+                                    child_fd = os.open(
+                                        entry.name,
+                                        directory_flags,
+                                        dir_fd=current_fd,
+                                    )
+                                except OSError:
+                                    inventory_incomplete = True
+                                    measurement_complete = False
+                                else:
+                                    try:
+                                        child_stat = os.fstat(child_fd)
+                                    except OSError:
+                                        os.close(child_fd)
+                                        raise
+                                    if (
+                                        child_stat.st_dev != root_stat.st_dev
+                                        or child_stat.st_ino != entry_stat.st_ino
+                                    ):
+                                        os.close(child_fd)
+                                        inventory_incomplete = True
+                                        measurement_complete = False
+                                    else:
+                                        pending.append((child_fd, depth + 1))
+                        elif not stat.S_ISREG(entry_stat.st_mode):
+                            # A symlink's own allocation is counted, but its
+                            # target and special-file contents stay outside.
+                            inventory_incomplete = True
+            finally:
+                os.close(current_fd)
             if inspected > _MAX_BACKUP_DIRECTORY_ENTRIES:
-                incomplete = True
                 break
     except OSError:
         return BackupDirectoryUsage(
             "unavailable", None, None, None, None, None, None, None, None
         )
+    finally:
+        for pending_fd, _depth in pending:
+            os.close(pending_fd)
 
     if observed_allocated >= BACKUP_TREE_WARNING_THRESHOLD_BYTES:
         warning_status = "warning"
-    elif incomplete or not allocation_supported:
+    elif not measurement_complete or not allocation_supported:
         warning_status = "unknown"
     else:
         warning_status = "below_threshold"
     return BackupDirectoryUsage(
-        "incomplete" if incomplete else "available",
+        "incomplete" if inventory_incomplete else "available",
         backup_count,
         file_bytes,
-        allocated_bytes if allocation_supported and not incomplete else None,
+        allocated_bytes if allocation_supported and not inventory_incomplete else None,
         unclassified,
         observed_entries,
         observed_files,

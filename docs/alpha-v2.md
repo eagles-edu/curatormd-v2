@@ -565,6 +565,37 @@ No files were removed and no Hermes service was restarted. The 13 focused backup
 tests pass, including threshold behavior and retention of files above the
 warning level.
 
+## 2026-10-28 complete backup-tree byte scan
+
+The bounded scanner previously skipped two owner-owned group-writable backup
+directories, which made its warning state `unknown` below the threshold. It now
+opens the root and nested directories through file descriptors with
+`O_NOFOLLOW`, verifies each opened child inode against its no-follow directory
+entry, and counts directory allocation as well as file allocation. It opens no
+file contents, modifies or deletes nothing, and keeps backup classification
+separate from byte-measurement completeness.
+
+The focused backup suite passes 13 tests. Targeted Pyright, errors-only Pylint,
+Bandit, and `git diff --check` pass. The rebuilt wheel has SHA-256
+`d3e81af77224f5cdaa7167a7c27c219284ea4acedb01b49a505041fa6131d219`. Before
+installation, a 186-entry rollback archive was created and verified at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-groupwrite-scan-20261028.tar.gz`
+(SHA-256
+`a68f92ab5e87b230074fab1458c12e6181212f82d3fadfa83d833cf18136689e`; manifest
+SHA-256 `0f299a725b5f44ba91a8a203fc4e78ce08b7686fae0ff0fe0fa6f6492ae41da5`).
+The wheel is installed only in the dedicated alpha virtualenv; all 88 installed
+Python module hashes match source, `uv pip check` passes, and the installed MCP
+launcher `--help` succeeds. A read-only installed-package scan of the configured
+backup tree observed 29 entries, 27 regular files, 4,642,256 logical file bytes,
+and 4,685,824 allocated bytes including the root directory. One daily snapshot
+is recognized; 28 legacy entries remain unclassified. Inventory status is
+`incomplete`, but the bounded allocated-byte measurement completed, so its
+warning state is `below_threshold` against 262,144,000 bytes. This satisfies the
+owner-approved whole-tree warning rule without treating the warning threshold
+as deletion authority. No backup was moved, changed, or deleted, and no Hermes
+service was restarted. Legacy retention and permanent-data class budgets stay
+open.
+
 ## 2026-10-28 Curator MCP process privacy limits
 
 Wheel `curatormd_v2-0.1.0a1-py3-none-any.whl` (SHA-256

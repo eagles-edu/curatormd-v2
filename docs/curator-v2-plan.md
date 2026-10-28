@@ -628,17 +628,16 @@ plugin or Hermes integration is installed and working end to end.
       only to verified daily snapshots created by Curator's backup routine.
       bounded backup reader now returns `warning_status`: `warning` at or above
       the observed-byte threshold, `below_threshold` only for a complete
-      supported scan below it, and `unknown` for incomplete or unsupported
-      measurements below threshold. A reached threshold remains a warning
-      even when the inventory is incomplete because observed bytes are a lower
-      bound. The updated wheel is installed in the local alpha environment;
-      its current read reports 21 entries and 4,636,672 observed allocated
-      bytes, but remains `incomplete`/`unknown` because it skips two
-      group-writable directories. The 13 focused backup tests pass, including
-      threshold and keep-files behavior. This implements the local warning
-      rule and legacy-file deletion boundary only; complete backup inventory,
-      long-term class retention/recovery horizons, and permanent-data
-      accounting remain open. By top-level name/type only, the
+      supported byte measurement below it, and `unknown` when the bounded size
+      measurement is incomplete or allocation units are unsupported. A reached
+      threshold remains a warning even when backup classification is incomplete
+      because observed bytes are a lower bound. The earlier installed read
+      reported 21 entries and 4,636,672 observed allocated bytes, but skipped
+      two group-writable directories and returned `incomplete`/`unknown`. The
+      13 focused backup tests passed, including threshold and keep-files
+      behavior. This implemented the local warning rule and legacy-file
+      deletion boundary; long-term class retention/recovery horizons and
+      permanent-data accounting remain open. By top-level name/type only, the
       20 unclassified entries are
       three older SQLite snapshots, eight WAL/SHM sidecars, five package
       rollback archives, one YAML profile-config snapshot, one VS Code settings
@@ -772,6 +771,20 @@ plugin or Hermes integration is installed and working end to end.
       replay-horizon retirement, and budgets for every permanent class are
       still unresolved; no permanent-data budget
       marker changes here.
+      Whole-tree measurement follow-up (2026-10-28 12:03 UTC): the scanner now
+      traverses owner-owned group-writable child directories using
+      descriptor-relative `O_NOFOLLOW` opens and verifies each child inode
+      after opening. Allocated-size completeness is independent of whether
+      every legacy entry can be classified as a Curator daily backup. The
+      installed alpha package measured all 29 entries and reports
+      `warning_status=below_threshold` at 4,685,824 allocated bytes against
+      262,144,000 bytes; its separate backup inventory remains `incomplete`
+      because 28 legacy entries are unclassified. No backup contents were read
+      and no files changed or were deleted. The 13 focused backup tests pass,
+      as do targeted Pyright, errors-only Pylint, Bandit, module-hash matching,
+      `uv pip check`, and the installed MCP launcher help check. This completes
+      the local backup-tree byte-warning measurement; retention horizons and
+      permanent-data class budgets remain open.
       Schema-coverage guard (2026-10-26): the attended storage-view regression
       now compares the current SQLite application-table inventory with the
       `dbstat` physical-class results when that extension is available. The
