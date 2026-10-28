@@ -8184,6 +8184,13 @@ substitute for evidence at a later integration boundary.
       d2aac32b8` (12 checks) pass. This source change has not been installed into the
       profile plugin copy. The current outbox snapshot below remains stale and
       coverage incomplete; no token-coverage or deployment checkbox changes.
+      Active-runtime comparison (2026-10-28): the enabled profile's
+      `project-usage` reader matches the Hermes checkout, but Hermes installed
+      at `/usr/local/lib/hermes-agent` is revision `ad06e63` and lacks the
+      provider-usage post-turn writer. Its gateway unit is inactive. The active
+      install has unrelated local modifications and untracked files, so it was
+      left untouched. The local source change and read-only report do not prove
+      current provider-token capture; keep the usage gate open.
       Hermes Core quality recheck (2026-10-27): the checkout has no local
       `main` or `origin/main` ref, so the default `scripts/check` base cannot be
       resolved. Re-running the same check with the current commit's parent

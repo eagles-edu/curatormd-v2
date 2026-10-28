@@ -15,6 +15,22 @@
 - **Outcome:** Recorded the owner-approved backup exception without changing a
   checklist marker.
 
+## 2026-10-28 — Identify the active Hermes usage-writer gap
+
+- **Intent:** Find why the local project-usage report remains stale and lacks
+  Hermes provider-token rows.
+- **Changed fact:** The enabled profile reader matches the Hermes source
+  checkout, while active install revision `ad06e63` lacks its provider-usage
+  post-turn writer; the profile gateway unit is inactive.
+- **Verification:** Read-only inspection confirms six retained Codex app-server
+  rows through 2026-10-21, five reported and one unknown. The active install
+  contains unrelated modifications and untracked files and was left untouched.
+- **Open gate:** No fresh Hermes provider-usage event has been observed. The
+  source checkout, unit tests, and retained-row report do not prove live token
+  capture. Curator V2 MCP persistence also returned `unauthenticated`.
+- **Outcome:** Keep the token-usage checklist item open until safe local runtime
+  integration and a real current event are verified.
+
 ## 2026-10-27 — Record request-bound Vhost acceptance progress
 
 - **Intent:** Continue the real-consumer acceptance work in Slice I with a
