@@ -8940,6 +8940,15 @@ substitute for evidence at a later integration boundary.
       `2026-10-21T10:40:21Z`; no event payload was read. Ledger persistence and
       local profile health are verified; new managed-gateway lifecycle
       delivery remains open.
+      Hermes health-bridge recheck (2026-10-28): the current source checkout
+      contains the seven-probe `curator_v2` metadata bridge; its focused
+      `tests/tools/test_curator_v2_health.py` run passes nine tests. The active
+      `/usr/local/lib/hermes-agent` install has no `tools/curator_v2_health.py`
+      and its MCP handler does not add `hermes/readiness`. The installed
+      `renew-ssl-coding` CLI connects to `curator_v2` and discovers 49 tools
+      (`Auth: none`), but that connection test does not call `project_health`.
+      The healthy source-checkout probe is not active-install health evidence;
+      runtime readiness and authenticated human identity remain open.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the

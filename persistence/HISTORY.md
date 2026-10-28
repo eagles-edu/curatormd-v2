@@ -9341,3 +9341,19 @@ while preserving explicit criteria and same-project parent validation.
   physical index/WAL/backup allocation remain unresolved.
 - **Outcome:** Verify exact local logical accounting for populated access
   classes without closing the permanent-data budget item.
+
+## 2026-10-28 — Separate Hermes probe source from installed runtime
+
+- **Intent:** Recheck which Hermes build supplies Curator V2 host readiness.
+- **Changed fact:** The Hermes source checkout contains the seven-probe MCP
+  metadata bridge, and its focused health test file passes nine tests. The
+  active `/usr/local/lib/hermes-agent` installation lacks that bridge. Its
+  profile MCP connection discovers 49 tools but reports transport auth as
+  `none`; connection discovery does not execute a health read.
+- **Verification:** `scripts/run_tests.sh tests/tools/test_curator_v2_health.py`
+  passes nine tests. `hermes -p renew-ssl-coding mcp test curator_v2` connects
+  and discovers the configured tool surface.
+- **Open gate:** Active-install health, a fresh managed-gateway health read,
+  authenticated human identity, and lifecycle delivery remain unverified.
+- **Outcome:** Keep source-checkout probe capability separate from active
+  runtime evidence.
