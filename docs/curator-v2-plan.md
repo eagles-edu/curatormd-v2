@@ -8907,6 +8907,16 @@ substitute for evidence at a later integration boundary.
       VSIX SHA-256 is `3af84365dd67b2aeb623122cb76d60a9ea89a43bb58a4564a731b21603839994`.
       The installed version and source hash match, but rendered 0.9.2 behavior
       remains unverified until the editor window reloads.
+      Rendered-version follow-up (2026-10-28): the ordinary `renew_ssl` editor
+      window was reloaded and its extension-host log records activation of the
+      installed 0.9.2 package. The visible status item remains immediately to
+      the right of Git Graph. Hover renders `CuratorMD V2 0.9.2` and explains
+      that gray means no project health read has been attempted. Installed and
+      repository `extension.js` hashes both equal
+      `1f863844c655c0ddd9bb76ecbb8f609fb61f4b9ade920896065def34525551bf`.
+      This verifies the requested version tooltip in the active editor window;
+      this window has not attempted a health read, and dashboard grants,
+      revocation, review, and cleanup acceptance remain open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
