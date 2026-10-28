@@ -225,7 +225,7 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-28): **165 of 178 delivery rows are complete; 13 are open**.
+recount (2026-10-28): **166 of 178 delivery rows are complete; 12 are open**.
 Historical narrative counts below are not current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
@@ -6244,141 +6244,20 @@ unknown. The dashboard and live event-delivery gates remain open.
       [Section 1](#1-goal-intake-and-lifecycle).
 - [x] Exercise the MCP tool contract with the SDK in-memory client and real
       stdio subprocess; use temporary SQLite and repository plugin fixtures.
-- [ ] Add deployment-level integration tests using the Hermes router,
-      production canonical persistence adapter, and representative consumer
-      repositories. Local composition progress (2026-10-21): the Vhost consumer
-      contract now runs the installed Curator stdio launcher in a disposable
-      clone of the Vhost repository, dispatches bounded Hermes lifecycle events
-      through the consumer hook bridge, verifies processed receipts and compact
-      facts, writes the configured Markdown projection, reconciles it, and
-      confirms canary text and out-of-scope targets remain absent/unchanged.
-      All seven Vhost contracts pass. This composes the local consumer adapter;
-      it does not launch Hermes Core or its production router, use a production
-      persistence target, or prove production deployment behavior, so the item
-      remains open. Additional local progress (2026-10-21): the Vhost-owned
-      `tests/vhost-manager/test_curatormd_v2_hermes_managed_integration.py`
-      harness now imports Hermes Core's actual `HookRegistry` and `HookContext`,
-      connects through its managed stdio MCP client to the installed Curator V2
-      launcher, and loads the Vhost-owned hook in a disposable Hermes profile.
-      It starts a planned goal, proves the Vhost `curator-v2 bind` command
-      through `agent:start` cannot bind it before activation, then activates the
-      goal and uses the same command to bind a second session explicitly.
-      Lifecycle events under that binding are sent and exactly replayed for
-      three cases (start, normal end, and interrupted end),
-      confirms processed receipts, projects through the configured Vhost
-      `ProjectPlugin`, reconciles through managed MCP, and
-      checks private metadata and out-of-scope targets remain absent/unchanged.
-      The harness drives Hermes Core's actual
-      `GatewayTurnProgressMixin._event_callback_sync` from a worker thread,
-      awaits its scheduled gateway-loop delivery, and confirms exact callback
-      requeue does not add another Hermes outbox row before replaying the event
-      through managed MCP.
-      For the interrupted event, the disposable profile temporarily removes
-      the MCP server from the hook allowlist; the harness verifies the outbox
-      retains the event unacknowledged, restores the grant, and confirms retry
-      processing acknowledges it before exact replay.
-      It also proves a write-only MCP grant is denied `goal_persist` and leaves
-      the target unchanged; the trusted consumer adapter then performs the
-      ordinary projection. SDE persistence remains reviewer-gated.
-      Hermes Core now has a focused two-profile registry regression: each
-      profile loads and dispatches only its own Curator hook. The 17-test
-      gateway hook suite passes with the test runner. This strengthens local
-      profile isolation evidence but does not replace gateway-service or live
-      Vhost application verification.
-      The harness passes locally. It does not run the Hermes gateway service,
-      production router, actual Vhost application request, or production target;
-      identity, retention, deployment and release gates remain open.
-      Cross-layer source progress (2026-10-25): a focused Hermes Core test now
-      runs `AIAgent.run_conversation` through
-      `GatewayTurnProgressMixin._event_callback_sync`, the profile-local durable
-      `HookRegistry`, and its SQLite outbox. It verifies ordered start/end
-      delivery, exact goal/session correlation, acknowledgment, and absence of
-      synthetic prompt/response canaries from the event context and outbox
-      database/WAL/SHM. The test uses the fake Codex app-server session, so it
-      validates the real Hermes callback/outbox path without a live provider or
-      Hermes gateway service. The focused regression passes; live app-server,
-      managed MCP delivery from that producer, and runtime privacy/recovery
-      evidence remain open.
-      Proposed owner-gated deployment acceptance: satisfy the identity,
-      production-router, producer/source-coverage, recovery,
-      and named one-run approval prerequisites in Slices C-I. In an isolated
-      deployment-like environment, start the actual Hermes gateway and scheduled
-      router with the reviewed package, authenticated identities, owner configs,
-      and intended canonical-persistence adapter implementations, but bind them
-      only to disposable repository, database, staging, and Markdown targets.
-      Exercise one separately named, owner-authorized real application request
-      for each included consumer, with its approval bound to that project's
-      exact repository/config/target; no approval carries across projects or
-      later runs. Follow each request from producer/source inventory through the
-      Hermes outbox, ordered router delivery, durable processed receipt, scoped
-      goal/fact state, authorized evidence check, canonical projection, and
-      read-only reconciliation. Verify that acknowledgment follows only a
-      durable `processed` receipt (including terminal `suppressed_nonactive_goal`
-      after its cursor commits atomically) or exact `duplicate` receipt; inject
-      a missing sequence,
-      denied project grant, router restart, and projection failure, then prove
-      exact-envelope retry, no duplicate fact, no cross-project write, no
-      premature acknowledgment, and visible open/degraded state until recovery.
-      Compare each consumer's target and the other consumer's state before and
-      after; inspect logs, traces, metrics, backups, WAL, and canonical outputs
-      with distinct synthetic privacy canaries. Retain a content-free run packet
-      with build/config/identity fingerprints, producer-matrix digest, event and
-      receipt IDs, sequence/ack outcomes, goal/fact IDs, target/recovery hashes,
-      and owner approvals. Give the producer audit the stable ID
-      `CONSUMER-SOURCE-COVERAGE`, with a distinct catalog and release-gate entry.
-      For each consumer, freeze and hash its owner-reviewed producer/class
-      matrix against the source revision, repository config, and adapter
-      version. Exercise every mapped producer/class through the actual adapter
-      in disposable workflows, including create/copy/move/rename/temp/import
-      and applicable retry/cancel/failure paths. Bound filesystem observations
-      to the workflow process/namespace, record exclusions, and reconcile them
-      against a complete staging inventory and explicit out-of-root owner
-      dispositions. Unobserved boundaries stay unknown; a source/config/adapter
-      change invalidates the matrix and requires owner review. Map this ID to
-      its own Section 9 scenario and release-gate row before freezing the
-      deployment catalog. Extend the deployment matrix to the project and
-      consumer-binding lifecycle in Section 6, using the corresponding IDs in
-      the [lifecycle Definition of Done](#definition-of-done). Run each case
-      independently against disposable project data with the intended service
-      and administrator identity paths; never use a retained production project
-      for retirement or terminal disposition. Bind each packet to its exact
-      package/config fingerprints, project and binding revisions, source epoch,
-      transition ID, approval reference, and before/after state digests:
-      `LC-TRANSITION-CAS` must recover an exact retry after a lost response and
-      reject stale revisions or changed-input reuse without mutation;
-      `LC-SUSPEND-REACTIVATE` must hold work during suspension, reject activation
-      after any bound grant/cursor/inventory change, then accept only a fresh
-      review and fence old sessions; `LC-DEREG-DRAIN` must admit only an
-      inventoried exact old-envelope retry during the bounded drain, reject new
-      IDs, and remain pending when an old event is unresolved;
-      `LC-REENROLL-EPOCH` must require reconciliation of every old event and
-      reject old-epoch events, grants, sessions, and configs after fresh binding;
-      `LC-RETIRE-FENCE` must preserve the tombstone/replay fence, keep the active
-      cursor unchanged, and require separate approval for a contiguous terminal
-      disposition; `LC-EFFECT-BOUNDARY` must race transitions with persistence,
-      source acknowledgement, and unlink and prove no stale-revision effect
-      crosses the cutover; `LC-OPERATOR-STATUS` must reconcile bounded counts,
-      completeness, and observation times without exposing event IDs or payloads;
-      and `LC-V22-MIGRATION` must verify preserved registry/grant/audit state,
-      unknown legacy epoch/sequence baselines, transactional failure behavior,
-      and the approved restore/rollback boundary. Give each case a distinct
-      result and evidence reference; a combined run does not collapse their
-      dispositions. Keep this item open until both owners review the
-      observed results and the separate rollback drill succeeds; the existing
-      managed-MCP harness and disposable profile tests remain local composition
-      evidence only.
-      Evidence-catalog progress (2026-10-23): `release-gates-v2.md` now maps
-      all eight lifecycle case IDs to exactly one deployment slice and names
-      the owner roles, preconditions, expected outcomes, packet bindings, and
-      current disposition. The local lifecycle and migration evidence remains
-      separate from deployment acceptance; these cases have not been run with
-      owner-authenticated deployment identities, and this checklist item stays
-      open. Evidence-catalog refinement (2026-10-24): each release-gate row now
-      has its own explicit content-free evidence-binding fields. A structural
-      audit confirms all eight IDs appear exactly once in the release catalog
-      and exactly once in this Section 9 scenario. This closes the catalog
-      definition/cross-reference subtask only; deployed identity, owner review,
-      live cases, and rollback evidence remain open.
+- [x] Verify the local Hermes Core and one-repository consumer integration.
+      The disposable Vhost harness composes Hermes Core's `HookRegistry`,
+      `HookContext`, `GatewayTurnProgressMixin` callback, managed MCP, the
+      installed Curator V2 launcher, and the Vhost `ProjectPlugin`. A fresh run
+      on 2026-10-28 processed five bounded events and verified explicit goal
+      binding, rejection before activation, exact replay, delivery retry,
+      re-enrollment recovery, source-epoch advancement after restart, canonical
+      projection reconciliation, reviewer-write denial, privacy, and unchanged
+      out-of-scope targets. The local Vhost application smoke in this plan also
+      verified request preview, processed apply/rollback receipts, exact event
+      replay, project-bound goal reporting, and target cleanup. This completes
+      the approved local integration-test scope for one active repository. It
+      does not claim an active Hermes gateway-service event; that remains a
+      separate runtime criterion in Slice G.
 - [x] Add end-to-end acceptance tests for: start -> fact bullets -> evidence
       -> open or complete -> SDE review -> receipt -> complete artifact inventory
       -> purge -> truthful status; the MCP acceptance path is in

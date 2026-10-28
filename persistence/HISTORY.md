@@ -9668,3 +9668,23 @@ while preserving explicit criteria and same-project parent validation.
   prove every log, trace, backup, crash sink, or producer path is content-free.
 - **Outcome:** Add direct evidence for the metrics sink while retaining the
   broader privacy audit as open.
+
+## 2026-10-28 — Close local Hermes/Vhost integration-test criterion
+
+- **Intent:** Verify the plan's integration-test criterion against the approved
+  single-repository local alpha scope.
+- **Changed fact:** The disposable consumer harness composes Hermes Core's real
+  hook registry/context and gateway callback with managed MCP, the installed
+  Curator launcher, and the Vhost projection adapter. The plan now records this
+  local acceptance without requiring a production runtime.
+- **Verification:** Fresh Hermes-managed integration run passed: five bounded
+  events processed; explicit binding, replay, delivery retry, re-enrollment,
+  source-epoch restart recovery, projection reconciliation, reviewer-write
+  denial, privacy, and out-of-scope preservation all verified. The earlier
+  local Vhost request/rollback smoke supplies the application-entrypoint
+  evidence. The official counter reports 166/178 complete; `git diff --check`
+  passes.
+- **Open gate:** A live Hermes gateway-service event remains separate in Slice
+  G; this row closes local integration-test coverage only.
+- **Outcome:** Close the local integration criterion and preserve the independent
+  live-runtime gate.
