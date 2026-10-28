@@ -7346,7 +7346,8 @@ substitute for evidence at a later integration boundary.
       interrupted receipt/projection, and the local failure matrix are covered
       by focused tests. Permanent-data budgets and inbox compaction remain open
       in their separate checklist item; this row closes the approved local
-      recovery workflow.
+      recovery workflow. Owner reconfirmed the seven-copy private backup rule
+      and attended restore approval on 2026-10-28; see the recovery runbook.
 - [x] **D. Build authenticated backend interfaces:** implement event ingress,
       review queue/detail/decision API, MCP transport, authorization, rate limits,
       audit identities, and end-to-end denial tests for wrong project/role.

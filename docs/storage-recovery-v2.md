@@ -8,6 +8,11 @@ both, stop automatic projection and purge for the affected target, and ask
 projected again through the authorized Curator operation. Never rebuild SQLite
 from Markdown or switch to a restored database automatically.
 
+Owner confirmation (2026-10-28): keep seven daily copies in the private Curator
+state directory. A restore requires `eaglesvn` to select the backup and
+destination and review it before use; Curator must never overwrite or switch
+the live database automatically.
+
 ## Backups and restore
 
 The local six-hour maintenance run creates one verified online backup per UTC
