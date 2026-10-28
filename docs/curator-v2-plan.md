@@ -9408,9 +9408,15 @@ substitute for evidence at a later integration boundary.
       confirms the previously reported dependency-unknown state is resolved at
       the trusted probe; visible desktop rendering remains unverified.
       This repairs the reported unknown status source; it does not close
-      unrelated acceptance checks. This row
-      remains open until the applicable checks are reconciled against the same package and
-      project binding; a unit test or an unrelated profile probe cannot stand
+      unrelated acceptance checks. Restore-to-new-path progress
+      (2026-10-28 13:14 UTC): the installed storage CLI restored the verified
+      2026-10-28 daily SQLite backup to a new owner-only review path. The
+      command verified SQLite integrity and foreign keys, the restored file is
+      mode 0600, and the live database's SHA-256 was unchanged before and after.
+      The restored copy was not activated. Backup rotation, package rollback,
+      target-hash comparison, and other acceptance evidence remain open, so
+      the alpha acceptance row remains open. A unit test or an unrelated
+      profile probe cannot stand
       in for a local workflow check.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The

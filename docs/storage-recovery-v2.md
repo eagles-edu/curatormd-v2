@@ -93,6 +93,16 @@ status, not paths or raw SQLite errors.
 | Purge interruption and retry after deletion before receipt update | [`tests/test_purge_lifecycle.py`](../tests/test_purge_lifecycle.py) | Pending work remains visible and exact retry records the already-absent target. |
 | Blocked WAL cleanup across restart | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py) | Cleanup stays pending while a reader blocks truncation and is retried after restart. |
 
+Live local-alpha restore (2026-10-28 13:14 UTC): the installed
+`curatormd-v2-storage` command restored the verified daily backup
+`curator-v2-2026-10-28.sqlite3` to the new owner-only path
+`/home/eaglesvn/.local/share/curatormd-v2-alpha/recovery-review-2026-10-28.sqlite3`.
+The command verified SQLite integrity and foreign keys. The result is owned by
+UID 1000 with mode `0600`; the active database hash was unchanged before and
+after, and the restored copy was not activated. This verifies restore to a new
+path for this local snapshot; it does not establish seven-copy rotation or
+broader backup recovery behavior.
+
 The local failure-injection matrix and backup suites are run and recorded in
 [`curator-v2-plan.md`](curator-v2-plan.md). These tests cover the local SQLite
 and filesystem adapters; they do not promise host power-loss durability.

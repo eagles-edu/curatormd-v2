@@ -10166,3 +10166,24 @@ while preserving explicit criteria and same-project parent validation.
   exclusion boundary exists; keep the usage/budget checklist row open. No token
   budget or external alert service is required for the approved local alpha.
 - **Outcome:** Refresh factual usage evidence and keep coverage claims bounded.
+
+## 2026-10-28 — Verify live alpha restore to a new path
+
+- **Intent:** Verify the approved local-alpha SQLite restore path without
+  overwriting or switching the live database.
+- **Changed fact:** The installed Curator V2 storage CLI restored
+  `/home/eaglesvn/.local/share/curatormd-v2-alpha/backups/curator-v2-2026-10-28.sqlite3`
+  to the new review copy
+  `/home/eaglesvn/.local/share/curatormd-v2-alpha/recovery-review-2026-10-28.sqlite3`.
+  The copy remains inactive and owner-only. The active database is unchanged.
+- **Verification:** The command returned `{"operation":"restore","status":"verified"}`,
+  which includes SQLite integrity and foreign-key checks. The restored file is
+  UID 1000, mode `0600`, 524,288 bytes. Its SHA-256 matches the selected
+  backup; the active database SHA-256 was
+  `8d819e782ddba1f9064e18a7e1aa1707a4455cc008c3cd79b26a2134b0e18334`
+  both before and after the restore. No application service was restarted.
+- **Open gate:** Seven-copy rotation, package rollback, target-hash comparison,
+  and the other local-alpha acceptance checks remain open. Keep the parent
+  acceptance checkbox unchecked; no checklist count changes.
+- **Outcome:** Record one live restore verification and preserve the separate
+  active database and review copy.
