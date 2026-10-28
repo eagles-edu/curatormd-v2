@@ -8865,6 +8865,15 @@ substitute for evidence at a later integration boundary.
       still required. A post-write `goal_report` confirms the fact is present
       and the criterion remains open. No checklist marker changed; this is
       durable status evidence, not lifecycle-delivery proof.
+      Persistence/health recheck (2026-10-28 01:20 UTC): the supported Hermes
+      profile probe exits 0 and reads the same bound project: 52/52 processed
+      receipts, 23 goals, and 20 facts. Its separate health observation is
+      `healthy`, with all seven dependencies fresh and an empty complete
+      staging inventory. A metadata-only outbox query still finds 11/11
+      acknowledged Codex lifecycle events, latest sequence 11 at
+      `2026-10-21T10:40:21Z`; no event payload was read. Ledger persistence and
+      local profile health are verified; new managed-gateway lifecycle
+      delivery remains open.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the

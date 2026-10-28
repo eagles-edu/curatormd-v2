@@ -9175,3 +9175,15 @@ while preserving explicit criteria and same-project parent validation.
 **Open gate:** The unit suite was not rerun. These static and dependency checks do not establish deployment, scheduler, identity, production retention, or live Hermes lifecycle behavior. No checklist marker changed.
 
 **Outcome:** Refresh local quality evidence only; keep runtime and release acceptance separate.
+
+## 2026-10-28 — Verify the profile-bound Curator V2 ledger
+
+**Intent:** Verify Curator V2 persistence through the supported Hermes profile path after recording the open lifecycle gate.
+
+**Changed fact:** No ledger or runtime code changed. The trusted `renew-ssl-coding` profile read returns the `vhost-manager-alpha` ledger with 52 processed receipts, 23 goals, and 20 facts; the separate health snapshot is healthy with seven fresh dependencies and a complete empty staging inventory.
+
+**Verification:** `./hermes -p renew-ssl-coding mcp test curator_v2 --probe-curator-status` exits 0, connects over local stdio, discovers 49 tools, and reads activity, goals, and health. A separate read-only SQLite metadata query finds 11/11 acknowledged Codex outbox events, latest sequence 11 at `2026-10-21T10:40:21Z`; no event payload was queried.
+
+**Open gate:** The profile ledger read is not a new Codex app-server lifecycle event. Slice G remains open for a real managed-gateway turn and its durable receipt. No checklist marker changed.
+
+**Outcome:** Confirm profile-bound persistence and current local health while preserving the live lifecycle gate.
