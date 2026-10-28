@@ -8879,7 +8879,12 @@ substitute for evidence at a later integration boundary.
       Snapshot validation update (2026-10-28): the dashboard now rejects
       `goal_report` responses missing a valid 64-character revision or fact
       total, so a malformed report cannot be rendered as a complete page. The
-      focused Node suite passes 15 tests; VSIX 0.9.1 is packaged and installed.
+      Focused Node suite (2026-10-28) passes 16 tests. Extension 0.9.2 is
+      packaged and installed; its installed `extension.js` SHA-256 matches the
+      source at
+      `1f863844c655c0ddd9bb76ecbb8f609fb61f4b9ade920896065def34525551bf`.
+      The attempted VS Code CLI reload used an unsupported `--command` option,
+      so activation of 0.9.2 in the already-open window is not claimed.
       Editor interaction follow-up (2026-10-28 05:18 UTC): the reloaded
       `renew_ssl` VS Code window visibly renders the V2 status item immediately
       after Git Graph in yellow `unknown` state and displays a project-scoped
@@ -8898,6 +8903,10 @@ substitute for evidence at a later integration boundary.
       This closes the uninitialized-page-snapshot gap only; live grant changes,
       trust/revocation changes, complete evidence verification, and attended
       review/cleanup remain open, so the dashboard checklist stays unchecked.
+      Package refresh (2026-10-28): version 0.9.2 includes the page guard; its
+      VSIX SHA-256 is `3af84365dd67b2aeb623122cb76d60a9ea89a43bb58a4564a731b21603839994`.
+      The installed version and source hash match, but rendered 0.9.2 behavior
+      remains unverified until the editor window reloads.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
