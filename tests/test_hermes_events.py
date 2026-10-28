@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -107,6 +108,91 @@ class HermesCodexEventTests(unittest.TestCase):
         self.assertEqual(event.payload.kind, FactKind.CHANGE)
         self.assertIn("no success criterion was verified", event.payload.bullet)
         self.assertNotIn("turn-1", event.to_json())
+
+    def test_bound_work_summary_records_files_and_check_exit_without_raw_text(self) -> None:
+        fingerprint = "a" * 64
+        binding = CodexGoalBinding(
+            profile_id="gptmd-coding",
+            project_id="gptmd",
+            session_id="session-1",
+            goal_id="goal-1",
+            source_id="hermes.gptmd-coding",
+            repository_fingerprint=fingerprint,
+        )
+        summary = json.dumps({
+            "schema_version": 1,
+            "repository_fingerprint": fingerprint,
+            "changed_files": [{"path": "src/change.py", "change": "update"}],
+            "omitted_files": 0,
+            "checks": [{"name": "scripts/check", "exit_code": 0}],
+            "omitted_checks": 0,
+        })
+
+        event = codex_hook_to_event(
+            "codex:turn:end",
+            {
+                "attempt_id": "attempt-summary",
+                "session_id": "session-1",
+                "turn_id": "turn-summary",
+                "outcome": "completed",
+                "work_summary_json": summary,
+            },
+            binding,
+            source_sequence=2,
+            occurred_at="2026-10-19T00:01:00+00:00",
+        )
+
+        assert isinstance(event.payload, GoalActivityObserved)
+        self.assertEqual(event.payload.kind, FactKind.CHANGE)
+        self.assertIn("src/change.py (update)", event.payload.bullet)
+        self.assertIn("scripts/check exited 0", event.payload.bullet)
+        self.assertIn("no success criterion was verified", event.payload.bullet.lower())
+        self.assertNotIn("work_summary_json", event.to_json())
+        self.assertNotIn("repository_fingerprint", event.to_json())
+
+    def test_work_summary_with_other_repository_or_failed_check_is_not_green(self) -> None:
+        binding = CodexGoalBinding(
+            profile_id="gptmd-coding",
+            project_id="gptmd",
+            session_id="session-1",
+            goal_id="goal-1",
+            source_id="hermes.gptmd-coding",
+            repository_fingerprint="a" * 64,
+        )
+        summary = json.dumps({
+            "schema_version": 1,
+            "repository_fingerprint": "b" * 64,
+            "changed_files": [{"path": "src/other.py", "change": "update"}],
+            "omitted_files": 0,
+            "checks": [{"name": "pytest", "exit_code": 2}],
+            "omitted_checks": 0,
+        })
+        context = {
+            "attempt_id": "attempt-summary-gate",
+            "session_id": "session-1",
+            "turn_id": "turn-summary-gate",
+            "outcome": "completed",
+            "work_summary_json": summary,
+        }
+
+        mismatched = codex_hook_to_event(
+            "codex:turn:end", context, binding,
+            source_sequence=2, occurred_at="2026-10-19T00:01:00+00:00",
+        )
+        assert isinstance(mismatched.payload, GoalActivityObserved)
+        self.assertEqual(mismatched.payload.kind, FactKind.CHANGE)
+        self.assertNotIn("src/other.py", mismatched.payload.bullet)
+
+        matching_summary = json.loads(summary)
+        matching_summary["repository_fingerprint"] = "a" * 64
+        context["work_summary_json"] = json.dumps(matching_summary)
+        failed = codex_hook_to_event(
+            "codex:turn:end", context, binding,
+            source_sequence=2, occurred_at="2026-10-19T00:01:00+00:00",
+        )
+        assert isinstance(failed.payload, GoalActivityObserved)
+        self.assertEqual(failed.payload.kind, FactKind.OPEN_GATE)
+        self.assertIn("pytest exited 2", failed.payload.bullet)
 
     def test_failed_or_interrupted_turn_remains_an_open_gate(self) -> None:
         for outcome in ("failed", "interrupted"):

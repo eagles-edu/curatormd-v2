@@ -51,6 +51,18 @@ class ApiHealthMetricsTests(_ApiTestSupport):
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.project_health(AuthenticatedCaller("other-user"), "project-a")
 
+    def test_project_repository_fingerprint_requires_project_read_access(self) -> None:
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+
+        self.assertEqual(
+            api.project_repository_fingerprint(self.caller, "project-a"),
+            self.plugin.config.repository_fingerprint,
+        )
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.project_repository_fingerprint(
+                AuthenticatedCaller("other-user"), "project-a"
+            )
+
 
     def test_project_activity_separates_no_capture_from_unknown_readiness(self) -> None:
         api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)

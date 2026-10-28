@@ -419,6 +419,15 @@ class _APIEventMethods(_APIState):
             caller, project_id, ProjectAction.READ
         ).activity_status()
 
+    def project_repository_fingerprint(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> str:
+        """Read the authorized repository binding for producer evidence checks."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.READ
+        ).config.repository_fingerprint
+
     def project_health(
         self, caller: AuthenticatedCaller, project_id: str
     ) -> ProjectHealthSnapshot:

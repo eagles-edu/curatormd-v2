@@ -304,6 +304,9 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
             session_id=session_id,
             goal_id=goal_id,
             source_id=source_id,
+            repository_fingerprint=api.project_repository_fingerprint(
+                caller, project_id
+            ),
         )
         event = codex_hook_to_event(
             event_type,

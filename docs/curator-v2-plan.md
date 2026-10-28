@@ -586,9 +586,16 @@ plugin or Hermes integration is installed and working end to end.
       ordinary project reads. Focused tests verify `VIEW` authorization, class
       attribution, and that identifiers are not returned. The global inbox byte
       total includes `event_retry_audit` bytes, while its receipt count counts
-      only `event_inbox` rows. For each class, the owner, retention horizon,
-      recovery source, and capacity threshold still need approval. Do not treat
-      current logical totals or receipt counts as complete database accounting.
+      only `event_inbox` rows. Owner-approved local-alpha default (2026-10-28):
+      retain goals, facts, SDE decisions, review/cleanup/recovery receipts,
+      grants/audit rows, and processed receipts until `eaglesvn` approves
+      cleanup of an exact displayed inventory; never automatically prune these
+      classes. Existing hard caps remain unchanged, and the 250 MiB backup-tree
+      threshold is warning-only. Pending retry/quarantine payload age remains
+      undecided. This records policy approval, not implementation proof.
+      Complete logical and physical accounting, class capacity thresholds, and
+      recovery-source accounting remain open. Do not treat current totals as
+      complete database accounting.
       Existing local controls include a 10,000-row maximum for request-rate
       buckets with idle-only pruning and deletion of WAL-scrub queue rows after
       a successful checkpoint. These controls do not establish a complete
@@ -7180,7 +7187,33 @@ Final report: completed facts, open items, recovery path, next action
       archive. Event, migration, schema, compaction, and Markdown regressions
       cover replay, legacy nulls, archive retrieval, and rendered bullets. This
       does not yet automatically record changed-file lists or exact command
-      results from live development sessions; that remains open.
+      results from live development sessions; that remains open. Producer trace
+      (2026-10-28): Curator's `hermes_codex_event` accepts only the two generic
+      `codex:turn:start` and `codex:turn:end` activities. Hermes's Codex
+      app-server bridge receives structured `fileChange` and
+      `commandExecution` items, but the profile outbox allowlist retains only
+      lifecycle correlation fields, outcome, and failure class; it does not
+      persist file-change paths, command output, or prompt/response text. The
+      next implementation belongs at that producer boundary: derive a bounded
+      project-relative changed-file list and allowlisted command result summary,
+      then send it through the existing durable outbox and Curator fact event.
+      Implementation progress (2026-10-28): Hermes now collects only completed
+      Codex `fileChange` paths and exit codes from a small allowlist of local
+      quality commands. It binds the summary to a hash of the active project
+      root, excludes absolute/out-of-root and secret-like paths, caps the summary
+      at 4 KiB, and excludes command arguments, prompts, and output. The durable
+      outbox validates the schema before persistence. Curator checks that the
+      summary fingerprint matches the authorized project config, then records
+      compact changed-path and check-result facts; failed checks become open
+      gates, and no check is treated as criterion verification. The repository
+      fingerprint is fetched through a project-read-authorized API method.
+      Hermes focused app-server, summary, and outbox tests pass 46/46; its
+      12-check quality command passes, and a post-integration Ruff/health rerun
+      passes both checks. Curator's focused event, hook, and API suites pass
+      33/33, with `git diff --check` clean in both repositories. The item stays
+      open until a real bound Hermes profile turn delivers this summary and its
+      compact fact is read back from the configured Curator ledger; local unit
+      and integration tests do not establish that live route.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer
@@ -9300,8 +9333,9 @@ substitute for evidence at a later integration boundary.
       scope is single-user development with one repository active at a time.
       The local producer/artifact audit is complete for the approved one-repository
       alpha, including standalone utilities and owner-disposition of out-of-root
-      artifacts. Gate F remains open for local human disposition, permanent-data
-      retention/recovery decisions, and alpha sign-off. Concurrent or shared
+      artifacts. Gate F remains open for local human disposition, pending
+      retry/quarantine retention and recovery details, complete permanent-data
+      accounting, and alpha sign-off. Concurrent or shared
       multi-consumer support is outside the approved alpha scope.
 - [ ] The single-user local alpha has evidence for the operating and recovery
       behavior that this development utility actually uses. Acceptance scope is
@@ -9342,6 +9376,20 @@ substitute for evidence at a later integration boundary.
       logical project-record bytes, zero retained event-payload bytes, a
       524,288-byte shared database, a 300,792-byte WAL, and a complete empty
       staging inventory below the 262,144,000-byte warning threshold.
+      Fresh readiness recheck (2026-10-28 12:49 UTC): from the configured
+      Vhost workspace, the exact Hermes Core profile probe used by the installed
+      extension returned `healthy`, all seven dependencies healthy, and zero
+      gates (exit 0, project `vhost-manager-alpha`). This refreshes the prior
+      probe evidence; a direct Curator MCP read without Hermes-injected profile
+      context remains unauthenticated and is not a health observation. This
+      does not verify the currently rendered desktop panel or close the other
+      local acceptance checks.
+      Fresh readiness recheck (2026-10-28 13:02 UTC): the same configured
+      profile probe connected successfully and returned schema version 1,
+      project `vhost-manager-alpha`, status `healthy`, all seven dependency
+      observations fresh and healthy, and zero gates. Exit status was 0. This
+      confirms the previously reported dependency-unknown state is resolved at
+      the trusted probe; visible desktop rendering remains unverified.
       This repairs the reported unknown status source; it does not close
       unrelated acceptance checks. This row
       remains open until the applicable checks are reconciled against the same package and

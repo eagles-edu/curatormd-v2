@@ -10043,3 +10043,104 @@ while preserving explicit criteria and same-project parent validation.
   marker changed.
 - **Outcome:** Measure current backup-tree size while preserving the exact
   seven-copy snapshot policy and unknown recovery files.
+
+## 2026-10-28 — Refresh local-alpha readiness observations
+
+- **Intent:** Resolve the reported unknown health dependencies using the
+  configured, trusted Hermes profile probe for the one-repository alpha.
+- **Changed fact:** The `renew-ssl-coding` profile probe returns project
+  `vhost-manager-alpha` with all seven dependencies healthy and no health gates.
+- **Verification:** Ran the configured Hermes Core source-checkout command
+  from `/home/eaglesvn/dockerz/renew_ssl` at 2026-10-28 12:49 UTC; it exited 0.
+  The timestamped JSON reports fresh `event_router`, `purge_scheduler`,
+  `database_storage_adapter`, `host_identity`, `human_review`,
+  `alert_delivery`, and `artifact_producer_inventory` observations. Direct
+  Curator MCP access without trusted Hermes profile context remains
+  unauthenticated and provides no health evidence.
+- **Open gate:** The displayed VS Code dashboard and status-bar color have not
+  been checked in a rendered desktop session. The local-alpha acceptance and
+  unrelated recovery/retention checks remain open.
+- **Outcome:** Refresh the trusted health evidence without changing policy or
+  claiming untrusted reads as healthy.
+
+## 2026-10-28 — Add bounded Codex work evidence to V2 events
+
+- **Intent:** Capture changed project paths and exact results of recognized
+  local checks in the existing Hermes lifecycle event without storing raw
+  commands, prompts, or output.
+- **Changed fact:** Hermes now builds a capped summary from completed app-server
+  file-change and command-execution items, binds it to the project-root
+  fingerprint, and validates it in the durable outbox. Curator accepts only a
+  summary matching the authorized project repository fingerprint and renders
+  changed-path/check facts; nonzero check results are open-gate facts. Source
+  binding now uses a project-read-authorized API accessor.
+- **Verification:** Hermes focused integration/summary/outbox runner passed 46
+  tests; `python3 scripts/check --base HEAD` passed 12 checks, and the
+  post-integration `python3 scripts/check --only ruff,health --base HEAD` passed
+  both checks. Curator's focused event, adapter, and API-health suites passed
+  33 tests; `git diff --check` passed in both repositories.
+- **Open gate:** No live bound profile event has yet been observed carrying this
+  summary and producing the compact fact in the configured Curator ledger. Keep
+  the plan item open until that profile-to-ledger path is verified.
+- **Outcome:** Implement and test the bounded producer-to-fact path while
+  preserving the live verification gate.
+
+## 2026-10-28 — Approve local-alpha durable-record retention default
+
+- **Intent:** Record the owner's retention decision for durable local-alpha
+  records without changing runtime deletion behavior or closing the broader
+  storage-policy checklist item.
+- **Changed fact:** `eaglesvn` approved retaining goals, facts, SDE decisions,
+  review/cleanup/recovery receipts, grants/audit rows, and processed receipts
+  until approval of cleanup for an exact displayed inventory, with no
+  automatic pruning. Existing hard caps remain unchanged; the 250 MiB
+  backup-tree limit is warning-only. Pending retry/quarantine payload age
+  remains undecided. The local-alpha policy and plan now state these decisions
+  and keep implementation proof and complete storage accounting open.
+- **Verification:** Inspected the V2 policy, storage checklist section, and
+  source deletion paths. Existing separate mechanisms include idle rate-limit
+  bucket pruning, WAL scrub-queue removal after successful checkpoint, staging
+  metadata cleanup, and fact compaction through its approval flow; no runtime
+  code was changed. `git diff --check` passes and the plan remains 183/194
+  complete (11 open); no checklist marker changed.
+- **Open gate:** Pending retry/quarantine payload age, complete logical and
+  physical accounting, permanent-class warning levels, and source enforcement
+  of the approved no-auto-prune rule remain open. Keep the plan checkbox
+  unchecked.
+- **Outcome:** Persist the approved policy while preserving explicit unknowns
+  and the full V2 goal.
+
+## 2026-10-28 — Recheck local-alpha dependency health
+
+- **Intent:** Recheck the seven dependencies previously reported as unknown
+  using the configured trusted Hermes profile probe.
+- **Changed fact:** The `renew-ssl-coding` probe connected to the V2 alpha and
+  returned `healthy` for `vhost-manager-alpha`, with all seven dependencies
+  observed healthy and zero gates. The approved durable-record retention rule
+  is reflected in the content-free alpha evidence snapshot; pending
+  retry/quarantine payload age and complete storage accounting remain open.
+- **Verification:** Ran the configured Hermes Core `mcp test curator_v2
+  --probe-curator-status --json` command from the Vhost workspace at
+  2026-10-28 13:02 UTC; exit status 0, schema version 1, connected true, zero
+  failed/quarantined events, zero pending review or purge counts.
+- **Open gate:** The visible VS Code rendering/status color and the remaining
+  local-alpha acceptance checks have not been verified by this probe.
+- **Outcome:** Refresh trusted health evidence and keep unrelated alpha gates
+  open.
+
+## 2026-10-28 — Verify V2 changes before publication
+
+- **Intent:** Run the repository quality gates before the owner-authorized push.
+- **Changed fact:** Strict typing in the bounded Hermes work-summary decoder
+  and its adapter test was corrected after the quality run surfaced unknown
+  JSON types. No runtime behavior was intentionally changed by that correction.
+- **Verification:** Curator Pyright reports zero errors, errors-only Pylint
+  exits successfully, Bandit exits successfully, the locked vulnerability audit
+  finds no known issues, and `git diff --check` passes. Hermes Core
+  `python3 scripts/check --base HEAD` passes all 12 checks; its focused behavior
+  suite had already passed in the immediately preceding implementation turn.
+- **Open gate:** The real bound Hermes profile-to-Curator fact readback remains
+  open; local checks do not establish that live producer path. Other alpha and
+  owner-review items remain open.
+- **Outcome:** Correct the checker finding and verify both repositories before
+  pushing the V2 work.

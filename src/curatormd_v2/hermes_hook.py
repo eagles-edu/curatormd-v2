@@ -13,7 +13,10 @@ from .project_config import ProjectConfig
 
 
 _EVENT_CONTEXT_FIELDS = frozenset(
-    {"attempt_id", "session_id", "turn_id", "outcome", "failure_kind"}
+    {
+        "attempt_id", "session_id", "turn_id", "outcome", "failure_kind",
+        "work_summary_json",
+    }
 )
 _SUPPORTED_EVENTS = frozenset({"codex:turn:start", "codex:turn:end"})
 ToolCall = Callable[..., str | Awaitable[str]]
@@ -24,7 +27,9 @@ HermesHook = Callable[
 
 
 def _build_payload(
-    event_type: str, hook_context: Mapping[str, Any]
+    event_type: str,
+    hook_context: Mapping[str, Any],
+    repository_fingerprint: str,
 ) -> dict[str, Any]:
     """Keep only the bounded event fields understood by Curator V2."""
 
@@ -33,6 +38,21 @@ def _build_payload(
         for key in _EVENT_CONTEXT_FIELDS
         if key in hook_context
     }
+    summary = context.get("work_summary_json")
+    if isinstance(summary, str) and len(summary) <= 4096:
+        try:
+            decoded = json.loads(summary)
+        except ValueError:
+            context.pop("work_summary_json", None)
+        else:
+            if (
+                not isinstance(decoded, dict)
+                or cast(dict[str, object], decoded).get("repository_fingerprint")
+                != repository_fingerprint
+            ):
+                context.pop("work_summary_json", None)
+    else:
+        context.pop("work_summary_json", None)
     if context.get("session_id") != hook_context.get("session_id"):
         raise ValueError("event session binding is inconsistent")
     payload = {
@@ -161,7 +181,9 @@ def build_hermes_hook_handler(
         if hook_context.get("project_id") != config.project_id:
             return None
         try:
-            payload = _build_payload(event_type, hook_context)
+            payload = _build_payload(
+                event_type, hook_context, config.repository_fingerprint
+            )
             result = await _call_curator(
                 payload,
                 server_name=server_name,

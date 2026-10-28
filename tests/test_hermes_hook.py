@@ -338,6 +338,48 @@ class HermesHookAdapterTests(unittest.TestCase):
                 asyncio.run(failing_exception("codex:turn:start", event))
             )
 
+    def test_work_summary_is_forwarded_only_for_the_configured_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            configure_stdio_consumer(root, "project-a")
+            handle, calls = _recording_hook_handler(root)
+            from curatormd_v2.project_config import ProjectConfig
+
+            fingerprint = ProjectConfig.load(root).repository_fingerprint
+            summary = json.dumps({
+                "schema_version": 1,
+                "repository_fingerprint": fingerprint,
+                "changed_files": [{"path": "src/change.py", "change": "update"}],
+                "omitted_files": 0,
+                "checks": [],
+                "omitted_checks": 0,
+            })
+            event: dict[str, Any] = {
+                "project_id": "project-a",
+                "goal_id": "goal-1",
+                "event_id": "hermes-event-1",
+                "source_sequence": 4,
+                "occurred_at": "2026-10-19T00:00:00+00:00",
+                "attempt_id": "attempt-1",
+                "session_id": "session-1",
+                "turn_id": "turn-1",
+                "outcome": "completed",
+                "work_summary_json": summary,
+            }
+
+            self.assertTrue(asyncio.run(handle("codex:turn:end", event)))
+            forwarded_context = cast(dict[str, object], calls[-1][2]["context"])
+            self.assertEqual(
+                forwarded_context["work_summary_json"], summary
+            )
+
+            mismatched = json.loads(summary)
+            mismatched["repository_fingerprint"] = "b" * 64
+            event["work_summary_json"] = json.dumps(mismatched)
+            self.assertTrue(asyncio.run(handle("codex:turn:end", event)))
+            forwarded_context = cast(dict[str, object], calls[-1][2]["context"])
+            self.assertNotIn("work_summary_json", forwarded_context)
+
     def test_lost_event_response_replays_receipt_after_project_suspension(self) -> None:
         """A lost reply is acked only by exact receipt replay after suspension."""
         with tempfile.TemporaryDirectory() as temporary:
