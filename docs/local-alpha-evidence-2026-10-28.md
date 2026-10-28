@@ -1,6 +1,6 @@
 # Local Curator V2 alpha evidence snapshot
 
-Updated 2026-10-28 05:43 UTC. Each row retains its observation time. This is
+Updated 2026-10-28 05:44 UTC. Each row retains its observation time. This is
 a content-free snapshot for the single-user, one-repository development alpha.
 It does not authorize another capture, cleanup, or policy change.
 
@@ -12,6 +12,8 @@ It does not authorize another capture, cleanup, or policy change.
 - Installed only in `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/curator-v2-alpha-venv`.
 - Repository config: `vhost-manager-alpha`, SHA-256
   `a37448f38683c864480d4f90db8fc6a6b694311679b598979f86ff574713f746`.
+- Binding recheck (2026-10-28 05:44 UTC): `.curatormd-v2.toml` remains a regular
+  file owned by UID 1000 with mode `0600`; its SHA-256 matches the bound value.
 - Local owner: `eaglesvn`, UID 1000. Alpha ledger:
   `/home/eaglesvn/.local/share/curatormd-v2-alpha/global.sqlite3`, mode `0600`;
   containing directory mode `0700`.
