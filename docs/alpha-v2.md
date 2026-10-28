@@ -16,7 +16,7 @@ changes in the Hermes Core repository; they are not part of this wheel. The
 Vhost Manager consumer plugin and hook are installed in its isolated local
 Hermes profile for alpha testing.
 The separate V2-owned VS Code extension
-`curatormd.curatormd-v2-status@0.8.8` is installed. It provides the project
+`curatormd.curatormd-v2-status@0.9.0` is installed. It provides the project
 dashboard, a bounded operational attention summary, review-queue display, and
 attended review handoff. Its status item appears immediately to the right of
 Git Graph. Gray means health has not been read, green means healthy, yellow
@@ -24,20 +24,22 @@ means unknown, red means degraded, and purple means review is pending when no
 other degraded gate takes precedence. Purple is covered by focused UI tests;
 the live project has no pending review to display it.
 
-The reloaded `renew_ssl` editor now has direct hover-level evidence: the item
-is yellow and its rendered text is `CuratorMD V2 0.8.8. Yellow means health or
-the SDE review count is unknown. Project health: unknown, no SDE reviews
-pending. Click to open the project-scoped dashboard.` The gray hover says no
-health read has been attempted. Each active color now explains its meaning.
+The last direct hover-level observation in the reloaded `renew_ssl` editor was
+from 0.8.8: the item was yellow and reported unknown health with no SDE reviews
+pending. Version 0.9.0 adds same-project health gate codes to the tooltip, but
+the active editor must be reloaded before that detail is visible. Gray means
+health has not been read; green means healthy; purple means an SDE review is
+pending without another degraded gate; yellow means health or the review count
+is unknown; red means another health gate is degraded.
 The dashboard reads the bound `vhost-manager-alpha` project: 41 processed
 receipts, 18 goals, 14 facts, no pending SDEs, and a complete empty staging
 inventory. Storage reports `0 B / 250.0 MiB` at a warning-only threshold and
 states writes remain allowed; model/token use is not reported in this view.
-The seven unknown dependency gates explain the yellow state. This verifies the
-configured consumer editor and tooltip, not review/purge, complete token
-coverage, or deployed monitoring. The Curator V2 backend checkout remains a
-global backend, not a consumer project; it does not need a consumer config or
-status-bar activation.
+The last observed seven unknown dependency gates explain the yellow state.
+This verifies the configured consumer editor and tooltip, not review/purge,
+complete token coverage, or deployed monitoring. The Curator V2 backend
+checkout remains a global backend, not a consumer project; it does not need a
+consumer config or status-bar activation.
 
 ## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
 
