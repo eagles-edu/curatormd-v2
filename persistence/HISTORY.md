@@ -10212,3 +10212,29 @@ while preserving explicit criteria and same-project parent validation.
   decision alone.
 - **Outcome:** Enforce the approved retry-retention rule in the failure path
   while keeping the broader alpha acceptance gates open.
+
+## 2026-10-29 — Recheck the composed Hermes managed-MCP path
+
+- **Intent:** Verify current Curator source through the disposable Vhost-owned
+  Hermes hook integration without changing the live consumer or ledger.
+- **Changed fact:** The Vhost harness composes Hermes Core hook dispatch, the
+  Curator MCP stdio launcher, and the Vhost hook against temporary state. It
+  passed exact goal binding, planned-goal denial, five processed events, exact
+  replay, failed-delivery retry, lost-ack recovery after re-enrollment,
+  source-epoch advancement, projection reconciliation, privacy exclusions,
+  out-of-scope preservation, and reviewer persist denial.
+- **Changed fact:** A separate trusted profile probe connected to
+  `vhost-manager-alpha` and reported all seven dependencies healthy, zero
+  operational gates, and zero received, failed, or quarantined event backlog.
+- **Verification:** Ran the documented
+  `tests/vhost-manager/test_curatormd_v2_hermes_managed_integration.py` with
+  Hermes Core's test interpreter, the alpha profile interpreter, and
+  `PYTHONPATH` pointing at Curator source commit `5d7d040`. It returned exit 0
+  and `result=passed`; all harness state was temporary.
+- **Verification:** The profile health probe returned `connected=true`, schema
+  version 1, and fresh dependency observations at 2026-10-28 21:22 UTC.
+- **Open gate:** This did not exercise the installed alpha wheel, live Vhost
+  service, or live ledger. Package binding, live consumer acceptance, the
+  remaining alpha checks, and owner review remain open.
+- **Outcome:** Refresh source-level integration evidence while keeping it
+  separate from live runtime proof.

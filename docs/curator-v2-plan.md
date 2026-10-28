@@ -9422,6 +9422,17 @@ substitute for evidence at a later integration boundary.
       the alpha acceptance row remains open. A unit test or an unrelated
       profile probe cannot stand
       in for a local workflow check.
+      Disposable Hermes integration recheck (2026-10-29): ran the documented
+      Vhost-owned managed-MCP harness against Curator source commit `5d7d040`
+      via `PYTHONPATH`, with temporary Hermes profile, database, checkout, and
+      projection state. It passed exact goal binding, planned-goal denial, five
+      processed lifecycle events, exact replay, failed-delivery retry, lost-ack
+      recovery after re-enrollment, source-epoch advancement, Vhost projection
+      reconciliation, privacy exclusions, unchanged out-of-scope target, and
+      reviewer-MCP persist denial. This verifies the composed source-level
+      contract only; it did not update the installed alpha wheel, use the live
+      Vhost service, or change the live ledger. Package binding, live consumer
+      workflow evidence, full acceptance checks, and owner review remain open.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the
