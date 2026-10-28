@@ -8349,17 +8349,19 @@ substitute for evidence at a later integration boundary.
       (`Auth: none`), but that connection test does not call `project_health`.
       The healthy source-checkout probe is not active-install health evidence;
       runtime readiness and authenticated human identity remain open.
-      Supported local-profile refresh (2026-10-28 02:00 UTC):
-      `./hermes -p renew-ssl-coding mcp test curator_v2
-      --probe-curator-status` exits 0 over local stdio, discovers 49 tools,
-      and reads `vhost-manager-alpha`: 56/56 receipts processed, 25 goals,
-      and 22 facts. The separate project-health snapshot is `healthy`, with
-      all seven dependencies healthy, a complete empty staging inventory,
-      and no event, review, purge, or expiry backlog. The latest recorded event
-      is at 01:25:39 UTC, so this is a current ledger/health read, not proof of
-      a new managed-gateway lifecycle event. A direct Curator MCP call without
-      Hermes context still returns `unauthenticated` for `goal_list`. No checklist marker
-      changed; Slice G remains open for a real managed-gateway turn and receipt.
+      Supported local-profile refresh (2026-10-28 04:41:50 UTC): from the
+      Hermes Core checkout, `./.venv/bin/hermes --profile renew-ssl-coding mcp
+      test curator_v2 --probe-curator-status` exits 0, reports host-injected
+      profile/session context, connects to the installed stdio server, and
+      discovers 50 tools. It reads `vhost-manager-alpha`: 56/56 receipts
+      processed, 25 goals, 22 facts, and zero SDE candidates. The separate
+      project-health observation is `healthy`, with a complete empty staging
+      inventory and no event, review, purge, or expiry backlog. This confirms
+      the direct-call `unauthenticated` response is absence of Hermes context
+      in that caller, not missing local project access. The newest ledger event
+      remains at 01:25:39 UTC; this is a read-only profile check, not a new
+      managed-gateway lifecycle event or a token-usage refresh. Slice G remains
+      open for a real managed-gateway turn and receipt.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the

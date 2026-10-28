@@ -1,6 +1,6 @@
 # Local Curator V2 alpha evidence snapshot
 
-Measured 2026-10-28 04:37:04 UTC. This is a content-free snapshot for the
+Measured 2026-10-28 04:41:50 UTC. This is a content-free snapshot for the
 single-user, one-repository development alpha. It does not authorize another
 capture, cleanup, or policy change.
 
@@ -29,6 +29,7 @@ capture, cleanup, or policy change.
 | Backup storage | The last content-free inventory found 21 entries, 19 regular files, 4,618,625 logical bytes, and 4,636,672 allocated bytes. Twenty entries remain unclassified; four entries were not owner-only, so the scan reported incomplete. | Open: no retention or warning policy for the older recovery files. |
 | Token usage | The profile ledger has six retained turns, five with reported usage and one unknown; its only source is `codex_app_server`. Latest event: `2026-10-21T10:40:21Z`; age at measurement: 582,351 seconds. The installed profile plugin matches Hermes source and reports `coverage_complete=false` and `tokens_complete=false`. | Open: current usage needs a real profile turn; known source exclusions prevent a completeness claim. No synthetic event was written. |
 | Process privacy | Curator's installed MCP launcher sets its own core limit to zero and umask to `0077`; an installed-interpreter child observed both settings. | Partial: no active Hermes-launched session was checked; Hermes, Apport, journals, and other sinks remain unverified. |
+| Hermes profile-to-ledger read | From the Hermes Core checkout, `./.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` exited 0, identified host-injected profile/session context, connected to the installed stdio server, and discovered 50 tools. The read returned 56/56 processed receipts, 25 goals, 22 facts, zero SDE candidates, and a separate `healthy` project-health observation for `vhost-manager-alpha`. | Current local profile read verified. It is not a new app-server lifecycle event and did not refresh token usage. The system Hermes CLI still displays `Auth: none`; that transport label is not the host-injected context result. |
 | SDE review | The local review CLI's `queue` read returned `pending: []` for `vhost-manager-alpha`. | No candidate awaits disposition; alpha packet review is a separate owner decision. |
 
 ## Remaining local acceptance work
