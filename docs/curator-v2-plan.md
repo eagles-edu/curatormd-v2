@@ -8880,6 +8880,14 @@ substitute for evidence at a later integration boundary.
       wording remains unverified. This proves the visible local dashboard/read
       path and position/color only; the broader snapshot, trust-revocation,
       review, and cleanup acceptance matrix remains open.
+      Later-page guard (2026-10-28): a direct report-page request with a
+      nonzero fact offset and no established first-page revision is now rejected
+      as stale, forcing the webview to restart from page one instead of showing
+      an unbound slice. The focused VS Code Node suite passes 16/16, including
+      this regression and the existing changed-revision and fresh-denial cases.
+      This closes the uninitialized-page-snapshot gap only; live grant changes,
+      trust/revocation changes, complete evidence verification, and attended
+      review/cleanup remain open, so the dashboard checklist stays unchecked.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

@@ -616,9 +616,9 @@ async function showDashboard(spawnProcess = spawn) {
         if (!match || !reportRevision) {
           throw curatorError('invalid-response', 'Curator V2 returned an incomplete goal report.');
         }
-        if (factOffset > 0 && reportRevision) {
+        if (factOffset > 0) {
           const priorRevision = reportRevisions.get(message.goalId);
-          if (priorRevision && priorRevision !== reportRevision) {
+          if (!priorRevision || priorRevision !== reportRevision) {
             panel.webview.postMessage({ type: 'reportStale', goalId: message.goalId });
             return;
           }
