@@ -42,7 +42,6 @@ from .store import (
     ConflictError,
     EventClaimError,
     EventInboxCapacityError,
-    FactCapacityError,
 )
 
 from .service_types import (
@@ -340,7 +339,6 @@ class _EventMixin(_PurgeMixin):  # pylint: disable=too-few-public-methods  # Int
                 self.project_id,
                 event.event_id,
                 error_code,
-                discard_payload=isinstance(exc, FactCapacityError),
                 lease_owner=lease_owner,
             )
 

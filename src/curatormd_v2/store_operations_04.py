@@ -161,12 +161,10 @@ class StoreOperations1Part1(StoreOperations1Part0):
 
     @staticmethod
     def _event_failure_next_attempt_at(
-        attempts: int, failed_at: datetime, discard_payload: bool
+        attempts: int, failed_at: datetime
     ) -> str | None:
         """Calculate the durable exponential retry time for a retained payload."""
 
-        if discard_payload:
-            return None
         attempt_number = attempts + 1
         delay_seconds = min(
             EVENT_RETRY_BASE_SECONDS * (2 ** min(attempt_number - 1, 16)),

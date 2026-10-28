@@ -84,13 +84,18 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
         self.assertEqual(failed.status.value, "failed")
         self.assertEqual(failed.last_error_code, "FactCapacityError")
         self.assertEqual(self.store.pending_events(project_id="default"), ())
-        self.assertEqual(
+        self.assertGreater(
             self.store.project_storage_usage("default").event_payload_bytes_retained,
             0,
-            "capacity-failed event payload is discarded after its digest receipt",
+            "an unresolved capacity failure retains its payload for retry",
         )
         retry = self.service.process_event(event)
         self.assertEqual(retry.status.value, "failed")
+        self.assertGreater(
+            self.store.project_storage_usage("default").event_payload_bytes_retained,
+            0,
+            "a retry blocked by the same capacity error keeps its payload",
+        )
         self.assertEqual(len(self.store.list_facts(self.goal.goal_id)), MAX_FACTS_PER_GOAL)
 
     def test_fact_byte_capacity_blocks_oversized_history_without_pruning(self) -> None:

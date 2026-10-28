@@ -10187,3 +10187,28 @@ while preserving explicit criteria and same-project parent validation.
   acceptance checkbox unchecked; no checklist count changes.
 - **Outcome:** Record one live restore verification and preserve the separate
   active database and review copy.
+
+## 2026-10-29 — Retain unresolved inbox payloads until disposition
+
+- **Intent:** Apply the owner's approved local-alpha retention decision to
+  failed and quarantined inbox events without changing unrelated storage rules.
+- **Changed fact:** `eaglesvn` approved retaining a failed or quarantined event's
+  raw inbox payload until successful processing or an explicit human-approved
+  terminal disposition; age alone does not discard it. The seven daily backups
+  may retain unresolved payloads, and copies containing them roll out within
+  seven days after live scrubbing. Automatic failure handling no longer
+  discards payloads, including when fact capacity is exhausted. The plan,
+  storage recovery guide, and alpha evidence record now reflect the decision.
+- **Verification:** The focused fact-capacity regression confirms unresolved
+  payload bytes remain available across repeated failures. The payload-scrub
+  regression confirms ordinary failure retains the payload; the backup
+  regression verifies failed and quarantined payload restoration. All three
+  focused tests pass. Strict Pyright reports zero errors, errors-only Pylint
+  exits successfully, Bandit exits successfully with existing informational
+  warnings, and `git diff --check` passes.
+- **Open gate:** Complete permanent-storage accounting, class-specific
+  retention/recovery horizons, source enforcement, local human disposition,
+  and alpha sign-off remain open. No checklist item is closed by this policy
+  decision alone.
+- **Outcome:** Enforce the approved retry-retention rule in the failure path
+  while keeping the broader alpha acceptance gates open.

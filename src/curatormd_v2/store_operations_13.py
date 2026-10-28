@@ -295,26 +295,14 @@ class StoreOperations5Part0(StoreOperations4):
         event_id: str,
         error_code: str,
         *,
-        discard_payload: bool = False,
         lease_owner: str | None = None,
     ) -> EventInboxReceipt:
-        """Retain retry payloads except permanent storage-capacity failures."""
+        """Retain failed payloads until retry succeeds or disposition is approved."""
 
         if not _ERROR_CODE_RE.fullmatch(error_code):
             raise ValueError("error_code must be 1-128 safe identifier characters")
         failed_at = datetime.now(UTC)
         with self._transaction() as connection:
-            payload_row = connection.execute(
-                "SELECT payload_json FROM event_inbox "
-                "WHERE project_id = ? AND event_id = ?",
-                (project_id, event_id),
-            ).fetchone()
-            if (
-                discard_payload
-                and payload_row is not None
-                and payload_row["payload_json"] is not None
-            ):
-                self._queue_event_payload_scrub(connection, project_id, event_id)
             existing = connection.execute(
                 "SELECT attempts FROM event_inbox WHERE project_id = ? AND event_id = ? "
                 "AND status IN (?, ?)",
@@ -328,14 +316,13 @@ class StoreOperations5Part0(StoreOperations4):
             if existing is None:
                 raise ConflictError("event is missing or already processed")
             next_attempt_at = self._event_failure_next_attempt_at(
-                int(existing["attempts"]), failed_at, discard_payload
+                int(existing["attempts"]), failed_at
             )
             cursor = connection.execute(
                 """UPDATE event_inbox SET status = ?, last_error = ?,
                    attempts = attempts + 1,
                    next_attempt_at = ?,
-                   lease_owner = NULL, lease_expires_at = NULL,
-                   payload_json = CASE WHEN ? THEN NULL ELSE payload_json END
+                   lease_owner = NULL, lease_expires_at = NULL
                    WHERE project_id = ? AND event_id = ? AND status IN (?, ?)
                      AND ((? IS NULL AND (lease_owner IS NULL OR lease_expires_at IS NULL
                                           OR lease_expires_at <= ?))
@@ -344,7 +331,6 @@ class StoreOperations5Part0(StoreOperations4):
                     EventInboxStatus.FAILED.value,
                     error_code,
                     next_attempt_at,
-                    int(discard_payload),
                     project_id,
                     event_id,
                     EventInboxStatus.RECEIVED.value,
@@ -360,8 +346,6 @@ class StoreOperations5Part0(StoreOperations4):
                 self._raise_event_failure_transition_error(
                     project_id, event_id, lease_owner
                 )
-        if discard_payload:
-            self.retry_pending_event_payload_scrubs()
         return self.event_receipt(project_id, event_id)
 
     def mark_event_processed(

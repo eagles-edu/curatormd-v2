@@ -23,6 +23,15 @@ live payload is scrubbed, snapshots containing it roll out within seven days.
 The payload remains operational recovery data, not canonical knowledge;
 processed event backups retain only the digest receipt after payload scrubbing.
 
+Owner confirmation (2026-10-29): failed or quarantined inbox payloads may
+remain in SQLite until the event is processed or explicitly resolved; they
+must not be discarded solely because of age. The seven-copy rotation may
+continue carrying unresolved payloads. Processing or explicit resolution
+scrubs the live payload; snapshots containing it then roll out within seven
+days. This is an approved recovery exception to the 72-hour live transient-file
+limit and is not canonical knowledge. Existing hard capacity limits remain in
+force.
+
 ## Backups and restore
 
 The local six-hour maintenance run creates one verified online backup per UTC

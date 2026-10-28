@@ -591,8 +591,12 @@ plugin or Hermes integration is installed and working end to end.
       grants/audit rows, and processed receipts until `eaglesvn` approves
       cleanup of an exact displayed inventory; never automatically prune these
       classes. Existing hard caps remain unchanged, and the 250 MiB backup-tree
-      threshold is warning-only. Pending retry/quarantine payload age remains
-      undecided. This records policy approval, not implementation proof.
+      threshold is warning-only. Owner decision (2026-10-29): retain failed and
+      quarantined inbox payloads until the event is processed or explicitly
+      resolved; do not discard them solely because of age. The seven-copy
+      backups may retain unresolved payloads; once the live payload is scrubbed,
+      those copies age out within seven days. This records policy approval, not
+      implementation proof or complete data accounting.
       Complete logical and physical accounting, class capacity thresholds, and
       recovery-source accounting remain open. Do not treat current totals as
       complete database accounting.
@@ -779,10 +783,11 @@ plugin or Hermes integration is installed and working end to end.
       test verifies a denied caller cannot read the view and the owner view's
       backup totals match the files; the backup suite covers clean and
       incomplete inventories. The seven-copy retention and manual new-path
-      restore policy remain as already approved. Pending inbox-payload age,
-      replay-horizon retirement, and budgets for every permanent class are
-      still unresolved; no permanent-data budget
-      marker changes here.
+      restore policy remain as already approved. Failed and quarantined payloads
+      remain until processed or explicitly resolved, and copies containing
+      scrubbed payloads roll out within seven days. Replay-horizon retirement
+      and budgets for every permanent class are still unresolved; no
+      permanent-data budget marker changes here.
       Whole-tree measurement follow-up (2026-10-28 12:03 UTC): the scanner now
       traverses owner-owned group-writable child directories using
       descriptor-relative `O_NOFOLLOW` opens and verifies each child inode
@@ -4706,15 +4711,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       by budget. These rules are implemented and covered by expiry, purge,
       staging, backup, and maintenance evidence below. Permanent SQLite/WAL
       growth limits remain open in the separate storage-budget item above.
-      Owner-approved backup exception (2026-10-28): the seven daily SQLite
-      snapshots may retain raw event payloads pending retry or quarantine,
-      beyond the 72-hour live-source limit. While an event stays pending, each
-      new daily snapshot may refresh the payload, so seven retained copies are
-      a count limit rather than a maximum age; no maximum unresolved-payload age
-      is approved. After the live payload is scrubbed, older snapshots containing
-      it roll out within seven days. These payloads remain recovery data, not
-      canonical facts; backup regressions verify failed/quarantined restore and
-      rolling seven-copy retention.
+      Owner-approved retry-payload policy (2026-10-29): failed or quarantined
+      event payloads may remain in SQLite until the event is processed or
+      explicitly resolved; they are not discarded solely due to age. The seven
+      daily snapshots may retain raw event payloads while unresolved. Each new
+      daily snapshot may refresh an unresolved payload, so this is intentionally
+      not a maximum-age rule. Once the live payload is scrubbed, older snapshots
+      containing it roll out within seven days. These payloads remain recovery
+      data, not canonical facts; backup regressions verify failed/quarantined
+      restore and rolling seven-copy retention.
       Maintenance-code refresh (2026-10-28): the enabled six-hour timer is
       active, and the latest local service run exited 0 with
       `backup_status=verified`. The installed `backup_daily` function and
@@ -9350,9 +9355,8 @@ substitute for evidence at a later integration boundary.
       scope is single-user development with one repository active at a time.
       The local producer/artifact audit is complete for the approved one-repository
       alpha, including standalone utilities and owner-disposition of out-of-root
-      artifacts. Gate F remains open for local human disposition, pending
-      retry/quarantine retention and recovery details, complete permanent-data
-      accounting, and alpha sign-off. Concurrent or shared
+      artifacts. Gate F remains open for local human disposition, complete
+      permanent-data accounting, and alpha sign-off. Concurrent or shared
       multi-consumer support is outside the approved alpha scope.
 - [ ] The single-user local alpha has evidence for the operating and recovery
       behavior that this development utility actually uses. Acceptance scope is

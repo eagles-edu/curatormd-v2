@@ -65,20 +65,20 @@ class EventPayloadScrubTests(unittest.TestCase):
         self.assertNotIn(canary.encode(), self.wal_bytes())
         self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 0)
 
-    def test_permanent_failure_payload_discard_is_removed_from_wal(self) -> None:
-        """Apply the same WAL scrub when a permanent failure discards input."""
+    def test_failed_payload_remains_until_explicit_terminal_disposition(self) -> None:
+        """A failed payload stays available until retry or reviewed disposition."""
 
         canary = "permanent-failure-wal-canary-68ad"
         event_id = "permanent-failure-wal-event"
         self.ingest_canary(event_id, canary)
 
         receipt = self.store.mark_event_failed(
-            "project-a", event_id, "fact_capacity_exhausted", discard_payload=True
+            "project-a", event_id, "fact_capacity_exhausted"
         )
 
         self.assertEqual(receipt.status.value, "failed")
         self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 0)
-        self.assertNotIn(canary.encode(), self.wal_bytes())
+        self.assertIn(canary.encode(), self.wal_bytes())
 
     def test_busy_reader_keeps_scrub_pending_until_checkpoint_can_truncate(self) -> None:
         """Expose a blocked WAL scrub as pending and clear it on a later retry."""
