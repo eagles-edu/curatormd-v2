@@ -2485,17 +2485,18 @@ plugin or Hermes integration is installed and working end to end.
       reject new files in Curator's configured temporary staging area. The
       local Vhost policy uses only a 250 MiB byte threshold and no project
       file-count limit; normal Vhost operations are unaffected. Per-artifact
-      and per-goal hard limits still apply. Neither gate deletes artifacts. External journal/alert
-      delivery is not implemented. The 16-test health/metrics suite checks the
+      and per-goal hard limits still apply. Neither gate deletes artifacts. The
+      local health/dashboard warning is the approved alpha notification; an
+      external journal or alert service is not required. The 16-test health/metrics suite checks the
       75% boundary and below-threshold behavior, and the updated wheel is
       installed in the isolated alpha venv; existing MCP processes were not
       restarted. The owner-approved config fingerprint is now registered at
       ledger revision 2; a fresh Hermes profile-context probe connects and
       reads the alpha ledger with `healthy` project health and a complete empty
-      staging inventory. Backend-wide budgets, measured growth,
-      threshold alert delivery/windows, complete temporary-data classes,
-      token-usage source completeness and retention horizons remain open for
-      this local alpha; the checklist row stays unchecked.
+      staging inventory. The alpha does not require additional backend-wide
+      budgets, a model/token budget, or external alerts. Measured growth,
+      complete temporary-data classes, and token-usage source completeness
+      remain open; the checklist row stays unchecked.
       Warning-only install (2026-10-27): owner clarification changed the local
       250 MiB project byte value from a write ceiling to a warning threshold
       and removed the project file-count setting. The replacement alpha wheel
@@ -2504,8 +2505,24 @@ plugin or Hermes integration is installed and working end to end.
       repository diff checks pass. Attended project registration is revision 3
       at the new config fingerprint, and the profile status probe reads 35/35
       processed receipts and reports healthy status with empty staging. The live
-      profile has not crossed the threshold; external alert delivery and the
-      broader checklist acceptance remain open.
+      profile has not crossed the threshold; growth measurement and broader
+      token-coverage acceptance remain open. No external alert service is
+      required for this local alpha.
+      Owner scope decision (2026-10-28): for this one-repository development
+      alpha, the configured 250 MiB staging threshold is warning-only, file
+      count is irrelevant, and the threshold does not block writes or authorize
+      cleanup. The local project health/dashboard warning is the required
+      notification; no external alert service or model/token budget is
+      required. Token use remains report-only. A read-only report at
+      2026-10-28 13:10 UTC returned seven retained bound turns (six reported,
+      one unknown), sourced only from Codex app-server, with latest retained
+      event age 26,401 seconds. `coverage_complete=false` and
+      `tokens_complete=false`; it lists auxiliary calls outside active-turn
+      context, attempts without a response, and unbound sessions as exclusions.
+      This confirms that the report refreshed from a real bound turn; it does
+      not resolve those coverage gaps or support complete token totals. Keep
+      the checkbox open for coverage resolution or an owner-approved explicit
+      exclusion boundary, not for an invented token budget or external alert.
       Cap-bound retry fix (2026-10-27): a new artifact path is rejected at the
       byte or file cap, but an exact retry of an already inventoried path is
       now streamed against the existing file and accepted without creating a

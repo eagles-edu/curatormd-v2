@@ -10144,3 +10144,25 @@ while preserving explicit criteria and same-project parent validation.
   owner-review items remain open.
 - **Outcome:** Correct the checker finding and verify both repositories before
   pushing the V2 work.
+
+## 2026-10-28 — Refresh report-only project usage evidence
+
+- **Intent:** Recheck the local alpha's project-usage report without creating
+  a synthetic event or exposing token totals.
+- **Changed fact:** The profile ledger now reports seven retained bound turns,
+  six with reported usage and one unknown, all sourced from Codex app-server.
+  The latest retained event is 2026-10-28 05:50:47 UTC; the read at 13:10 UTC
+  measured its age as 26,401 seconds. Coverage and captured-token completeness
+  remain false, with three declared source exclusions. The alpha evidence and
+  plan now state this refreshed report and the owner-approved report-only,
+  no-token-budget policy.
+- **Verification:** Invoked Hermes Core's read-only `project_usage` handler
+  against the exact configured `vhost-manager-alpha` ledger. It returned
+  `status=available`, `measurement_scope=all_retained_project_usage_rows`,
+  `coverage_complete=false`, and `tokens_complete=false`. The read emitted no
+  token totals or private turn/session IDs and made no ledger write.
+- **Open gate:** Auxiliary calls outside active-turn context, attempts without
+  responses, and unbound sessions remain excluded. No owner-approved complete
+  exclusion boundary exists; keep the usage/budget checklist row open. No token
+  budget or external alert service is required for the approved local alpha.
+- **Outcome:** Refresh factual usage evidence and keep coverage claims bounded.
