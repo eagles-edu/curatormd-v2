@@ -8821,6 +8821,12 @@ substitute for evidence at a later integration boundary.
       250 MiB. Model/token use remains unreported. Reviewer interaction,
       grant-revocation behavior, cleanup, token coverage, and deployed
       monitoring remain open; no checklist marker changed.
+      Current extension refresh (2026-10-28): VS Code lists the V2 extension
+      as 0.8.9, and the 14-test Node suite passes. Tests cover versioned color
+      tooltips, paged facts/evidence, page revision changes, and clearing stale
+      data after denied reads. The current desktop has no foreground VS Code
+      window, so the 0.8.9 hover and dashboard rendering were not observed;
+      this does not close the interactive-view criterion.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

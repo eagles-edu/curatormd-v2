@@ -9688,3 +9688,19 @@ while preserving explicit criteria and same-project parent validation.
   G; this row closes local integration-test coverage only.
 - **Outcome:** Close the local integration criterion and preserve the independent
   live-runtime gate.
+
+## 2026-10-28 — Verify installed V2 editor extension version
+
+- **Intent:** Recheck the installed editor extension and its local dashboard
+  regressions while continuing the user-visible facts criterion.
+- **Changed fact:** VS Code lists `curatormd.curatormd-v2-status@0.8.9`, matching
+  the tracked package version. The extension tests cover color/version tooltip
+  text, bounded goal/fact/evidence pages, and clearing content after denied
+  reads.
+- **Verification:** `node --test extension.test.js` passes all 14 tests. A
+  screenshot of the current X display shows no foreground VS Code window, so
+  the installed 0.8.9 hover and dashboard were not visually verified.
+- **Open gate:** The live interactive view and grant-revocation behavior remain
+  open; the plan keeps the user-visible facts criterion unchecked.
+- **Outcome:** Confirm the installed source version and test coverage without
+  claiming a rendered interaction.
