@@ -9199,3 +9199,19 @@ while preserving explicit criteria and same-project parent validation.
 **Open gate:** The preview's firewall plan was empty, but the observed `iptables-save` digest changed and could not be attributed; no claim of unchanged firewall state is made. The goal's three criteria, including human review, remain open. The owner-reviewed acceptance packet and complete attributable out-of-scope hash set are still missing; no checklist marker changed.
 
 **Outcome:** Advance local Vhost route, Curator persistence, bounded report, and fact-replay evidence while keeping the pilot gate open.
+
+## 2026-10-28 — Retry canonical projection after directory-sync failure
+
+- **Intent:** Close a local recovery gap in the failure-injection matrix for a
+  Markdown replacement whose parent-directory sync fails.
+- **Changed fact:** An unchanged retry now synchronizes the parent directory
+  before returning a projection result. A failed first sync remains an error;
+  retry verifies durability without rewriting identical bytes.
+- **Verification:** The focused Markdown persistence suite passes 18 tests.
+  Strict Pyright reports zero diagnostics, errors-only Pylint exits 0, and
+  `git diff --check` passes. The official delivery count remains 154/178,
+  with 24 open.
+- **Open gate:** Power-loss behavior and the full deployment-shaped storage and
+  staging fault matrix remain open. No checklist marker changed.
+- **Outcome:** Make local canonical projection retry confirm directory
+  durability while preserving the deployment recovery gate.

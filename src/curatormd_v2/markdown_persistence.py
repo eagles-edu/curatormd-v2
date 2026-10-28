@@ -197,6 +197,13 @@ class MarkdownPersistenceAdapter:
                 changed = updated != current
                 if changed:
                     self._atomic_replace(target, encoded, mode)
+                else:
+                    try:
+                        self._sync_parent_directory(target.parent)
+                    except (OSError, ValueError):
+                        raise MarkdownPersistenceError(
+                            "canonical Markdown directory sync failed"
+                        ) from None
         return MarkdownProjectionResult(
             target=target,
             project_id=self.project_id,
@@ -637,6 +644,17 @@ class MarkdownPersistenceAdapter:
         return descriptor
 
     @staticmethod
+    def _sync_parent_directory(directory: Path) -> None:
+        """Make a published or already-present target durable in its directory."""
+
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_fd = os.open(directory, directory_flags)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    @staticmethod
     def _atomic_replace(target: Path, data: bytes, mode: int) -> None:
         temporary_path: str | None = None
         descriptor = -1
@@ -658,12 +676,7 @@ class MarkdownPersistenceAdapter:
                 )
             os.replace(temporary_path, target)
             temporary_path = None
-            directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-            directory_fd = os.open(target.parent, directory_flags)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            MarkdownPersistenceAdapter._sync_parent_directory(target.parent)
         except (OSError, ValueError):
             replacement_failed = True
         finally:

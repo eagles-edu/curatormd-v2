@@ -845,6 +845,34 @@ raise SystemExit(0)
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 
+    def test_retry_syncs_directory_after_replacement_sync_failure(self) -> None:
+        """Retry durability after replacement succeeded but directory sync failed."""
+
+        self.plugin.goal_activate(
+            self.goal.goal_id, "Retry a directory durability failure", 1
+        )
+        with patch(
+            "curatormd_v2.markdown_persistence.os.fsync",
+            side_effect=[None, OSError("injected directory sync failure")],
+        ):
+            with self.assertRaisesRegex(
+                MarkdownPersistenceError,
+                "atomic canonical Markdown replacement failed",
+            ):
+                self.plugin.persist_goal(self.goal.goal_id, self.target)
+
+        projected_bytes = self.target.read_bytes()
+        self.assertIn(self.goal.goal_id.encode("utf-8"), projected_bytes)
+        with patch(
+            "curatormd_v2.markdown_persistence.os.fsync",
+            wraps=os.fsync,
+        ) as retry_fsync:
+            retry = self.plugin.persist_goal(self.goal.goal_id, self.target)
+
+        self.assertFalse(retry.changed)
+        self.assertEqual(retry_fsync.call_count, 1)
+        self.assertEqual(self.target.read_bytes(), projected_bytes)
+
 
 
 if __name__ == "__main__":

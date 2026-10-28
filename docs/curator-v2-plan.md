@@ -1964,6 +1964,14 @@ consumer plugin, Hermes integration, or production deployment.
       tests; targeted Pyright and errors-only Pylint pass. These local boundary
       checks do not close the production-adapter matrix or reviewed retry/stop
       classifications.
+      Canonical directory-sync retry follow-up (2026-10-28): after atomic
+      Markdown replacement succeeds but parent-directory `fsync` fails, a
+      retry now synchronizes the directory even when the projection bytes are
+      already identical. The first call remains an error; the retry returns a
+      projection only after a successful directory sync. The focused Markdown
+      persistence suite passes 18 tests; targeted Pyright, errors-only Pylint,
+      and `git diff --check` pass. This is local filesystem retry evidence;
+      power-loss and deployment-shaped recovery remain open.
 
 ### 5. Global backend, persistence, and operations
 
