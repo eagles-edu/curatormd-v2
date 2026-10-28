@@ -9436,3 +9436,22 @@ while preserving explicit criteria and same-project parent validation.
   own local implementation or evidence; no V1 or production claim is made.
 - **Outcome:** Confirm the approved backup policy and close the local dashboard
   item without expanding the repository or consumer scope.
+
+## 2026-10-28 — Close approved local retention policy
+
+- **Intent:** Reconcile the retention checklist with the owner's local-alpha
+  decisions and implemented behavior.
+- **Changed fact:** The checklist now records the approved class rules:
+  prompt post-record/SDE-disposition cleanup, 72-hour maximum for transient
+  sources, separately released explicit holds, human approval of the exact
+  complete purge inventory, a warning-only 250 MiB staging threshold, and seven
+  private daily database backups with restore to a new path only. Permanent
+  SQLite/WAL capacity limits remain a separate open decision.
+- **Verification:** Existing focused expiry, purge, staging, backup, and
+  maintenance evidence is cited in the plan. The owner-approved policy is
+  recorded in `docs/Curator V2 Pilot Default Policy.md`. The Curator V2
+  delivery count and whitespace check are rechecked after this record.
+- **Open gate:** No permanent-database warning threshold has been approved;
+  this item does not set one or authorize automatic cleanup from a budget.
+- **Outcome:** Close local artifact-retention policy without treating SQLite
+  growth or a staging warning as deletion authority.

@@ -4543,26 +4543,23 @@ unknown. The dashboard and live event-delivery gates remain open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.
-- [ ] Define retention and deletion policies by artifact class, with measured
-      disk budgets and monitoring for unexplained growth. The local-alpha
-      72-hour maximum and prompt post-record/disposition expiry are implemented;
-      content-free per-class measurements and configurable project staging
-      limits are available. Owner-approved measured budgets and deployed growth
-      monitoring remain open. Proposed production closure sequence: artifact
-      owners set retention, expiry triggers, hold discovery/release, and recovery
-      rules for each class and lifecycle state; do not infer these from the
-      local-alpha 72-hour default. Measure content-free bytes, counts, and age by
-      project, artifact class, and pending/held/purge state across representative
-      normal, peak, and full-retention workloads, including database, WAL, backup,
-      staging, and retry growth. Product and deployment owners approve class
-      budgets, safety margins, alert recipients, and thresholds from those
-      measurements. Exercise expected growth, held/unknown-age artifacts,
-      incomplete inventory, stalled purge, WAL blockage, and alert-delivery
-      failure; verify unexplained growth is reported as unknown/unattributed and
-      never healthy, while alerts and retention actions do not expose content or
-      trigger unapproved deletion. Keep this gate open until the owner-approved
-      policy, measured thresholds, and deployment alert/recovery evidence are
-      reviewable. Specify the age anchor for each artifact class (authoritative
+- [x] Define and enforce the local-alpha retention and cleanup rules by artifact
+      class: temporary source artifacts become eligible promptly after facts
+      are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
+      require separate release; purge requires human approval of the exact
+      complete inventory. Staging has a warning-only 250 MiB byte threshold and
+      no file-count cap. Private SQLite backups retain seven daily copies, and
+      restore requires human approval to a new path. Dashboard and maintenance
+      status report local staging and purge/backup conditions without deleting
+      by budget. These rules are implemented and covered by expiry, purge,
+      staging, backup, and maintenance evidence below. Permanent SQLite/WAL
+      growth limits remain open in the separate storage-budget item above.
+      Additional design notes, not required for local-alpha completion: measure
+      content-free bytes, counts, and age by artifact class and lifecycle state;
+      keep unknown age visible and never let a retry, rename, copy, restore,
+      restart, or exact event replay silently restart the retention interval.
+      Preserve the original age and maximum-age deadline unless policy explicitly
+      defines a new source occurrence and records its provenance. Specify the age anchor for each artifact class (authoritative
       source creation, first controlled publication, or another owner-selected
       event) and how artifact identity distinguishes a genuinely new source
       occurrence from a retry or duplicate with identical content. Do not infer
@@ -4575,8 +4572,9 @@ unknown. The dashboard and live event-delivery gates remain open.
       Exercise before/at/after-threshold cases with retries, duplicate delivery,
       rename/copy/restore, clock rollback, future or missing timestamps, and
       hold placement/release. Unknown or untrustworthy age remains visible and
-      cannot silently reset the clock or become a deletion authorization. This
-      is a proposal, not a production policy or cleanup grant.
+      cannot silently reset the clock or become a deletion authorization. These
+      additional measurement and age-identity details do not expand the
+      approved local cleanup authority.
       Local clock-skew follow-up (2026-10-27): expiry discovery now treats a
       staged timestamp later than its locked inventory observation time as
       unknown age. The complete inventory is unusable for purge and emits no
