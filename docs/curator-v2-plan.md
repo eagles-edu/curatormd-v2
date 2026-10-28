@@ -4869,6 +4869,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       tests; targeted Pyright, errors-only Pylint, and `git diff --check` pass.
       This covers the local approved-terminal path only; blocked-scrub and
       deployment sink behavior remain open.
+      Blocked terminal-scrub replay follow-up (2026-10-28): a held SQLite
+      reader now keeps the payload canary in WAL after owner-authorized terminal
+      disposition, with one pending scrub receipt. Once the reader closes, an
+      exact disposition replay retries the checkpoint and removes the canary;
+      before this fix, replay returned early and left the scrub pending. The
+      focused consumer-binding lifecycle suite passes nine tests; targeted
+      Pyright, errors-only Pylint, and `git diff --check` pass. This closes the
+      local held-reader retry case only; broader privacy sinks remain open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.

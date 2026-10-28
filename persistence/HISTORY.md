@@ -9261,3 +9261,21 @@ while preserving explicit criteria and same-project parent validation.
   no checklist marker changed.
 - **Outcome:** Preserve a content-free terminal disposition record while
   verifying local payload erasure.
+
+## 2026-10-28 — Retry terminal payload scrub after a held reader
+
+- **Intent:** Verify terminal-event privacy recovery when a reader blocks the
+  SQLite WAL checkpoint.
+- **Changed fact:** Exact replay of an already-authorized terminal disposition
+  now retries pending payload scrubs after the reader releases its snapshot.
+  The regression first reproduced the bug: replay returned while the scrub
+  remained pending. After the fix, the retry clears the queue and the payload
+  canary is absent from SQLite files.
+- **Verification:** The focused consumer-binding lifecycle suite passes nine
+  tests; targeted Pyright reports zero diagnostics, errors-only Pylint exits 0,
+  and `git diff --check` passes.
+- **Open gate:** This closes only the local held-reader terminal retry case.
+  Other payload states, sinks, and deployment recovery remain open; no
+  checklist marker changed.
+- **Outcome:** Make an exact approved replay finish deferred payload scrubbing
+  without duplicating the terminal decision.

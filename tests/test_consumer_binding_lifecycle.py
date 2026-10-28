@@ -6,6 +6,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+import sqlite3
 from threading import Barrier
 import unittest
 
@@ -333,6 +334,14 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         self.assertEqual(observed.consumer_binding.status, "deregistration_pending")
         self.assertEqual(observed.event_status_counts, (("quarantined", 1),))
         self.assertEqual(observed.unprocessed_event_count, 1)
+        reader = sqlite3.connect(self.store.database, isolation_level=None)
+        self.addCleanup(reader.close)
+        reader.execute("BEGIN")
+        pinned_payload = reader.execute(
+            "SELECT payload_json FROM event_inbox WHERE project_id = ? AND event_id = ?",
+            (self.project_id, event.event_id),
+        ).fetchone()[0]
+        self.assertIn(payload_canary, pinned_payload)
         self._allow_admin(ProjectAdministrationAction.DISPOSE_EVENT)
         result, disposition = self.manager.terminally_dispose_event(
             self.operator,
@@ -369,10 +378,13 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         self.assertEqual(audit_row["payload_sha256"], received.payload_sha256)
         self.assertNotIn(payload_canary, repr(audit_row))
         database = Path(self.store.database)
-        for suffix in ("", "-wal", "-shm", "-journal"):
-            candidate = Path(f"{database}{suffix}")
-            if candidate.exists():
-                self.assertNotIn(payload_canary.encode(), candidate.read_bytes())
+        self.assertEqual(
+            self.store.event_payload_scrub_pending_count(self.project_id), 1
+        )
+        wal_path = Path(f"{database}-wal")
+        self.assertIn(payload_canary.encode(), wal_path.read_bytes())
+        reader.execute("ROLLBACK")
+        reader.close()
         self.assertEqual(self.store.consumer_drain_inventory(self.project_id)[0], 0)
         replay, replayed_disposition = self.manager.terminally_dispose_event(
             self.operator,
@@ -388,6 +400,13 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         )
         self.assertEqual(replay, result)
         self.assertEqual(replayed_disposition, disposition)
+        self.assertEqual(
+            self.store.event_payload_scrub_pending_count(self.project_id), 0
+        )
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            candidate = Path(f"{database}{suffix}")
+            if candidate.exists():
+                self.assertNotIn(payload_canary.encode(), candidate.read_bytes())
         finalized_status = self.manager.lifecycle_status_snapshot(
             self.operator, self.project_id, event_limit=1
         )

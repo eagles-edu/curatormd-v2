@@ -151,14 +151,19 @@ class StoreOperations5Part0(StoreOperations4):
         now = utc_now()
         with self._transaction() as connection:
             replay = self._terminal_event_disposition_replay(connection, request)
-            if replay is not None:
-                return replay
-            self._require_terminal_disposition_binding(connection, request)
-            row = self._require_terminal_disposition_event(connection, request, now)
-            self._advance_terminal_disposition_cursor(connection, request, row, now)
-            record = self._persist_terminal_event_disposition(
-                connection, request, row, now
-            )
+            if replay is None:
+                self._require_terminal_disposition_binding(connection, request)
+                row = self._require_terminal_disposition_event(
+                    connection, request, now
+                )
+                self._advance_terminal_disposition_cursor(
+                    connection, request, row, now
+                )
+                record = self._persist_terminal_event_disposition(
+                    connection, request, row, now
+                )
+            else:
+                record = replay[1]
         self.retry_pending_event_payload_scrubs()
         return self.event_receipt(request.project_id, request.event_id), record
 
