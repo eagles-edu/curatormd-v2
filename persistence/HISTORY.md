@@ -9518,3 +9518,18 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** The failure matrix remains open for the local filesystem fault
   cases not yet covered as a complete matrix. No checklist marker changed.
 - **Outcome:** Close the local unavailable-SQLite event-acknowledgment case.
+
+## 2026-10-28 — Complete the local storage fault matrix
+
+- **Intent:** Reconcile focused local failure-injection evidence against the
+  Curator V2 storage fault checklist.
+- **Changed fact:** The local matrix maps SQLite availability/full/commit faults,
+  backup and restore boundaries, staging filesystem faults, exact-inventory
+  purge retries, interrupted receipts/projection, idempotent event replay, and
+  non-green health behavior to focused tests.
+- **Verification:** The 11 relevant suites pass 150 tests. The changed API fault
+  suite also passes targeted strict Pyright and errors-only Pylint; `git diff
+  --check` passes.
+- **Open gate:** These tests do not promise power-loss durability or behavior on
+  external filesystem adapters.
+- **Outcome:** Close the local failure-injection matrix for the one-user utility.

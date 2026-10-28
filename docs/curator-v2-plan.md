@@ -1586,7 +1586,7 @@ plugin or Hermes integration is installed and working end to end.
       checkout at `0.22.2+2263`. No active Hermes installation was changed.
       This refreshes local profile health only; it does not exercise a Vhost
       application request or verify a Curator receipt from that workflow.
-- [ ] Complete a failure-injection matrix for the local SQLite database and
+- [x] Complete a failure-injection matrix for the local SQLite database and
       staging files used by the one-user development utility. Cover SQLite
       full/read-only/unavailable errors, failed writes and commits, and supported
       backup/restore boundaries. Cover staging root/lock/enumeration failures,
@@ -1793,6 +1793,21 @@ plugin or Hermes integration is installed and working end to end.
       Markdown persistence suite passes 20 tests; targeted Pyright,
       errors-only Pylint, and `git diff --check` pass. This is local failure
       evidence only; deployment storage and power-loss behavior remain open.
+      Local matrix verification (2026-10-28): 150 focused tests pass across
+      `test_api_storage_faults`, `test_store_resources`, `test_backup`,
+      `test_project_plugin_config`, `test_project_plugin_staging`,
+      `test_project_plugin_storage`, `test_purge_filesystem`,
+      `test_purge_lifecycle`, `test_markdown_persistence`,
+      `test_api_health_metrics`, and `test_router`. Together they cover the
+      local SQLite full/read-only/unavailable and commit failures; online
+      backup/restore boundaries; staging root, lock, enumeration, unreadable,
+      changed, oversized, symlink, replacement, and sync failures; exact-inventory
+      purge/unlink retries; interrupted event, projection, and cleanup receipts;
+      idempotent replay; and degraded/unknown health for required pending work.
+      The changed API-fault test also passes strict Pyright and errors-only
+      Pylint, and `git diff --check` passes. This closes the applicable local
+      development-utility matrix; power-loss guarantees and external filesystem
+      behavior are not provided by this local adapter contract.
 
 ### 5. Global backend, persistence, and operations
 
