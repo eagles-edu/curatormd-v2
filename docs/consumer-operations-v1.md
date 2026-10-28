@@ -200,7 +200,7 @@ substitute for the trusted production router configuration.
 3. Before a schema/database upgrade, stop producers through the host's approved
    maintenance process, make a verified online backup to a new path, and test
    restore to another new path. Follow
-   [`storage-recovery-v1.md`](storage-recovery-v1.md); never replace the active
+   [`storage-recovery-v2.md`](storage-recovery-v2.md); never replace the active
    database in place or copy only its main SQLite file while writers are live.
 4. Keep the old backend, consumer config, database, and backup until the new
    profile passes its authorized read/write smoke test and its rollback point
@@ -230,7 +230,7 @@ substitute for the trusted production router configuration.
 ## Recover data without overwriting evidence
 
 Use the isolated backup/restore procedure in
-[`storage-recovery-v1.md`](storage-recovery-v1.md). Restore only to a new
+[`storage-recovery-v2.md`](storage-recovery-v2.md). Restore only to a new
 review path, inspect integrity and application-level records there, and
 reconcile canonical Markdown read-only. The project owner must decide conflicts
 before any production path switch; this repository has no approved automatic

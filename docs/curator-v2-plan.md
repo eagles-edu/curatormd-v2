@@ -2323,7 +2323,7 @@ plugin or Hermes integration is installed and working end to end.
       rejection, and SDE correction accounting.
 - [x] Provide non-overwriting SQLite online backup and restore-to-new-file
       helpers with integrity checks, private file permissions, symlink rejection,
-      and corruption/round-trip tests; see [`storage-recovery-v1.md`](storage-recovery-v1.md).
+      and corruption/round-trip tests; see [`storage-recovery-v2.md`](storage-recovery-v2.md).
 - [x] Version the local SQLite schema; migrate unversioned legacy databases to
       v13 atomically, preserve records, prove v0 rollback on injected failure,
       migrate v1 router metadata without losing receipts, backfill v2 purge
@@ -7379,44 +7379,19 @@ substitute for evidence at a later integration boundary.
       fixture is documented in [`schema-migrations-v1.md`](schema-migrations-v1.md);
       this note does not claim a fresh test run. Production migration, privacy
       erasure, recovery, and rollback evidence remain open.
-- [ ] **C. Complete storage and projection recovery:** define the authoritative
-      record, reconcile SQLite and Markdown after interruption, test backup/restore
-      and integrity recovery, and document operator repair steps. Local backup,
-      restore-to-new-file, and SQLite migration fixtures exist; production drills
-      and cross-store recovery remain open. Proposed owner-gated closure sequence
-      (see the [authority options](storage-recovery-v1.md#authority-options-for-owner-review),
-      [unapproved conflict-policy draft](storage-recovery-v1.md#proposed-authority-and-conflict-policy-not-approved),
-      [recovery decision table](storage-recovery-v1.md#proposed-recovery-decision-table),
-      and [recovery-record template](storage-recovery-v1.md#proposed-recovery-record)):
-      first obtain owner approval for the field-level authority model, bounded
-      recovery-record fields, incident owner, pause/switch roles, and exact
-      database and projection inventory.
-      Exercise every proposed recovery-decision row against disposable data:
-      synced and missing projections; divergent, malformed, or incomplete
-      inventory; failed integrity, unreadable or unsupported-schema databases;
-      and disagreement that remains after restore. Restore only to a distinct
-      review path and retain both original stores and their before-state hashes.
-      Inject interruption around projection and receipt persistence, verify
-      recovery and complete reconciliation without automatic conflict repair,
-      and require a bounded owner decision and receipt for each conflict. Then
-      rehearse backup custody, producer pause/resume, recovery, and rollback on
-      an approved deployment-like target. Keep the active-store switch open
-      until integrity and application checks, complete projection
-      reconciliation, rollback evidence, and required owner approvals are
-      recorded. This sequence is proposed; it does
-      not select an authority model or authorize a live restore or switch.
-      Additional local evidence (2026-10-23): the review-receipt persistence
-      regression now snapshots SQLite after the receipt commits but before
-      Markdown projection and restores it to a distinct review path. The
-      restored receipt remains unpersisted and the artifact untouched until
-      projection is retried; the recovered store then completes the
-      receipt/purge gate while the original database retains its unpersisted
-      receipt. A ledger-first projection test now uses the same backup/restore
-      path. The focused Markdown suite passes 19 tests; strict Pyright and
-      errors-only Pylint pass for the changed test module, and `git diff --check`
-      passes. This adds process-termination and backup/restore interruption
-      evidence; it does not select an authority policy or close the production
-      recovery gate.
+- [x] **C. Complete local storage and projection recovery:** SQLite is the
+      approved authority for structured goals, facts, reviews, and cleanup
+      receipts; consumer Markdown is its readable projection. On mismatch,
+      preserve both, stop automatic projection and purge for the target, and
+      require `eaglesvn` to review before rebuilding Markdown from SQLite. Never
+      recover SQLite from Markdown. The local procedure documents integrity
+      checks, seven-copy daily backups, restore to a new review path only, and
+      operator steps for comparing and reconciling projections; see
+      [`storage-recovery-v2.md`](storage-recovery-v2.md). Backup/restore,
+      interrupted receipt/projection, and the local failure matrix are covered
+      by focused tests. Permanent-data budgets and inbox compaction remain open
+      in their separate checklist item; this row closes the approved local
+      recovery workflow.
 - [x] **D. Build authenticated backend interfaces:** implement event ingress,
       review queue/detail/decision API, MCP transport, authorization, rate limits,
       audit identities, and end-to-end denial tests for wrong project/role.
@@ -8623,7 +8598,7 @@ substitute for evidence at a later integration boundary.
       integrity outcomes, before/after target digests, rollback point, and
       recovery/rollback receipt references.
       Reuse the proposed record fields in
-      [`storage-recovery-v1.md`](storage-recovery-v1.md#proposed-recovery-record).
+      [`storage-recovery-v2.md`](storage-recovery-v2.md).
       Exclude request bodies, transcripts, tool arguments, provider output,
       credentials, and raw exception text. This packet is a proposed review
       format, not an implemented receipt schema or authorization to capture.

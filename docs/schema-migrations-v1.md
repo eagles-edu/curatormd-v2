@@ -63,7 +63,7 @@ version also refuses a database whose `user_version` is newer than it supports,
 so pointing old code at an upgraded database is not a rollback procedure.
 
 For a local review, preserve the source and restore a verified pre-upgrade
-backup to a new path using [`storage-recovery-v1.md`](storage-recovery-v1.md).
+backup to a new path using [`storage-recovery-v2.md`](storage-recovery-v2.md).
 Compare that copy and its consumer projections before any service switch.
 Switching a live service requires a deployment-specific owner-approved
 procedure, a recorded rollback point, and a separate smoke test. Production

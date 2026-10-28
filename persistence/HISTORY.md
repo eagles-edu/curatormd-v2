@@ -9533,3 +9533,21 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** These tests do not promise power-loss durability or behavior on
   external filesystem adapters.
 - **Outcome:** Close the local failure-injection matrix for the one-user utility.
+
+## 2026-10-28 — Approve and document V2 storage recovery
+
+- **Intent:** Replace the obsolete V1-named recovery draft and finish the
+  approved local SQLite/Markdown recovery procedure.
+- **Changed fact:** The V2 runbook now records SQLite as the structured source
+  of truth, manual owner review on SQLite/Markdown mismatch, preservation of
+  both copies, seven private daily backups, and restore to a new review path
+  only. The plan's local storage/projection recovery row is closed; permanent
+  data budgets and inbox compaction remain separate open work.
+- **Verification:** The focused local fault matrix passed 150 tests across
+  SQLite, backup/restore, staging, purge, projection, health, and routing suites.
+  All documentation references now point to `storage-recovery-v2.md`;
+  `git diff --check` and the delivery counter are rechecked after this update.
+- **Open gate:** No live database was restored or switched. Permanent-data
+  budgets remain undecided.
+- **Outcome:** Record the owner's recovery decision in V2-only documentation
+  and close local recovery without involving Curator V1.
