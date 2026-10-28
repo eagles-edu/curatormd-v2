@@ -4473,10 +4473,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       staging, backup, and maintenance evidence below. Permanent SQLite/WAL
       growth limits remain open in the separate storage-budget item above.
       Owner-approved backup exception (2026-10-28): the seven daily SQLite
-      snapshots may retain raw event payloads pending retry or quarantine for
-      the snapshot recovery window, beyond the 72-hour live-source limit. These
-      payloads remain recovery data, not canonical facts; the focused backup
-      restore regression verifies failed and quarantined text is preserved.
+      snapshots may retain raw event payloads pending retry or quarantine,
+      beyond the 72-hour live-source limit. While an event stays pending, each
+      new daily snapshot may refresh the payload, so seven retained copies are
+      a count limit rather than a maximum age; no maximum unresolved-payload age
+      is approved. After the live payload is scrubbed, older snapshots containing
+      it roll out within seven days. These payloads remain recovery data, not
+      canonical facts; backup regressions verify failed/quarantined restore and
+      rolling seven-copy retention.
       Additional design notes, not required for local-alpha completion: measure
       content-free bytes, counts, and age by artifact class and lifecycle state;
       keep unknown age visible and never let a retry, rename, copy, restore,

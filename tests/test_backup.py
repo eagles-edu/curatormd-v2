@@ -382,6 +382,19 @@ class DatabaseBackupTests(unittest.TestCase):
             database_path = root / "state" / "curator.sqlite3"
             backup_directory = database_path.parent / "backups"
             database = CuratorStore(database_path)
+            event = EventEnvelope(
+                "rolling-retry-event",
+                "backup-project",
+                GoalStarted(
+                    "rolling-retry-goal",
+                    "Keep unresolved retry recoverable",
+                    (SuccessCriterion("retry", "Retain the failed envelope"),),
+                ),
+            )
+            database.ingest_event(event)
+            database.mark_event_failed(
+                "backup-project", event.event_id, "temporary_adapter_error"
+            )
             database.close()
             backup_day = date(2026, 10, 1)
 
@@ -403,6 +416,19 @@ class DatabaseBackupTests(unittest.TestCase):
             self.assertFalse(
                 (backup_directory / f"curator-v2-{backup_day.isoformat()}.sqlite3").exists()
             )
+            for backup_name in retained:
+                with CuratorStore(backup_directory / backup_name) as snapshot:
+                    receipt = snapshot.event_receipt(
+                        "backup-project", event.event_id
+                    )
+                    self.assertEqual(receipt.status, EventInboxStatus.FAILED)
+                    with snapshot.transaction() as connection:
+                        row = connection.execute(
+                            "SELECT payload_json FROM event_inbox "
+                            "WHERE project_id = ? AND event_id = ?",
+                            ("backup-project", event.event_id),
+                        ).fetchone()
+                    self.assertEqual(row["payload_json"], event.to_json())
             self.assertEqual(stat.S_IMODE(backup_directory.stat().st_mode), 0o700)
             unrelated = backup_directory / "keep-this-note.txt"
             unrelated.write_text("not a Curator backup", encoding="utf-8")

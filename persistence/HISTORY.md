@@ -9637,3 +9637,20 @@ while preserving explicit criteria and same-project parent validation.
   audits remain open; this decision covers only owner-approved local backups.
 - **Outcome:** Record the explicit retention exception and keep retry recovery
   possible from the approved daily snapshots.
+
+## 2026-10-28 — Verify rolling retry payload backup retention
+
+- **Intent:** Check whether seven retained daily backups also establish a
+  maximum age for an unresolved failed event payload.
+- **Changed fact:** A pending payload is copied into each new daily snapshot.
+  Rotation limits the backup set to seven files, not the payload's total age;
+  once the live payload is scrubbed, old snapshots containing it roll out in
+  seven days. No maximum age for unresolved payloads has been approved.
+- **Verification:** The daily-rotation regression now snapshots a failed event
+  on eight successive dates, confirms only the newest seven files remain, and
+  reads each snapshot to confirm the payload remains recoverable. All 10 backup
+  tests pass; `git diff --check` passes.
+- **Open gate:** The live retry/quarantine payload retention age still needs an
+  explicit owner limit or an explicit decision to retain it while unresolved.
+- **Outcome:** Clarify seven-copy retention as a rolling count policy, not a
+  seven-day maximum age for pending event text.
