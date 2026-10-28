@@ -9073,6 +9073,29 @@ substitute for evidence at a later integration boundary.
       Same-event replay, before/after hashes for out-of-scope targets, bounded
       Hermes `goal_report`, and owner-reviewed packet remain open; this does not
       close the checklist item.
+      Local Vhost Manager smoke (2026-10-28): through the running loopback
+      application, previewed and applied `curator-v2-alpha-smoke-20261028.test`
+      as a static site, received processed apply receipt
+      `vhost-apply-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c`, and observed an HTTP
+      200 response with the test Host header. The bounded preview problem and
+      its three criterion IDs were present in the resulting
+      `vhost-manager-alpha` goal report. Replaying the exact fact event left one
+      processed inbox row and one matching fact; replaying the goal start
+      returned `processed`, and the report still contained one goal. Rollback
+      operation `b3cfa643-c3e1-456b-89a8-996479be6b4b` completed with its
+      processed receipt. The site, dedicated account, and target Nginx files
+      are absent; root `nginx -t` passes and the Vhost, Nginx, and OpenLiteSpeed
+      services remain active. The out-of-scope Nginx tree had 63 entries and
+      the same SHA-256 before and after:
+      `b2c5d9b9e26afd0d99f93ee0b3062e3831d712628c64c88f33a9f9be8fbb8698`.
+      The preview's firewall plan was empty, but the `iptables-save` digest
+      changed between observations; the change is unattributed, so firewall
+      state is not claimed unchanged. The goal report keeps all three criteria
+      open, including human review. The consumer checkout was already dirty;
+      no consumer source was changed. This advances the local live-route,
+      bounded-report, and exact-fact-replay substeps only. The acceptance
+      packet still lacks a reviewed disposition and a complete attributable
+      out-of-scope hash set; this checklist item remains open.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot

@@ -9187,3 +9187,15 @@ while preserving explicit criteria and same-project parent validation.
 **Open gate:** The profile ledger read is not a new Codex app-server lifecycle event. Slice G remains open for a real managed-gateway turn and its durable receipt. No checklist marker changed.
 
 **Outcome:** Confirm profile-bound persistence and current local health while preserving the live lifecycle gate.
+
+## 2026-10-28 — Exercise the Vhost Manager local alpha route
+
+**Intent:** Use the ready local Curator V2 integration in the Vhost Manager utility to exercise one disposable request through preview, apply, Curator persistence, exact-event replay, and rollback.
+
+**Changed fact:** The running loopback Vhost Manager applied the reserved static target `curator-v2-alpha-smoke-20261028.test` with an empty firewall plan. Apply receipt `vhost-apply-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and rollback receipt `vhost-rollback-b3cfa643-c3e1-456b-89a8-996479be6b4b` are processed. The active goal report preserves the preview problem and three open criteria. Exact fact-event replay leaves one processed inbox row and one matching fact; the goal-start replay returns `processed` and leaves one goal. Rollback removes the target site, dedicated account, and target Nginx files.
+
+**Verification:** The applied target returned HTTP 200 for the exact local Host header. Root `nginx -t` passes after rollback; Vhost Manager, Nginx, and OpenLiteSpeed remain active. A content-free hash over 63 out-of-scope Nginx files is identical before and after (`b2c5d9b9e26afd0d99f93ee0b3062e3831d712628c64c88f33a9f9be8fbb8698`). Read-only SQLite checks show one `processed` row each for apply, apply fact, rollback, and rollback fact; `PRAGMA quick_check` returns `ok`. The existing dirty consumer checkout was not edited.
+
+**Open gate:** The preview's firewall plan was empty, but the observed `iptables-save` digest changed and could not be attributed; no claim of unchanged firewall state is made. The goal's three criteria, including human review, remain open. The owner-reviewed acceptance packet and complete attributable out-of-scope hash set are still missing; no checklist marker changed.
+
+**Outcome:** Advance local Vhost route, Curator persistence, bounded report, and fact-replay evidence while keeping the pilot gate open.
