@@ -845,6 +845,14 @@ consumer plugin, Hermes integration, or production deployment.
       their grant's project; numeric values are measured as decimal text. The
       aggregate requires the existing host-level `VIEW` action and returns no
       row identifiers or contents. Ten focused access-manager/CLI tests pass.
+      Terminal-disposition accounting follow-up (2026-10-28): the retired
+      project lifecycle regression now creates a real authorized disposition,
+      reads the project control-plane storage aggregate, and verifies its class
+      count and UTF-8 logical-byte total against the persisted fields. The
+      focused lifecycle suite, targeted Pyright, errors-only Pylint, and
+      `git diff --check` pass. This verifies local logical attribution for this
+      receipt class; retention horizons, recovery sources, capacity thresholds,
+      and physical index/WAL/backup allocation remain open.
       Owner-approved retention horizons, recovery sources, per-class capacity
       thresholds, and physical index/WAL/
       backup allocation remain open.

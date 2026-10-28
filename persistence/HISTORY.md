@@ -9295,3 +9295,19 @@ while preserving explicit criteria and same-project parent validation.
   authorizer, and deployed identity, backup, and other sink paths remain open.
 - **Outcome:** Confirm that local project retirement does not bypass or block
   exact terminal event disposition and payload scrubbing.
+
+## 2026-10-28 — Verify terminal-disposition storage attribution
+
+- **Intent:** Check local logical storage attribution for terminal event
+  disposition records.
+- **Changed fact:** The retired-project lifecycle regression now verifies the
+  project control-plane aggregate reports the persisted disposition count and
+  exact UTF-8 logical-byte total.
+- **Verification:** The focused consumer-binding lifecycle suite passes nine
+  tests; targeted Pyright reports zero diagnostics, errors-only Pylint exits 0,
+  and `git diff --check` passes.
+- **Open gate:** This does not define retention, recovery, class capacity, or
+  physical database/index/WAL/backup allocation. The permanent-data budget
+  checklist remains open.
+- **Outcome:** Confirm one additional class's local logical accounting without
+  implying a complete storage budget.

@@ -424,6 +424,28 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         )
         self.assertEqual(finalized_status.event_status_counts, (("processed", 1),))
         self.assertEqual(finalized_status.unprocessed_event_count, 0)
+        control_plane_usage = self.store.project_control_plane_storage_usage(
+            self.project_id
+        )
+        terminal_usage = next(
+            item for item in control_plane_usage.classes
+            if item.class_name == "terminal_event_dispositions"
+        )
+        terminal_fields = (
+            disposition.project_id,
+            disposition.event_id,
+            disposition.transition_id,
+            disposition.actor_id,
+            disposition.prior_status.value,
+            disposition.payload_sha256,
+            disposition.rationale,
+            disposition.created_at,
+        )
+        self.assertEqual(terminal_usage.record_count, 1)
+        self.assertEqual(
+            terminal_usage.logical_bytes,
+            sum(len(value.encode("utf-8")) for value in terminal_fields),
+        )
         duplicate, is_new = self.store.ingest_event(event)
         self.assertFalse(is_new)
         self.assertEqual(duplicate.disposition, "terminal_authorized")
