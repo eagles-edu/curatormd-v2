@@ -8851,6 +8851,14 @@ substitute for evidence at a later integration boundary.
       whose configuration enables profile multiplexing. This configuration
       does not substitute for a recent `renew-ssl-coding` app-server event and
       receipt; Slice G remains open.
+      Open-gate ledger update (2026-10-28): recorded a typed `open_gate` fact
+      against active goal `vhost-alpha-curator-smoke-20261020`, linked to
+      criterion `durable-hermes-event`. The fact records that the profile
+      outbox remains at 11 acknowledged events through sequence 11, latest
+      `2026-10-21T10:40:21Z`, and that a real managed-gateway Codex turn is
+      still required. A post-write `goal_report` confirms the fact is present
+      and the criterion remains open. No checklist marker changed; this is
+      durable status evidence, not lifecycle-delivery proof.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
