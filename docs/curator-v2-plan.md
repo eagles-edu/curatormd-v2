@@ -8394,11 +8394,17 @@ substitute for evidence at a later integration boundary.
       It records the installed package/config binding, the 2026-10-28 loopback
       Vhost apply/replay/rollback receipts, staging and retention policy,
       backup/restore evidence, and the current open issues. The route smoke
-      and exact receipt replay are verified. Finish the remaining local checks:
-      verify the exact canonical projection for the named run; compare the
-      approved out-of-scope target hashes before and after that run; verify a
-      package rollback to its archived version; and refresh the token report
-      through a real profile turn rather than synthetic data. Preserve any
+      and exact receipt replay are verified. Progress (2026-10-28 04:32 UTC):
+      the owner-only local reviewer API projected the exact apply goal
+      `vhost-op-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and rollback goal
+      `vhost-rollback-b3cfa643-c3e1-456b-89a8-996479be6b4b` to the configured
+      Vhost `HISTORY.md`; read-only reconciliation returned `synced` for both.
+      Their block hashes are recorded in
+      [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
+      Remaining checks: compare the approved out-of-scope target hashes before
+      and after the run; verify a package rollback to its archived version; and
+      refresh the token report through a real profile turn rather than synthetic
+      data. Preserve any
       operation or cleanup work as open until its exact reviewer action and
       receipts exist. Stop if the project/config binding changes, a receipt is
       missing or not `processed`/exact `duplicate`, an out-of-scope target

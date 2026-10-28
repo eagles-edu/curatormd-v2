@@ -1,6 +1,6 @@
 # Local Curator V2 alpha evidence snapshot
 
-Measured 2026-10-28 04:26:12 UTC. This is a content-free snapshot for the
+Measured 2026-10-28 04:35:27 UTC. This is a content-free snapshot for the
 single-user, one-repository development alpha. It does not authorize another
 capture, cleanup, or policy change.
 
@@ -21,9 +21,9 @@ capture, cleanup, or policy change.
 
 | Area | Observed result | State |
 |---|---|---|
-| Package | 88 installed Python modules match source; `pip check` and MCP launcher `--help` pass. Before replacement, 182 files were hash-verified in rollback archive `~/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-mcp-privacy-20261028T041838Z.tar.gz` (SHA-256 `89133debfb12cb7a02cfc1476e019b0fd067d23752c95f7b8137757aeb75221b`). | Verified install; no Hermes process restarted. |
+| Package | 88 installed Python modules match source; `pip check` and MCP launcher `--help` pass. Before replacement, 182 files were hash-verified in rollback archive `~/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-mcp-privacy-20261028T041838Z.tar.gz` (SHA-256 `89133debfb12cb7a02cfc1476e019b0fd067d23752c95f7b8137757aeb75221b`). The archive was extracted to a temporary isolated package path; its `0.1.0a1` metadata loaded and the restored MCP launcher `--help` passed. The active profile install was not replaced. | Archive restore/launch is verified in isolation; replacing and rolling back a disposable installed environment remains open. |
 | Quality | Focused hosted-MCP tests pass (13 plus one CLI evidence test); full Pyright, errors-only Pylint on the changed files, Bandit, and `git diff --check` passed for the source change. | Verified for the changed launcher; the full Curator test suite was not rerun for this change. |
-| Vhost route | The 2026-10-28 loopback smoke applied `curator-v2-alpha-smoke-20261028.test`, returned HTTP 200, replayed the same fact and goal-start idempotently, then rolled back. Apply receipt: `vhost-apply-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c`; rollback operation: `b3cfa643-c3e1-456b-89a8-996479be6b4b`. The test site's account and Nginx files were absent afterward; the unrelated 63-entry Nginx tree retained hash `b2c5d9b9e26afd0d99f93ee0b3062e3831d712628c64c88f33a9f9be8fbb8698`. | Local workflow observed; owner review of the complete packet remains open. |
+| Vhost route and Markdown projection | The 2026-10-28 loopback smoke applied `curator-v2-alpha-smoke-20261028.test`, returned HTTP 200, replayed the same fact and goal-start idempotently, then rolled back. Apply receipt: `vhost-apply-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c`; rollback operation: `b3cfa643-c3e1-456b-89a8-996479be6b4b`. The test site's account and Nginx files were absent afterward; the unrelated 63-entry Nginx tree retained hash `b2c5d9b9e26afd0d99f93ee0b3062e3831d712628c64c88f33a9f9be8fbb8698`. Using the owner-only local UID reviewer API, projected only goals `vhost-op-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and `vhost-rollback-b3cfa643-c3e1-456b-89a8-996479be6b4b` to the configured `HISTORY.md`; read-only reconciliation returned `synced` for both. Their ledger block hashes are `112e427fad74cd5a451145ca796f96f101c081976dfedea2ebe7fdf27256862c` and `1a4360114240c1e1304ca46fd73b28caf6b9f619973183fb16e40ab4bcec2f7d`. | Local workflow and exact projections verified; owner review of the complete packet remains open. |
 | Staging | The approved Vhost staging threshold is 262,144,000 bytes (250 MiB), warning only; writes remain allowed and there is no file-count limit. Boundary behavior has focused test coverage. | Policy and implementation verified; the live profile has not crossed the threshold. |
 | Retention and backup | Live transient source files have a 72-hour maximum. The backup policy retains the newest seven verified daily SQLite copies; owner approval allows unresolved retry/quarantine payloads in those copies. Restore is manual to a new path. | Policy and rotation/restore tests verified; unresolved payloads can roll forward while still pending. Retention of other backup-tree files is open. |
 | Backup storage | The last content-free inventory found 21 entries, 19 regular files, 4,618,625 logical bytes, and 4,636,672 allocated bytes. Twenty entries remain unclassified; four entries were not owner-only, so the scan reported incomplete. | Open: no retention or warning policy for the older recovery files. |
@@ -38,10 +38,11 @@ capture, cleanup, or policy change.
 - Assign retention and warning rules to the unclassified older backup files
   and complete permanent-data accounting.
 - Finish the local source-to-sink privacy review beyond the Curator MCP child.
-- Reconcile canonical projection for the named smoke goal and compare the
-  Vhost-owned target hashes for the reviewed workflow.
-- Reconcile package rollback and all applicable local workflow evidence against
-  this exact package/config binding.
+- Compare the other Vhost-owned target hashes for the reviewed workflow; only
+  the configured `HISTORY.md` target was written during this projection check.
+- Exercise replacement and rollback in a disposable installed environment, then
+  reconcile all applicable local workflow evidence against this exact
+  package/config binding.
 - `eaglesvn` reviews and accepts or rejects this snapshot; no review decision is
   implied by its creation.
 
