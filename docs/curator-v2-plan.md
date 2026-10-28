@@ -622,6 +622,9 @@ plugin or Hermes integration is installed and working end to end.
       trusted inventory or establish class-level retention. Owner decision
       (2026-10-28): warn at 262,144,000 allocated bytes (250 MiB) for the whole
       backup tree; keep every file and never prune based on this budget. The
+      current legacy entries remain untouched until `eaglesvn` reviews and
+      approves deletion of an exact inventory. The seven-copy rotation applies
+      only to verified daily snapshots created by Curator's backup routine.
       bounded backup reader now returns `warning_status`: `warning` at or above
       the observed-byte threshold, `below_threshold` only for a complete
       supported scan below it, and `unknown` for incomplete or unsupported
@@ -632,8 +635,9 @@ plugin or Hermes integration is installed and working end to end.
       bytes, but remains `incomplete`/`unknown` because it skips two
       group-writable directories. The 13 focused backup tests pass, including
       threshold and keep-files behavior. This implements the local warning
-      rule only; backup inventory, retention decisions for older classes, and
-      permanent-data accounting remain open. By top-level name/type only, the
+      rule and legacy-file deletion boundary only; complete backup inventory,
+      long-term class retention/recovery horizons, and permanent-data
+      accounting remain open. By top-level name/type only, the
       20 unclassified entries are
       three older SQLite snapshots, eight WAL/SHM sidecars, five package
       rollback archives, one YAML profile-config snapshot, one VS Code settings
