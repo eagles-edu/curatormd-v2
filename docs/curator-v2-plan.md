@@ -4877,6 +4877,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       focused consumer-binding lifecycle suite passes nine tests; targeted
       Pyright, errors-only Pylint, and `git diff --check` pass. This closes the
       local held-reader retry case only; broader privacy sinks remain open.
+      Retired-project follow-up (2026-10-28): the same content-free scrub and
+      held-reader retry regression now retires the fenced project before the
+      approved terminal disposition. The event remains reviewable by its exact
+      payload digest; replay after reader release completes the scrub. This
+      covers local retired-project disposition only, not the complete
+      source-to-sink review.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.

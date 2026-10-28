@@ -9279,3 +9279,19 @@ while preserving explicit criteria and same-project parent validation.
   checklist marker changed.
 - **Outcome:** Make an exact approved replay finish deferred payload scrubbing
   without duplicating the terminal decision.
+
+## 2026-10-28 — Exercise terminal scrub for a retired project
+
+- **Intent:** Extend the local payload-scrub regression to the retired-project
+  terminal-disposition path called out in the privacy review.
+- **Changed fact:** The test now fences and retires the project while retaining
+  one quarantined event, then performs the exact approved disposition. The
+  payload canary stays pending only while a reader pins the WAL and is scrubbed
+  after the reader releases and the decision is replayed.
+- **Verification:** The focused consumer-binding lifecycle suite passes nine
+  tests; targeted Pyright reports zero diagnostics, errors-only Pylint exits 0,
+  and `git diff --check` passes.
+- **Open gate:** This is synthetic local evidence. Human authorization is a test
+  authorizer, and deployed identity, backup, and other sink paths remain open.
+- **Outcome:** Confirm that local project retirement does not bypass or block
+  exact terminal event disposition and payload scrubbing.

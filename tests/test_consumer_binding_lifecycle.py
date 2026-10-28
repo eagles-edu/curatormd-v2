@@ -288,8 +288,8 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         with self.assertRaisesRegex(ConflictError, "does not accept new events"):
             self.store.ingest_event(replace(event, event_id="new-event"))
 
-    def test_terminal_event_disposition_is_exact_ordered_and_replayable(self) -> None:
-        """A fenced source can close one failed event without losing its receipt."""
+    def test_retired_project_terminal_event_disposition_scrubs_and_replays(self) -> None:
+        """Scrub an approved terminal event after project retirement and retry."""
 
         self._register()
         payload_canary = "terminal-disposition-private-payload-canary"
@@ -334,6 +334,18 @@ class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
         self.assertEqual(observed.consumer_binding.status, "deregistration_pending")
         self.assertEqual(observed.event_status_counts, (("quarantined", 1),))
         self.assertEqual(observed.unprocessed_event_count, 1)
+        self._allow_admin(ProjectAdministrationAction.RETIRE)
+        retirement = self.manager.retire_project(
+            self.operator,
+            self.project_id,
+            "Owner retires the fenced project",
+            1,
+            "retire-before-terminal-disposition",
+        )
+        self.assertEqual(retirement.retired_revision, 2)
+        self.assertEqual(
+            self.store.get_project_registration(self.project_id).status, "suspended"
+        )
         reader = sqlite3.connect(self.store.database, isolation_level=None)
         self.addCleanup(reader.close)
         reader.execute("BEGIN")
