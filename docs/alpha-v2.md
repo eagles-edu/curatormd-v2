@@ -520,3 +520,25 @@ classes. The backup-directory scan remains incomplete: it recognizes one
 directory has 21 entries and measures 4,618,625 logical / 4,636,672 allocated
 bytes; no files were changed or deleted. Retention and local warning thresholds
 for those unclassified recovery files remain open.
+
+## 2026-10-28 local backup-tree accounting
+
+Curator's bounded backup-directory reader now includes observed counts and
+logical/allocated bytes for regular files across nested directories. It does
+not open file contents or follow symlinks, and retains separate totals for
+recognized daily SQLite snapshots. The refreshed wheel SHA-256 is
+`c4c4d265c7cb82dd6cd4ba100a95746ca3fd612c48615c0ccba68914fbef1543`.
+Before installation, 183 package, metadata, and launcher files were archived
+and hash-verified at
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-backup-tree-metrics-20261028.tar.gz`
+(SHA-256
+`afc393c1eca11d00dee8ca091651d55b1b717be84ffcae224d4bf1d7281f6af9`).
+All 88 installed Python modules match source, and `uv pip check` passes.
+
+The attended read-only Vhost view reports 21 observed entries, 19 regular
+files, 4,618,625 observed file bytes, and 4,636,672 allocated bytes. One
+524,288-byte daily snapshot is recognized; 20 other entries remain
+unclassified, so status remains incomplete. The scanner traversed the bounded
+tree without reading file contents or following symlinks. No service was
+restarted and no backup entry was moved, changed, or deleted. Retention and
+warning levels for the unclassified recovery material remain open.

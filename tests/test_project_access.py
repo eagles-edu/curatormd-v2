@@ -441,6 +441,16 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
             usage.backup_storage.allocated_bytes,
             backup_file.stat().st_blocks * 512,
         )
+        self.assertEqual(usage.backup_storage.observed_entry_count, 1)
+        self.assertEqual(usage.backup_storage.observed_file_count, 1)
+        self.assertEqual(
+            usage.backup_storage.observed_file_bytes,
+            len(b"verified-snapshot"),
+        )
+        self.assertEqual(
+            usage.backup_storage.observed_allocated_bytes,
+            backup_file.stat().st_blocks * 512,
+        )
         counts = {item.class_name: item.record_count for item in usage.classes}
         logical_bytes = {item.class_name: item.logical_bytes for item in usage.classes}
         self.assertEqual(

@@ -80,20 +80,56 @@ class DatabaseBackupTests(unittest.TestCase):
 
             oversized_directory = Path(temporary) / "oversized"
             oversized_directory.mkdir(mode=0o700)
-            for index in range(33):
+            for index in range(257):
                 (oversized_directory / f"note-{index}").write_bytes(b"x")
             oversized = measure_backup_directory(oversized_directory)
             self.assertEqual(oversized.status, "incomplete")
             self.assertIsNone(oversized.allocated_bytes)
-            self.assertIsNotNone(oversized.unclassified_entry_count)
-            assert oversized.unclassified_entry_count is not None
-            self.assertLessEqual(oversized.unclassified_entry_count, 32)
+            self.assertEqual(oversized.observed_entry_count, 256)
+            self.assertEqual(oversized.observed_file_count, 256)
+            self.assertEqual(oversized.observed_file_bytes, 256)
+            self.assertEqual(oversized.unclassified_entry_count, 256)
 
             unsafe_directory = Path(temporary) / "unsafe-backups"
             unsafe_directory.symlink_to(backup_directory, target_is_directory=True)
             unsafe = measure_backup_directory(unsafe_directory)
             self.assertEqual(unsafe.status, "unavailable")
             self.assertIsNone(unsafe.backup_count)
+
+    def test_backup_directory_usage_measures_nested_files_without_following_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backup_directory = root / "backups"
+            backup_directory.mkdir(mode=0o700)
+            snapshot = backup_directory / "curator-v2-2026-10-28.sqlite3"
+            snapshot.write_bytes(b"snapshot")
+            snapshot.chmod(0o600)
+
+            old_packages = backup_directory / "extension-backups"
+            old_packages.mkdir(mode=0o700)
+            old_package = old_packages / "old.vsix"
+            old_package.write_bytes(b"prior package")
+            old_package.chmod(0o600)
+
+            external = root / "outside"
+            external.mkdir(mode=0o700)
+            outside_file = external / "unmeasured.bin"
+            outside_file.write_bytes(b"must not be counted")
+            (backup_directory / "external-link").symlink_to(external, target_is_directory=True)
+
+            usage = measure_backup_directory(backup_directory)
+
+            self.assertEqual(usage.status, "incomplete")
+            self.assertEqual(usage.backup_count, 1)
+            self.assertEqual(usage.file_bytes, len(b"snapshot"))
+            self.assertEqual(usage.observed_entry_count, 4)
+            self.assertEqual(usage.observed_file_count, 2)
+            self.assertEqual(
+                usage.observed_file_bytes,
+                len(b"snapshot") + len(b"prior package"),
+            )
+            self.assertEqual(usage.unclassified_entry_count, 3)
+            self.assertTrue(outside_file.exists())
 
     def test_backup_and_restore_are_consistent_private_and_non_overwriting(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

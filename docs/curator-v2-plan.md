@@ -605,12 +605,15 @@ plugin or Hermes integration is installed and working end to end.
       unassigned scrub-queue bytes, a 524,288-byte SQLite main file, a 168,952-
       byte WAL, and 32,768 unattributed database bytes. The sibling backup
       inventory is incomplete: one recognized 524,288-byte daily snapshot and
-      20 unclassified entries. A content-free filesystem scan measured 21 total
-      entries at 4,618,625 logical / 4,636,672 allocated bytes; 19 are regular
-      files and two are directories, and two regular files plus both directories
-      are not owner-only. No entries were moved, changed, or deleted. This is a
-      baseline, not complete permanent-data accounting or an approved warning
-      threshold. By name/type only, the 20 unclassified entries are three older
+      20 unclassified entries. The bounded V2 scanner now counts nested regular
+      files without reading contents or following symlinks. Its attended view
+      reports 21 observed entries, 19 regular files, 4,618,625 observed logical
+      bytes, and 4,636,672 observed allocated bytes. The inventory remains
+      incomplete because two files and both directories are not owner-only.
+      No entries were moved, changed, or deleted. This is complete size
+      observation for the current bounded tree, not class-level retention or an
+      approved warning threshold. By name/type only, the 20 unclassified entries
+      are three older
       SQLite snapshots, eight WAL/SHM sidecars, five package rollback archives,
       one YAML profile-config snapshot, one VS Code settings snapshot, and two
       prior VS Code extension-backup directories; archive/settings contents were

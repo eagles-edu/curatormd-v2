@@ -426,13 +426,17 @@ class SQLitePhysicalStorageUsage:
 
 @dataclass(frozen=True, slots=True)
 class BackupDirectoryUsage:
-    """Bounded aggregate size of private daily SQLite snapshots."""
+    """Bounded daily-snapshot totals and observed bytes for the whole backup tree."""
 
     status: Literal["available", "incomplete", "unavailable"]
     backup_count: int | None
     file_bytes: int | None
     allocated_bytes: int | None
     unclassified_entry_count: int | None
+    observed_entry_count: int | None
+    observed_file_count: int | None
+    observed_file_bytes: int | None
+    observed_allocated_bytes: int | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -9932,3 +9932,29 @@ while preserving explicit criteria and same-project parent validation.
   report; Codex-session activity here is not evidence of that event.
 - **Outcome:** Identify the missing live capture boundary and preserve the
   report's incomplete status.
+
+## 2026-10-28 — Measure nested local backup recovery files
+
+- **Intent:** Include nested recovery-directory files in the content-free
+  backup-size view without treating unclassified entries as daily snapshots.
+- **Changed fact:** The bounded scanner now traverses safe nested directories,
+  counts regular-file logical bytes and allocated blocks across the tree, and
+  reports observed entry/file totals separately from recognized daily SQLite
+  backups. It does not read file contents or follow symlinks; unknown entries,
+  non-private modes, and limit hits keep status incomplete. Inaccessible
+  directory reads return unavailable.
+- **Verification:** Backup and project-access suites pass 12/12 each; strict
+  Pyright reports zero diagnostics and errors-only Pylint exits 0. The refreshed
+  alpha wheel SHA-256 is
+  `c4c4d265c7cb82dd6cd4ba100a95746ca3fd612c48615c0ccba68914fbef1543`;
+  all 88 installed modules match source and `uv pip check` passes. The rollback
+  archive's 183 files were hash-verified before installation. The attended
+  Vhost view reports 21 entries, 19 regular files, 4,618,625 observed file
+  bytes, and 4,636,672 allocated bytes; one daily snapshot is recognized and
+  20 entries remain unclassified.
+- **Open gate:** The complete byte observation does not assign retention or
+  warning policies to old recovery material. Its contents and dispositions
+  remain unreviewed; no backup entries were changed or removed. No checklist
+  marker changed.
+- **Outcome:** Measure current backup-tree size while preserving the exact
+  seven-copy snapshot policy and unknown recovery files.
