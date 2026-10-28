@@ -9340,7 +9340,9 @@ substitute for evidence at a later integration boundary.
       and gate validation. The extension probe returned `vhost-manager-alpha`,
       all seven dependencies healthy, and zero gates. Its 17 focused Node tests
       and Hermes Core's 49 focused CLI tests pass. The current VS Code window
-      still needs a reload and panel refresh before a rendered-state claim.
+      extension-host log records Curator V2 activation at 12:17:49 UTC; a
+      rendered panel refresh has not been observed, so no visible-state claim
+      is made.
       This repairs the reported unknown status source; it does not close
       unrelated acceptance checks. This row
       remains open until the applicable checks are reconciled against the same package and
