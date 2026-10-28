@@ -34,6 +34,24 @@
 - **Outcome:** Keep the token-usage checklist item open until safe local runtime
   integration and a real current event are verified.
 
+## 2026-10-28 — Recheck local Vhost rollback and manual DNS retention
+
+- **Intent:** Continue the local-alpha pilot and verify the approved
+  no-verbatim handling and 72-hour cap for manual DNS logs.
+- **Changed fact:** The active loopback Vhost utility records the prior
+  disposable apply as `rolled-back` and rollback as `complete`; both exact
+  Curator receipts are `processed`, and the `.test` site is absent. The manual
+  DNS expiry timer is active with a successful last run.
+- **Verification:** `sudo nginx -t` passes. Two disposable manual-DNS tests
+  pass; the installed expiry script hash matches the consumer source, which
+  removes only old matching regular logs without reading contents. No consumer
+  source or live operation was changed.
+- **Open gate:** Same-event replay, out-of-scope before/after hashes, owner
+  review, and the complete cross-sink privacy audit remain open; no checklist
+  marker changed.
+- **Outcome:** Reconfirm the local rollback and one transient-log path while
+  keeping the full pilot and privacy criteria open.
+
 ## 2026-10-27 — Record request-bound Vhost acceptance progress
 
 - **Intent:** Continue the real-consumer acceptance work in Slice I with a

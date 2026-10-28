@@ -4486,6 +4486,13 @@ unknown. The dashboard and live event-delivery gates remain open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
       every applicable local and deployed path have direct evidence; focused
       canary tests do not close the full review.
+      Manual DNS transient-sink follow-up (2026-10-28): two isolated tests pass
+      for failed and successful fake-ACME runs. They verify TXT-value redaction
+      in saved logs, immediate temp cleanup, and that bounded Curator results
+      contain neither challenge values nor domains. The installed host cleanup
+      script hash matches the consumer source; its six-hour timer is active,
+      and its last one-shot completed successfully. This verifies the approved
+      manual-DNS log path only; the full privacy matrix remains open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
@@ -8410,6 +8417,14 @@ substitute for evidence at a later integration boundary.
       local source/artifact audit and standalone utility scope were closed on
       2026-10-26 for the approved alpha. The recovery packet and independent
       release approvals remain open; Slice I stays open.
+      Rollback recheck (2026-10-28): the local Vhost service and its root-run
+      utility are active. Its loopback history still records the named apply as
+      `rolled-back` and rollback as `complete`; the corresponding two Curator
+      inbox receipts are `processed`, and the rolled-back `.test` site lookup
+      returns 404. `sudo nginx -t` succeeds. This reconfirms the existing
+      disposable run and rollback, but does not supply same-event replay,
+      out-of-scope before/after hashes, or the owner-reviewed evidence packet.
+      Slice I remains open.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
