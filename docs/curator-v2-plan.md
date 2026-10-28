@@ -8386,115 +8386,29 @@ substitute for evidence at a later integration boundary.
       cleanup disabled until the Hermes account owner approves the target
       manifest, identity, supervision, recovery procedure, and recorded pilot
       evidence. This proposal does not authorize cleanup on a live host.
-- [ ] **I. Pilot and release:** run the V2 consumer workflow and rollback drill,
-      publish runbooks/release notes, and obtain owner sign-off on the pilot and
-      any production retention, cleanup, or capture policy beyond the approved
-      local-alpha defaults. V1 migration or rollback is not a V2 gate.
-      Local alpha evidence (2026-10-22) is summarized in
-      [`release-gates-v2.md`](release-gates-v2.md): profile-bound event delivery,
-      bounded payload disposal, and disposable consumer contracts were checked.
-      That checkpoint predated the Vhost application and canonical-projection
-      evidence recorded below; it does not establish production rollback or
-      owner sign-off. Next
-      pilot checkpoint (owner-led): confirm the named request's event class,
-      profile/project binding, and targets fit the approved local-alpha policy
-      ([`Curator V2 Pilot Default Policy`](<Curator V2 Pilot Default Policy.md>));
-      obtain explicit authorization for this one capture, and approve a policy
-      change before expanding scope. Exercise the named Vhost application
-      request through the real producer and verify its scoped receipt and
-      canonical projection; preserve and inspect a recovery copy; complete an
-      approved rollback drill with a recovery receipt; then publish the
-      runbook/release notes and record the owner's cleanup, retention, and
-      capture decisions. Treat production
-      policy approval as a separate gate. Keep Slice I open until those artifacts
-      and approvals are reviewable.
-      Proposed approval ownership: the pilot owner authorizes the named one-run
-      capture and approves its source inventory, exact bindings, and targets;
-      the product owner signs off the pilot and residual risks; production
-      policy changes require their policy owner; the deployment owner approves
-      rollback; and the release owner approves the runbook and release. Keep
-      each decision independent; no approval authorizes a broader capture or a
-      different target.
-      Proposed pilot evidence packet (content-free, retained in the owner's
-      access-controlled operations system): bind the approved local-alpha policy
-      reference, one-run capture authorization, and approver reference to the
-      exact profile, project, repository and config fingerprints, plus
-      persistence/staging targets. Record separately scoped approval references
-      for the one-run capture, product pilot/risk sign-off, any production-policy
-      change, rollback, and release; missing approvals leave their gates open.
-      Include the owner-reviewed producer/source-
-      to-class matrix digest and a disposition for every source: V2-staged,
-      owner-confirmed absent, or owner-managed outside V2. No unresolved
-      producer, class, or destination may remain for the approved run. List only
-      bounded source/class IDs and dispositions, event IDs, source sequences,
-      receipt dispositions, goal/fact IDs, the stable run ID, and the durable
-      action-intent and authorization-consumption receipt references. Prove an
-      exact retry resumes that run and a different run is denied without a
-      second capture or target mutation; record only their IDs and outcomes.
-      Include one bounded run disposition (`completed`, `open/degraded`, or
-      `unknown`), the last confirmed durable step, and the next owner/action.
-      If stopped, bind the stop trigger, operator ID, and bounded control result
-      to the same run ID so a partial run cannot be presented as complete.
-      Include the complete inventory hash and canonical projection
-      hash/reconciliation result; then attach the recovery snapshot digest and
-      integrity outcomes, before/after target digests, rollback point, and
-      recovery/rollback receipt references.
-      Reuse the proposed record fields in
-      [`storage-recovery-v2.md`](storage-recovery-v2.md).
-      Exclude request bodies, transcripts, tool arguments, provider output,
-      credentials, and raw exception text. This packet is a proposed review
-      format, not an implemented receipt schema or authorization to capture.
-      Proposed pilot stop conditions: before the one-run authorization, name
-      the operator who may stop the producer/router and the exact bounded
-      control used to do so. Stop capture and routing if the profile, project,
-      repository/config fingerprint, event class, or persistence/staging target
-      differs from the approved binding; if producer coverage or inventory is
-      incomplete; if acknowledgment occurs without a durable `processed` receipt
-      (including `suppressed_nonactive_goal` with an atomic cursor advance) or
-      exact `duplicate` receipt; if any write reaches another project or an
-      unapproved target; if a health observation that the approved local-alpha
-      policy or this run's preflight designates mandatory is unknown or stale;
-      or if a privacy canary appears in an unapproved sink. Production-only
-      probes are not local-alpha prerequisites unless owners explicitly include
-      them in the one-run authorization. On stop, keep any pending
-      envelope only in its approved retry/quarantine store, retain content-free
-      receipt references without copying the envelope into the review packet,
-      prevent automatic replay or cleanup from expanding the action, preserve
-      the pre-run recovery copy, and record the run as open/degraded with the
-      failed condition and owner.
-      Do not resume, purge, switch storage, or perform rollback beyond an
-      existing approval's exact conditions and targets; if the observed state
-      falls outside that approval, require the applicable product, repository,
-      policy, or deployment owner to record a fresh decision bound to the state
-      and targets. Record the stop trigger, time, operator, bounded control
-      result, preserved receipt references, and resume/rollback approval
-      reference in the content-free evidence packet. This proposed containment
-      protocol grants no operational access.
-      Current local-alpha evidence (2026-10-25T11:38Z): the supported profile
-      reads 21 processed receipts, eight goals, four facts, and healthy project
-      status with no gates. Three reserved `.test` sites have been applied and
-      rolled back through the local Vhost routes; exact receipts were processed,
-      the latest apply/rollback facts reconcile to canonical Vhost history, and
-      the disposable accounts/sites were removed. This closes the real local
-      route and projection substeps only. Five earlier operation goals still
-      await disposition, the two latest review goals remain active, and the
-      local source/artifact audit and standalone utility scope were closed on
-      2026-10-26 for the approved alpha. The recovery packet and independent
-      release approvals remain open; Slice I stays open.
-      Rollback recheck (2026-10-28): the local Vhost service and its root-run
-      utility are active. Its loopback history still records the named apply as
-      `rolled-back` and rollback as `complete`; the corresponding two Curator
-      inbox receipts are `processed`, and the rolled-back `.test` site lookup
-      returns 404. `sudo nginx -t` succeeds. This reconfirms the existing
-      disposable run and rollback.
-      Exact apply replay (2026-10-28): the goal-start payload reconstructed
-      from the canonical goal fields matches the original receipt's
-      idempotency digest. Replaying it through the same profile-bound stdio
-      server returned the existing `processed` receipt. The V2 idempotency path
-      returns the existing row without inserting a receipt; the before/after
-      counts remain 56 receipts, 25 goals, and 22 facts. The exact replay
-      substep is verified. Out-of-scope before/after hashes and the
-      owner-reviewed evidence packet remain open; Slice I remains open.
+- [ ] **I. Local alpha and owner review:** finish the approved V2 consumer
+      workflow for `vhost-manager-alpha`, then let `eaglesvn` review one
+      content-free evidence snapshot. V1 is outside this plan; no additional
+      users, public endpoint, or production service is required. The current
+      snapshot is [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
+      It records the installed package/config binding, the 2026-10-28 loopback
+      Vhost apply/replay/rollback receipts, staging and retention policy,
+      backup/restore evidence, and the current open issues. The route smoke
+      and exact receipt replay are verified. Finish the remaining local checks:
+      verify the exact canonical projection for the named run; compare the
+      approved out-of-scope target hashes before and after that run; verify a
+      package rollback to its archived version; and refresh the token report
+      through a real profile turn rather than synthetic data. Preserve any
+      operation or cleanup work as open until its exact reviewer action and
+      receipts exist. Stop if the project/config binding changes, a receipt is
+      missing or not `processed`/exact `duplicate`, an out-of-scope target
+      changes unexpectedly, or a privacy canary reaches an unapproved sink.
+      Record only package/config/project fingerprints, bounded result codes,
+      receipt references, hashes, and evidence times; do not include request
+      bodies, transcripts, tool arguments, provider output, credentials, or raw
+      exception text. Keep Slice I open until the local evidence is reconciled
+      and `eaglesvn` records an explicit accept/reject decision against the
+      snapshot digest.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
@@ -9197,10 +9111,9 @@ substitute for evidence at a later integration boundary.
       scope is single-user development with one repository active at a time.
       The local producer/artifact audit is complete for the approved one-repository
       alpha, including standalone utilities and owner-disposition of out-of-root
-      artifacts. Gate F remains open for human disposition, production retention,
-      recovery, and release evidence; live deployment identity and runtime remain
-      separate gates. Concurrent or shared multi-consumer support is outside the
-      approved alpha scope and is deferred unless the owner expands scope.
+      artifacts. Gate F remains open for local human disposition, permanent-data
+      retention/recovery decisions, and alpha sign-off. Concurrent or shared
+      multi-consumer support is outside the approved alpha scope.
 - [ ] The single-user local alpha has evidence for the operating and recovery
       behavior that this development utility actually uses. Acceptance scope is
       the approved OS account `eaglesvn`, one active repository, the configured

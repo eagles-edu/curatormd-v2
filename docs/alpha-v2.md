@@ -2,9 +2,12 @@
 
 ## Candidate scope
 
+The latest content-free evidence snapshot for owner review is
+[`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
+
 The package version is `0.1.0a1`. This is a local alpha candidate for
-integration and feedback. It is not a published distribution, production
-deployment, or authorization to broaden capture or enable destructive cleanup.
+integration and feedback, not a published or publicly enabled service. It does
+not authorize broader capture or destructive cleanup.
 
 The candidate includes the typed goal/fact/event lifecycle, local SQLite
 backend, stdio MCP server, reference repository plugin, bounded staging and

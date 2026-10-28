@@ -9764,6 +9764,27 @@ while preserving explicit criteria and same-project parent validation.
 - **Outcome:** Make the remaining finish line match the approved development
   scope without claiming the remaining local evidence is complete.
 
+## 2026-10-28 — Assemble the local alpha evidence snapshot
+
+- **Intent:** Give `eaglesvn` one bounded, content-free record for reviewing the
+  current V2 alpha package and its remaining local work.
+- **Changed fact:** Added
+  [`docs/local-alpha-evidence-2026-10-28.md`](../docs/local-alpha-evidence-2026-10-28.md),
+  SHA-256 `2a832b843624d07451b67b1b8ab3b3e1ca996fd81750035f1b8c07ceecbb6aa7`.
+  It binds the installed wheel, config/project, local database and owner; it
+  records Vhost smoke receipts, backup/staging defaults, usage freshness, and
+  the scope of the Curator process privacy limits. The Slice I and final
+  acceptance rows now point to this packet and require only local-alpha checks
+  and one `eaglesvn` decision.
+- **Verification:** Recomputed the packet SHA-256, verified the 167/178
+  delivery-row count is unchanged, and `git diff --check` passes. No Vhost or
+  Hermes source was modified in this documentation update.
+- **Open gate:** The packet is not an approval. Exact projection review,
+  package rollback, fresh real profile usage, broader local privacy review,
+  backup-tree retention, and `eaglesvn` sign-off remain open.
+- **Outcome:** Replace the overbroad proposed deployment manifest with one
+  reviewable record tied to the approved local development scope.
+
 ## 2026-10-28 — Verify rolling retry payload backup retention
 
 - **Intent:** Check whether seven retained daily backups also establish a
