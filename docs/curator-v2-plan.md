@@ -4599,6 +4599,11 @@ unknown. The dashboard and live event-delivery gates remain open.
       maintenance service reports `Result=success`, exit status 0,
       `LimitCORE=0`, and `UMask=0077`. These process controls remain only one
       part of the source-to-sink review; no crash canary was generated.
+      Review aid: the content-free [`local-alpha privacy sink
+      matrix`](local-alpha-evidence-2026-10-28.md#local-alpha-privacy-sink-matrix)
+      now separates tested boundaries, the approved retry/quarantine backup
+      exception, and the unverified command-history, producer, and host sinks.
+      The matrix is not owner-reviewed and does not close this checklist item.
       Local launcher follow-up (2026-10-28): the Curator hosted-MCP launcher
       source now sets its core-dump limit to zero and its file-creation umask
       to `0077` before initializing the runtime. A child-process regression
@@ -4612,8 +4617,8 @@ unknown. The dashboard and live event-delivery gates remain open.
       upstream crash reporting handle data. Keep the full source-to-sink item
       open.
       Keep the privacy row open until the owner-reviewed source/sink matrix and
-      every applicable local and deployed path have direct evidence; focused
-      canary tests do not close the full review.
+      every applicable local-alpha path have direct evidence; focused canary
+      tests do not close the full review.
       Manual DNS transient-sink follow-up (2026-10-28): two isolated tests pass
       for failed and successful fake-ACME runs. They verify TXT-value redaction
       in saved logs, immediate temp cleanup, and that bounded Curator results

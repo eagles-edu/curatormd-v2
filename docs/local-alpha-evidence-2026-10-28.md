@@ -1,6 +1,6 @@
 # Local Curator V2 alpha evidence snapshot
 
-Updated 2026-10-28 05:30 UTC. Each row retains its observation time. This is
+Updated 2026-10-28 05:43 UTC. Each row retains its observation time. This is
 a content-free snapshot for the single-user, one-repository development alpha.
 It does not authorize another capture, cleanup, or policy change.
 
@@ -33,6 +33,27 @@ It does not authorize another capture, cleanup, or policy change.
 | Hermes profile-to-ledger read | At 2026-10-28 05:36 UTC, `./.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` exited 0, identified host-injected profile/session context, connected to the installed stdio server, and discovered 50 tools. The read returned 56/56 processed receipts, 25 goals, 22 facts, zero SDE candidates, and a separate healthy project-health observation with complete database and staging observations and seven healthy dependency observations, with no gate codes. A direct `mcp__curator_v2__goal_list` call from this Codex session returned `unauthenticated` because it had no trusted Hermes profile context; the supported local profile call succeeded. The profile's configured `codex_bin` was previously corrected from a missing VS Code extension path to installed Codex CLI `0.162.0-alpha.17.2`; a mode-0600 config backup was retained. | Local Hermes profile context and ledger/health reads verified. The direct caller without injected context is denied. This probe is not an app-server lifecycle event and did not refresh token usage. |
 | SDE review | The local review CLI's `queue` read returned `pending: []` for `vhost-manager-alpha`. | No candidate awaits disposition; alpha packet review is a separate owner decision. |
 
+## Local-alpha privacy sink matrix
+
+This matrix records tested boundaries and the approved retry-data exception. It
+does not claim that every producer or operating-system sink has been audited.
+
+| Sink | Current evidence | State |
+|---|---|---|
+| Exceptions, MCP errors, and CLI failures | Focused canary regressions cover MCP tool errors/logs, router configuration failures, producer failures, storage failures, and event/config decode errors. The handlers emit fixed public errors or bounded labels. See the privacy progress record in [`curator-v2-plan.md`](curator-v2-plan.md#8-security-privacy-token-and-disk-controls). | Covered for these tested paths; every producer/adapter path has not been inventoried. |
+| Metrics | `tests/test_api_health_metrics.py::test_retry_payload_text_is_not_exposed_in_project_metrics` checks that retained retry text does not appear in Prometheus output. | Focused canary evidence recorded; no general trace exporter is configured in Curator V2. |
+| Canonical ledger and SQLite | Sensitive-event ingress tests reject recognized credential-like input before durable writes. Processed payload scrub tests cover WAL removal. Retryable and quarantined event payloads remain in the inbox for recovery by design. | Processed/rejected paths have focused evidence; retry/quarantine retention is an explicit recovery exception, not canonical fact storage. |
+| SQLite backups | Backup tests prove processed envelopes are not retained as source payloads and verify retry/quarantine restoration. Owner policy permits unresolved retry/quarantine payloads in the newest seven daily backups. | Approved exception; pending payload age can roll forward while the event remains unresolved. |
+| Hermes diagnostics and trajectory | Hermes Core source/test progress records redaction of Curator V2 arguments, results, and failure details in the reviewed diagnostics and trajectory paths. | Source/test evidence only; other Hermes session and trajectory paths were not audited for this snapshot. |
+| Core dumps | At 05:40 UTC, the active gateway and local maintenance service reported `LimitCORE=0`; the gateway process also reported a zero core limit and `UMask=0077`. No crash canary was generated. | Limits verified for these processes; other producers and crash-report handling were not exercised. |
+| Host journals | The current maintenance run writes a bounded JSON summary with counts and status. The inspected service output contained no event payload. | Verified for this maintenance service run only; other journal producers were not scanned. |
+| Command history | Curator event content is transported through MCP/stdin rather than command-line arguments in the reviewed producer path. | The account's command history was not scanned; this sink remains unverified. |
+
+The full privacy checklist remains open for command-history coverage, other
+local producer/log paths, broader Hermes and operating-system sinks, and owner
+review of this matrix. The available focused evidence does not establish a
+universal source-to-sink guarantee.
+
 ## Remaining local acceptance work
 
 - Refresh the profile usage ledger through a real, durable project/goal-bound
@@ -40,7 +61,8 @@ It does not authorize another capture, cleanup, or policy change.
   its known coverage gaps. No model/token budget is enforced.
 - Complete class-specific long-term retention/recovery horizons for the legacy
   backup entries and permanent database classes.
-- Finish the local source-to-sink privacy review beyond the Curator MCP child.
+- Review the local-alpha privacy sink matrix and close its listed unverified
+  producer and operating-system paths.
 - Compare the other Vhost-owned target hashes for the reviewed workflow; only
   the configured `HISTORY.md` target was written during this projection check.
 - Reconcile the package and all applicable local workflow evidence against this
