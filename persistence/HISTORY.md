@@ -27,7 +27,10 @@
   contains unrelated modifications and untracked files and was left untouched.
 - **Open gate:** No fresh Hermes provider-usage event has been observed. The
   source checkout, unit tests, and retained-row report do not prove live token
-  capture. Curator V2 MCP persistence also returned `unauthenticated`.
+  capture. A direct Curator MCP request without Hermes context returns
+  `unauthenticated`; the supported source-checkout CLI path succeeds with
+  host-injected profile/session context and currently reports 56/56 processed
+  receipts, 25 goals, 22 facts, and healthy local project health.
 - **Outcome:** Keep the token-usage checklist item open until safe local runtime
   integration and a real current event are verified.
 
