@@ -2658,6 +2658,16 @@ plugin or Hermes integration is installed and working end to end.
       `coverage_complete=false` and `tokens_complete=false`. This makes staleness
       measurable but does not supply missing usage, approve a budget, or close
       this checklist item.
+      Local usage refresh (2026-10-28 05:57 UTC): the read-only installed
+      `project-usage` handler matches the Hermes checkout source by SHA-256
+      `28bdc821866b2814737dd9cdca155f19389b008044435121af1a79d5ea302428`.
+      After the real local app-server turn, the report shows seven retained
+      turns (six reported, one unknown), ending at `2026-10-28T05:50:47Z`; the
+      latest event age was 380 seconds. Both completeness flags remain false
+      and the report lists auxiliary calls outside active-turn context,
+      auxiliary attempts without response, and unbound sessions as exclusions.
+      No token totals were displayed. This refreshes freshness evidence only;
+      project-wide completeness, budget/alert policy, and retention remain open.
 - [x] Verify local restart recovery, duplicate delivery, delayed ordering,
       SQLite worker locking, and backup restore for the single active repository.
       Local unit coverage explicitly closes/reopens SQLite with a sequence-gap event
