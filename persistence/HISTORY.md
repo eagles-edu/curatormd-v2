@@ -9471,3 +9471,20 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** This does not verify power-loss durability or usage budgets.
 - **Outcome:** Close local functional restart/replay reliability without
   claiming sustained or deployment-scale capacity.
+
+## 2026-10-28 — Close explicit local event routing
+
+- **Intent:** Apply the approved one-active-repository scope to the router
+  operation checklist.
+- **Changed fact:** Router acceptance is explicit and project-bound. The local
+  one-shot command validates the selected V2 repository, processes only its
+  registered project, and leaves unbound-project events untouched. No
+  background event scheduler or remote alert route is needed for this utility.
+- **Verification:** The plan records the installed Vhost consumer integration
+  and focused router tests for bounded execution, ordering, replay,
+  retry/quarantine, worker claims, and recovery. The Curator V2 delivery count
+  and whitespace check are rechecked after this record; no tests were rerun.
+- **Open gate:** This does not claim sustained-load or multi-project scheduler
+  behavior; those are outside the approved dev-only scope.
+- **Outcome:** Close local event routing without carrying production scheduling
+  requirements into Curator V2 alpha.

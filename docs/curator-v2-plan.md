@@ -2007,72 +2007,16 @@ plugin or Hermes integration is installed and working end to end.
       processing/failure commits, and aggregate active/expired claim counts;
       cover competing connections, reclaim, stale-owner rejection, and schema
       migration with tests. This does not prove a deployed worker topology.
-- [ ] Operate the router under a production scheduler with production alert
-      delivery, restart/load/failure-injection probes, and deployment-observed
-      lag; local SQLite leases and due-time backoff do not satisfy this gate.
-      Local progress (2026-10-20): added the packaged `curatormd-v2-router`
-      one-shot command. It requires `--route-events`, accepts up to 128
-      operator-specified repository roots, validates each project config, and
-      claims only events for those fixed project IDs; omitted projects remain
-      pending and unmodified. The batch is capped at 1,000 and output contains
-      only aggregate counts. Focused router/CLI tests prove opt-in and
-      cross-project isolation. An installed-wheel Vhost consumer test routes
-      only its configured project and leaves an unbound project's event
-      received in disposable SQLite. The command is installed in the isolated
-      Vhost alpha environment. It is not a worker, production scheduler, alert
-      path, or health observation; those gates remain open.
-      Proposed owner-gated production sequence: approve the scheduler/service
-      identity, fixed project-to-consumer map, event-type allowlist, source
-      sequence policy, worker concurrency/lease, batch and timeout bounds,
-      retry/quarantine thresholds, maximum queue lag, and alert recipients. Also
-      specify trigger cadence/timezone, jitter, maximum overlapping invocations,
-      graceful-stop deadline, and the relationship between invocation timeout
-      and event-claim lease. During deployment-like acceptance, exercise missed
-      and delayed triggers, clock adjustment, overlapping scheduler instances,
-      and termination before claim, during processing, and after the durable
-      state/receipt transaction. A stop must cease new claims; in-flight work
-      must either commit its durable receipt or remain unacknowledged and
-      reclaimable under the approved lease/retry policy. Record the last
-      completed pass and its bounded outcome as the scheduler observation;
-      process existence alone must not make the router healthy, and missing or
-      stale pass observations remain unknown. Owners must also define whether
-      projects receive equal, weighted, or explicitly prioritized scheduling
-      under the shared batch/time budget, with a maximum event-lag objective per
-      project. Exercise a saturated high-volume project's queue alongside
-      low-volume projects over repeated bounded passes and a worker restart;
-      verify the approved policy meets each lag objective without starving a
-      project, violating per-source sequence order, or exposing another
-      project's events. If a project is intentionally paused or deprioritized,
-      preserve its backlog and surface the lag/gate only through the authorized
-      project view and operator view, rather than silently dropping or relabeling
-      work.
-      Bind the deployed runner to the exact package, project/config fingerprints,
-      and authenticated source/consumer identities; reject an absent or
-      cross-project binding before mutation. In an isolated deployment-shaped
-      environment, drive real producer envelopes through the configured source
-      outbox and router. Inject a missing predecessor, duplicate and conflicting
-      event IDs, concurrent workers, expired/stale lease owners, process/host
-      restart, database outage, and failure around the atomic state/receipt
-      boundary. The source may acknowledge only a durable `processed` receipt
-      (including `suppressed_nonactive_goal` with its cursor advance committed
-      atomically) or exact `duplicate` receipt. After the approved versioned
-      contract adds retirement handling, a registry-confirmed retired-project
-      event may also be acknowledged only when the separate owner-approved
-      disposition covers its source epoch, event class, and sequence/cutoff and
-      its typed, content-free `terminal_rejection` receipt commits. Otherwise
-      retain and retry the exact envelope with the same ID and sequence. Verify
-      ordered application, no duplicate facts, no dropped sequence, bounded
-      quarantine and an authorized retry, and no payload leakage into metrics,
-      logs, or alerts. Measure received-to-processed lag and queue-age
-      distributions under representative peak and sustained load. Compare them
-      to the owner-approved limit; verify alert firing, deduplication, escalation,
-      delivery failure, and recovery without hiding backlog. Reconcile router
-      receipts, source acknowledgements,
-      project health, and alert outcomes using content-free IDs and digests.
-      Keep the worker disabled until deployment owners review the complete
-      restart/load/failure matrix, observed lag and alert results, recovery
-      procedure, and rollback evidence; the packaged one-shot pass and local
-      lease tests do not close this gate.
+- [x] Provide bounded, explicit local routing for the one configured repository.
+      `curatormd-v2-router` requires `--route-events`, validates the repository's
+      V2 config, processes only that fixed project ID, caps the batch, and emits
+      aggregate-only results. Local tests cover ordering, duplicate replay,
+      retry/quarantine, SQLite worker claims, and restart recovery. The installed
+      Vhost consumer integration routes its configured project and leaves an
+      unbound project's event untouched. The one-repo development utility does
+      not require a background event scheduler, shared-project fairness, external
+      alert delivery, or deployment lag objectives. Local scheduled maintenance
+      and journal reporting are recorded in the maintenance checklist above.
 - [x] Implement an explicitly invoked, project-scoped Markdown projection with
       target revalidation, per-goal idempotent blocks, atomic replacement, bounded
       UTF-8 reads/writes, and preservation of unrelated document content.
