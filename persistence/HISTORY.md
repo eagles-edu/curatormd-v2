@@ -10238,3 +10238,32 @@ while preserving explicit criteria and same-project parent validation.
   remaining alpha checks, and owner review remain open.
 - **Outcome:** Refresh source-level integration evidence while keeping it
   separate from live runtime proof.
+
+## 2026-10-29 — Refresh the isolated Curator V2 alpha package
+
+- **Intent:** Put the pushed V2 source into the dedicated one-user alpha
+  environment and verify the installed consumer path with recoverable rollback.
+- **Changed fact:** Installed wheel SHA-256
+  `042dc1fcb0cf40a154ff898c9275dd00b97c03eb49d104b141e83f85707419b1`, built
+  from source commit `43c8beb72e8b6894f66b279a5ba5b96d89e32d46`, only in the
+  `renew-ssl-coding` Curator virtualenv. Before replacement, verified a
+  183-file rollback archive at
+  `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-inbox-retention-20261029.tar.gz`
+  with SHA-256
+  `3ce3bccc5fde94d0e978ece8cac2052068be4f0fc0276017bc9768e280bec66e`; every
+  archive member hash matches its private manifest. The installed source now
+  matches all 88 Python modules. No Hermes or Vhost service was restarted.
+- **Verification:** `uv build --wheel` succeeded; installed-package hash
+  comparison found 88 matching modules and no missing, different, or extra
+  modules; `pip check` and MCP launcher `--help` pass. Eight Vhost consumer
+  contract tests passed; the Hermes-managed disposable integration returned
+  `result=passed` for five events, retry/replay/re-enrollment, projection,
+  isolation, privacy, and reviewer denial. The installed fact-capacity,
+  failed-payload retention, and backup restore regressions each passed. A fresh
+  trusted Hermes profile probe returned connected, all seven dependencies
+  healthy, no gates, and no event/review/purge backlog.
+- **Open gate:** This does not exercise a live Vhost application operation,
+  desktop rendering, complete token coverage, all retention/accounting rules,
+  or owner review. The live services were not restarted.
+- **Outcome:** Refresh the installed alpha package and its bounded consumer
+  evidence while leaving the full acceptance goal active.

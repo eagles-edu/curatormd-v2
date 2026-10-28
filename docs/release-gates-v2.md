@@ -14,7 +14,19 @@ match that scope and has been corrected. The Vhost source/artifact audit for
 the approved dirty development snapshot is complete; release gates below remain
 separate.
 
-Latest local-alpha package refresh (2026-10-26): wheel SHA-256
+Latest local-alpha package refresh (2026-10-29): wheel SHA-256
+`042dc1fcb0cf40a154ff898c9275dd00b97c03eb49d104b141e83f85707419b1` from
+Curator commit `43c8beb72e8b6894f66b279a5ba5b96d89e32d46` is installed only in
+the dedicated `renew-ssl-coding` V2 virtualenv after a verified 183-file
+rollback archive. All 88 installed modules match source; `pip check` and
+launcher help pass. The eight consumer contract tests, five-event
+Hermes-managed integration, and installed capacity/payload-retention/backup
+regressions pass. A fresh trusted profile probe reports all seven local
+dependencies healthy and no operational gates. The Vhost service and Hermes
+gateway were not restarted; no live Vhost operation was run. The prior
+2026-10-26 refresh record follows.
+
+Prior local-alpha package refresh (2026-10-26): wheel SHA-256
 `c1c3eb614e0dc85f5c9ebe28842316c6db8c59a748b14f05eb720ebb3bf3cee9` was
 installed only in the dedicated `renew-ssl-coding` V2 virtualenv after a
 verified rollback archive at

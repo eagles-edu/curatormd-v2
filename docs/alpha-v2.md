@@ -38,11 +38,33 @@ The dashboard reads the bound `vhost-manager-alpha` project: 41 processed
 receipts, 18 goals, 14 facts, no pending SDEs, and a complete empty staging
 inventory. Storage reports `0 B / 250.0 MiB` at a warning-only threshold and
 states writes remain allowed; model/token use is not reported in this view.
-The last observed seven unknown dependency gates explain the yellow state.
-This verifies the configured consumer editor and tooltip, not review/purge,
-complete token coverage, or deployed monitoring. The Curator V2 backend
+An earlier dashboard snapshot had seven unknown dependency gates; the fresh
+trusted profile probe on 2026-10-29 returned all seven healthy. The desktop
+status-bar rendering has not been rechecked since that probe. This verifies the
+configured consumer editor and tooltip, not review/purge, complete token
+coverage, or deployed monitoring. The Curator V2 backend
 checkout remains a global backend, not a consumer project; it does not need a
 consumer config or status-bar activation.
+
+## 2026-10-29 installed alpha package refresh
+
+Built wheel SHA-256
+`042dc1fcb0cf40a154ff898c9275dd00b97c03eb49d104b141e83f85707419b1` from
+Curator commit `43c8beb72e8b6894f66b279a5ba5b96d89e32d46`. Before replacement,
+verified the 183-file rollback archive
+`/home/eaglesvn/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-inbox-retention-20261029.tar.gz`
+(SHA-256
+`3ce3bccc5fde94d0e978ece8cac2052068be4f0fc0276017bc9768e280bec66e`). Installed
+the wheel only into the dedicated `renew-ssl-coding` alpha virtualenv. All 88
+installed Python module hashes match source, `pip check` passes, and the MCP
+launcher `--help` succeeds. The eight Vhost consumer contract tests, the
+five-event Hermes-managed disposable integration, and focused installed
+capacity, payload-retention, and backup regressions pass. A fresh trusted
+profile probe reports `vhost-manager-alpha` healthy with all seven dependencies
+healthy, zero gates, and no event, review, or purge backlog. No Hermes or
+Vhost service was restarted, and no live Vhost application operation was run.
+This refresh verifies the installed package and disposable consumer path; live
+application acceptance and owner review remain open.
 
 ## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
 

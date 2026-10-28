@@ -9433,6 +9433,21 @@ substitute for evidence at a later integration boundary.
       contract only; it did not update the installed alpha wheel, use the live
       Vhost service, or change the live ledger. Package binding, live consumer
       workflow evidence, full acceptance checks, and owner review remain open.
+      Installed alpha refresh (2026-10-29): built wheel SHA-256
+      `042dc1fcb0cf40a154ff898c9275dd00b97c03eb49d104b141e83f85707419b1`
+      from Curator commit `43c8beb72e8b6894f66b279a5ba5b96d89e32d46` and
+      installed it only in the dedicated `renew-ssl-coding` virtualenv after
+      verifying a 183-file rollback archive (SHA-256
+      `3ce3bccc5fde94d0e978ece8cac2052068be4f0fc0276017bc9768e280bec66e`).
+      All 88 installed Python modules match source, `pip check` passes, and the
+      MCP launcher `--help` succeeds. Eight Vhost consumer contract tests, the
+      five-event Hermes-managed integration, and the installed capacity,
+      payload-retention, and backup regressions pass. A fresh trusted profile
+      probe connects and reports the configured project healthy, all seven
+      dependencies healthy, zero gates, and no event/review/purge backlog. No
+      Hermes or Vhost service was restarted, and no live Vhost operation was
+      run. Package binding is now verified; live consumer workflow evidence,
+      remaining acceptance checks, and owner review remain open.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the
