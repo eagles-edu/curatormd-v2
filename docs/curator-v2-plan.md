@@ -1972,6 +1972,13 @@ consumer plugin, Hermes integration, or production deployment.
       persistence suite passes 18 tests; targeted Pyright, errors-only Pylint,
       and `git diff --check` pass. This is local filesystem retry evidence;
       power-loss and deployment-shaped recovery remain open.
+      Canonical short-write follow-up (2026-10-28): the atomic Markdown writer
+      now requires its temporary-file write to accept the complete payload
+      before flushing or replacing the target. An injected short write leaves
+      the original projection unchanged and removes the partial temporary file.
+      The focused Markdown persistence suite passes 19 tests; targeted Pyright,
+      errors-only Pylint, and `git diff --check` pass. This covers the local
+      writer boundary only; production filesystem fault injection remains open.
 
 ### 5. Global backend, persistence, and operations
 

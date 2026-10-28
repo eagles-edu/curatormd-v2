@@ -9215,3 +9215,18 @@ while preserving explicit criteria and same-project parent validation.
   staging fault matrix remain open. No checklist marker changed.
 - **Outcome:** Make local canonical projection retry confirm directory
   durability while preserving the deployment recovery gate.
+
+## 2026-10-28 — Reject short canonical Markdown writes
+
+- **Intent:** Continue local failure injection for the canonical projection
+  writer.
+- **Changed fact:** The writer rejects a short temporary-file write before
+  flushing or replacing the target. The previous target remains byte-identical
+  and the partial temporary file is removed.
+- **Verification:** The focused Markdown persistence suite passes 19 tests.
+  Strict Pyright reports zero diagnostics, errors-only Pylint exits 0, and
+  `git diff --check` passes.
+- **Open gate:** This does not prove deployment-filesystem behavior or close
+  the broader failure-injection matrix; no checklist marker changed.
+- **Outcome:** Preserve the existing projection and fail visibly when the
+  temporary canonical write is incomplete.

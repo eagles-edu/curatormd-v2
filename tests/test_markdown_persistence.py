@@ -12,7 +12,7 @@ import subprocess
 import sys
 from threading import Event
 import unittest
-from typing import BinaryIO, cast
+from typing import BinaryIO, Self, cast
 from unittest.mock import patch
 
 from evidence_fixtures import attest_test_evidence
@@ -872,6 +872,57 @@ raise SystemExit(0)
         self.assertFalse(retry.changed)
         self.assertEqual(retry_fsync.call_count, 1)
         self.assertEqual(self.target.read_bytes(), projected_bytes)
+
+    def test_short_canonical_write_preserves_target_and_removes_partial(self) -> None:
+        """Reject a short temporary-file write without replacing the target."""
+
+        original_target = self.target.read_bytes()
+        original_fdopen = os.fdopen
+
+        class ShortWriter:
+            """Write a prefix and report its actual byte count."""
+
+            def __init__(self, stream: BinaryIO) -> None:
+                self.stream = stream
+
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                self.stream.close()
+
+            def write(self, data: bytes) -> int:
+                prefix = data[:2]
+                self.stream.write(prefix)
+                self.stream.flush()
+                return len(prefix)
+
+            def flush(self) -> None:
+                self.stream.flush()
+
+            def fileno(self) -> int:
+                return self.stream.fileno()
+
+        def short_fdopen(descriptor: int, mode: str) -> BinaryIO:
+            stream = cast(BinaryIO, original_fdopen(descriptor, mode))
+            if mode == "wb":
+                return cast(BinaryIO, ShortWriter(stream))
+            return stream
+
+        with patch(
+            "curatormd_v2.markdown_persistence.os.fdopen",
+            side_effect=short_fdopen,
+        ):
+            with self.assertRaisesRegex(
+                MarkdownPersistenceError,
+                "atomic canonical Markdown replacement failed",
+            ):
+                self.plugin.persist_goal(self.goal.goal_id, self.target)
+
+        self.assertEqual(self.target.read_bytes(), original_target)
+        self.assertEqual(
+            tuple(self.target.parent.glob(".curatormd-v2-write-*")), ()
+        )
 
 
 

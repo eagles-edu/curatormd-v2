@@ -667,7 +667,8 @@ class MarkdownPersistenceAdapter:
             os.fchmod(descriptor, mode)
             with os.fdopen(descriptor, "wb") as destination:
                 descriptor = -1
-                destination.write(data)
+                if destination.write(data) != len(data):
+                    raise OSError("short write during canonical Markdown replacement")
                 destination.flush()
                 os.fsync(destination.fileno())
             if target.is_symlink():
