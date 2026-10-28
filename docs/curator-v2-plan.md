@@ -2478,6 +2478,19 @@ plugin or Hermes integration is installed and working end to end.
       `2026-10-21T10:40:21Z`. This Codex session has not generated a new event
       in that Hermes profile. Do not insert synthetic usage to refresh it; the
       next proof must come from a real turn through the bound profile.
+      Profile-runtime progress (2026-10-28 04:58 UTC): the configured Codex
+      binary pointed to a removed VS Code extension path. Updated only the
+      `renew-ssl-coding` profile's `codex_bin` to the installed Codex CLI
+      `0.162.0-alpha.17.2` and retained a mode-0600 config backup. A one-shot
+      Hermes CLI turn returned successfully, but the read-only usage report
+      stayed at six turns (five reported, one unknown; last event
+      `2026-10-21T10:40:21Z`): the CLI session had no durable project/goal
+      binding and is correctly excluded. A fresh profile MCP probe connected
+      with host-injected profile/session context, discovered 50 tools, read
+      56/56 processed Curator receipts, and returned a separate healthy project
+      health observation at 2026-10-28 04:58 UTC. This verifies the profile
+      runtime repair and ledger read, not a bound usage event; a real
+      project/goal-bound turn and complete source coverage remain open.
       Provider/model token usage is not collected by Curator. It belongs to
       Hermes Core's local project-usage accounting; Host Steward remains a
       separate root-account host-disk concern and must not own project token

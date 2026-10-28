@@ -1,8 +1,8 @@
 # Local Curator V2 alpha evidence snapshot
 
-Measured 2026-10-28 04:49:06 UTC. This is a content-free snapshot for the
-single-user, one-repository development alpha. It does not authorize another
-capture, cleanup, or policy change.
+Updated 2026-10-28 04:58:31 UTC. Each row retains its observation time. This is
+a content-free snapshot for the single-user, one-repository development alpha.
+It does not authorize another capture, cleanup, or policy change.
 
 ## Binding
 
@@ -28,15 +28,16 @@ capture, cleanup, or policy change.
 | Retention and backup | Live transient source files have a 72-hour maximum. The backup policy retains the newest seven verified daily SQLite copies; owner approval allows unresolved retry/quarantine payloads in those copies. Restore is manual to a new path. | Policy and rotation/restore tests verified; unresolved payloads can roll forward while still pending. Retention of other backup-tree files is open. |
 | Backup storage | The installed V2 scanner reports an incomplete top-level inventory: 21 entries, 19 regular files, 4,618,625 logical bytes, and 4,636,672 allocated bytes. It skips two group-writable directories. A separate bounded metadata-only walk at 2026-10-28 04:52 UTC, with no content reads or symlink following, counted 29 entries (27 files, 2 directories, 0 symlinks), 4,642,256 logical file bytes, and 4,681,728 allocated bytes. Twelve entries have group/world permissions: 2 directories, 1 package archive, 1 editor-settings file, and 8 nested files (2 JavaScript, 2 JSON, 2 Markdown, 2 suffixless). Filenames and contents were not recorded; no files or permissions were changed. | Open: the scanner still reports incomplete; retention and warning rules for older recovery files remain undecided. The approved seven daily SQLite copies may retain retry/quarantine payloads while pending; restore remains manual to a new path. |
 | Permanent storage measurement | The local Vhost project read reports 43,912 logical project bytes: 25 goals, 22 facts, 56 event receipts; 37,859 original event-payload bytes received and zero retained payload bytes. The inbox retains 18,885 logical row bytes of its 134,217,728-byte limit. The separate control-plane view reports 3,145 logical bytes across 11 classes, 524,288 database bytes, and a 383,192-byte WAL. Staging is empty and complete. | Current sizes measured; class retention/recovery horizons and permanent-storage warning rules remain open. |
-| Token usage | At the last ledger read (2026-10-28 04:26:12 UTC), the profile ledger had six retained turns, five with reported usage and one unknown; its only source was `codex_app_server`. Latest event: `2026-10-21T10:40:21Z`, age 582,351 seconds at that read. The installed profile plugin reports `coverage_complete=false` and `tokens_complete=false`. | Stale; no model-consuming profile turn was run. Known source exclusions still prevent a completeness claim. No synthetic event was written. |
+| Token usage | At 2026-10-28 04:57:28 UTC, the read-only profile report still had six retained turns (five reported, one unknown), source `codex_app_server`, last event `2026-10-21T10:40:21Z`; both `coverage_complete` and `tokens_complete` are false. A real one-shot Hermes CLI query succeeded after correcting the profile's stale Codex binary path, but added no usage row because that CLI session had no durable project/goal binding and is excluded by design. | Stale and incomplete; a bound project/goal turn is still needed to refresh the report. Known source exclusions prevent a completeness claim. No synthetic usage event was written. |
 | Process privacy | During a Hermes profile `--probe-curator-status` invocation, a syscall-only trace of the spawned Curator MCP server observed `prlimit64(... RLIMIT_CORE, {0, 0})` and `umask(077)` before serving. | The Hermes-launched MCP child limits are verified. The Hermes gateway, Apport retention, journals, and other data sinks remain unverified; no crash canary was generated. |
-| Hermes profile-to-ledger read | From the Hermes Core checkout, `./.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` exited 0, identified host-injected profile/session context, connected to the installed stdio server, and discovered 50 tools. The read returned 56/56 processed receipts, 25 goals, 22 facts, zero SDE candidates, and a separate `healthy` project-health observation for `vhost-manager-alpha`. | Current local profile read verified. It is not a new app-server lifecycle event and did not refresh token usage. The system Hermes CLI still displays `Auth: none`; that transport label is not the host-injected context result. |
+| Hermes profile-to-ledger read | At 2026-10-28 04:58 UTC, `./.venv/bin/hermes --profile renew-ssl-coding mcp test curator_v2 --probe-curator-status` exited 0, identified host-injected profile/session context, connected to the installed stdio server, and discovered 50 tools. The read returned 56/56 processed receipts, 25 goals, 22 facts, zero SDE candidates, and a separate healthy project-health observation with complete database and staging observations and no gate codes. The profile's configured `codex_bin` was corrected from a missing VS Code extension path to installed Codex CLI `0.162.0-alpha.17.2`; a mode-0600 config backup was retained. | Current local profile and ledger read verified. It is not a new app-server lifecycle event and did not refresh token usage. The system Hermes CLI still displays `Auth: none`; that transport label is not the host-injected context result. |
 | SDE review | The local review CLI's `queue` read returned `pending: []` for `vhost-manager-alpha`. | No candidate awaits disposition; alpha packet review is a separate owner decision. |
 
 ## Remaining local acceptance work
 
-- Refresh the profile usage ledger with a real turn and resolve or explicitly
-  retain its known coverage gaps. No model/token budget is enforced.
+- Refresh the profile usage ledger through a real, durable project/goal-bound
+  turn; a plain Hermes CLI turn is excluded. Then resolve or explicitly retain
+  its known coverage gaps. No model/token budget is enforced.
 - Assign retention and warning rules to the unclassified older backup files
   and complete permanent-data accounting.
 - Finish the local source-to-sink privacy review beyond the Curator MCP child.
