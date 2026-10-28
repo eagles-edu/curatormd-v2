@@ -3098,10 +3098,11 @@ consumer plugin, Hermes integration, or production deployment.
       `Gray means no health read has been attempted`; after the project read,
       yellow rendered `Yellow means health or the SDE review count is unknown`
       with project health `unknown`. Source and installed extension hashes
-      match; the focused extension suite passes 14 tests. The currently running
-      VS Code extension host still logs version `0.8.7`; the newly installed
-      `0.8.9` has not yet been loaded in that window. This color explanation
-      does not change the separate deployed monitoring gate.
+      match; the focused extension suite passes 14 tests. At the time of this
+      earlier 2026-10-27 check, the active extension host still logged version
+      `0.8.7`; that was later superseded by the owner hover report and the
+      direct 0.8.9 verification recorded below. This local color explanation
+      does not close the separate deployed monitoring gate.
       Owner hover follow-up (2026-10-27): the user reports that the visible
       tooltip currently shows `8.8`. The installed package and source remain
       `0.8.9`; the prior `0.8.7` host log is stale relative to this report.
@@ -3109,7 +3110,25 @@ consumer plugin, Hermes integration, or production deployment.
       `curatormd-v2-status-0.8.8/extension.js`; it has not loaded the installed
       `0.8.9` package. Reload that window, then verify the rendered tooltip
       against `0.8.9`. The version mismatch is confirmed; current rendered
-      tooltip behavior remains unverified.
+      tooltip behavior was then unverified.
+      Current-window acceptance (2026-10-28): a fresh VS Code window opened
+      `renew_ssl`; its extension-host log records activation of
+      `curatormd.curatormd-v2-status`, and `code --list-extensions` reports
+      `0.8.9`. The installed `extension.js` SHA-256 matches this repository at
+      `6c2aa3a4376394e55a6eacd9f86f26c86eb6ea5085c95eda958bd0b61622af7b`.
+      The rendered status item is immediately to the right of Git Graph. Hover
+      shows `CuratorMD V2 0.8.9` and the gray explanation; clicking it opens the
+      dashboard and reads project health, retained activity, storage, and the
+      first page of goals. The post-read yellow tooltip shows version `0.8.9`,
+      explains yellow as unknown health or SDE review count, and reports health
+      `unknown` with no SDE reviews pending. The health snapshot has seven
+      `dependency_unknown` gates; retained activity shows 51 processed
+      receipts, 23 goals, 19 facts, and no pending SDEs. Storage renders the
+      250 MiB warning-only threshold and staging usage; goals render page 1 of
+      2.
+      This closes the local editor extension acceptance. It does not close
+      deployment monitoring, runtime dependency probes, or any other open
+      Definition-of-Done gate.
 - [x] Validate config schema, ownership, path confinement, secrets policy,
       and supported backend version at plugin startup. The reference loader
       requires config ownership to match the repository root, rejects
