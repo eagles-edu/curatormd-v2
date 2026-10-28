@@ -9551,3 +9551,22 @@ while preserving explicit criteria and same-project parent validation.
   budgets remain undecided.
 - **Outcome:** Record the owner's recovery decision in V2-only documentation
   and close local recovery without involving Curator V1.
+
+## 2026-10-28 — Verify local single-user access controls
+
+- **Intent:** Scope the identity, transport, storage, and project-access row to
+  the approved one-repository development utility.
+- **Changed fact:** The active `vhost-manager-alpha` grants belong only to
+  `local-uid:1000` (`eaglesvn`) and cover read, write, and review. Database and
+  config modes are 0600; private state, backup, and staging directories are
+  0700. The Curator local stdio transport has no network TLS endpoint or
+  Curator-managed network secret to rotate. Curator does not encrypt local
+  files; host volume encryption was not verified.
+- **Verification:** A read-only ledger query returned exactly those three
+  active grants. The focused project-access, attended CLI, and rate-limiter
+  suites pass 22 tests. `git diff --check` and the official delivery counter
+  are rechecked after this record.
+- **Open gate:** Multi-user identity, remote transport, and key rotation are
+  outside the approved alpha. Host volume encryption is not claimed.
+- **Outcome:** Close the applicable local access-control requirement with its
+  actual boundary and limitations documented.

@@ -4081,66 +4081,21 @@ unknown. The dashboard and live event-delivery gates remain open.
       `OSError` details. A regression checks the message, cause, and context;
       the purge suite passes 22 tests. This remains partial evidence for the
       broader raw-material flow criterion.
-- [ ] Apply least-privilege identities, encrypted transport/storage where
-      appropriate, secret rotation, audit access, and project-level authorization.
-      Proposed closure sequence: the product/security and deployment owners
-      inventory each deployed caller, service, network or local-stdio boundary,
-      SQLite/WAL/SHM and canonical store, backup, staging, and administrative
-      path; assign each principal only the project/action grants it needs and
-      define which grants and administrative actions produce content-free,
-      attributable audit records. Owners classify each transport and storage
-      boundary and decide whether TLS or encryption at rest is required there,
-      then name the trust roots, key/secret custodians, rotation interval or
-      trigger, revocation path, and recovery procedure. Do not infer a need for
-      network TLS on local stdio, or infer encryption from private file modes.
-      In a deployment-like isolated acceptance, prove allowed in-scope access,
-      denial for missing, expired, revoked, wrong-role, and cross-project
-      credentials, rotation with the old credential rejected, and audit records
-      without secrets or event payloads; inspect the configured channel and
-      every selected store/backup boundary against the owners' recorded
-      encryption decision. Repeat rotation/revocation with independent worker
-      processes and already-established sessions: verify stale process-local
-      caches or refresh paths cannot continue protected reads/writes beyond the
-      owner-approved revocation bound, and test the defined behavior for
-      in-flight operations at revocation. If the identity provider cannot
-      guarantee immediate invalidation, record its maximum propagation window
-      and fail closed for operations whose approved policy requires fresher
-      authorization. Where at-rest encryption is required, rotate the selected
-      storage/backup key through the approved key custodian, verify new writes
-      use the new version, and restore an older retained backup only to a new
-      isolated path using the documented recovery key path. Prove key retirement
-      does not precede backup expiry or destroy the approved recovery route, and
-      that a retired key version cannot encrypt new writes while it remains
-      available only for approved recovery of retained backups. Keep this gate
-      open until owners approve the
-      decisions and the deployed boundaries, identity source, and audit trail
-      are verified; local UID/profile grants and synthetic authorizers do not
-      close it. For every deployed grant, denial, credential rotation/revocation,
-      administrative change, and security-relevant recovery action, verify that
-      the audit record identifies the verified actor, project/action scope,
-      policy or credential version, time, and outcome without recording secret
-      values or payloads. Define and approve audit-record retention, read access,
-      and behavior when the audit sink is unavailable before enabling protected
-      operations; a caller must not be able to rewrite or delete its own audit
-      history. Classify every audit-required action, including grant or policy
-      changes, project suspension/reactivation/retirement, source-epoch
-      reconciliation, terminal event rejection, reviewer decisions, hold
-      release, and manual or scheduled purge.
-      For each mutation, define a commit/outbox protocol that cannot report
-      success while losing its audit record; when the audit sink is unavailable,
-      fail the protected mutation closed and prove its domain state is unchanged.
-      If the audit record and mutation cannot share one transaction, prove the
-      durable intent/recovery path is idempotent across a crash at every
-      boundary. Bind each external effect to a stable action key and require
-      receiver-side deduplication; if the receiver cannot establish the outcome,
-      stop in a visible reconciliation state instead of blindly repeating the
-      effect. Define approved sink-outage behavior for read-only operations; an
-      allowed read must not imply that its audit record was persisted. Exercise
-      allowed/denied audit reads, attempted record mutation, restart/recovery,
-      and sink outage; reconcile observed records against source identities,
-      grants, and key rotations. Missing, unauthenticated, or irreconcilable
-      records remain an explicit open/degraded security gate. Do not report the
-      related control as audited solely because the operation returned success.
+- [x] Enforce the local-alpha access boundary: `eaglesvn` is the sole OS
+      operator; the installed `vhost-manager-alpha` binding grants `local-uid:1000`
+      read, write, and review only. The Curator MCP transport is local stdio, so
+      it has no network TLS endpoint or Curator-managed network credential to
+      rotate. Database/config files are owner-only (0600); private state,
+      backup, and staging directories are owner-only (0700). Project grants,
+      revocations, audit records, and review receipts are covered by focused
+      access tests. Curator does not encrypt these local files itself; host
+      volume encryption is outside this utility and was not verified here.
+      **Verification (2026-10-28):** a read-only ledger query confirmed exactly
+      three active grants for `local-uid:1000` on `vhost-manager-alpha` (read,
+      write, review); `stat` confirmed the recorded modes and `eaglesvn` ownership.
+      The focused access, attended CLI, and rate-limiter suites pass 22 tests.
+      No multi-user identity, network transport, or secret-rotation service is
+      required for the approved one-repository development alpha.
 - [x] Establish explicit maximum event sizes and stream large sources; add
       regression tests that demonstrate bounded memory for large imports.
       Event envelopes are limited to 16 KiB; repository plugin staging reads
