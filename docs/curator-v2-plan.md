@@ -621,6 +621,18 @@ plugin or Hermes integration is installed and working end to end.
       [`Curator V2 Pilot Default Policy.md`](Curator%20V2%20Pilot%20Default%20Policy.md).
       The recovery material's retention and warning threshold still need owner
       review.
+      Fresh local-alpha accounting (2026-10-28 04:49:06 UTC): the authorized
+      Vhost project read reports 43,912 logical project-record bytes across
+      25 goals, 22 facts, 56 event receipts, and zero SDE candidates or retained
+      event payload bytes. The inbox has 18,885 retained logical row bytes of
+      its 134,217,728-byte limit and can accept new events. Original payload
+      bytes received total 37,859; processed payloads are no longer retained in
+      the live ledger. The separate host-authorized view reports 3,145 logical
+      control-plane bytes across 11 classes, a 524,288-byte SQLite file, and a
+      383,192-byte WAL. Staging is complete and empty. The sibling backup scan
+      remains incomplete at 21 entries and 4,636,672 allocated bytes. This
+      refreshes current measurements only; durable-class retention, recovery
+      horizons, and permanent-storage warning thresholds remain open.
       Progress (2026-10-23): project-authorized `ProjectStorageUsage` now reports
       project-scoped event cursor count and logical UTF-8 bytes, includes those
       bytes in `logical_record_bytes`, and exports aggregate-only cursor metrics.
