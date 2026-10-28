@@ -9218,8 +9218,12 @@ substitute for evidence at a later integration boundary.
       it and its known coverage gaps are resolved; it must not enforce an
       invented budget. Do not require a multi-user identity service, public
       endpoint, hosted CI, production deployment, or separate deployment,
-      policy, and release owners for this local alpha. This row remains open
-      until the applicable checks are reconciled against the same package and
+      policy, and release owners for this local alpha. Current runtime progress
+      (2026-10-28 12:30 +07): the active per-user timer is scheduled every six
+      hours. Its 12:00 run exited successfully, reported a verified daily backup,
+      and reported zero due purge/expiry items and zero pending failures. The
+      run's service result and bounded journal output were checked. This row
+      remains open until the applicable checks are reconciled against the same package and
       project binding; a unit test or an unrelated profile probe cannot stand
       in for a local workflow check.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
