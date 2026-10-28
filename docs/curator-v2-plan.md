@@ -7893,7 +7893,7 @@ substitute for evidence at a later integration boundary.
       still open at this 2026-10-25 snapshot; it was closed for the approved
       local alpha on 2026-10-26 (see the Section 6 audit entry below). Release
       Gate F and Slice I remain open for local human disposition and alpha sign-off.
-- [ ] **G. Integrate Hermes Core:** map real app-server lifecycle events through
+- [x] **G. Integrate Hermes Core:** map real app-server lifecycle events through
       the global router and managed gateway; prove profile/project authorization
       and that no raw session transcript is retained. Local diagnostic progress
       (2026-10-22): the checkout Hermes CLI now labels a configured local stdio
@@ -8456,6 +8456,22 @@ substitute for evidence at a later integration boundary.
       remains at 01:25:39 UTC; this is a read-only profile check, not a new
       managed-gateway lifecycle event or a token-usage refresh. Slice G remains
       open for a real managed-gateway turn and receipt.
+      Local app-server route verified (2026-10-28 05:50 UTC): one bounded
+      Hermes Core CLI turn under the `renew-ssl-coding` profile generated
+      `codex:turn:start` and `codex:turn:end` as outbox sequences 12 and 13.
+      Both were acknowledged for `vhost-manager-alpha` and active goal
+      `vhost-alpha-curator-smoke-20261020`; a metadata-only check confirmed the
+      event session matched its existing project/goal binding. The first
+      attempted bind command was rejected and created no binding; the matching
+      binding already existed, so the lifecycle run was not retried. The
+      profile probe then reported 58/58 processed receipts, zero received,
+      failed, or quarantined events, and a separate healthy project snapshot.
+      The outbox contexts contain only bounded attempt/session/turn identifiers
+      and outcome; no prompt or transcript is sent in the Curator event. This
+      verifies the real local app-server-to-profile-hook-to-Curator managed-MCP
+      route and closes Slice G for the approved single-user development scope.
+      It does not claim conventional human authentication, a public endpoint,
+      or production deployment.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
