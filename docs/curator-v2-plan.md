@@ -4593,6 +4593,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       process. This covers the gateway process on this host. Apport retention,
       journals, other producers, upstream crash reporting, and crash-canary
       handling remain unverified; keep the full source-to-sink item open.
+      Live recheck (2026-10-28 05:40 UTC): `hermes-gateway.service` remains
+      active/running with `LimitCORE=0` and `UMask=0077`; its active UID-1000
+      process reports the same umask and zero core-file limit. The Curator
+      maintenance service reports `Result=success`, exit status 0,
+      `LimitCORE=0`, and `UMask=0077`. These process controls remain only one
+      part of the source-to-sink review; no crash canary was generated.
       Local launcher follow-up (2026-10-28): the Curator hosted-MCP launcher
       source now sets its core-dump limit to zero and its file-creation umask
       to `0077` before initializing the runtime. A child-process regression
