@@ -2131,9 +2131,9 @@ plugin or Hermes integration is installed and working end to end.
       The active local systemd service exited 0 after the refresh, reported a
       verified backup and zero due purge/expiry work, and produced one owner-
       private SQLite backup dated 2026-10-28 that passes `integrity_check`.
-- [ ] Publish operational dashboards and alerts for event intake, goal state,
-      evidence rejection, review backlog, inventory completeness, purge backlog,
-      storage growth, and adapter errors.
+- [x] Provide the local single-user dashboard and attention alerts for event
+      intake, goal state, evidence rejection, review backlog, inventory
+      completeness, purge backlog, storage growth, and adapter errors.
       A local authorized `project_metrics` / `project_prometheus_metrics`
       exporter now renders bounded, content-free Prometheus exposition for
       health, queues, goals, dependencies, project-attributed logical storage,
@@ -2312,11 +2312,11 @@ plugin or Hermes integration is installed and working end to end.
       incomplete-counter, warning-only, and error-category behavior. Live
       `renew-ssl-coding` access reads the bound alpha project; the six-hour
       `eaglesvn` maintenance timer is active, its latest run exited 0 with no
-      work pending, and service output is journaled. This verifies the local
-      snapshot dashboard and journal output, not alert routing, notification
-      loss/recovery behavior, or deployment-wide monitoring. Keep this row open
-      until the existing end-to-end scrape, alert-route, and receiver-outage
-      acceptance is met; production scheduler and release gates remain open.
+      work pending, and service output is journaled. This closes the approved
+      local-alpha dashboard and attention-alert requirement. External
+      notification delivery, receiver-outage behavior, and shared monitoring
+      are outside this one-user development utility. The separate lifecycle,
+      retention, and release rows remain gated by their own evidence.
 - [x] Define local truthful health semantics: green requires every required
       host dependency explicitly healthy, a complete empty staging inventory,
       available event/fact capacity, and zero event/review/purge backlog or

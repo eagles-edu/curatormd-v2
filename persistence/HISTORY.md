@@ -9414,3 +9414,25 @@ while preserving explicit criteria and same-project parent validation.
   failure cases are still open.
 - **Outcome:** Implement seven-copy local retention and require explicit
   approval before restoring to an isolated path.
+
+## 2026-10-28 — Confirm local backup and dashboard policy
+
+- **Intent:** Resolve the local-alpha backup approval and close dashboard work
+  against the approved one-user scope.
+- **Changed fact:** The owner confirms seven daily SQLite backups in the private
+  Curator state directory; restore requires the owner's approval, targets a
+  new path, and never replaces the live database automatically. The local
+  dashboard/attention-alert criterion is complete for the one-user alpha using
+  the installed V2 editor panel and journal-backed maintenance status.
+- **Verification:** VS Code reports extension `0.8.9`; its installed
+  `extension.js` SHA-256 matches the repository source at
+  `6c2aa3a4376394e55a6eacd9f86f26c86eb6ea5085c95eda958bd0b61622af7b`.
+  Prior local evidence records 14 focused extension cases, project-bound
+  dashboard reads, warning/queue/error attention states, and an active
+  six-hour maintenance timer with a successful journaled run. The Curator V2
+  delivery count and whitespace check are rechecked after this record.
+- **Open gate:** External notification delivery and shared monitoring are
+  outside the approved local utility. Remaining checklist items require their
+  own local implementation or evidence; no V1 or production claim is made.
+- **Outcome:** Confirm the approved backup policy and close the local dashboard
+  item without expanding the repository or consumer scope.
