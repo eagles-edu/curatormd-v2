@@ -8844,6 +8844,13 @@ substitute for evidence at a later integration boundary.
       remains `unknown`; direct MCP without Hermes context remains
       `unauthenticated`. Slice G remains open pending live lifecycle delivery
       and its remaining acceptance evidence.
+      Outbox follow-up (2026-10-28): read-only metadata confirms 11/11 profile
+      outbox events acknowledged, with the latest still sequence 11 at
+      `2026-10-21T10:40:21Z`; no newer Codex turn event exists in this outbox.
+      The currently running Hermes gateway process uses the root Hermes home,
+      whose configuration enables profile multiplexing. This configuration
+      does not substitute for a recent `renew-ssl-coding` app-server event and
+      receipt; Slice G remains open.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
