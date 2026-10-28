@@ -619,16 +619,23 @@ plugin or Hermes integration is installed and working end to end.
       are two JavaScript, two JSON, two Markdown, and two suffixless files; no
       filenames or contents are recorded. No entries or permissions were
       changed. This supplements the scanner result but does not complete its
-      trusted inventory or establish class-level retention or a warning
-      threshold. By top-level name/type only, the 20 unclassified entries are
+      trusted inventory or establish class-level retention. Owner decision
+      (2026-10-28): warn at 262,144,000 allocated bytes (250 MiB) for the whole
+      backup tree; keep every file and never prune based on this budget. The
+      bounded backup reader now returns `warning_status`: `warning` at or above
+      the observed-byte threshold, `below_threshold` only for a complete
+      supported scan below it, and `unknown` for incomplete or unsupported
+      measurements below threshold. A reached threshold remains a warning
+      even when the inventory is incomplete because observed bytes are a lower
+      bound. This implements the local warning rule only; backup inventory,
+      retention decisions for older classes, and permanent-data accounting
+      remain open. By top-level name/type only, the 20 unclassified entries are
       three older SQLite snapshots, eight WAL/SHM sidecars, five package
       rollback archives, one YAML profile-config snapshot, one VS Code settings
       snapshot, and two prior VS Code extension-backup directories;
       archive/settings contents were not opened. A content-free size breakdown
       by these classes is recorded in
       [`Curator V2 Pilot Default Policy.md`](Curator%20V2%20Pilot%20Default%20Policy.md).
-      The recovery material's retention and warning threshold still need owner
-      review.
       Fresh local-alpha accounting (2026-10-28 04:49:06 UTC): the authorized
       Vhost project read reports 43,912 logical project-record bytes across
       25 goals, 22 facts, 56 event receipts, and zero SDE candidates or retained
@@ -8809,10 +8816,16 @@ substitute for evidence at a later integration boundary.
       `goal_report` responses missing a valid 64-character revision or fact
       total, so a malformed report cannot be rendered as a complete page. The
       focused Node suite passes 15 tests; VSIX 0.9.1 is packaged and installed.
-      `code --list-extensions` confirms the installed version, but the open
-      editor has not been reloaded for a rendered 0.9.1 check. This closes only
-      the malformed-report handling slice; the broader dashboard acceptance
-      matrix remains open.
+      Editor interaction follow-up (2026-10-28 05:18 UTC): the reloaded
+      `renew_ssl` VS Code window visibly renders the V2 status item immediately
+      after Git Graph in yellow `unknown` state and displays a project-scoped
+      report page with the recorded-fact classification and evidence action.
+      The status-tooltip implementation prefixes the current package version,
+      and its Node assertions now read the version from `package.json`; the
+      root-screen hover capture did not render tooltip text, so rendered hover
+      wording remains unverified. This proves the visible local dashboard/read
+      path and position/color only; the broader snapshot, trust-revocation,
+      review, and cleanup acceptance matrix remains open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

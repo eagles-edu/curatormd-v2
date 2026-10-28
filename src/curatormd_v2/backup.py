@@ -10,7 +10,7 @@ import sqlite3
 import stat
 import tempfile
 
-from .read_models import BackupDirectoryUsage
+from .read_models import BACKUP_TREE_WARNING_THRESHOLD_BYTES, BackupDirectoryUsage
 
 _MAX_BACKUP_DIRECTORY_ENTRIES = 256
 _MAX_BACKUP_DIRECTORY_DEPTH = 8
@@ -34,7 +34,11 @@ def measure_backup_directory(directory: str | Path | None) -> BackupDirectoryUsa
     try:
         metadata = backup_directory.stat(follow_symlinks=False)
     except FileNotFoundError:
-        return BackupDirectoryUsage("available", 0, 0, 0, 0, 0, 0, 0, 0)
+        return BackupDirectoryUsage(
+            "available", 0, 0, 0, 0, 0, 0, 0, 0,
+            warning_threshold_bytes=BACKUP_TREE_WARNING_THRESHOLD_BYTES,
+            warning_status="below_threshold",
+        )
     except OSError:
         return BackupDirectoryUsage(
             "unavailable", None, None, None, None, None, None, None, None
@@ -139,6 +143,12 @@ def measure_backup_directory(directory: str | Path | None) -> BackupDirectoryUsa
             "unavailable", None, None, None, None, None, None, None, None
         )
 
+    if observed_allocated >= BACKUP_TREE_WARNING_THRESHOLD_BYTES:
+        warning_status = "warning"
+    elif incomplete or not allocation_supported:
+        warning_status = "unknown"
+    else:
+        warning_status = "below_threshold"
     return BackupDirectoryUsage(
         "incomplete" if incomplete else "available",
         backup_count,
@@ -149,6 +159,8 @@ def measure_backup_directory(directory: str | Path | None) -> BackupDirectoryUsa
         observed_files,
         observed_file_bytes,
         observed_allocated if allocation_supported else None,
+        warning_threshold_bytes=BACKUP_TREE_WARNING_THRESHOLD_BYTES,
+        warning_status=warning_status,
     )
 
 

@@ -45,6 +45,8 @@ class DatabaseBackupTests(unittest.TestCase):
 
             usage = measure_backup_directory(backup_directory)
             self.assertEqual(usage.status, "available")
+            self.assertEqual(usage.warning_status, "below_threshold")
+            self.assertEqual(usage.warning_threshold_bytes, 250 * 1024 * 1024)
             self.assertEqual(usage.backup_count, 2)
             self.assertEqual(usage.file_bytes, len(b"snapshot-one") + len(b"snapshot-two"))
             self.assertEqual(
@@ -60,11 +62,39 @@ class DatabaseBackupTests(unittest.TestCase):
             (backup_directory / "curator-v2-2026-10-29.sqlite3").symlink_to(external)
             incomplete = measure_backup_directory(backup_directory)
             self.assertEqual(incomplete.status, "incomplete")
+            self.assertEqual(incomplete.warning_status, "unknown")
             self.assertEqual(incomplete.backup_count, 2)
             self.assertEqual(incomplete.file_bytes, usage.file_bytes)
             self.assertIsNone(incomplete.allocated_bytes)
             self.assertEqual(incomplete.unclassified_entry_count, 2)
             self.assertTrue(unrelated.exists())
+
+    def test_backup_tree_warning_is_warning_only_at_allocated_byte_threshold(self) -> None:
+        """Warn at the measured threshold without removing backup files."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            backup_directory = Path(temporary) / "backups"
+            backup_directory.mkdir(mode=0o700)
+            snapshot = backup_directory / "curator-v2-2026-10-28.sqlite3"
+            snapshot.write_bytes(b"verified-snapshot")
+            snapshot.chmod(0o600)
+            allocated = snapshot.stat().st_blocks * 512
+
+            with patch(
+                "curatormd_v2.backup.BACKUP_TREE_WARNING_THRESHOLD_BYTES",
+                allocated,
+            ):
+                at_threshold = measure_backup_directory(backup_directory)
+            self.assertEqual(at_threshold.warning_status, "warning")
+            self.assertEqual(at_threshold.warning_threshold_bytes, allocated)
+
+            with patch(
+                "curatormd_v2.backup.BACKUP_TREE_WARNING_THRESHOLD_BYTES",
+                allocated + 512,
+            ):
+                below_threshold = measure_backup_directory(backup_directory)
+            self.assertEqual(below_threshold.warning_status, "below_threshold")
+            self.assertTrue(snapshot.is_file())
 
             loose_directory = Path(temporary) / "loose-backups"
             loose_directory.mkdir(mode=0o700)

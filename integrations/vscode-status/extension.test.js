@@ -6,9 +6,14 @@ const fs = require('node:fs');
 const Module = require('node:module');
 const os = require('node:os');
 const path = require('node:path');
+const { version: extensionVersion } = require('./package.json');
 const { PassThrough, Writable } = require('node:stream');
 const test = require('node:test');
 const vm = require('node:vm');
+
+function assertTooltipIncludesCurrentVersion(item) {
+  assert.ok(item.tooltip.includes(`CuratorMD V2 ${extensionVersion}.`));
+}
 
 const vscodeMock = {};
 const originalLoad = Module._load;
@@ -210,7 +215,7 @@ test('status item follows Git Graph and uses project-bound health colors', () =>
   assert.equal(items[0].priority, 0);
   assert.equal(items[0].text, '$(circle-filled) CuratorMD V2');
   assert.equal(items[0].color, '#888888');
-  assert.match(items[0].tooltip, /CuratorMD V2 0\.9\.0/);
+  assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Gray means no health read has been attempted/);
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
   assert.equal(subscriptions.length, 2);
@@ -219,7 +224,7 @@ test('status item follows Git Graph and uses project-bound health colors', () =>
   assert.equal(items[0].color, '#73d216');
   assert.match(items[0].tooltip, /Project health: healthy/);
   assert.match(items[0].tooltip, /no SDE reviews pending/);
-  assert.match(items[0].tooltip, /CuratorMD V2 0\.9\.0/);
+  assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Green means health is healthy with no SDE reviews pending/);
   const pendingReview = { candidate: { candidate_id: 'review-1' } };
   assert.equal(updateStatusBarHealth(
@@ -253,7 +258,7 @@ test('status item follows Git Graph and uses project-bound health colors', () =>
   assert.match(items[0].tooltip, /Project health: unknown/);
   assert.match(items[0].tooltip, /Health gates: missing_host_probe, database_observation_failed/);
   assert.doesNotMatch(items[0].tooltip, /not a gate/);
-  assert.match(items[0].tooltip, /CuratorMD V2 0\.9\.0/);
+  assertTooltipIncludesCurrentVersion(items[0]);
   assert.equal(updateStatusBarHealth(
     { project_id: 'other', status: 'healthy', gate_codes: ['private_gate'] }, 'alpha', [],
   ), 'unknown');

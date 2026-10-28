@@ -435,6 +435,11 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
         self.assertIsNotNone(usage.backup_storage)
         assert usage.backup_storage is not None
         self.assertEqual(usage.backup_storage.status, "available")
+        self.assertEqual(usage.backup_storage.warning_status, "below_threshold")
+        self.assertEqual(
+            usage.backup_storage.warning_threshold_bytes,
+            250 * 1024 * 1024,
+        )
         self.assertEqual(usage.backup_storage.backup_count, 1)
         self.assertEqual(usage.backup_storage.file_bytes, len(b"verified-snapshot"))
         self.assertEqual(
