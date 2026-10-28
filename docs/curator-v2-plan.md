@@ -605,19 +605,27 @@ plugin or Hermes integration is installed and working end to end.
       unassigned scrub-queue bytes, a 524,288-byte SQLite main file, a 168,952-
       byte WAL, and 32,768 unattributed database bytes. The sibling backup
       inventory is incomplete: one recognized 524,288-byte daily snapshot and
-      20 unclassified entries. The bounded V2 scanner now counts nested regular
-      files without reading contents or following symlinks. Its attended view
-      reports 21 observed entries, 19 regular files, 4,618,625 observed logical
-      bytes, and 4,636,672 observed allocated bytes. The inventory remains
-      incomplete because two files and both directories are not owner-only.
-      No entries were moved, changed, or deleted. This is complete size
-      observation for the current bounded tree, not class-level retention or an
-      approved warning threshold. By name/type only, the 20 unclassified entries
-      are three older
-      SQLite snapshots, eight WAL/SHM sidecars, five package rollback archives,
-      one YAML profile-config snapshot, one VS Code settings snapshot, and two
-      prior VS Code extension-backup directories; archive/settings contents were
-      not opened. A content-free size breakdown by these classes is recorded in
+      20 unclassified top-level entries. The installed bounded V2 scanner sees
+      21 top-level entries and 19 regular files (4,618,625 logical bytes and
+      4,636,672 allocated bytes) without reading contents or following
+      symlinks. It does not descend into the two group-writable directories
+      (mode 0775), so this is not a complete tree-size observation. A separate
+      bounded metadata-only walk at 2026-10-28 04:52 UTC followed neither
+      symlinks nor file contents and counted 29 entries: 27 regular files, two
+      directories, zero symlinks, 4,642,256 logical file bytes, and 4,681,728
+      allocated bytes across files and directories. Twelve entries have
+      group/world permissions: the two directories, one package archive, one
+      editor-settings file, and eight nested files. The nested suffix counts
+      are two JavaScript, two JSON, two Markdown, and two suffixless files; no
+      filenames or contents are recorded. No entries or permissions were
+      changed. This supplements the scanner result but does not complete its
+      trusted inventory or establish class-level retention or a warning
+      threshold. By top-level name/type only, the 20 unclassified entries are
+      three older SQLite snapshots, eight WAL/SHM sidecars, five package
+      rollback archives, one YAML profile-config snapshot, one VS Code settings
+      snapshot, and two prior VS Code extension-backup directories;
+      archive/settings contents were not opened. A content-free size breakdown
+      by these classes is recorded in
       [`Curator V2 Pilot Default Policy.md`](Curator%20V2%20Pilot%20Default%20Policy.md).
       The recovery material's retention and warning threshold still need owner
       review.

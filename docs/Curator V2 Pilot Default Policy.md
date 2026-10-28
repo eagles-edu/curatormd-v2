@@ -15,11 +15,12 @@
 ## Still open
 
 - Remaining local SQLite/staging failure cases.
-- Complete permanent-data policy and local warning levels beyond the approved staging threshold. The installed bounded V2 scanner measures the current backup tree without reading contents or following symlinks: 21 observed entries, 19 regular files, 4,618,625 observed logical bytes, and 4,636,672 observed allocated bytes. It recognizes one 524,288-byte daily snapshot and reports 20 unclassified entries; two regular files and both directories are not owner-only, so inventory status remains incomplete. By name/type only, the other entries are three older SQLite snapshots, eight SQLite WAL/SHM sidecars, five package rollback archives, one YAML profile-config snapshot, one VS Code settings snapshot, and two prior VS Code extension-backup directories. Archive and settings contents were not opened. No entries were moved, changed, or deleted. Retention and warning thresholds for this recovery material still need owner review.
+- Complete permanent-data policy and local warning levels beyond the approved staging threshold. The installed bounded V2 scanner measures `/home/eaglesvn/.local/share/curatormd-v2-alpha/backups` without reading contents or following symlinks. Its result is incomplete: it sees 21 entries and 19 regular files (4,618,625 logical bytes; 4,636,672 allocated bytes), recognizes one 524,288-byte daily snapshot, and marks 20 entries unclassified. It deliberately does not enter two group-writable directories (mode `0775`). A separate bounded, no-follow, no-content metadata walk at 2026-10-28 04:52 UTC counted those directories' contents too: 29 total entries, 27 regular files, 2 directories, zero symlinks, 4,642,256 logical file bytes, and 4,681,728 allocated bytes across files and directory entries. Twelve entries have group/world permissions: the two directories, one package archive, one editor-settings file, and eight files in the two directories. The nested files are two JavaScript, two JSON, two Markdown, and two suffixless files; filenames and contents are not recorded here. Top-level classes are three older SQLite snapshots, eight SQLite WAL/SHM sidecars, five package rollback archives, one YAML profile-config snapshot, one VS Code settings snapshot, and two prior VS Code extension-backup directories, in addition to the recognized daily SQLite snapshot. Archive and settings contents were not opened. No entries were moved, changed, or deleted. Retention and warning thresholds for this recovery material still need owner review.
 
-The following breakdown uses entry type and filename suffix only. File contents
-were not read; directory entries have no regular files beneath them in this
-bounded scan.
+The following breakdown uses entry type and filename suffix only. No file
+contents were read. The V2 scanner's rows cover the visible top-level entries;
+its incomplete status is due to the two group-writable directories. The nested
+row comes from the separate metadata-only walk above.
 
 | Class | Entries | Logical file bytes | Allocated bytes | Entries not owner-only |
 | --- | ---: | ---: | ---: | ---: |
@@ -30,6 +31,7 @@ bounded scan.
 | YAML configuration snapshot | 1 | 3,264 | 4,096 | 0 |
 | VS Code settings snapshot | 1 | 5,233 | 8,192 | 1 |
 | Prior extension-backup directories | 2 | 0 | 0 | 2 |
-| **Total** | **21** | **4,618,625** | **4,636,672** | **4** |
+| Nested files in those directories | 8 | 23,631 | 45,056 | 8 |
+| **Total including nested files** | **29** | **4,642,256** | **4,681,728** | **12** |
 
 The approved values above define the supported local development utility. No multi-user or public-service behavior is required.
