@@ -13,6 +13,13 @@ state directory. A restore requires `eaglesvn` to select the backup and
 destination and review it before use; Curator must never overwrite or switch
 the live database automatically.
 
+Owner confirmation (2026-10-28): those seven snapshots may retain raw event
+payloads whose inbox status is still pending retry or quarantine. This extends
+the backup copy's lifetime beyond the 72-hour limit for live transient source
+files, for up to the seven-snapshot recovery window. The payload remains
+operational recovery data, not canonical knowledge; processed event backups
+retain only the digest receipt after payload scrubbing.
+
 ## Backups and restore
 
 The local six-hour maintenance run creates one verified online backup per UTC
@@ -68,7 +75,7 @@ status, not paths or raw SQLite errors.
 
 | Case | Evidence | Result |
 | --- | --- | --- |
-| Online backup, private restore, existing destination, corrupt backup, symlink, and destination race | [`tests/test_backup.py`](../tests/test_backup.py) | Snapshot is consistent and verified; restore never overwrites and invalid inputs remain available for review. |
+| Online backup, private restore, existing destination, corrupt backup, symlink, destination race, and retry/quarantine payload recovery | [`tests/test_backup.py`](../tests/test_backup.py) | Snapshot is consistent and verified; failed and quarantined payloads survive restore, processed payloads are scrubbed, restore never overwrites, and invalid inputs remain available for review. |
 | SQLite/Markdown comparison, projection retry, and interruption before receipt commit | [`tests/test_markdown_persistence.py`](../tests/test_markdown_persistence.py) | Comparison is read-only; retries reconcile the projection and receipt after reopen. |
 | Purge interruption and retry after deletion before receipt update | [`tests/test_purge_lifecycle.py`](../tests/test_purge_lifecycle.py) | Pending work remains visible and exact retry records the already-absent target. |
 | Blocked WAL cleanup across restart | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py) | Cleanup stays pending while a reader blocks truncation and is retried after restart. |

@@ -291,6 +291,75 @@ class DatabaseBackupTests(unittest.TestCase):
                 restored.close()
                 source.close()
 
+    def test_backup_and_restore_preserve_retry_and_quarantine_payloads(self) -> None:
+        """Approved daily backups retain payloads needed for inbox recovery."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_path = root / "live.sqlite3"
+            backup_path = root / "backup.sqlite3"
+            restored_path = root / "restored.sqlite3"
+            source = CuratorStore(source_path)
+            retry_event = EventEnvelope(
+                "retry-event", "backup-project",
+                GoalStarted(
+                    "retry-goal", "Recover a failed local event",
+                    (SuccessCriterion("retried", "Retain the retry envelope"),),
+                ),
+            )
+            quarantine_event = EventEnvelope(
+                "quarantine-event", "backup-project",
+                GoalStarted(
+                    "quarantine-goal", "Recover an exhausted local event",
+                    (SuccessCriterion("reviewed", "Retain the quarantine envelope"),),
+                ),
+            )
+            try:
+                receipt, created = source.ingest_event(retry_event)
+                self.assertTrue(created)
+                failed = source.mark_event_failed(
+                    "backup-project", "retry-event", "temporary_adapter_error"
+                )
+                self.assertEqual(failed.status, EventInboxStatus.FAILED)
+                self.assertEqual(receipt.event_id, failed.event_id)
+                source.ingest_event(quarantine_event)
+                source.mark_event_failed(
+                    "backup-project", "quarantine-event", "temporary_adapter_error"
+                )
+                quarantined = source.quarantine_event(
+                    "backup-project", "quarantine-event", max_attempts=1
+                )
+                self.assertEqual(quarantined.status, EventInboxStatus.QUARANTINED)
+
+                backup_database(source_path, backup_path)
+                restore_database(backup_path, restored_path)
+
+                with CuratorStore(restored_path) as restored:
+                    with restored.transaction() as connection:
+                        rows = connection.execute(
+                            "SELECT payload_json FROM event_inbox "
+                            "WHERE project_id = ? ORDER BY event_id",
+                            ("backup-project",),
+                        ).fetchall()
+                    restored_receipts = {
+                        event_id: restored.event_receipt("backup-project", event_id)
+                        for event_id in ("retry-event", "quarantine-event")
+                    }
+                    self.assertEqual(
+                        restored_receipts["retry-event"].status,
+                        EventInboxStatus.FAILED,
+                    )
+                    self.assertEqual(
+                        restored_receipts["quarantine-event"].status,
+                        EventInboxStatus.QUARANTINED,
+                    )
+                    self.assertEqual(
+                        {row["payload_json"] for row in rows},
+                        {retry_event.to_json(), quarantine_event.to_json()},
+                    )
+            finally:
+                source.close()
+
     def test_symlink_sources_and_destinations_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -9618,3 +9618,22 @@ while preserving explicit criteria and same-project parent validation.
   MCP child is not proven. The broad source-to-sink privacy item stays open.
 - **Outcome:** Record the actual host boundary rather than claiming that the
   maintenance-unit core limit protects all local processes.
+
+## 2026-10-28 — Approve pending event payload retention in daily backups
+
+- **Intent:** Resolve whether recoverable event text may be included in the
+  seven approved daily SQLite snapshots while inbox delivery is pending.
+- **Changed fact:** `eaglesvn` approves retaining raw event payloads in those
+  backups when an event is pending retry or quarantine. This permits backup
+  copies to outlive the 72-hour limit for live transient source files, up to
+  the seven-snapshot recovery window; payloads remain recovery data, not
+  canonical facts.
+- **Verification:** Added a focused backup/restore regression that creates
+  failed and quarantined events, snapshots and restores SQLite, and verifies
+  both payloads remain available. All 10 tests in `tests/test_backup.py` pass;
+  the processed-event regression also verifies that completed backups contain
+  only the compact digest receipt. `git diff --check` passes.
+- **Open gate:** The broader permanent-data capacity and source-to-sink privacy
+  audits remain open; this decision covers only owner-approved local backups.
+- **Outcome:** Record the explicit retention exception and keep retry recovery
+  possible from the approved daily snapshots.
