@@ -4541,6 +4541,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       script hash matches the consumer source; its six-hour timer is active,
       and its last one-shot completed successfully. This verifies the approved
       manual-DNS log path only; the full privacy matrix remains open.
+      Hermes-child limit check (2026-10-28 04:47 UTC): traced the Curator MCP
+      process spawned by the Hermes Core checkout's profile status probe. Its
+      syscall trace shows `prlimit64(... RLIMIT_CORE, {0, 0}) = 0` and
+      `umask(077)` before serving; the profile probe exits 0. This verifies
+      the installed launcher limits in the Hermes-spawned child. It does not
+      inspect the gateway's own `LimitCORE=infinity` setting, Apport retention,
+      host journals, or other sinks, and no crash canary was generated. The
+      source-to-sink checklist remains open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
