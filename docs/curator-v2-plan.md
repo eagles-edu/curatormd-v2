@@ -4930,6 +4930,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       suite was not rerun for this verification-only check. This confirms the
       current local quality gate only; it does not close deployment or runtime
       acceptance.
+      Quality refresh (2026-10-28): the documented local checks pass again:
+      strict Pyright (zero diagnostics), errors-only Pylint, Bandit, `uv audit`
+      (no known vulnerabilities or adverse package status in 50 packages),
+      `uv lock --check`, and `git diff --check`. The unit suite was not rerun.
+      This refreshes local source quality only; deployment and live-runtime
+      acceptance remain open.
 - [x] Resolve existing repository-wide Pylint findings. Progress (2026-10-18):
       extracted the lifecycle test's loop-captured action helper, wrapped
       overlong lines, simplified one unnecessary `try/else`, and switched test

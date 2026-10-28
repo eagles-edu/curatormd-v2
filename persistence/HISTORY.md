@@ -9164,3 +9164,14 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Read the current Vhost checkout's `docs/curatormd-v2-alpha.md` sections “Vhost apply receipt bridge” and “SSL renewal receipt bridge”; the consumer documentation identifies the runs as local utility operations and distinguishes the fake ACME path from real renewal.
 - **Open gate:** Those operations predate the current request-bound exact problem/criteria preview and retry contract. No packet yet binds that current request and criteria to fingerprints, a bounded report, replay/restart, and out-of-scope hashes. Keep the Definition of done item open; no checklist marker changed.
 - **Outcome:** Preserve the verified local runs while narrowing the remaining evidence gap to the current request contract and its reviewed acceptance packet.
+## 2026-10-28 — Reverify the local Curator V2 quality gate
+
+**Intent:** Complete the previously requested check of the current Curator V2 quality commands and record their result without rerunning the already-passing unit suite.
+
+**Changed fact:** No application source, database, or runtime state changed. The plan now records a fresh local quality verification and preserves deployment/live-runtime gates as open.
+
+**Verification:** `uv run --locked --group quality pyright` reports zero errors, warnings, or informations. Errors-only Pylint and Bandit exit 0. `uv audit --locked --preview-features audit-command` finds no known vulnerabilities or adverse package status in 50 packages. `uv lock --check` and `git diff --check` pass.
+
+**Open gate:** The unit suite was not rerun. These static and dependency checks do not establish deployment, scheduler, identity, production retention, or live Hermes lifecycle behavior. No checklist marker changed.
+
+**Outcome:** Refresh local quality evidence only; keep runtime and release acceptance separate.
