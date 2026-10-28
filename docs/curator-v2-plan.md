@@ -1129,6 +1129,16 @@ plugin or Hermes integration is installed and working end to end.
       verified; person identity, reviewer authority from the profile,
       managed-gateway delivery, live capture, and writes from the direct Codex
       client remain open.
+      Current runtime evidence (2026-10-28 05:36 UTC): the supported
+      `renew-ssl-coding` profile probe exited successfully, discovered 50 tools,
+      and read 56 processed receipts, 25 goals, 22 facts, and zero SDE
+      candidates. Its separate health observation was `healthy`, with complete
+      database/staging observations, seven healthy dependency observations, and
+      no gate codes. A direct Curator tool call from the current Codex context
+      returned `unauthenticated`; this caller has no Hermes-injected profile
+      context. This confirms the supported local profile path and expected
+      denial of the untrusted direct path; it does not establish app-server
+      lifecycle delivery or refresh project token usage.
 - [x] Make an SDE decision and its artifact manifest immutable after the first
       durable receipt; repeated requests with changed decision or targets conflict.
 - [x] Record bounded, idempotent corrections as linked append-only follow-up
