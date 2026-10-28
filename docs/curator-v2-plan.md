@@ -8422,9 +8422,15 @@ substitute for evidence at a later integration boundary.
       `rolled-back` and rollback as `complete`; the corresponding two Curator
       inbox receipts are `processed`, and the rolled-back `.test` site lookup
       returns 404. `sudo nginx -t` succeeds. This reconfirms the existing
-      disposable run and rollback, but does not supply same-event replay,
-      out-of-scope before/after hashes, or the owner-reviewed evidence packet.
-      Slice I remains open.
+      disposable run and rollback.
+      Exact apply replay (2026-10-28): the goal-start payload reconstructed
+      from the canonical goal fields matches the original receipt's
+      idempotency digest. Replaying it through the same profile-bound stdio
+      server returned the existing `processed` receipt. The V2 idempotency path
+      returns the existing row without inserting a receipt; the before/after
+      counts remain 56 receipts, 25 goals, and 22 facts. The exact replay
+      substep is verified. Out-of-scope before/after hashes and the
+      owner-reviewed evidence packet remain open; Slice I remains open.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.

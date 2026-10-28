@@ -52,6 +52,21 @@
 - **Outcome:** Reconfirm the local rollback and one transient-log path while
   keeping the full pilot and privacy criteria open.
 
+## 2026-10-28 — Verify exact replay of the live Vhost apply event
+
+- **Intent:** Close the same-event replay substep for the disposable local
+  Vhost apply request.
+- **Changed fact:** Reconstructed the goal-start payload from its canonical
+  goal fields; its idempotency digest matches the processed inbox receipt.
+- **Verification:** Replayed through the same profile-bound Curator stdio
+  server and received the existing `processed` receipt. The event remains
+  processed with its payload scrubbed; aggregate counts remain 56 receipts,
+  25 goals, and 22 facts. No second goal or fact was created.
+- **Open gate:** Out-of-scope before/after hashes, the complete owner-reviewed
+  evidence packet, and pilot sign-off remain open. No checklist marker changed.
+- **Outcome:** Verify exact replay idempotency without retaining or reconstructing
+  the original Vhost request from consumer history.
+
 ## 2026-10-27 — Record request-bound Vhost acceptance progress
 
 - **Intent:** Continue the real-consumer acceptance work in Slice I with a
