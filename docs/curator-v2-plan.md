@@ -9336,6 +9336,10 @@ substitute for evidence at a later integration boundary.
       under a stubbed VS Code host. The real goal page loaded with all seven
       dependencies healthy and zero gates. The host and webview were stubbed,
       so the desktop rendering and status-bar color remain unverified.
+      The same read returned 26 goals, 23 facts, 60 event receipts, 46,338
+      logical project-record bytes, zero retained event-payload bytes, a
+      524,288-byte shared database, a 300,792-byte WAL, and a complete empty
+      staging inventory below the 262,144,000-byte warning threshold.
       This repairs the reported unknown status source; it does not close
       unrelated acceptance checks. This row
       remains open until the applicable checks are reconciled against the same package and
