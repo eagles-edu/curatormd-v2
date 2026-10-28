@@ -25,6 +25,8 @@ const {
   McpStdioClient,
   dashboardHtml,
   defaultReviewCommand,
+  parseHermesHealthProbe,
+  readHermesHealthProbe,
   hasWorkspaceSettingOverride,
   quotePosixShellArgument,
   activate,
@@ -156,6 +158,81 @@ class FakeMcpProcess extends EventEmitter {
     this.emit('exit', 0, null);
   }
 }
+
+class FakeHermesProcess extends EventEmitter {
+  constructor(payload, exitCode = 0) {
+    super();
+    this.stdout = new PassThrough();
+    this.killed = false;
+    setImmediate(() => {
+      this.stdout.end(JSON.stringify(payload), () => this.emit('close', exitCode, null));
+    });
+  }
+
+  kill() {
+    this.killed = true;
+    this.emit('close', 1, null);
+  }
+}
+
+function healthyHermesProbe(projectId = 'alpha') {
+  const names = [
+    'event_router', 'purge_scheduler', 'database_storage_adapter', 'host_identity',
+    'human_review', 'alert_delivery', 'artifact_producer_inventory',
+  ];
+  return {
+    schema_version: 1,
+    connected: true,
+    project_id: projectId,
+    health: {
+      project_id: projectId,
+      status: 'healthy',
+      gate_codes: [],
+      database_observation_complete: true,
+      dependencies: names.map((name) => ({
+        name, status: 'healthy', observed_at: '2026-10-28T12:10:20+00:00', age_seconds: 0,
+      })),
+      operational_counts: {
+        pending_review_count: 0,
+        pending_purge_receipt_count: 0,
+        pending_purge_artifact_count: 0,
+        pending_expiry_purge_receipt_count: 0,
+        pending_expiry_purge_artifact_count: 0,
+      },
+      event_received_count: 0,
+      event_failed_count: 0,
+      event_quarantined_count: 0,
+      event_claimed_count: 0,
+      event_expired_claim_count: 0,
+      oldest_pending_event_age_seconds: null,
+    },
+  };
+}
+
+test('Hermes health probe requires a complete fresh-schema project-bound result', async () => {
+  const payload = healthyHermesProbe();
+  const health = parseHermesHealthProbe(JSON.stringify(payload), 'alpha');
+  assert.equal(health.status, 'healthy');
+  assert.equal(health.dependencies.length, 7);
+  assert.throws(() => parseHermesHealthProbe(JSON.stringify(payload), 'other'), /incomplete or project-mismatched/);
+  const incomplete = healthyHermesProbe();
+  incomplete.health.dependencies.pop();
+  assert.throws(() => parseHermesHealthProbe(JSON.stringify(incomplete), 'alpha'), /incomplete or project-mismatched/);
+
+  let invocation;
+  const read = await readHermesHealthProbe(
+    'fixture-hermes', 'fixture-profile', 'alpha', '/tmp/project',
+    (command, args, options) => {
+      invocation = { command, args, options };
+      return new FakeHermesProcess(payload);
+    },
+  );
+  assert.equal(read.project_id, 'alpha');
+  assert.deepEqual(invocation.args, [
+    '-p', 'fixture-profile', 'mcp', 'test', 'curator_v2', '--probe-curator-status', '--json',
+  ]);
+  assert.equal(invocation.options.cwd, '/tmp/project');
+});
 
 test('MCP stdio dashboard client initializes and reads a tool result', async () => {
   const child = new FakeMcpProcess();
@@ -385,22 +462,23 @@ test('launcher, database, and profile settings reject workspace overrides', () =
     databasePath: { globalValue: '/home/user/curator.sqlite3' },
     profileId: { globalValue: 'development-profile' },
     serverCommand: { globalValue: '/opt/curator/bin/curatormd-v2-mcp' },
+    hermesCommand: { globalValue: '/opt/hermes/bin/hermes' },
     reviewCommand: { globalValue: '/opt/curator/bin/curatormd-v2-review' },
   };
   const config = { inspect: (name) => settings[name] };
   assert.equal(
-    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand']),
+    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand']),
     false,
   );
   settings.databasePath.workspaceValue = '/tmp/attacker.sqlite3';
   assert.equal(
-    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand']),
+    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'hermesCommand']),
     true,
   );
   delete settings.databasePath.workspaceValue;
   settings.reviewCommand.workspaceFolderValue = '/tmp/attacker-review';
   assert.equal(
-    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand']),
+    hasWorkspaceSettingOverride(config, ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand']),
     true,
   );
 });
@@ -487,6 +565,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
     serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
     reviewCommand: '/opt/curator tools/curatormd-v2-review',
   };
   const terminalCalls = [];
@@ -515,7 +594,8 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     }),
   };
 
-  await showDashboard(() => {
+  await showDashboard((command) => {
+    if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
     const current = processCount++;
     const child = new FakeMcpProcess(
       current >= 3 ? 'b'.repeat(64) : 'a'.repeat(64),
@@ -580,6 +660,7 @@ test('dashboard rejects goal reports without a valid snapshot revision', async (
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
     serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
   };
   vscodeMock.workspace = {
     workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
@@ -602,7 +683,9 @@ test('dashboard rejects goal reports without a valid snapshot revision', async (
     }),
   };
 
-  await showDashboard(() => new FakeMcpProcess('invalid-revision'));
+  await showDashboard((command) => command === 'fixture-hermes'
+    ? new FakeHermesProcess(healthyHermesProbe())
+    : new FakeMcpProcess('invalid-revision'));
   await receiveMessage({ type: 'loadGoals', offset: 0 });
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
 
@@ -618,6 +701,7 @@ test('dashboard refuses a later fact page before a first-page snapshot exists', 
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
     serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
   };
   vscodeMock.workspace = {
     workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
@@ -640,7 +724,9 @@ test('dashboard refuses a later fact page before a first-page snapshot exists', 
     }),
   };
 
-  await showDashboard(() => new FakeMcpProcess());
+  await showDashboard((command) => command === 'fixture-hermes'
+    ? new FakeHermesProcess(healthyHermesProbe())
+    : new FakeMcpProcess());
   await receiveMessage({ type: 'loadGoals', offset: 0 });
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 16 });
 
@@ -792,6 +878,7 @@ test('dashboard still reads goals when the health probe is unavailable', async (
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
     serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
   };
   vscodeMock.workspace = {
     workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
@@ -814,10 +901,12 @@ test('dashboard still reads goals when the health probe is unavailable', async (
     }),
   };
 
-  await showDashboard(() => new FakeMcpProcess(
-    'a'.repeat(64), false,
-    ['project_health', 'project_activity_status', 'project_storage_usage'],
-  ));
+  await showDashboard((command) => command === 'fixture-hermes'
+    ? new FakeHermesProcess(healthyHermesProbe(), 1)
+    : new FakeMcpProcess(
+      'a'.repeat(64), false,
+      ['project_health', 'project_activity_status', 'project_storage_usage'],
+    ));
   await receiveMessage({ type: 'loadGoals', offset: 0 });
 
   const goals = messages.find((message) => message.type === 'goals');

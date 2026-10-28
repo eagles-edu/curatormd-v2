@@ -1,19 +1,23 @@
 # Local Curator V2 alpha evidence snapshot
 
-Updated 2026-10-28 05:44 UTC. Each row retains its observation time. This is
+Updated 2026-10-28 12:18 UTC. Each row retains its observation time. This is
 a content-free snapshot for the single-user, one-repository development alpha.
 It does not authorize another capture, cleanup, or policy change.
 
 ## Binding
 
-- Installed package source commit: `c1f15cb215c0c0d4a9fab703b988ac1830a2a825`.
+- Installed package source commit: `851d12d5a7073cf236f6ba97a46ab95e9591d45c`.
 - Alpha wheel: `curatormd_v2-0.1.0a1-py3-none-any.whl`, SHA-256
-  `fbe39c5dc6ee0abe459e97fc7cc156527a110d1ca563d9036371e516ef3574b2`.
+  `d3e81af77224f5cdaa7167a7c27c219284ea4acedb01b49a505041fa6131d219`.
 - Installed only in `/home/eaglesvn/.hermes/profiles/renew-ssl-coding/curator-v2-alpha-venv`.
 - Repository config: `vhost-manager-alpha`, SHA-256
   `a37448f38683c864480d4f90db8fc6a6b694311679b598979f86ff574713f746`.
 - Binding recheck (2026-10-28 05:44 UTC): `.curatormd-v2.toml` remains a regular
   file owned by UID 1000 with mode `0600`; its SHA-256 matches the bound value.
+- Binding reconciliation (2026-10-28 12:08 UTC): the installed distribution
+  is `0.1.0a1`; all 88 installed Python module hashes match the repository
+  source at the recorded commit, `pip check` passes, and the project config
+  remains a regular UID-1000 file with mode `0600` and the same SHA-256.
 - Local owner: `eaglesvn`, UID 1000. Alpha ledger:
   `/home/eaglesvn/.local/share/curatormd-v2-alpha/global.sqlite3`, mode `0600`;
   containing directory mode `0700`.
@@ -23,14 +27,14 @@ It does not authorize another capture, cleanup, or policy change.
 | Area | Observed result | State |
 |---|---|---|
 | Package | 88 installed Python modules match source; `pip check` and MCP launcher `--help` pass. Before replacement, 182 files were hash-verified in rollback archive `~/.hermes/profiles/renew-ssl-coding/backups/curator-v2-pre-mcp-privacy-20261028T041838Z.tar.gz` (SHA-256 `89133debfb12cb7a02cfc1476e019b0fd067d23752c95f7b8137757aeb75221b`). In a temporary site-packages copy, the active package tree was replaced by the verified archive; both package versions loaded and the launcher `--help` passed before and after rollback. The active profile install was not replaced. | Isolated package rollback passed; active profile and Hermes process were untouched. |
-| V2 VS Code dashboard | Extension 0.9.2 is installed and its `extension.js` hash matches source (`1f863844c655c0ddd9bb76ecbb8f609fb61f4b9ade920896065def34525551bf`). The focused Node suite passes 16/16, including revision mismatch, fresh-read denial, and rejection of a later page without a first-page snapshot. The reloaded `renew_ssl` window's extension-host log records 0.9.2 activation; the status item is immediately after Git Graph. Hover visibly renders `CuratorMD V2 0.9.2` and says gray means no health read has been attempted. | Package/source match, active-window version, placement, and rendered version tooltip verified. The current gray state accurately reflects that no project health read has run in this window. Grant/trust changes and full review/cleanup interactions remain open. |
-| Quality | The focused backup suite passes 13 tests, including threshold status and keeping files above the warning level; `git diff --check` passes. The source change's targeted Pyright, errors-only Pylint, and Bandit checks passed when implemented. | Current focused backup behavior verified. The full Curator suite was not rerun for the backup warning change. |
+| V2 VS Code dashboard and readiness | Extension 0.9.3 is installed. Its focused Node suite passes 17/17. The extension now obtains project health from Hermes Core's bounded `--probe-curator-status --json` command, validates the exact configured project and all seven fresh probe observations, and keeps the direct Curator MCP reads for dashboard data. The current User setting points `hermesCommand` at the Hermes Core source checkout. At 2026-10-28 12:17 UTC, the exact extension probe path returned `vhost-manager-alpha`, `status=healthy`, zero gates, and all seven dependencies healthy. | Probe, schema validation, and installed package verified. The current VS Code window has not yet been confirmed reloaded or rendered with this version; use Developer: Reload Window, then refresh the Curator panel to display the new read. |
+| Quality | The focused backup suite passes 13 tests, including threshold status and keeping files above the warning level. The VS Code extension suite passes 16 tests; `git diff --check` passes. Targeted Pyright, errors-only Pylint, and Bandit passed when the backup scanner was implemented. | Focused checks verified; the full Curator suite was not rerun for the backup warning change. |
 | Vhost route and Markdown projection | The 2026-10-28 loopback smoke applied `curator-v2-alpha-smoke-20261028.test`, returned HTTP 200, replayed the same fact and goal-start idempotently, then rolled back. Apply receipt: `vhost-apply-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c`; rollback operation: `b3cfa643-c3e1-456b-89a8-996479be6b4b`. The test site's account and Nginx files were absent afterward; the unrelated 63-entry Nginx tree retained hash `b2c5d9b9e26afd0d99f93ee0b3062e3831d712628c64c88f33a9f9be8fbb8698`. Using the owner-only local UID reviewer API, projected only goals `vhost-op-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and `vhost-rollback-b3cfa643-c3e1-456b-89a8-996479be6b4b` to the configured `HISTORY.md`; read-only reconciliation returned `synced` for both. Their ledger block hashes are `112e427fad74cd5a451145ca796f96f101c081976dfedea2ebe7fdf27256862c` and `1a4360114240c1e1304ca46fd73b28caf6b9f619973183fb16e40ab4bcec2f7d`. | Local workflow and exact projections verified; owner review of the complete packet remains open. |
 | Staging | The approved Vhost staging threshold is 262,144,000 bytes (250 MiB), warning only; writes remain allowed and there is no file-count limit. Boundary behavior has focused test coverage. | Policy and implementation verified; the live profile has not crossed the threshold. |
 | Retention and backup | Live transient source files have a 72-hour maximum. The backup policy retains the newest seven verified daily SQLite copies; owner approval allows unresolved retry/quarantine payloads in those copies. Restore is manual to a new path. The per-user six-hour maintenance timer was active at 2026-10-28 12:30 +07; its 12:00 run exited 0 and emitted `backup_status=verified`, with zero due purge and expiry items or pending failures. | Policy, rotation/restore tests, and current timer/backup run verified. Restore-to-new-path has focused source tests but no live alpha restore; unresolved payloads can roll forward while pending. Retention of other backup-tree files is open. |
 | Backup storage | The 04:52 UTC inventory counted 29 entries (27 files, 2 directories, 0 symlinks), 4,642,256 logical file bytes, and 4,681,728 allocated bytes without reading file contents. The refreshed installed scanner traverses all 29 entries using descriptor-relative no-follow opens, including the two group-writable directories. Its 12:03 UTC read measured 4,642,256 logical file bytes and 4,685,824 allocated bytes including the root directory; one daily snapshot is recognized and 28 legacy entries remain unclassified. Inventory `status=incomplete` describes class identification; the separate `warning_status=below_threshold` follows a complete bounded byte measurement under the 262,144,000-byte (250 MiB) warning threshold. The owner-approved warning never authorizes deletion, and no files were changed or removed. | The warning-only policy and complete bounded size measurement are verified. Class-specific long-term retention/recovery horizons and permanent-data policy remain open. |
 | Permanent storage measurement | The local Vhost project read at 04:49 UTC reported 43,912 logical project bytes: 25 goals, 22 facts, 56 event receipts; 37,859 original event-payload bytes received and zero retained payload bytes. The inbox retains 18,885 logical row bytes of its 134,217,728-byte limit. Its separate control-plane view reported 3,145 logical bytes across 11 classes, 524,288 database bytes, and a 383,192-byte WAL. At 05:34 UTC, metadata-only `lstat` measured the current database at 524,288 bytes, WAL at 457,352 bytes, and SHM at 32,768 bytes; all are regular files owned by UID 1000 with mode `0600`, and the backup directory is owned by UID 1000 with mode `0700`. No contents were read. Staging was empty and complete in the earlier project read. | Logical class values remain the 04:49 observation; physical WAL/SHM values are dynamic and were remeasured at 05:34. Per-class retention/recovery horizons and permanent-database warning rules remain open. |
-| Token usage | At 2026-10-28 05:57 UTC, the read-only installed `project-usage` handler (SHA-256 matches Hermes source) reports seven retained turns, six reported and one unknown, with the latest event at 05:50:47 UTC and age 380 seconds. `coverage_complete` and `tokens_complete` remain false; excluded sources are auxiliary calls outside active-turn context, auxiliary attempts without responses, and unbound sessions. No token totals were displayed. | Freshness refreshed by the local app-server turn; coverage remains incomplete and report-only. No token budget is defined or enforced. |
+| Token usage | The last recorded read was 2026-10-28 05:57 UTC. At that time, the installed read-only `project-usage` handler reported a recent real profile-bound app-server event. No newer read was made during this evidence refresh. `coverage_complete` and `tokens_complete` were false; excluded sources include auxiliary calls outside active-turn context, auxiliary attempts without responses, and unbound sessions. | Treat the report as stale until a new durable profile-bound turn is observed and read. Coverage remains incomplete and report-only; no token budget is defined or enforced. |
 | Process privacy | During a Hermes profile `--probe-curator-status` invocation, a syscall-only trace of the spawned Curator MCP server observed `prlimit64(... RLIMIT_CORE, {0, 0})` and `umask(077)` before serving. On 2026-10-28 05:13 UTC, Hermes Core's root-owned drop-in `/etc/systemd/system/hermes-gateway.service.d/90-local-privacy.conf` was applied, systemd reloaded, and `hermes-gateway.service` restarted. Recheck at 05:40 UTC reports the gateway active/running with `LimitCORE=0` and `UMask=0077`; process UID is 1000, process umask is `0077`, and `/proc` reports zero core-file size. The Curator maintenance service reports `Result=success`, exit status 0, `LimitCORE=0`, and `UMask=0077`. | Hermes-launched MCP child, gateway, and maintenance-process limits are verified on this host. Apport retention, journals, other data sinks, and crash-canary handling remain unverified; full source-to-sink audit stays open. |
 | Hermes profile-to-ledger and lifecycle | At 2026-10-28 05:50 UTC, a real Hermes Core app-server turn under the `renew-ssl-coding` profile emitted start/end outbox sequences 12 and 13 for `vhost-manager-alpha` and the existing active alpha goal. Both events were acknowledged; metadata-only binding checks matched their session to the same project and goal. Curator's supported profile probe then returned 58/58 processed receipts, zero failed or quarantined events, and healthy project status. The event contexts contain only bounded attempt/session/turn identifiers and outcome, without prompt/transcript text. A direct MCP call without injected Hermes context still returns `unauthenticated`; profile-context access succeeds. | Local app-server-to-managed-MCP lifecycle delivery and content boundary verified. No human-authentication or production claim. Token usage is now fresh but remains incomplete. |
 | SDE review | The local review CLI's `queue` read returned `pending: []` for `vhost-manager-alpha`. | No candidate awaits disposition; alpha packet review is a separate owner decision. |
@@ -58,17 +62,17 @@ universal source-to-sink guarantee.
 
 ## Remaining local acceptance work
 
-- Refresh the profile usage ledger through a real, durable project/goal-bound
-  turn; a plain Hermes CLI turn is excluded. Then resolve or explicitly retain
-  its known coverage gaps. No model/token budget is enforced.
+- Refresh the stale profile usage report through a real, durable
+  project/goal-bound app-server turn; a plain Hermes CLI turn is excluded. Then
+  resolve or explicitly retain its known coverage gaps. No model/token budget
+  is enforced.
 - Complete class-specific long-term retention/recovery horizons for the legacy
   backup entries and permanent database classes.
 - Review the local-alpha privacy sink matrix and close its listed unverified
   producer and operating-system paths.
-- Compare the other Vhost-owned target hashes for the reviewed workflow; only
-  the configured `HISTORY.md` target was written during this projection check.
-- Reconcile the package and all applicable local workflow evidence against this
-  exact package/config binding.
+- Compare the other Vhost-owned target hashes before and after an approved
+  workflow run; the recorded smoke verified the unrelated Nginx tree after
+  rollback but did not record a before/after set for every configured target.
 - `eaglesvn` reviews and accepts or rejects this snapshot; no review decision is
   implied by its creation.
 

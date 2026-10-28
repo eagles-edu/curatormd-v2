@@ -8549,10 +8549,9 @@ substitute for evidence at a later integration boundary.
       Vhost `HISTORY.md`; read-only reconciliation returned `synced` for both.
       Their block hashes are recorded in
       [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
-      Remaining checks: compare the approved out-of-scope target hashes before
-      and after the run; refresh the token report through a real profile turn
-      rather than synthetic data; and reconcile applicable evidence against the
-      exact package/config binding. Rollback rehearsal (2026-10-28 04:37 UTC):
+      Remaining checks: compare approved out-of-scope target hashes before and
+      after a workflow run, and keep the profile usage read current. Rollback
+      rehearsal (2026-10-28 04:37 UTC):
       in a temporary site-packages copy, the installed package tree was replaced
       by the verified archive; both versions loaded and the MCP launcher
       `--help` passed. The active profile install was untouched. Preserve any
@@ -9334,7 +9333,16 @@ substitute for evidence at a later integration boundary.
       (2026-10-28 12:30 +07): the active per-user timer is scheduled every six
       hours. Its 12:00 run exited successfully, reported a verified daily backup,
       and reported zero due purge/expiry items and zero pending failures. The
-      run's service result and bounded journal output were checked. This row
+      run's service result and bounded journal output were checked. Readiness
+      panel repair (2026-10-28 12:17 UTC): Hermes Core's bounded profile health
+      command now emits a schema-versioned JSON snapshot, and the installed V2
+      extension consumes it only after exact project, seven-probe, freshness,
+      and gate validation. The extension probe returned `vhost-manager-alpha`,
+      all seven dependencies healthy, and zero gates. Its 17 focused Node tests
+      and Hermes Core's 49 focused CLI tests pass. The current VS Code window
+      still needs a reload and panel refresh before a rendered-state claim.
+      This repairs the reported unknown status source; it does not close
+      unrelated acceptance checks. This row
       remains open until the applicable checks are reconciled against the same package and
       project binding; a unit test or an unrelated profile probe cannot stand
       in for a local workflow check.

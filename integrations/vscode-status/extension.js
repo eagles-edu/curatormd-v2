@@ -26,6 +26,12 @@ const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
 const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
+const HERMES_HEALTH_TIMEOUT_MS = 20000;
+const HERMES_HEALTH_MAX_BYTES = 32768;
+const REQUIRED_HEALTH_PROBES = Object.freeze([
+  'event_router', 'purge_scheduler', 'database_storage_adapter', 'host_identity',
+  'human_review', 'alert_delivery', 'artifact_producer_inventory',
+]);
 const REPORT_FACT_ID_PATTERN = /^- `([^`]{1,256})` — /;
 let dashboardStatusItem;
 
@@ -92,6 +98,96 @@ function curatorError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function parseHermesHealthProbe(stdout, expectedProjectId) {
+  if (typeof stdout !== 'string' || Buffer.byteLength(stdout, 'utf8') > HERMES_HEALTH_MAX_BYTES) {
+    throw curatorError('hermes-probe-invalid', 'Hermes health response exceeded its size limit.');
+  }
+  let response;
+  try {
+    response = JSON.parse(stdout);
+  } catch {
+    throw curatorError('hermes-probe-invalid', 'Hermes health response was not valid JSON.');
+  }
+  const health = response && response.health;
+  const validCode = (code) => typeof code === 'string'
+    && /^[a-z][a-z0-9_:.-]{0,127}$/.test(code);
+  const dependencies = health && health.dependencies;
+  const dependencyNames = Array.isArray(dependencies)
+    ? dependencies.map((dependency) => dependency && dependency.name) : [];
+  const dependenciesValid = Array.isArray(dependencies)
+    && dependencies.length === REQUIRED_HEALTH_PROBES.length
+    && new Set(dependencyNames).size === REQUIRED_HEALTH_PROBES.length
+    && REQUIRED_HEALTH_PROBES.every((name) => dependencyNames.includes(name))
+    && dependencies.every((dependency) => dependency
+      && ['healthy', 'degraded', 'unknown'].includes(dependency.status)
+      && typeof dependency.observed_at === 'string'
+      && dependency.observed_at.length > 0 && dependency.observed_at.length <= 64
+      && Number.isSafeInteger(dependency.age_seconds) && dependency.age_seconds >= 0);
+  if (!response || response.schema_version !== 1 || response.connected !== true
+    || response.project_id !== expectedProjectId
+    || !health || health.project_id !== expectedProjectId
+    || !['healthy', 'degraded', 'unknown'].includes(health.status)
+    || health.database_observation_complete !== true
+    || !Array.isArray(health.gate_codes) || health.gate_codes.length > 128
+    || !health.gate_codes.every(validCode) || !dependenciesValid) {
+    throw curatorError('hermes-probe-invalid', 'Hermes health response was incomplete or project-mismatched.');
+  }
+  if (health.status === 'healthy'
+    && (health.gate_codes.length > 0
+      || dependencies.some((dependency) => dependency.status !== 'healthy'))) {
+    throw curatorError('hermes-probe-invalid', 'Hermes health response did not reconcile.');
+  }
+  return health;
+}
+
+function readHermesHealthProbe(command, profileId, projectId, cwd, spawnProcess = spawn) {
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawnProcess(command, [
+        '-p', profileId, 'mcp', 'test', 'curator_v2', '--probe-curator-status', '--json',
+      ], { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      reject(curatorError('hermes-probe-start', 'Hermes health probe could not start.'));
+      return;
+    }
+    let stdout = '';
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(curatorError('hermes-probe-timeout', 'Hermes health probe timed out.'));
+    }, HERMES_HEALTH_TIMEOUT_MS);
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+      if (Buffer.byteLength(stdout, 'utf8') > HERMES_HEALTH_MAX_BYTES) {
+        child.kill();
+        finish(curatorError('hermes-probe-invalid', 'Hermes health response exceeded its size limit.'));
+      }
+    });
+    child.once('error', () => {
+      finish(curatorError('hermes-probe-start', 'Hermes health probe could not start.'));
+    });
+    child.once('close', (code) => {
+      if (code !== 0) {
+        finish(curatorError('hermes-probe-exit', 'Hermes health probe did not complete.'));
+        return;
+      }
+      try {
+        finish(null, parseHermesHealthProbe(stdout, projectId));
+      } catch (error) {
+        finish(error);
+      }
+    });
+  });
 }
 
 function dashboardErrorMessage(error) {
@@ -484,11 +580,12 @@ async function showDashboard(spawnProcess = spawn) {
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   const workspaceOverride = hasWorkspaceSettingOverride(
     configuration,
-    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand'],
+    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand'],
   );
   const databasePath = configuration.get('databasePath', '');
   const profileId = configuration.get('profileId', '');
   const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
+  const hermesCommand = configuration.get('hermesCommand', 'hermes');
   const configuredReviewCommand = configuration.get('reviewCommand', '');
   const reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
   if (workspaceOverride) {
@@ -498,7 +595,7 @@ async function showDashboard(spawnProcess = spawn) {
     );
     return;
   }
-  if (!databasePath || !profileId || !serverCommand) {
+  if (!databasePath || !profileId || !serverCommand || !hermesCommand) {
     resetStatusBarHealth();
     vscode.window.showErrorMessage(
       'Set CuratorMD V2 databasePath and profileId in VS Code settings before opening the dashboard.',
@@ -559,9 +656,6 @@ async function showDashboard(spawnProcess = spawn) {
         const offset = Number.isSafeInteger(message.offset) && message.offset >= 0
           ? message.offset : 0;
         const result = await withClient(async (client) => {
-          const healthRequest = client.callTool('project_health', {})
-            .then((wire) => JSON.parse(wire))
-            .catch(() => null);
           const activityRequest = client.callTool('project_activity_status', {})
             .then((wire) => JSON.parse(wire))
             .catch(() => null);
@@ -577,17 +671,32 @@ async function showDashboard(spawnProcess = spawn) {
           const reviewRequest = client.callTool('sde_review_queue_cards', {
             limit: REVIEW_QUEUE_SIZE,
           }).then((wire) => JSON.parse(wire)).catch(() => null);
-          const [health, activity, storage, metrics, page, reviews] = await Promise.all([
-            healthRequest,
+          const [activity, storage, metrics, page, reviews] = await Promise.all([
             activityRequest,
             storageRequest,
             metricsRequest,
             pageRequest,
             reviewRequest,
           ]);
-          return { health, activity, storage, metrics, page, reviews };
+          let health = null;
+          let healthProbeError = null;
+          if (typeof page.project_id === 'string' && page.project_id) {
+            try {
+              health = await readHermesHealthProbe(
+                hermesCommand,
+                profileId,
+                page.project_id,
+                workspace.uri.fsPath,
+                spawnProcess,
+              );
+            } catch (error) {
+              healthProbeError = error && typeof error.code === 'string'
+                ? error.code : 'hermes-probe-failed';
+            }
+          }
+          return { health, healthProbeError, activity, storage, metrics, page, reviews };
         });
-        const { page, health, activity, storage, metrics, reviews } = result;
+        const { page, health, healthProbeError, activity, storage, metrics, reviews } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
           projectId = page.project_id;
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
@@ -597,6 +706,7 @@ async function showDashboard(spawnProcess = spawn) {
         candidateIds = new Set((reviewItems || []).map((item) => item.candidate.candidate_id));
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage, reviews: reviewItems,
+          healthProbeError,
           goalStatesSummary: summarizeGoalStates(activity, page.project_id),
           queueSummary: summarizeOperationalQueues(health, page.project_id),
           alertSummary: summarizeOperationalAlerts(health, storage, metrics, page.project_id),
@@ -937,8 +1047,16 @@ function dashboardHtml(webview) {
             : !validHealthStatus || !Array.isArray(healthSnapshot.gate_codes)
               ? ['health_observation_invalid']
               : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string');
+        const probeFailure = {
+          'hermes-probe-start': 'Hermes could not start. Check the User setting hermesCommand.',
+          'hermes-probe-exit': 'Hermes did not complete its trusted health read. Check that its Curator status probe is supported.',
+          'hermes-probe-timeout': 'Hermes health read timed out. Try Refresh after checking the profile.',
+          'hermes-probe-invalid': 'Hermes returned an invalid or project-mismatched health snapshot.',
+          'hermes-probe-failed': 'Hermes health read failed. Check the profile and try again.',
+        }[message.healthProbeError];
         health.textContent = 'Project health: ' + healthStatus + '. Open gates: '
-          + (healthGates.length ? healthGates.join(', ') : 'none reported') + '.';
+          + (healthGates.length ? healthGates.join(', ') : 'none reported') + '.'
+          + (probeFailure ? ' ' + probeFailure : '');
         alertSummary.textContent = typeof message.alertSummary === 'string'
           ? message.alertSummary : 'Operational alerts: unknown. Alert summary unavailable.';
         queueSummary.textContent = typeof message.queueSummary === 'string'
@@ -1202,6 +1320,8 @@ module.exports = {
   McpStdioClient,
   dashboardHtml,
   defaultReviewCommand,
+  parseHermesHealthProbe,
+  readHermesHealthProbe,
   dashboardErrorMessage,
   summarizeGoalStates,
   summarizeEventFailureCategories,

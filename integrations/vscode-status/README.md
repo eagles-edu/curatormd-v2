@@ -36,14 +36,16 @@ Configure these **User** settings in VS Code:
 
 - `curatormdV2.databasePath`: absolute path to the Curator V2 SQLite database.
 - `curatormdV2.profileId`: host-selected profile routing label.
+- `curatormdV2.hermesCommand`: absolute path or PATH command for a Hermes CLI
+  that supports the machine-readable Curator health probe; defaults to `hermes`.
 - `curatormdV2.serverCommand`: optional local `curatormd-v2-mcp` path or PATH
   command; defaults to `curatormd-v2-mcp`.
 - `curatormdV2.reviewCommand`: attended local SDE review CLI path or PATH
   command; defaults beside an absolute `serverCommand`, otherwise
   `curatormd-v2-review` on PATH.
 
-The extension rejects workspace-level overrides for the launcher, database,
-profile, and review CLI. It starts a read-only stdio MCP process for each
+The extension rejects workspace-level overrides for the Hermes command, Curator
+launcher, database, profile, and review CLI. It starts a read-only stdio MCP process for each
 request, pinned to the open repository's `.curatormd-v2.toml` project. The
 Python host derives the
 authorization subject from the kernel UID and checks the exact project read
@@ -82,12 +84,14 @@ their fixed error code and observed lower bound. Missing, malformed, or
 cross-project results display as unknown. Token usage remains outside this read
 and is not inferred from zero values.
 
-The editor launches Curator directly over local stdio and supplies profile and
-session routing metadata. It does not supply Hermes Core's trusted host
-readiness observations. Therefore host dependencies in `project_health` remain
-`unknown` in this editor path until a trusted Hermes-managed readiness source is
-connected. Do not treat the configured profile label as proof of host identity
-or readiness.
+Health comes from Hermes Core's trusted, profile-bound
+`mcp test curator_v2 --probe-curator-status --json` read. The result must be
+bounded, include all seven timestamped dependency probes, and match the project
+returned by Curator. This lets the editor display the same local host evidence
+as the Hermes profile while keeping health `unknown` if the Hermes CLI is old,
+unavailable, stale, malformed, or bound to another project. The editor never
+creates readiness values itself. The `profileId` setting remains routing
+context, not an identity or credential.
 
 The operational queue summary shows event age and counts, pending review,
 purge, and expiry queues from a project-matched health snapshot. The **Attention**
