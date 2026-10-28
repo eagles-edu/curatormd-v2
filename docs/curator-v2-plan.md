@@ -8706,9 +8706,20 @@ substitute for evidence at a later integration boundary.
       Current extension refresh (2026-10-28): VS Code lists the V2 extension
       as 0.8.9, and the 14-test Node suite passes. Tests cover versioned color
       tooltips, paged facts/evidence, page revision changes, and clearing stale
-      data after denied reads. The current desktop has no foreground VS Code
-      window, so the 0.8.9 hover and dashboard rendering were not observed;
-      this does not close the interactive-view criterion.
+      data after denied reads. Earlier desktop inspection had no foreground
+      VS Code window. **Fresh rendered check (2026-10-28):** the ordinary
+      `renew_ssl` VS Code workspace displays the installed 0.8.9 status item
+      immediately to the right of Git Graph. Its hover shows version 0.8.9 and
+      explains yellow as unknown health or review count. The dashboard renders
+      the configured project's health (`unknown` with seven unverified gates),
+      aggregate activity, storage, paged goals, and a selected goal report with
+      its snapshot revision, open human-review criterion, and an evidence
+      action. The evidence read was authorized and returned no references for
+      that change fact. The attended local review CLI independently reports an
+      empty pending SDE queue. This confirms the visible local dashboard/read
+      path for the current project; live grant revocation, verified-fact
+      evidence resolution, SDE disposition, exact cleanup review, and the full
+      dashboard acceptance matrix remain open. No consumer files were changed.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

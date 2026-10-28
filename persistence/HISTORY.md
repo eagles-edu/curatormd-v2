@@ -9724,3 +9724,21 @@ while preserving explicit criteria and same-project parent validation.
   baseline, not an SLA.
 - **Outcome:** Close the bounded local reliability row without expanding the
   product to multi-project operation.
+
+## 2026-10-28 — Verify rendered V2 dashboard and status tooltip
+
+- **Intent:** Observe the installed V2 extension in the configured local
+  consumer workspace and replace the stale note that no VS Code window was
+  available.
+- **Changed fact:** The dashboard's live read path renders project health,
+  activity, storage, paged goals, and a selected report with a revision label,
+  open human-review criterion, and evidence action. The status tooltip shows
+  extension version 0.8.9 and explains its yellow unknown state.
+- **Verification:** The evidence action completed under the project read grant;
+  the selected change fact had no evidence references. The local attended review
+  CLI reports no pending SDE candidates. No consumer files were changed.
+- **Open gate:** This does not prove live grant revocation, resolution of a
+  verified fact's evidence, human SDE disposition, exact-inventory cleanup, or
+  the remaining dashboard acceptance matrix. No checklist marker changed.
+- **Outcome:** Replace the stale no-window observation with current rendered
+  evidence while keeping the full dashboard and review criteria open.
