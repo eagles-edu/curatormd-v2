@@ -18,6 +18,9 @@ mismatched, incomplete, or returned `unknown`.
 Cross-project or unavailable health is shown as unknown. If the workspace has
 no `.curatormd-v2.toml`, the extension explains
 that a configured consumer project is required before starting the launcher.
+For configured consumer workspaces, health and the review queue are read when
+the extension activates and when the workspace folder changes, so the status
+bar does not wait for the dashboard to be opened.
 The button opens a
 project-scoped dashboard for the first workspace folder. Goal, health, activity,
 storage, and SDE queue reads are read-only. It shows project health, exact
@@ -92,6 +95,12 @@ as the Hermes profile while keeping health `unknown` if the Hermes CLI is old,
 unavailable, stale, malformed, or bound to another project. The editor never
 creates readiness values itself. The `profileId` setting remains routing
 context, not an identity or credential.
+
+The probe selects the configured profile by setting `HERMES_HOME` to
+`~/.hermes/profiles/<profileId>` and runs `mcp test` without treating the
+profile ID as Hermes' model option. Point `hermesCommand` at a Hermes Core
+checkout or installation that includes `--probe-curator-status`; older CLI
+builds return unknown because they do not support that read.
 
 The operational queue summary shows event age and counts, pending review,
 purge, and expiry queues from a project-matched health snapshot. The **Attention**

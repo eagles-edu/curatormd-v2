@@ -10267,3 +10267,249 @@ while preserving explicit criteria and same-project parent validation.
   or owner review. The live services were not restarted.
 - **Outcome:** Refresh the installed alpha package and its bounded consumer
   evidence while leaving the full acceptance goal active.
+
+## 2026-10-29 — Verify one live Vhost Manager alpha request
+
+- **Intent:** Exercise the installed Curator V2 integration through the local
+  Vhost Manager and restore the host after a disposable workflow.
+- **Changed fact:** The loopback Vhost Manager previewed and applied
+  `curator-v2-alpha-20261029.test` as a static site with no firewall targets.
+  Its local Host request returned HTTP 200. Curator persisted processed apply
+  receipt `vhost-apply-8a770ef0-42cb-495a-a696-303a968b861d`. The UI rollback
+  action persisted processed receipt
+  `vhost-rollback-33ac9b51-d3dc-4aca-afa6-acd71a707c58` and removed the target
+  account, home, and Nginx files.
+- **Verification:** Read-only SQLite checks show both inbox rows are processed
+  once and `PRAGMA quick_check` returns `ok`. The pre-run values for 16
+  out-of-scope Nginx entries and both iptables files are unchanged. Root
+  `nginx -t` and OpenLiteSpeed config validation pass. The Vhost Manager,
+  Nginx, and OpenLiteSpeed remain active. The trusted Hermes profile probe
+  reports all seven dependencies healthy, zero gates, and no event, review, or
+  purge backlog. The Vhost Manager Git checkout is clean.
+- **Open gate:** This is one disposable local workflow. It does not complete
+  the source-request/goal comparison, all local acceptance checks, the full
+  target-class hash comparison, or the explicit owner decision. No checklist
+  marker changed.
+- **Outcome:** Record direct Vhost application evidence and exact Curator
+  receipts while keeping the local alpha acceptance item open.
+
+## 2026-10-29 — Refresh the report-only project usage observation
+
+- **Intent:** Check whether the configured local project-usage ledger has
+  newer bound usage and whether its coverage status changed.
+- **Changed fact:** The read-only profile report contains seven retained turns
+  for `vhost-manager-alpha`: six with reported usage and one unknown, sourced
+  from `codex_app_server`. The latest event is `2026-10-28T05:50:47Z` and was
+  56,953 seconds old when measured at `2026-10-28T21:40:01Z`.
+- **Verification:** Called the installed `project_usage` read handler against
+  the profile-local SQLite ledger. It reports
+  `coverage_complete=false`, `tokens_complete=false`, and the documented
+  auxiliary-call and unbound-session exclusions. Token totals and private
+  identifiers were not printed; the database was opened read-only.
+- **Open gate:** This refreshes measurement time only. Missing/unknown usage
+  and excluded source classes remain unresolved; no token budget or alert is
+  enforced. The checklist item remains open.
+- **Outcome:** Record current report scope and freshness without changing the
+  usage ledger or claiming complete project totals.
+
+## 2026-10-29 — Verify the rendered V2 dashboard in the consumer workspace
+
+- **Intent:** Confirm the installed V2 status item and dashboard in the actual
+  configured one-repository consumer workspace.
+- **Changed fact:** In the live `renew_ssl` VS Code window, CuratorMD V2 Status
+  0.9.3 rendered immediately after Git Graph. The status changed from gray
+  before a read, through yellow `unknown` while the read was loading, to green
+  `healthy`. The dashboard displayed project health with no reported gates,
+  66 processed receipts, 29 goals, 26 facts, zero pending SDE candidates, and
+  storage/staging usage. Its goal list displayed 20 of 29 goals on page 1.
+- **Verification:** The extension-host log records activation of the installed
+  V2 extension in the `renew_ssl` window. The trusted read was authorized and
+  returned the configured `vhost-manager-alpha` project. The displayed page
+  and status color were inspected in the rendered VS Code window. The consumer
+  Git checkout remains clean; no service was restarted.
+- **Open gate:** This verifies the live status item and overview/list path only.
+  Paged fact detail, rendered revision-stale behavior, grant changes, evidence
+  resolution, SDE disposition, and exact cleanup review remain open. No plan
+  checkbox changed.
+- **Outcome:** Replace the earlier “desktop rendering unverified” status with
+  an actual consumer-window result while keeping the broader dashboard and
+  local-alpha acceptance gates open.
+
+## 2026-10-29 — Record the rejected live Hermes binding attempt
+
+- **Intent:** Verify the existing live Hermes-to-Curator path for the active
+  Vhost alpha goal before running one read-only repository check.
+- **Changed fact:** The Hermes one-shot session reached the configured managed
+  MCP, but the exact goal-bind call was rejected by the tool approval layer.
+- **Verification:** The saved profile session records one rejected MCP call
+  and the assistant stopped before invoking the terminal. A read-only query of
+  the profile outbox still shows sequence 13 as its newest event; no new bind,
+  turn, usage, or Curator receipt was persisted. A direct Curator read from
+  this caller also returns `unauthenticated` and was not treated as evidence.
+  Curator `pyright` completed with zero diagnostics; the documented errors-only
+  Pylint command, Bandit, and `uv audit` exited successfully. Bandit emitted
+  non-failing `nosec` warnings; the locked audit found no known vulnerabilities
+  in 50 packages. `git diff --check` passed. The official
+  checklist script reports 168/178 delivery rows complete and 10 open. The
+  full 183/194 checkbox count includes section 11, which contributes 15 checked
+  rows and one open row.
+- **Open gate:** The real bound profile turn and its compact fact are still
+  unverified. Do not retry the rejected call without a fresh user-approved
+  profile action. Checklist progress is unchanged.
+- **Outcome:** Preserve the rejection as an open gate; no repository or
+  consumer source was changed by the attempted check.
+
+## 2026-10-29 — Refresh the V2 status bar without opening the dashboard
+
+- **Intent:** Fix the configured consumer workspace status item remaining
+  yellow after project health and the review queue had recovered.
+- **Changed fact:** VS Code extension 0.9.4 now performs read-only, project-
+  bound health and pending-review reads when the extension activates and when
+  the workspace folder changes. It keeps the item neutral for an unconfigured
+  backend/consumer workspace and shows unknown when a configured read fails.
+- **Verification:** All 17 focused VS Code extension tests pass. `node --check`
+  and `git diff --check` pass. The local package is installed as
+  `curatormd.curatormd-v2-status@0.9.4`; installed and repository
+  `extension.js` hashes match at
+  `a7446ff9ddda2f171134b4d8bf7cf5b847bcc5c998a2d8661dcc2ccea8447cdf`.
+  The configured Hermes profile reports healthy status with all seven local
+  dependencies healthy, and the content-free local review queue count is zero.
+- **Open gate:** The already-open VS Code window still needs `Developer:
+  Reload Window` before its extension host loads 0.9.4; its rendered post-reload
+  color has not yet been visually confirmed. No plan checkbox changed.
+- **Outcome:** Remove the requirement to open the dashboard just to refresh
+  status; preserve unknown/yellow when either health or review state is not
+  available.
+
+## 2026-10-29 — Count interrupted Codex turns as unknown usage
+
+- **Intent:** Repair the profile-local token report's stale/incomplete handling
+  so durable Codex starts without an end receipt are not silently omitted.
+- **Changed fact:** The enabled `renew-ssl-coding` `project-usage` plugin now
+  counts durable unmatched starts as unknown usage. Its retained lifecycle
+  envelope intentionally excludes provider/model labels, so such turns are
+  reported in an `unknown` bucket without retaining additional metadata. A
+  later matching end contributes the reported totals without a duplicate turn.
+- **Verification:** The Hermes focused plugin suite passes 7/7. The updated
+  profile plugin files match the Core checkout at SHA-256
+  `ce7d27398de55840fb205080dfef72a3089eaaee57488ab6361eb6fdb3687416` for
+  `__init__.py` and `17280f5c1fe0ad64214f333996523f121c758e39a087b3550b5be8ea53c5a8b0`
+  for `README.md`; the previous profile plugin is archived under its private
+  backups directory. A query-only profile read at
+  `2026-10-29T09:09:31Z` reports 7 turns (6 reported, 1 unknown), source
+  `codex_app_server`, and newest-event age 98,323 seconds.
+- **Open gate:** The measurement time is current, but the newest source event
+  remains stale and overall coverage is incomplete with known excluded sources.
+  The reader remains report-only; no token budget or freshness threshold was
+  inferred. No checklist marker changed.
+- **Outcome:** Preserve unknown usage for interrupted attempts and keep partial
+  source coverage visible without inventing usage or a budget.
+
+## 2026-10-29 — Correct the V2 status-bar health refresh
+
+- **Intent:** Fix the installed Curator V2 status bar remaining yellow in the
+  configured `renew_ssl` workspace.
+- **Changed fact:** Extension 0.9.5 runs the Hermes status probe with the
+  selected profile's `HERMES_HOME`; the prior invocation incorrectly passed
+  the profile label as Hermes' model option. The status bar retries every 60
+  seconds and retains the last result while a refresh runs.
+- **Verification:** The extension suite passes 17/17, `node --check` and
+  `git diff --check` pass, and the exact configured Hermes CLI/profile probe
+  reports `vhost-manager-alpha` healthy with seven healthy dependencies and
+  zero gates. VSIX 0.9.5 is installed, and its `extension.js` hash matches the
+  repository source.
+- **Open gate:** The existing VS Code window must reload once to load 0.9.5;
+  its rendered post-reload color is not yet verified. No plan checkbox changed.
+- **Outcome:** A temporary failed probe remains visibly yellow and retries
+  automatically; a successful profile-bound read can return the status bar to
+  green without reopening the project.
+
+## 2026-10-29 — Refresh the local V2 storage inventory
+
+- **Intent:** Replace the stale local-alpha SQLite and backup-tree measurements
+  used by the open storage-accounting requirement.
+- **Changed fact:** The attended `VIEW vhost-manager-alpha ACCESS` now reports
+  3,145 logical control-plane bytes across 11 classes, zero unassigned
+  scrub-queue bytes, a 540,672-byte SQLite file, a 276,072-byte WAL, and 32,768
+  unattributed database bytes. The bounded backup scan observes 32 entries,
+  classifies two daily snapshots (1,064,960 bytes), and leaves 30 files
+  unclassified; total observed allocation is 5,259,264 bytes.
+- **Changed fact:** A separate profile-bound `project_storage_usage` read
+  reports 31 goals, 28 facts, 70 processed event receipts, 54,951 logical
+  project-record bytes, and an empty staging inventory. The global inbox is
+  70/250,000 receipts and 23,559/134,217,728 logical bytes; it retains no source
+  payloads, has no queued scrubs, and accepts new events. The shared database
+  read measured a 540,672-byte main file and 284,312-byte WAL.
+- **Verification:** The TTY-gated read exited successfully. Output was
+  filtered to aggregate storage fields; event content and identifiers were not
+  recorded. The backup scan remains `incomplete` and below its warning-only
+  250 MiB threshold.
+- **Open gate:** Class-specific capacity and retention horizons, full backup
+  inventory, physical index/shared-overhead attribution, and recovery-source
+  accounting remain open. No checklist marker changed.
+- **Outcome:** Refresh current local measurements while preserving the
+  unresolved storage and recovery limits.
+
+## 2026-10-29 — Align the approved retry-payload retention policy
+
+- **Intent:** Remove outdated “undecided” wording after the owner selected the
+  local alpha's failed-event payload rule.
+- **Changed fact:** The pilot policy now states that failed and quarantined
+  payloads remain until processed or explicitly resolved; age alone does not
+  discard them. The newest seven daily backups may carry them forward, and
+  copies roll out within seven days after live scrubbing. The open list now
+  names implementation verification and storage accounting rather than an
+  unresolved age decision.
+- **Verification:** The policy and recovery guide agree on the rule, and a
+  scoped search finds no remaining “pending payload age is undecided” statement
+  in the plan or local-alpha policy/evidence documents. `git diff --check`
+  passes. No plan marker changed.
+- **Open gate:** Source enforcement, current complete backup classification,
+  and per-class storage accounting remain open.
+- **Outcome:** Keep approved policy separate from implementation evidence and
+  preserve the outstanding verification gates.
+
+## 2026-10-29 — Record the current local-alpha class census
+
+- **Intent:** Make the open storage/recovery item reviewable against the live
+  V2 schema, logical counters, and global SQLite allocation.
+- **Changed fact:** `docs/storage-recovery-v2.md` now groups all 30 schema tables
+  into seven owned data classes and records content-free row counts, logical
+  bytes where measured, table/index allocation, retention/replay rules,
+  existing limits, and recovery sources. The snapshot totals 175 table rows,
+  58,096 logical bytes, and 507,904 attributed B-tree bytes; 32,768 main-file
+  bytes remain shared/unattributed. It identifies the unclassified backup
+  files and the undecided database-size warning.
+- **Verification:** A query-only SQLite read reported schema v38 and
+  `quick_check=ok`. Counts were obtained only with `COUNT(*)`; table/index
+  allocation and the authorized logical usage views exposed no row contents.
+  Class and total sums were checked against the current view results.
+- **Open gate:** The owner has not yet selected a main-database-plus-WAL warning
+  threshold. The backup tree remains incompletely classified; seven-copy
+  rotation and the per-class recovery process still need live verification.
+  No checklist marker changed.
+- **Outcome:** Provide one current, content-free accounting snapshot and leave
+  unsupported thresholds and runtime claims open.
+
+## 2026-10-29 — Close staging and usage policy for the local alpha
+
+- **Intent:** Apply the owner's explicit decision that the single-repository
+  development utility does not need complete project-wide token coverage or a
+  token budget.
+- **Changed fact:** The local-alpha policy now keeps `project_usage` report-only
+  and excludes complete usage coverage from acceptance. Its partial coverage,
+  fixed exclusions, latest-event age, and unknown values remain visible; totals
+  are never an enforcement value. The 250 MiB staging warning, 72-hour live
+  transient-file maximum, and in-app health warning remain in scope. The plan
+  item is checked complete for this alpha boundary only.
+- **Verification:** A read-only invocation of the enabled profile reader at
+  `2026-10-29T09:26:14Z` returned seven turns (six reported, one unknown),
+  `coverage_complete=false`, `tokens_complete=false`, and the four documented
+  exclusions. The newest event age was 99,326 seconds. Token counts and private
+  identifiers were not printed. Staging policy and profile health/read evidence
+  are recorded in the local-alpha snapshot.
+- **Open gate:** Source coverage remains incomplete by design; no budget,
+  billing total, freshness threshold, or enforcement claim is made. The global
+  database warning decision and broader storage-class evidence remain open.
+- **Outcome:** Close the requested usage/policy item without claiming complete
+  token measurement or changing the approved alpha scope.

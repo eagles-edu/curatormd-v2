@@ -39,18 +39,23 @@ const {
   showDashboard,
   statusColorMeaning,
   updateStatusBarHealth,
+  refreshStatusBarHealthFromWorkspace,
   validateReviewQueue,
 } = require('./extension');
 Module._load = originalLoad;
 
 class FakeMcpProcess extends EventEmitter {
-  constructor(reportRevision = 'a'.repeat(64), denyToolCall = false, denyToolName = null, reportFactId = null) {
+  constructor(
+    reportRevision = 'a'.repeat(64), denyToolCall = false,
+    denyToolName = null, reportFactId = null, emptyReviewQueue = false,
+  ) {
     super();
     this.requests = [];
     this.denyToolCall = denyToolCall;
     this.denyToolName = denyToolName;
     this.reportRevision = reportRevision;
     this.reportFactId = reportFactId;
+    this.emptyReviewQueue = emptyReviewQueue;
     this.stdout = new PassThrough();
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -111,7 +116,7 @@ class FakeMcpProcess extends EventEmitter {
             }) }] };
           } else if (request.params.name === 'sde_review_queue_cards') {
             result = { content: [{ type: 'text', text: JSON.stringify({
-              project_id: 'alpha', candidates: [{
+              project_id: 'alpha', candidates: this.emptyReviewQueue ? [] : [{
               candidate: {
                 candidate_id: 'candidate-1', materiality: 'decision',
                 rationale: 'Retain this verified project decision.',
@@ -229,9 +234,13 @@ test('Hermes health probe requires a complete fresh-schema project-bound result'
   );
   assert.equal(read.project_id, 'alpha');
   assert.deepEqual(invocation.args, [
-    '-p', 'fixture-profile', 'mcp', 'test', 'curator_v2', '--probe-curator-status', '--json',
+    'mcp', 'test', 'curator_v2', '--probe-curator-status', '--json',
   ]);
   assert.equal(invocation.options.cwd, '/tmp/project');
+  assert.equal(
+    invocation.options.env.HERMES_HOME,
+    path.join(os.homedir(), '.hermes', 'profiles', 'fixture-profile'),
+  );
 });
 
 test('MCP stdio dashboard client initializes and reads a tool result', async () => {
@@ -266,7 +275,7 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.doesNotMatch(html, /reviews\.innerHTML/);
 });
 
-test('status item follows Git Graph and uses project-bound health colors', () => {
+test('status item follows Git Graph and uses project-bound health colors', async () => {
   const items = [];
   const commands = [];
   vscodeMock.StatusBarAlignment = { Left: 1, Right: 2 };
@@ -295,7 +304,7 @@ test('status item follows Git Graph and uses project-bound health colors', () =>
   assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Gray means no health read has been attempted/);
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
-  assert.equal(subscriptions.length, 2);
+  assert.equal(subscriptions.length, 3);
 
   assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
   assert.equal(items[0].color, '#73d216');
@@ -341,6 +350,35 @@ test('status item follows Git Graph and uses project-bound health colors', () =>
   ), 'unknown');
   assert.doesNotMatch(items[0].tooltip, /private_gate/);
   assert.equal(statusColorMeaning('unknown'), 'Yellow means health or the SDE review count is unknown.');
+
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-status-'));
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  const userSettings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  try {
+    const status = await refreshStatusBarHealthFromWorkspace((command) => (
+      command === 'fixture-hermes'
+        ? new FakeHermesProcess(healthyHermesProbe())
+        : new FakeMcpProcess('a'.repeat(64), false, null, null, true)
+    ));
+    assert.equal(status, 'healthy');
+    assert.equal(items[0].color, '#73d216');
+    assert.match(items[0].tooltip, /Project health: healthy/);
+    assert.match(items[0].tooltip, /no SDE reviews pending/);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
   deactivate();
 });
 

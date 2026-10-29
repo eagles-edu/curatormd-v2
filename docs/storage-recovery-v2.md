@@ -32,6 +32,60 @@ days. This is an approved recovery exception to the 72-hour live transient-file
 limit and is not canonical knowledge. Existing hard capacity limits remain in
 force.
 
+## Current local-alpha storage census (2026-10-29)
+
+This is a content-free snapshot of the configured `vhost-manager-alpha` ledger.
+The profile-bound `project_storage_usage` read and host-authorized access view
+are separate because project grants do not authorize control-plane storage
+details. A query-only SQLite metadata read reported schema version 38,
+`quick_check=ok`, and 30 application tables. Logical bytes count stored record
+fields and payload bytes as documented by the source queries; they are not
+SQLite allocation. Physical B-tree allocation includes each table's indexes.
+
+| Data class and tables | Rows | Logical bytes | Physical B-tree bytes |
+| --- | ---: | ---: | ---: |
+| Goals and criteria (`goals`, `goal_criteria_versions`; 31 goals and 31 criteria versions) | 62 | 22,474 | 53,248 |
+| Facts (`facts`) | 28 | 8,794 | 32,768 |
+| Approved archives (`fact_archives`, `fact_archive_items`) | 0 | 0 | 28,672 |
+| SDE/review/cleanup (`sde_candidates`, `sde_corrections`, `sde_quality_feedback`, `audit_receipts`, `purge_targets`, `cleanup_authorizations`) | 0 | 0 | 81,920 |
+| Event receipts and replay state (`event_inbox`, `event_retry_audit`, `event_payload_scrub_queue`, `event_cursors`, `terminal_event_dispositions`) | 71 | 23,683 | 151,552 |
+| Artifact/expiry metadata (`staging_artifact_occurrences`, `staging_artifact_times`, `expiry_purge_receipts`, `expiry_purge_targets`) | 0 | 0 | 45,056 |
+| Project access and rate limits (`consumer_bindings`, `consumer_binding_audit`, `consumer_drain_sessions`, `consumer_drain_events`, `project_retirement_tombstones`, `project_registry`, `project_registry_audit`, `project_grants`, `project_grant_revocations`, `request_rate_buckets`) | 14 | 3,145 | 114,688 |
+| **Totals** | **175** | **58,096** | **507,904** |
+
+The event-class total includes 70 inbox receipts, one cursor, and zero rows in
+the other three tables. Its logical bytes are 23,559 for inbox records plus
+124 for the cursor. The event payload source-byte total is 47,281; zero source
+payload bytes remain in the live inbox. The global inbox cap is 250,000
+receipts or 134,217,728 retained logical bytes, whichever is reached first;
+this snapshot uses 70 receipts and 23,559 bytes. The access-class logical total
+is the sum of the 11 content-free per-class values in the authorized view.
+
+SQLite reports a 540,672-byte main file: 507,904 attributed B-tree bytes plus
+32,768 unattributed/shared bytes. The WAL measured 284,312 bytes during the
+project read and changes as writers/checkpoints run. These are global file
+sizes, not per-project or per-table capacity. The backup scan observed 32
+entries, 5,215,696 file bytes, and 5,259,264 allocated bytes, but could classify
+only two managed daily snapshots (1,064,960 bytes); 30 files remain
+unclassified. The measured size is below the approved 262,144,000-byte
+warning-only backup-tree threshold. No legacy entry was read, moved, or removed.
+
+| Class | Retention/replay rule | Current limit or alert | Recovery source |
+| --- | --- | --- | --- |
+| Goals, criteria, facts, archives, SDE/review/cleanup decisions and receipts | Keep durable records until `eaglesvn` approves cleanup of an exact inventory; never auto-prune. Event-backed facts retain their source event reference. | Facts: 10,000/project and 16 MiB/project; archives: 64 MiB/project. No separate row cap is implemented for every receipt class. | Verified daily SQLite snapshot; restore manually to a new path. Fact archives additionally retain the approved, hash-verified compacted source. |
+| Event receipts, cursors, retry audit, scrub queue, terminal dispositions | Keep processed receipts and replay cursors until exact approved cleanup. Keep failed/quarantined source payloads until processed or explicitly resolved; age alone does not discard them. | Global inbox: 250,000 receipts / 128 MiB retained row bytes. Event payload input: 16 KiB/event. | Source retry/redelivery while pending; verified SQLite snapshots. Resolved events scrub live payloads; copies roll out within seven days. |
+| Staging files and artifact/expiry metadata | Remove transient source files promptly after facts are recorded and SDE disposition completes, with a 72-hour live-file maximum. Honor explicit artifact holds. Keep durable cleanup receipts until exact approved cleanup. | Project staging: 250 MiB warning only, with warning at 75%; no file-count limit. Per-file/per-goal hard limits remain. | Exact staged-file manifest and purge receipts; reacquire from the producer if needed. SQLite backup preserves receipts, not staging file contents. |
+| Project registry, grants, bindings, audits, drain history, retirement state | Keep access and lifecycle receipts until exact approved cleanup; retain source epoch/cursor state needed to reject stale replay. | Request-rate buckets: 10,000 rows with idle-only pruning. No other independent class threshold is implemented. | Verified SQLite snapshot and reviewed restore to a new path. |
+| SQLite pages, indexes, WAL, and SHM | Shared storage for all classes; preserve the database and active sidecars together during recovery. | Main database plus WAL warning threshold is awaiting the owner's decision. Existing schema/inbox/fact/archive caps above remain in force. | SQLite online backup, integrity and foreign-key checks, then owner-reviewed restore to a new path. Never auto-switch the active database. |
+| Backup tree | Keep newest seven verified daily snapshots. Legacy/unclassified files remain until an exact deletion inventory is reviewed. | 250 MiB allocated-byte warning only; never prune due to the warning. | Select a verified snapshot and restore to a new path. |
+
+This census supplies current counts, logical sizes where the API defines them,
+and physical table/index allocation for all 30 schema tables. It does not turn
+shared page allocation into project data, identify the contents of unclassified
+backups, set the missing SQLite size warning, or prove seven-copy rotation from
+the present directory scan. Those limits keep the storage-accounting checklist
+open pending the remaining policy answer and runtime evidence.
+
 ## Backups and restore
 
 The local six-hour maintenance run creates one verified online backup per UTC

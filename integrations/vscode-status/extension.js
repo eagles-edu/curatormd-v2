@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const path = require('node:path');
@@ -28,12 +29,14 @@ const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
 const HERMES_HEALTH_MAX_BYTES = 32768;
+const STATUS_REFRESH_INTERVAL_MS = 60000;
 const REQUIRED_HEALTH_PROBES = Object.freeze([
   'event_router', 'purge_scheduler', 'database_storage_adapter', 'host_identity',
   'human_review', 'alert_delivery', 'artifact_producer_inventory',
 ]);
 const REPORT_FACT_ID_PATTERN = /^- `([^`]{1,256})` — /;
 let dashboardStatusItem;
+let statusRefreshTimer;
 
 function statusTooltip(message) {
   return `${STATUS_LABEL} ${EXTENSION_VERSION}. ${message}`;
@@ -143,12 +146,23 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
 }
 
 function readHermesHealthProbe(command, profileId, projectId, cwd, spawnProcess = spawn) {
+  if (typeof profileId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(profileId)) {
+    return Promise.reject(curatorError('hermes-probe-profile', 'Hermes profile routing label is invalid.'));
+  }
   return new Promise((resolve, reject) => {
     let child;
     try {
       child = spawnProcess(command, [
-        '-p', profileId, 'mcp', 'test', 'curator_v2', '--probe-curator-status', '--json',
-      ], { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+        'mcp', 'test', 'curator_v2', '--probe-curator-status', '--json',
+      ], {
+        cwd,
+        env: {
+          ...process.env,
+          HERMES_HOME: path.join(os.homedir(), '.hermes', 'profiles', profileId),
+        },
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
     } catch {
       reject(curatorError('hermes-probe-start', 'Hermes health probe could not start.'));
       return;
@@ -513,9 +527,23 @@ function activate(context) {
     () => showDashboard(),
   );
   context.subscriptions.push(statusItem, openDashboard);
+  void refreshStatusBarHealthFromWorkspace();
+  statusRefreshTimer = setInterval(() => {
+    void refreshStatusBarHealthFromWorkspace();
+  }, STATUS_REFRESH_INTERVAL_MS);
+  if (typeof statusRefreshTimer.unref === 'function') statusRefreshTimer.unref();
+  context.subscriptions.push({ dispose: () => clearInterval(statusRefreshTimer) });
+  if (vscode.workspace && typeof vscode.workspace.onDidChangeWorkspaceFolders === 'function') {
+    context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      resetStatusBarHealth();
+      void refreshStatusBarHealthFromWorkspace();
+    }));
+  }
 }
 
 function deactivate() {
+  if (statusRefreshTimer) clearInterval(statusRefreshTimer);
+  statusRefreshTimer = undefined;
   dashboardStatusItem = undefined;
 }
 
@@ -560,6 +588,63 @@ function resetStatusBarHealth() {
   dashboardStatusItem.tooltip = statusTooltip(
     `${statusColorMeaning('neutral')} Click to open the project dashboard.`,
   );
+}
+
+async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
+  const workspace = vscode.workspace
+    && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+  if (!workspace) {
+    resetStatusBarHealth();
+    return 'neutral';
+  }
+  const projectRoot = workspace.uri.fsPath;
+  if (!fs.existsSync(projectRoot) || !fs.existsSync(path.join(projectRoot, '.curatormd-v2.toml'))) {
+    resetStatusBarHealth();
+    return 'neutral';
+  }
+
+  const configuration = vscode.workspace.getConfiguration('curatormdV2');
+  if (hasWorkspaceSettingOverride(configuration,
+    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand'])) {
+    resetStatusBarHealth();
+    return 'neutral';
+  }
+  const databasePath = configuration.get('databasePath', '');
+  const profileId = configuration.get('profileId', '');
+  const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
+  const hermesCommand = configuration.get('hermesCommand', 'hermes');
+  if (!databasePath || !profileId || !serverCommand || !hermesCommand) {
+    resetStatusBarHealth();
+    return 'neutral';
+  }
+
+  const client = new McpStdioClient(serverCommand, [
+    '--project-root', projectRoot,
+    '--database', databasePath,
+    '--profile-id', profileId,
+  ], projectRoot, profileId, spawnProcess);
+  try {
+    await client.initialize();
+    const page = JSON.parse(await client.callTool('goal_list_page', { offset: 0, limit: 1 }));
+    if (!page || typeof page.project_id !== 'string' || !page.project_id) {
+      throw curatorError('status-project-invalid', 'Curator returned no project binding.');
+    }
+    const [reviewWire, health] = await Promise.all([
+      client.callTool('sde_review_queue_cards', { limit: REVIEW_QUEUE_SIZE })
+        .then((wire) => JSON.parse(wire)),
+      readHermesHealthProbe(hermesCommand, profileId, page.project_id, projectRoot, spawnProcess),
+    ]);
+    const reviews = validateReviewQueue(reviewWire, page.project_id);
+    updateStatusBarHealth(health, page.project_id, reviews);
+    if (reviews === null) return 'unknown';
+    if (health.status !== 'healthy') return health.status;
+    return reviews.length > 0 ? 'review' : 'healthy';
+  } catch {
+    updateStatusBarHealth(null, null, null);
+    return 'unknown';
+  } finally {
+    client.close();
+  }
 }
 
 async function showDashboard(spawnProcess = spawn) {
@@ -1332,5 +1417,6 @@ module.exports = {
   showDashboard,
   statusColorMeaning,
   updateStatusBarHealth,
+  refreshStatusBarHealthFromWorkspace,
   validateReviewQueue,
 };

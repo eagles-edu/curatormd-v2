@@ -225,8 +225,11 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-28): **167 of 178 delivery rows are complete; 11 are open**.
-Historical narrative counts below are not current.
+recount (2026-10-29): **168 of 178 delivery rows are complete; 10 are open**.
+The full raw checkbox count is **183 of 194 complete; 11 are open**. Section 11
+contributes 15 complete rows and one open row; do not compare these two scopes
+as if their totals were the same. Historical narrative counts below are not
+current.
 
 An item closes only when its listed observable evidence exists. Unit tests prove
 the behavior of this library slice; they do not prove that a local consumer
@@ -673,6 +676,36 @@ plugin or Hermes integration is installed and working end to end.
       remains incomplete at 21 entries and 4,636,672 allocated bytes. This
       refreshes current measurements only; durable-class retention, recovery
       horizons, and permanent-storage warning thresholds remain open.
+      Fresh measurement (2026-10-29): the TTY-gated `VIEW
+      vhost-manager-alpha ACCESS` returned 3,145 logical bytes across the same
+      11 project control-plane classes, with zero unassigned scrub-queue rows.
+      SQLite reports 132 pages at 4,096 bytes (540,672-byte main file), 276,072
+      WAL bytes, 32,768 unattributed main-file bytes, and 507,904 table B-tree
+      bytes across the listed tables. The bounded backup scan now observes 32
+      entries and 30 files not classified as managed daily snapshots; it
+      recognizes two snapshots totaling 1,064,960 bytes and measures 5,215,696
+      file bytes / 5,259,264 allocated bytes overall. Classification remains
+      incomplete, so these snapshot totals are not the backup tree's total.
+      The warning-only 250 MiB threshold remains below its limit. The read-only
+      view included one event status row; no event text or identifiers were
+      retained in this report. This refreshes measured sizes and confirms that
+      legacy backup classification has expanded since the prior scan; it does
+      not close class-specific budgets, retention horizons, or recovery-source
+      accounting.
+      Fresh profile-bound project read (2026-10-29): `project_storage_usage`
+      reports 31 goals, 28 facts, and 70 processed event receipts. Logical
+      project records total 54,951 bytes; the global inbox is 70/250,000
+      receipts and 23,559/134,217,728 retained bytes, with zero retained source
+      payload bytes and zero scrub-queue entries. New events are accepted.
+      The configured staging inventory is complete and empty. Main database
+      size is 540,672 bytes and WAL is 284,312 bytes at this read. The project
+      counters and global inbox are separate from the 3,145-byte access-control
+      classes above. This closes no retention or size-policy gap; file sizes and
+      WAL contents remain global/shared. A content-free 30-table logical and
+      physical census, retention/cap mapping, and explicit omissions are now
+      recorded in [`storage-recovery-v2.md`](storage-recovery-v2.md); the
+      unanswered SQLite warning rule and incomplete backup classification keep
+      this checklist item open.
       Metadata-only `lstat` at 2026-10-28 05:34 UTC found the SQLite main file
       at 524,288 bytes, WAL at 457,352 bytes, and SHM at 32,768 bytes; each is a
       UID-1000-owned regular file with mode 0600. The backup directory is
@@ -2454,7 +2487,7 @@ plugin or Hermes integration is installed and working end to end.
       target timestamps, add v3 retry scheduling, and refuse unsupported future
       versions; see
       [`schema-migrations-v1.md`](schema-migrations-v1.md).
-- [ ] Measure staging/temp bytes and model/token use per project, then define
+- [x] Measure staging/temp bytes and model/token use per project, then define
       budgets, retention thresholds, and alerts. Fact-history limits exist, but
       staging bytes and file counts are now locally measurable by fixed
       temporary-artifact class through the authorized API/MCP and metrics; files
@@ -2525,9 +2558,18 @@ plugin or Hermes integration is installed and working end to end.
       `tokens_complete=false`; it lists auxiliary calls outside active-turn
       context, attempts without a response, and unbound sessions as exclusions.
       This confirms that the report refreshed from a real bound turn; it does
-      not resolve those coverage gaps or support complete token totals. Keep
-      the checkbox open for coverage resolution or an owner-approved explicit
-      exclusion boundary, not for an invented token budget or external alert.
+      not resolve those coverage gaps or support complete token totals. At this
+      point the alpha's explicit coverage-exclusion decision was still pending;
+      the later owner-approved boundary is recorded below.
+      Progress (2026-10-29): the enabled `renew-ssl-coding` profile's read-only
+      usage plugin now counts durable unmatched Codex starts as unknown turns,
+      so interrupted attempts do not disappear and later end-event retries do
+      not double-count them. Its focused Hermes suite passes 7 tests; the
+      profile-local reader was synchronized to the tested checkout and reports
+      a current measurement time, seven retained turns (six reported, one
+      unknown), and a 98,323-second age for the newest underlying usage event.
+      Coverage remains explicitly incomplete and report-only; known excluded
+      sources and stale event data remain open, and no token budget is enforced.
       Cap-bound retry fix (2026-10-27): a new artifact path is rejected at the
       byte or file cap, but an exact retry of an already inventoried path is
       now streamed against the existing file and accepted without creating a
@@ -2715,6 +2757,32 @@ plugin or Hermes integration is installed and working end to end.
       auxiliary attempts without response, and unbound sessions as exclusions.
       No token totals were displayed. This refreshes freshness evidence only;
       project-wide completeness, budget/alert policy, and retention remain open.
+      Read-only profile usage refresh (2026-10-28 21:40 UTC): the installed
+      `project_usage` handler returns seven retained turns for
+      `vhost-manager-alpha` (six reported, one unknown), sourced from
+      `codex_app_server`. The newest retained usage event is
+      `2026-10-28T05:50:47Z`, 56,953 seconds old at measurement. Both
+      `coverage_complete` and `tokens_complete` remain false; the report lists
+      the known auxiliary-call and unbound-session exclusions. No token totals
+      were displayed and the read changed no ledger rows. This refreshes the
+      report measurement, not source coverage; the item remains open until the
+      approved completeness boundary is resolved or explicitly excluded.
+      Owner-approved alpha acceptance (2026-10-29): complete project-wide token
+      coverage and a model/token budget are not required for this one-repository
+      development utility. The owner directed that usage remain report-only and
+      asked to close this item despite the known incomplete source coverage. The
+      installed profile reader explicitly returns the fixed exclusions,
+      measurement time, latest-event age, and separate `coverage_complete=false`
+      / `tokens_complete=false` flags; unknown usage stays distinct from zero,
+      and totals are not used for budgets or enforcement. A read-only profile
+      query at 2026-10-29 09:26:14 UTC returned seven turns (six reported, one
+      unknown), with latest-event age 99,326 seconds; no token values or private
+      IDs were copied into this record. Staging bytes remain measured through a
+      complete project-scoped scan and the owner-approved 250 MiB warning-only
+      threshold, 72-hour live transient-file maximum, and project-health alert.
+      **Closed for the approved alpha scope only:** the remaining usage-source
+      gaps are visible report limitations, not an unmet alpha acceptance gate;
+      no claim of complete token accounting is made.
 - [x] Verify local restart recovery, duplicate delivery, delayed ordering,
       SQLite worker locking, and backup restore for the single active repository.
       Local unit coverage explicitly closes/reopens SQLite with a sequence-gap event
@@ -7236,6 +7304,10 @@ Final report: completed facts, open items, recovery path, next action
       open until a real bound Hermes profile turn delivers this summary and its
       compact fact is read back from the configured Curator ledger; local unit
       and integration tests do not establish that live route.
+      Live-profile attempt (2026-10-29): a one-shot Hermes turn requested the
+      exact goal binding before running a read-only Git check. The managed MCP
+      call returned `user rejected MCP tool call`; the command did not run and
+      no new Curator receipt or fact was produced. The criterion remains open.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer
@@ -8723,6 +8795,22 @@ substitute for evidence at a later integration boundary.
       bounded-report, and exact-fact-replay substeps only. The acceptance
       packet still lacks a reviewed disposition and a complete attributable
       out-of-scope hash set; this checklist item remains open.
+      Live Vhost follow-up (2026-10-29 04:32–04:36 +07): through the running
+      loopback application, previewed and applied the disposable static target
+      `curator-v2-alpha-20261029.test` with empty TCP/UDP firewall lists. Its
+      local Host request returned HTTP 200. Curator recorded apply event
+      `vhost-apply-8a770ef0-42cb-495a-a696-303a968b861d` as processed. The
+      Vhost Manager's own rollback control then recorded
+      `vhost-rollback-33ac9b51-d3dc-4aca-afa6-acd71a707c58` as processed and
+      removed the dedicated account, home, and target Nginx files. All 16
+      saved out-of-scope Nginx entries and both firewall files match their
+      pre-run values; root `nginx -t` and the OpenLiteSpeed config check pass,
+      and all three services remain active. The Vhost checkout is clean. A
+      fresh trusted profile probe reports all seven dependencies healthy, zero
+      gates, and no pending event/review/purge work. This verifies one live
+      local workflow only; source-request/goal comparison, remaining alpha
+      checks, complete target-class comparison, and owner review remain open.
+      No checklist marker changed.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot
@@ -8999,6 +9087,19 @@ substitute for evidence at a later integration boundary.
       This verifies the requested version tooltip in the active editor window;
       this window has not attempted a health read, and dashboard grants,
       revocation, review, and cleanup acceptance remain open.
+      Live rendered V2 check (2026-10-29 04:43–04:45 +07): opened the actual
+      `renew_ssl` consumer workspace in a separate VS Code window with installed
+      extension 0.9.3. The status item appeared immediately after Git Graph;
+      it was gray before the read, briefly showed yellow `unknown` while health
+      loaded, then rendered green `healthy`. Clicking it opened the actual V2
+      dashboard. The authorized read displayed project health `healthy` with
+      no reported gates, 66 processed receipts, 29 goals, 26 facts, zero
+      pending SDE candidates, and storage/staging usage. The goal list showed
+      page 1 of 2 (20 of 29 goals). The active consumer's database and UI were
+      read only; no Vhost source or service was changed. This verifies the live
+      status and overview/list rendering; paged fact details, revision-stale
+      handling in the rendered UI, grant changes, evidence resolution, and SDE/
+      cleanup review remain open. No checklist marker changed.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
