@@ -9721,6 +9721,15 @@ substitute for evidence at a later integration boundary.
       and pending event/review/purge/expiry counts are zero, and the staging
       inventory is complete and empty. This is a fresh local profile read, not
       rendered VS Code color or owner SDE/cleanup disposition.
+      Maintenance/backup-tree recheck (2026-10-29 18:29 +07): the six-hour
+      timer remains enabled, with its next run scheduled for 00:00. Its 18:00
+      journal result remains `backup_status=verified`, with zero purge/expiry
+      work or failures. A fresh no-follow metadata scan confirms 32 entries,
+      5,259,264 allocated bytes including the root, 12 non-owner-only entries,
+      and no symlinks; no file contents or permissions were changed. The scan
+      still finds only two recognized daily copies, with 30 legacy entries,
+      including archives of unknown provenance. Seven-copy live rotation,
+      class-specific retention, and a live due-expiry run remain open.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the

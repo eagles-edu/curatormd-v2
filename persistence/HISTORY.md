@@ -10973,3 +10973,20 @@ while preserving explicit criteria and same-project parent validation.
   remains open.
 - **Outcome:** Record one bounded package-level sink review and keep the
   cross-boundary privacy requirement open.
+
+## 2026-10-29 — Recheck local maintenance and backup metadata
+
+- **Intent:** Refresh operational evidence for the local-alpha recovery item
+  without opening or changing retained backup files.
+- **Changed fact:** The six-hour user timer remains enabled; the 18:00 +07 run
+  reported a verified backup and no due purge/expiry work or failures. A fresh
+  no-follow tree walk again found 32 entries, 5,259,264 allocated bytes, 12
+  non-owner-only entries, and no symlinks. Only two daily SQLite copies are
+  managed by rotation; archive provenance and the remaining legacy classes
+  are unresolved.
+- **Verification:** Checked `systemctl --user list-timers`, the timer state and
+  bounded journal result, then compared metadata only without opening files or
+  changing permissions. The 250 MiB budget remains below threshold.
+- **Open gate:** Seven-copy live rotation, class-specific retention, approved
+  legacy disposition, and a live due-expiry run remain open.
+- **Outcome:** Refresh the local recovery evidence while preserving every file.
