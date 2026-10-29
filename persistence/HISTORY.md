@@ -10936,3 +10936,23 @@ while preserving explicit criteria and same-project parent validation.
   currently shows. The dashboard checklist remains open.
 - **Outcome:** The V2 backend and refresh path are healthy at this observation;
   keep the rendered UI state unverified.
+
+## 2026-10-29 — Clarify approved local-alpha privacy exception
+
+- **Intent:** Align the privacy checklist wording with the approved unresolved-
+  event recovery policy and the owner's instruction about manual DNS values.
+- **Changed fact:** Credential values and raw chat/transcript/import/cue/scratch
+  content must not enter canonical facts or unapproved sinks. The approved
+  exception is bounded failed/quarantined event payloads retained only in the
+  SQLite retry inbox and newest seven daily backups until processed or resolved.
+  The synthetic local-alpha corpus rejects password/pwd assignments, labeled
+  DNS TXT/challenge values, provider-token shapes, credential URLs, and key
+  markers before durable facts are accepted.
+- **Verification:** Compared the plan with `docs/Curator V2 Pilot Default
+  Policy.md`, `tests/fixtures/content-safety-v2-local-alpha.json`, and the
+  reject-only checks in `tests/test_content_safety.py`. No test was run because
+  this change documents already-recorded policy and evidence.
+- **Open gate:** Cross-boundary producer, trace, backup, host-journal, and
+  command-history coverage is incomplete; the privacy checklist remains open.
+- **Outcome:** State the owner's existing policy without weakening the pending
+  source-to-sink review.

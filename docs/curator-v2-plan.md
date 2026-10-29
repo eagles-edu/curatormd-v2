@@ -4419,9 +4419,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       allocations below 4 MiB. This proves the local staging implementation's
       allocation bound, not total process RSS or end-to-end producer behavior;
       see `tests/test_project_plugin.py`.
-- [ ] Prove raw material is not copied into logs, exceptions, metrics, traces,
-      backups, crash/core dumps, host journals, command history, or canonical
-      persistence. Progress (2026-10-19): the hosted
+- [ ] Prove credential values and raw chat/transcript/import/cue/scratch content
+      are absent from canonical facts and every unapproved log, exception,
+      metric, trace, backup, crash/core dump, host journal, and command-history
+      sink. Honor the owner's approved recovery exception: a bounded failed or
+      quarantined event payload may remain only in SQLite retry state and the
+      newest seven approved daily backups until processed or explicitly
+      resolved; it must never be projected as a fact. Progress (2026-10-19):
+      the hosted
       launcher now emits a generic startup failure instead of echoing exception
       text, and a backup regression proves a successfully processed event's
       serialized source envelope is absent from the SQLite snapshot while its
@@ -4811,6 +4816,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       script hash matches the consumer source; its six-hour timer is active,
       and its last one-shot completed successfully. This verifies the approved
       manual-DNS log path only; the full privacy matrix remains open.
+      Scope clarification (2026-10-29): the local-alpha synthetic corpus
+      explicitly rejects password/pwd assignments, labeled DNS TXT/challenge
+      values, provider-token shapes, credential URLs, and key markers before
+      durable facts are accepted. This agrees with the user's rule that manual
+      DNS codes, keys, and passwords must not be recorded verbatim. The separate
+      unresolved-event retry payload exception remains limited to its inbox and
+      approved daily backups. These scoped tests do not cover all host and
+      producer sinks; keep this item open.
       Hermes-child limit check (2026-10-28 04:47 UTC): traced the Curator MCP
       process spawned by the Hermes Core checkout's profile status probe. Its
       syscall trace shows `prlimit64(... RLIMIT_CORE, {0, 0}) = 0` and
