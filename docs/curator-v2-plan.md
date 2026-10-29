@@ -7427,6 +7427,16 @@ Final report: completed facts, open items, recovery path, next action
       pushed to the configured development fork. The live profile-bound task
       and Curator fact readback are still unverified, so this checklist item
       remains open.
+      Receiver-boundary follow-up (2026-10-30): the Hermes durable outbox and
+      Curator event translator independently reject schema-valid summaries
+      containing cloud credential paths, SSH material, package credentials, or
+      private-key/certificate suffixes. Hermes outbox summary tests pass 8/8,
+      Curator Hermes event tests pass 9/9, and Ruff passes on the touched
+      Hermes files. Hermes commit `68f5c7d914` is pushed to the configured
+      development fork. This blocks crafted payloads from bypassing the
+      producer filter, but it does not prove privacy for every log, trace,
+      backup, journal, or crash-dump sink; the broad source-to-sink item stays
+      open.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer

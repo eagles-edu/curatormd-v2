@@ -11345,3 +11345,18 @@ while preserving explicit criteria and same-project parent validation.
   close that live route.
 - **Outcome:** Record the implementation and keep the live integration gate
   open.
+
+## 2026-10-30 — Validate work-summary privacy at both receiving boundaries
+
+- **Intent:** Ensure a crafted but schema-valid Hermes work summary cannot
+  reintroduce credential paths after the producer filter.
+- **Changed fact:** The Hermes durable outbox and Curator event translator now
+  independently reject common cloud credential locations, SSH material,
+  package-manager credentials, and private-key/certificate file suffixes.
+- **Verification:** Eight focused Hermes outbox/summary tests and nine Curator
+  Hermes event tests pass. Ruff passes on the touched Hermes files; both repo
+  diffs pass `git diff --check`. Hermes commit `68f5c7d914` is pushed to its
+  configured development fork.
+- **Open gate:** Full logs, traces, backups, journals, and crash-dump source-to-
+  sink coverage remains unproven. The broad privacy criterion stays open.
+- **Outcome:** Add defense in depth without overstating universal privacy proof.
