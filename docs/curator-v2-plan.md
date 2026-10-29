@@ -977,6 +977,15 @@ plugin or Hermes integration is installed and working end to end.
       net increase when active facts are moved. The focused scenario, strict
       Pyright, errors-only Pylint for the changed test, and `git diff --check`
       pass. Physical allocation and owner-approved budgets remain open.
+      Event-inbox recovery progress (2026-10-29): added a project-bound,
+      review-authorized, paged read-only proposal for eligible processed
+      receipts whose payloads are scrubbed. Each page carries a stable manifest
+      digest and exact retry, terminal-disposition, and consumer-drain reference
+      counts; the inventory streams from one SQLite snapshot and changes no
+      rows. Focused store and API tests pass. This supplies an attended
+      inventory input only: archival, replay-preserving recovery, full permanent
+      class budgets, and safe capacity recovery remain unimplemented, so the
+      item remains open.
 - [x] Enforce explicit domain ceilings for criteria, dependencies, evidence
       references, SDE supporting facts, and per-receipt artifact paths, including
       direct callers that bypass serialized-event limits; cover limit and

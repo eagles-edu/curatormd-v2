@@ -51,6 +51,7 @@ MAX_SDE_FEEDBACK_PER_PROJECT = 10_000
 MAX_EVENT_RECEIPTS_GLOBAL = 250_000
 MAX_EVENT_RECEIPT_BYTES_GLOBAL = 128 * 1024 * 1024
 EVENT_FAILURE_METADATA_RESERVE_BYTES = 160
+MAX_EVENT_COMPACTION_PAGE = 100
 MAX_GOAL_LIST_PAGE = 100
 MAX_GOAL_STATUS_CANDIDATES = 32
 MAX_GOAL_STATUS_PURGE_RECEIPTS = 16
@@ -73,6 +74,8 @@ __all__ = [
     "DependencyHealth",
     "DependencyProbeObservation",
     "EventClassStorageUsage",
+    "EventReceiptCompactionItem",
+    "EventReceiptCompactionProposal",
     "EventPayloadScrubUsage",
     "EventFailureCategory",
     "EventFailureCategoryUsage",
@@ -145,6 +148,8 @@ if TYPE_CHECKING:
         EventPayloadScrubUsage,
         EventFailureCategory,
         EventFailureCategoryUsage,
+        EventReceiptCompactionItem,
+        EventReceiptCompactionProposal,
         ExpiryPurgeReceipt,
         FactArchiveReceipt,
         GoalBullet,

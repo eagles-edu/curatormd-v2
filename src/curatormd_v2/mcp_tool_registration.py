@@ -143,6 +143,21 @@ def _register_status_tools(registrar: _McpToolRegistrar) -> None:
             open_world_hint=False,
         )
     )
+    def event_receipt_compaction_propose(offset: int = 0, limit: int = 50) -> str:
+        """Read one page and a stable digest of eligible processed event receipts."""
+
+        return json_result(
+            api.propose_event_receipt_compaction(caller, project_id, offset, limit)
+        )
+
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
     def project_activity_status() -> str:
         """Read retained event and SDE counts; this is not a health indicator."""
 

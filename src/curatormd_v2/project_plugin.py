@@ -24,6 +24,7 @@ from .models import (
     GoalCard,
     GoalSubtaskStartRequest,
     GoalStatus,
+    EventReceiptCompactionProposal,
     ProjectActivitySnapshot,
     SuccessCriterion,
 )
@@ -332,6 +333,15 @@ class ProjectPlugin(ProjectReviewMixin, ProjectGoalReadMixin):
         """Return event backlog metrics for this project's authorized binding."""
 
         return self.service.store.event_queue_status(self.config.project_id)
+
+    def propose_event_receipt_compaction(
+        self, offset: int = 0, limit: int = 50
+    ) -> EventReceiptCompactionProposal:
+        """List a bounded review inventory without changing retained receipts."""
+
+        return self.service.store.propose_event_receipt_compaction(
+            self.config.project_id, offset, limit
+        )
 
     def activity_status(self) -> ProjectActivitySnapshot:
         """Return retained event, goal, fact, and SDE totals for this project."""

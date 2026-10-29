@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from test_api import (
+    AllowProject,
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     ConsumerBindingTransitionRequest,
@@ -37,6 +38,23 @@ class ApiGoalAccessTests(_ApiTestSupport):
         api = AuthenticatedCuratorAPI({"project-a": self.plugin})
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.goal_list(self.caller, "project-a")
+
+    def test_event_compaction_inventory_requires_review_scope(self) -> None:
+        """Only the exact project's review grant can read receipt inventories."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.propose_event_receipt_compaction(self.caller, "project-a")
+
+        reviewer = AllowProject(
+            {("hermes-user-1", "project-a", ProjectAction.REVIEW)}
+        )
+        review_api = AuthenticatedCuratorAPI({"project-a": self.plugin}, reviewer)
+        proposal = review_api.propose_event_receipt_compaction(
+            self.caller, "project-a"
+        )
+        self.assertEqual(proposal.project_id, "project-a")
+        self.assertEqual(proposal.eligible_count, 0)
 
     def test_fact_evidence_read_requires_exact_project_read_grant(self) -> None:
         goal = self.plugin.service.goal_start(

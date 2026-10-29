@@ -65,6 +65,30 @@ class EventPayloadScrubTests(unittest.TestCase):
         self.assertNotIn(canary.encode(), self.wal_bytes())
         self.assertEqual(self.store.event_payload_scrub_pending_count("project-a"), 0)
 
+    def test_compaction_proposal_is_paged_stable_and_read_only(self) -> None:
+        """Inventory only scrubbed processed receipts without changing the ledger."""
+
+        self.ingest_canary("compact-a", "transient-a")
+        self.ingest_canary("compact-b", "transient-b")
+        self.ingest_canary("compact-pending", "transient-pending")
+        self.store.mark_event_processed("project-a", "compact-a")
+        self.store.mark_event_processed("project-a", "compact-b")
+
+        before = self.store.global_event_inbox_usage()
+        first = self.store.propose_event_receipt_compaction("project-a", 0, 1)
+        second = self.store.propose_event_receipt_compaction("project-a", 1, 1)
+        after = self.store.global_event_inbox_usage()
+
+        self.assertEqual(first.eligible_count, 2)
+        self.assertEqual(tuple(item.event_id for item in first.items), ("compact-a",))
+        self.assertEqual(tuple(item.event_id for item in second.items), ("compact-b",))
+        self.assertEqual(first.manifest_sha256, second.manifest_sha256)
+        self.assertEqual(before, after)
+        self.assertEqual(self.store.event_receipt("project-a", "compact-a").status.value, "processed")
+        self.assertEqual(self.store.event_receipt("project-a", "compact-pending").status.value, "received")
+        with self.assertRaises(ValueError):
+            self.store.propose_event_receipt_compaction("project-a", 0, 101)
+
     def test_failed_payload_remains_until_explicit_terminal_disposition(self) -> None:
         """A failed payload stays available until retry or reviewed disposition."""
 

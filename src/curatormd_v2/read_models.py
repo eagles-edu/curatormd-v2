@@ -16,6 +16,7 @@ from .models import (
     MAX_FACT_ARCHIVE_BYTES_PER_PROJECT,
     MAX_FACT_BYTES_PER_PROJECT,
     MAX_FACT_COMPACTION_BATCH_FACTS,
+    MAX_EVENT_COMPACTION_PAGE,
     ArtifactRef,
     AuditReceipt,
     CriterionProgress,
@@ -172,6 +173,74 @@ class GlobalEventInboxUsage:
     can_accept_new_event: bool
     payload_scrub_queue: EventPayloadScrubUsage
     open_gate: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EventReceiptCompactionItem:
+    """One processed, payload-free receipt listed for attended archival review."""
+
+    project_id: str
+    event_id: str
+    event_type: str
+    payload_sha256: str
+    idempotency_sha256: str | None
+    received_at: str
+    processed_at: str
+    source_id: str | None
+    source_sequence: int | None
+    attempts: int
+    retry_audit_count: int
+    terminal_disposition_count: int
+    consumer_drain_reference_count: int
+
+    def __post_init__(self) -> None:
+        if not self.project_id or not self.event_id or not self.event_type:
+            raise ValueError("event compaction identity fields must be non-empty")
+        if not _SHA256_RE.fullmatch(self.payload_sha256):
+            raise ValueError("payload_sha256 must be lowercase SHA-256")
+        if self.idempotency_sha256 is not None and not _SHA256_RE.fullmatch(
+            self.idempotency_sha256
+        ):
+            raise ValueError("idempotency_sha256 must be lowercase SHA-256")
+        _parse_aware_timestamp("received_at", self.received_at)
+        _parse_aware_timestamp("processed_at", self.processed_at)
+        if self.source_sequence is not None and (
+            not is_exact_int(self.source_sequence) or self.source_sequence < 1
+        ):
+            raise ValueError("source_sequence must be a positive integer")
+        for name, value in (
+            ("attempts", self.attempts),
+            ("retry_audit_count", self.retry_audit_count),
+            ("terminal_disposition_count", self.terminal_disposition_count),
+            ("consumer_drain_reference_count", self.consumer_drain_reference_count),
+        ):
+            if not is_exact_int(value) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+
+
+@dataclass(frozen=True, slots=True)
+class EventReceiptCompactionProposal:
+    """Paged exact inventory; proposing never archives or deletes receipts."""
+
+    project_id: str
+    eligible_count: int
+    offset: int
+    limit: int
+    manifest_sha256: str
+    items: tuple[EventReceiptCompactionItem, ...]
+
+    def __post_init__(self) -> None:
+        if not self.project_id:
+            raise ValueError("project_id must be non-empty")
+        for name, value in (("eligible_count", self.eligible_count), ("offset", self.offset)):
+            if not is_exact_int(value) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if not is_exact_int(self.limit) or not 1 <= self.limit <= MAX_EVENT_COMPACTION_PAGE:
+            raise ValueError("limit is outside the bounded event compaction page size")
+        if not _SHA256_RE.fullmatch(self.manifest_sha256):
+            raise ValueError("manifest_sha256 must be lowercase SHA-256")
+        if len(self.items) > self.limit or self.offset + len(self.items) > self.eligible_count:
+            raise ValueError("event compaction page exceeds its inventory")
 
 
 @dataclass(frozen=True, slots=True)

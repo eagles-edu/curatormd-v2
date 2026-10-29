@@ -40,6 +40,7 @@ from .models import (
     CleanupAuthorizationReceipt,
     FactArchiveReceipt,
     FactCompactionProposal,
+    EventReceiptCompactionProposal,
     GoalListPage,
     GoalChildrenPageRequest,
     GoalSnapshot,
@@ -198,6 +199,19 @@ class _APIState:  # pylint: disable=too-few-public-methods  # Shared initialized
 
 
 class _APIEventMethods(_APIState):
+    def propose_event_receipt_compaction(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> EventReceiptCompactionProposal:
+        """Review a bounded exact receipt inventory for one authorized project."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).propose_event_receipt_compaction(offset, limit)
+
     def process_event_json(
         self,
         caller: AuthenticatedCaller,

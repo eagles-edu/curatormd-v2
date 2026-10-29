@@ -10653,3 +10653,22 @@ while preserving explicit criteria and same-project parent validation.
   automatic status refresh interval is 60 seconds; reopening is not required for
   later health updates.
 - **Outcome:** Confirm the live data path without claiming visual verification.
+
+## 2026-10-29 — Add read-only processed event inventory proposal
+
+- **Intent:** Provide a bounded, review-scoped inventory input for future
+  attended event-receipt capacity recovery without changing durable rows.
+- **Changed fact:** Curator can stream a project-scoped, stable-digest manifest
+  of processed receipts whose payloads are scrubbed and have no scrub queue or
+  active lease. The proposal includes counts of retry, terminal-disposition,
+  and consumer-drain references, and is exposed through the review-authorized
+  API and project-bound MCP tool.
+- **Verification:** Focused event-payload and API-access suites pass (20 tests).
+  Coverage verifies paging, stable manifest digest, unchanged receipt capacity,
+  bounded page size, and denial without the exact project review grant. Strict
+  Pyright passes for source and focused tests.
+- **Open gate:** This proposal neither archives nor deletes receipts. A
+  replay-preserving attended archive/recovery action and complete permanent
+  data-class budgets remain open.
+- **Outcome:** Add a safe inventory step without claiming inbox compaction or
+  recovery is complete.

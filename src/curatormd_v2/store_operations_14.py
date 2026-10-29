@@ -9,12 +9,15 @@ from __future__ import annotations
 # pylint: disable=too-many-ancestors,duplicate-code
 from .store_support_01 import (
     ConflictError,
+    EventReceiptCompactionItem,
+    EventReceiptCompactionProposal,
     EventQueueStatus,
     FactKind,
     GoalCard,
     GoalCriteriaAmendmentRequest,
     GoalStatus,
     MAX_CRITERIA_REVISIONS,
+    MAX_EVENT_COMPACTION_PAGE,
     MAX_SUCCESS_CRITERIA,
     NotFoundError,
     ProjectOperationalCounts,
@@ -28,6 +31,7 @@ from .store_support_01 import (
     _json_dump,
     _validate_unique_amended_criteria_ids,
     asdict,
+    hashlib,
     is_exact_int,
     json,
     new_id,
@@ -37,6 +41,72 @@ from .store_operations_13 import StoreOperations5Part0
 
 class StoreOperations5(StoreOperations5Part0):
     """Continuation of StoreOperations5 operations."""
+
+    def propose_event_receipt_compaction(
+        self, project_id: str, offset: int = 0, limit: int = 50
+    ) -> EventReceiptCompactionProposal:
+        """Return a paged, read-only manifest of processed payload-free events."""
+
+        self._validate_access_identity(project_id, "project_id")
+        if not is_exact_int(offset) or offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if not is_exact_int(limit) or not 1 <= limit <= MAX_EVENT_COMPACTION_PAGE:
+            raise ValueError("limit is outside the bounded event compaction page size")
+
+        query = """SELECT e.project_id, e.event_id, e.event_type,
+                   e.payload_sha256, e.idempotency_sha256, e.received_at,
+                   e.processed_at, e.source_id, e.source_sequence, e.attempts,
+                   (SELECT COUNT(*) FROM event_retry_audit AS r
+                    WHERE r.project_id = e.project_id AND r.event_id = e.event_id)
+                       AS retry_audit_count,
+                   (SELECT COUNT(*) FROM terminal_event_dispositions AS d
+                    WHERE d.project_id = e.project_id AND d.event_id = e.event_id)
+                       AS terminal_disposition_count,
+                   (SELECT COUNT(*) FROM consumer_drain_events AS c
+                    WHERE c.project_id = e.project_id AND c.event_id = e.event_id)
+                       AS consumer_drain_reference_count
+               FROM event_inbox AS e
+               WHERE e.project_id = ? AND e.status = 'processed'
+                 AND e.payload_json IS NULL AND e.processed_at IS NOT NULL
+                 AND e.lease_owner IS NULL
+                 AND NOT EXISTS (
+                     SELECT 1 FROM event_payload_scrub_queue AS q
+                     WHERE q.project_id = e.project_id AND q.event_id = e.event_id
+                 )
+               ORDER BY e.event_id"""
+        with self._lock:
+            if self._connection.in_transaction:
+                raise RuntimeError("event compaction inventory cannot nest a transaction")
+            self._connection.execute("BEGIN")
+            try:
+                digest = hashlib.sha256()
+                eligible_count = 0
+                page: list[EventReceiptCompactionItem] = []
+                cursor = self._connection.execute(query, (project_id,))
+                for row in cursor:
+                    canonical = {key: row[key] for key in row.keys()}
+                    digest.update(
+                        json.dumps(
+                            canonical, sort_keys=True, separators=(",", ":")
+                        ).encode("utf-8")
+                    )
+                    digest.update(b"\n")
+                    if offset <= eligible_count < offset + limit:
+                        page.append(EventReceiptCompactionItem(**canonical))
+                    eligible_count += 1
+                manifest_sha256 = digest.hexdigest()
+            except BaseException:
+                self._connection.rollback()
+                raise
+            self._connection.commit()
+        return EventReceiptCompactionProposal(
+            project_id=project_id,
+            eligible_count=eligible_count,
+            offset=offset,
+            limit=limit,
+            manifest_sha256=manifest_sha256,
+            items=tuple(page),
+        )
 
 
     def amend_goal_criteria(
