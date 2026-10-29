@@ -9969,6 +9969,14 @@ substitute for evidence at a later integration boundary.
       regressions. Version 0.9.10 is installed; source, VSIX, and installed
       `extension.js` hashes match (`2a4c1fe702f8fcf98d0eef108af3c16eadd9cde18dc18410d369cb3f4cbc191e`).
       The rendered-dashboard acceptance item remains open.
+      Live alpha storage check (2026-10-30 02:46 +07:00): the six-hour
+      `vhost-manager-alpha` timer is loaded, active, and enabled; the last run
+      began at 00:00:08 and its service result is `success`, with the next run
+      scheduled at 06:00:06. Both recognized daily SQLite backups
+      (`2026-10-28` and `2026-10-29`) pass read-only `quick_check` and have zero
+      foreign-key violations. Only two daily copies are present; the seven-copy
+      live rotation and full backup-tree classification remain open. No
+      maintenance or cleanup was triggered.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
