@@ -8863,6 +8863,16 @@ substitute for evidence at a later integration boundary.
       local workflow only; source-request/goal comparison, remaining alpha
       checks, complete target-class comparison, and owner review remain open.
       No checklist marker changed.
+      Bounded report recheck (2026-10-29): the configured `renew-ssl-coding`
+      profile read the apply goal `vhost-op-8a770ef0-42cb-495a-a696-303a968b861d`
+      and rollback goal `vhost-rollback-33ac9b51-d3dc-4aca-afa6-acd71a707c58`.
+      Their report digests are `754e587129990397aa445fa36fcc0a24c33bdd6e5596663c1c7ab73523ee8e38`
+      and `3c465e27c823d1d56dba3514baf86bc105db1828a8e6dfda33c296c24e613bd0`.
+      The apply report contains three open criteria; the rollback report
+      contains one open criterion. Neither report marked a criterion verified,
+      and neither contained `/home`, `/etc`, or `/var/lib` path strings. This
+      verifies current bounded report reads; request-digest comparison, live
+      same-event replay, and owner review remain open.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot

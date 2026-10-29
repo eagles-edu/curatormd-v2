@@ -10760,3 +10760,19 @@ while preserving explicit criteria and same-project parent validation.
   rendered status button and tooltip have not been inspected in the desktop UI.
 - **Outcome:** Verify the live read and computed state; keep rendered UI proof
   open.
+
+## 2026-10-29 — Recheck live Vhost apply and rollback reports
+
+- **Intent:** Verify bounded reports for the latest local Vhost apply and
+  rollback goals through the configured Curator profile.
+- **Changed fact:** The apply report contains three open criteria and the
+  rollback report contains one open criterion. None is marked verified. Their
+  SHA-256 digests are recorded in the alpha evidence snapshot; neither report
+  contained the checked `/home`, `/etc`, or `/var/lib` path prefixes.
+- **Verification:** The V2 VS Code dashboard MCP client read both exact goals
+  under the configured `renew-ssl-coding` profile and project. No Vhost action
+  or ledger write was performed.
+- **Open gate:** Live same-event replay, request-digest comparison, and owner
+  review remain open.
+- **Outcome:** Refresh report evidence without claiming request acceptance or
+  criterion verification.
