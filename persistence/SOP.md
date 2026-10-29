@@ -28,3 +28,8 @@
    instruction overrides the normal requirement to wait for publication
    authorization. After each item is completed, commit and push when this
    standing instruction applies.
+10. Before a push, inspect the complete outgoing change set for server/host
+    configuration, firewall rules, credentials, private runtime logs, or
+    other operational details. Omit those files from publication and ask
+    `eaglesvn` before including them. A request to push the whole worktree does
+    not override this check. Never publish first and ask afterward.
