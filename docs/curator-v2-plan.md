@@ -9617,7 +9617,11 @@ substitute for evidence at a later integration boundary.
       User settings, Curator alpha MCP launcher/database, and configured Hermes
       Core command. The live profile-bound reads completed and the method returned
       `healthy` (exit 0). Only the VS Code API host was mocked; the rendered status
-      bar remains unverified, and the open extension host still needs to load 0.9.6.
+      bar remains unverified. Window activation recheck (2026-10-29 17:44 +07):
+      the actual `renew_ssl` VS Code window activated the installed 0.9.6 extension
+      after its 16:45 install; installed and source JS hashes match. The Xfce
+      screensaver covered the display, so visible color and dashboard rendering
+      remain open; no further reload is needed to load 0.9.6.
       Focused expiry/backup regressions (2026-10-29): four disposable-source
       tests pass for exact 72-hour expiry approval/purge, immediate expiry
       eligibility after post-stage facts, stable occurrence age on replay, and

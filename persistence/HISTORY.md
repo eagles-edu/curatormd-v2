@@ -10900,3 +10900,20 @@ while preserving explicit criteria and same-project parent validation.
   are evidenced.
 - **Outcome:** Remove multi-user requirements that do not apply to the alpha
   while retaining its local authorization and evidence-integrity checks.
+
+## 2026-10-29 — Confirm V2 0.9.6 loaded in the Vhost window
+
+- **Intent:** Resolve whether the `renew_ssl` VS Code extension host still
+  needed a reload to load the installed V2 package.
+- **Changed fact:** The `renew_ssl` window's extension host activated the V2
+  extension at 17:44:20 +07, after version 0.9.6 was installed at 16:45. Its
+  installed JavaScript hash matches repository source:
+  `e2dcd0fa8504276ef7872e7c2000e9264f2ba5a527cf248d3863d2e47b196cee`.
+- **Verification:** Matched the X11 window title to `renew_ssl`, the
+  extension-host activation log to that window, and the install timestamp to
+  the 0.9.6 extension file timestamp. No command or workspace reload was sent.
+- **Open gate:** The Xfce screensaver covers the display, preventing inspection
+  of the rendered color, tooltip, and dashboard. The installed version is
+  loaded; a reload is not the remaining action.
+- **Outcome:** Correct the stale reload claim and retain the visual UI check as
+  open until the workstation is unlocked.
