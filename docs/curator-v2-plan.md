@@ -7416,6 +7416,17 @@ Final report: completed facts, open items, recovery path, next action
       remains non-verifying. The focused eight-test Hermes event suite passes.
       This synthetic pipeline recheck does not prove delivery and readback for
       the live current goal; that local-alpha evidence remains open.
+      Producer privacy and interrupted-usage follow-up (2026-10-30): Hermes
+      now omits common credential locations and key/certificate file suffixes
+      from changed-path summaries, and rejects raw paths longer than 4,096
+      characters before path resolution. The Hermes project-usage plugin counts
+      durable bound Codex starts with no matching end as unknown-usage turns;
+      it does not store those correlation IDs in the report. The focused
+      work-summary, outbox, app-server, and project-usage suites pass 54 tests;
+      Ruff passes on the changed Python files. Hermes commit `f24db8a03a` is
+      pushed to the configured development fork. The live profile-bound task
+      and Curator fact readback are still unverified, so this checklist item
+      remains open.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer

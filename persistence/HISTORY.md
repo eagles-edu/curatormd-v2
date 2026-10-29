@@ -11326,3 +11326,22 @@ while preserving explicit criteria and same-project parent validation.
   retention policy.
 - **Outcome:** Apply the owner scope decision, close only the accepted-packet
   review row, and continue V2/Hermes/plugin work.
+
+## 2026-10-30 — Harden Hermes V2 work-summary privacy and usage counts
+
+- **Intent:** Keep the bounded Codex work summary free of common credential
+  paths and ensure interrupted, durably started Codex turns remain visible as
+  unknown usage.
+- **Changed fact:** Hermes filters common cloud, SSH, package, key, and
+  certificate credential paths from work summaries and bounds raw path length.
+  The local project-usage plugin counts durable Codex starts without a matching
+  end as unknown usage without exposing attempt/session IDs.
+- **Verification:** 54 focused Hermes work-summary, outbox, app-server, and
+  project-usage tests pass; Ruff passes on the changed Python files; both repo
+  diffs pass `git diff --check`. Hermes commit `f24db8a03a` is pushed to the
+  configured development fork.
+- **Open gate:** A real bound Hermes Codex task and readback of its compact fact
+  from the Curator ledger have not been verified. Synthetic/local tests do not
+  close that live route.
+- **Outcome:** Record the implementation and keep the live integration gate
+  open.
