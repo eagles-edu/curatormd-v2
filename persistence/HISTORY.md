@@ -10845,3 +10845,22 @@ while preserving explicit criteria and same-project parent validation.
   open; no checklist marker changed.
 - **Outcome:** Make the approved database-size warning observable in the
   backend read without turning it into enforcement.
+
+## 2026-10-29 — Record exact Vhost request digest replay evidence
+
+- **Intent:** Advance the local-alpha acceptance for preserving a real
+  Vhost preview's request and criteria through Curator goal intake and replay.
+- **Changed fact:** The Vhost preview digest for operation
+  `00ec3e2f-5736-4b37-ab8d-beed07436e77` matches the SHA-256 of its canonical
+  problem and ordered criterion IDs:
+  `6b7de8ea5f743d6b7e5bf8dc03ec28c7298e99c8e1e745fd535e77f537de09bc`.
+- **Verification:** Exact project, active goal, problem, criteria, and
+  next-action checks passed before bridge replay. Apply and fact receipts were
+  `processed`; before/after bounded goal-state SHA-256 remained
+  `18eed64a2471554b660401b759319acaf633862aa024f23098363b6b7f47383a`, with
+  one fact and three open criteria.
+- **Open gate:** This is same-event bridge replay evidence; it does not prove
+  restart recovery or unchanged targets in another project. The full request
+  acceptance and owner review remain open.
+- **Outcome:** Preserve the exact digest and replay evidence without changing
+  the live goal or marking criteria verified.

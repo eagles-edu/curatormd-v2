@@ -8890,6 +8890,17 @@ substitute for evidence at a later integration boundary.
       both reads show one fact and the same three open criteria. This verifies
       idempotent live replay of the stored goal/fact payload. It does not supply
       the source-preview request digest, and owner review remains open.
+      Request-digest replay (2026-10-27): the Vhost preview's canonical problem
+      and ordered criterion IDs hash to
+      `6b7de8ea5f743d6b7e5bf8dc03ec28c7298e99c8e1e745fd535e77f537de09bc`,
+      matching the consumer's recorded preview digest. Replayed operation
+      `00ec3e2f-5736-4b37-ab8d-beed07436e77` after exact project, active goal,
+      problem, criteria, and next-action preflight. Apply and fact receipts were
+      `processed`; before/after `goal_status` digest is unchanged at
+      `18eed64a2471554b660401b759319acaf633862aa024f23098363b6b7f47383a`,
+      with one fact and the same three open criteria. This verifies the exact
+      preview digest and idempotent event replay for this request. Restart
+      recovery, another-project target comparison, and owner review remain open.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot
