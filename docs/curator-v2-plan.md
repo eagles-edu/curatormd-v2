@@ -605,7 +605,13 @@ plugin or Hermes integration is installed and working end to end.
       the seven-copy backup-tree warning separate and warning-only. No new
       per-class hard caps or automatic deletion are authorized. This is a
       local-alpha policy, not complete physical accounting of unclassified
-      legacy backup files or live proof.
+      legacy backup files or live proof. Implementation recheck (2026-10-29):
+      the host-authorized SQLite storage view now includes the combined main
+      database-plus-WAL byte count and warning state. A focused regression
+      covers exactly 250 MiB, one byte above it, and a successful project write
+      above the warning. The backend change is not installed or observed above
+      threshold in the live alpha; the full accounting and recovery checklist
+      remains open.
       Existing local controls include a 10,000-row maximum for request-rate
       buckets with idle-only pruning and deletion of WAL-scrub queue rows after
       a successful checkpoint. Other durable receipt classes rely on the shared

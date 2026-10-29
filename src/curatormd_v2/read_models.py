@@ -35,6 +35,7 @@ from .models import (
 )
 
 BACKUP_TREE_WARNING_THRESHOLD_BYTES = 250 * 1024 * 1024
+SQLITE_DATABASE_WARNING_THRESHOLD_BYTES = 250 * 1024 * 1024
 from .record_validation import (
     REVIEWER_ID_RE as _REVIEWER_ID_RE,
     SHA256_RE as _SHA256_RE,
@@ -520,6 +521,9 @@ class SQLiteDatabaseFileUsage:
 
     database_bytes: int | None
     wal_file_bytes: int | None
+    combined_bytes: int | None = None
+    warning_threshold_bytes: int = SQLITE_DATABASE_WARNING_THRESHOLD_BYTES
+    warning_status: Literal["unknown", "below_threshold", "warning"] = "unknown"
 
 
 @dataclass(frozen=True, slots=True)

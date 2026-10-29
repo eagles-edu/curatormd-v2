@@ -9,6 +9,7 @@ import json
 import sqlite3
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from store_test_support import patch_store_symbol
 
@@ -50,6 +51,43 @@ class DurableProjectAccessTests(ProjectAccessTestCase):
                 ).fetchall()
             }
         self.assertSetEqual(physical_class_names, table_names)
+
+    def test_sqlite_main_plus_wal_warning_is_report_only(self) -> None:
+        """Warn only when the combined file size exceeds the alpha threshold."""
+
+        threshold = 250 * 1024 * 1024
+        self._register()
+        self._allow_admin(ProjectAdministrationAction.VIEW)
+        self._allow_admin(ProjectAdministrationAction.SUSPEND)
+
+        def fake_size(path: Path) -> int:
+            return threshold - 50 if path.name.endswith("-wal") else 50
+
+        with patch.object(
+            type(self.store), "_regular_file_size", new=staticmethod(fake_size)
+        ):
+            usage = self.manager.storage_usage(self.operator, self.project_id)
+            assert usage.sqlite_physical is not None
+            at_threshold = usage.sqlite_physical.files
+        self.assertEqual(at_threshold.combined_bytes, threshold)
+        self.assertEqual(at_threshold.warning_threshold_bytes, threshold)
+        self.assertEqual(at_threshold.warning_status, "below_threshold")
+
+        def one_byte_over(path: Path) -> int:
+            return threshold - 49 if path.name.endswith("-wal") else 50
+
+        with patch.object(
+            type(self.store), "_regular_file_size", new=staticmethod(one_byte_over)
+        ):
+            usage = self.manager.storage_usage(self.operator, self.project_id)
+            assert usage.sqlite_physical is not None
+            over_threshold = usage.sqlite_physical.files
+            self._change_status(
+                "suspended", "Allow writes above the warning threshold", 1,
+                "warning-threshold-write-check",
+            )
+        self.assertEqual(over_threshold.combined_bytes, threshold + 1)
+        self.assertEqual(over_threshold.warning_status, "warning")
 
     def test_reactivation_review_is_bound_to_current_backlog_and_receipt(self) -> None:
         """A new old-source event invalidates the reviewed reactivation packet."""

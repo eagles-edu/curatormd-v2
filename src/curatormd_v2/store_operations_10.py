@@ -37,6 +37,7 @@ from .store_support_01 import (
     timedelta,
     utc_now,
 )
+from .read_models import SQLITE_DATABASE_WARNING_THRESHOLD_BYTES
 from .store_operations_09 import StoreOperations3
 
 class StoreOperations4Part0(StoreOperations3):
@@ -631,6 +632,26 @@ class StoreOperations4Part0(StoreOperations3):
             if self.database != ":memory:"
             else None
         )
+        combined_file_bytes = (
+            database_file_bytes + wal_file_bytes
+            if database_file_bytes is not None and wal_file_bytes is not None
+            else None
+        )
+        warning_status = (
+            "unknown"
+            if combined_file_bytes is None
+            else (
+                "warning"
+                if combined_file_bytes > SQLITE_DATABASE_WARNING_THRESHOLD_BYTES
+                else "below_threshold"
+            )
+        )
+        file_usage = SQLiteDatabaseFileUsage(
+            database_bytes=database_file_bytes,
+            wal_file_bytes=wal_file_bytes,
+            combined_bytes=combined_file_bytes,
+            warning_status=warning_status,
+        )
         try:
             rows = self._connection.execute(
                 """SELECT m.tbl_name AS class_name,
@@ -661,10 +682,7 @@ class StoreOperations4Part0(StoreOperations3):
                     attributed_btree_bytes=None,
                     unattributed_database_bytes=None,
                 ),
-                files=SQLiteDatabaseFileUsage(
-                    database_bytes=database_file_bytes,
-                    wal_file_bytes=wal_file_bytes,
-                ),
+                files=file_usage,
             )
         classes = tuple(
             StoragePhysicalClassUsage(
@@ -690,8 +708,5 @@ class StoreOperations4Part0(StoreOperations3):
                 attributed_btree_bytes=attributed_bytes,
                 unattributed_database_bytes=database_bytes - attributed_bytes,
             ),
-            files=SQLiteDatabaseFileUsage(
-                database_bytes=database_file_bytes,
-                wal_file_bytes=wal_file_bytes,
-            ),
+            files=file_usage,
         )

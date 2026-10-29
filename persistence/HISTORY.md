@@ -10827,3 +10827,21 @@ while preserving explicit criteria and same-project parent validation.
   no artifact was deleted.
 - **Outcome:** Verify routine live operation while preserving unclassified
   backup files and all open acceptance checks.
+
+## 2026-10-29 — Report combined SQLite main and WAL warning state
+
+- **Intent:** Expose the approved warning-only 250 MiB SQLite size policy in
+  Curator's authorized storage read.
+- **Changed fact:** The control-plane storage view now reports main database
+  bytes, WAL bytes, their combined total, the threshold, and `unknown`,
+  `below_threshold`, or `warning`. It does not block writes, checkpoint, or
+  delete files.
+- **Verification:** A focused access regression checks the exact threshold,
+  one byte over, and a successful project write while above threshold. The
+  focused unittest and targeted strict Pyright pass; `git diff --check` is
+  recorded after the documentation update.
+- **Open gate:** No live above-threshold warning was observed. Full storage
+  classification, retention, backup rotation, and recovery evidence remain
+  open; no checklist marker changed.
+- **Outcome:** Make the approved database-size warning observable in the
+  backend read without turning it into enforcement.
