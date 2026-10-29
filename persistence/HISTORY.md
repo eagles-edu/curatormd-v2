@@ -10794,3 +10794,18 @@ while preserving explicit criteria and same-project parent validation.
   digest. The real source request binding and owner review remain open.
 - **Outcome:** Verify exact bridge replay without duplicating the goal, fact, or
   criteria.
+
+## 2026-10-29 — Check for a real pilot fact ready for SDE review
+
+- **Intent:** Determine whether the live Vhost pilot has a completed,
+  evidence-verified fact suitable for the required human SDE review.
+- **Changed fact:** The profile-bound project has 31 goals: 26 active, five
+  planned, and none complete. The local review queue contains zero pending
+  candidates.
+- **Verification:** Read-only goal-list pages and the owner-authorized review
+  queue returned project-bound results. No candidate was created.
+- **Open gate:** There is no completed verified pilot fact to assess. Complete
+  the real operation criteria first, then submit a supported material fact for
+  `eaglesvn` to review. Do not use unverified operation reports as SDEs.
+- **Outcome:** Preserve an empty review queue instead of fabricating a review
+  candidate; keep SDE disposition and exact cleanup open.

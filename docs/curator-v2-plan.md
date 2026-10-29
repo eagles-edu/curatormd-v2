@@ -9197,6 +9197,12 @@ substitute for evidence at a later integration boundary.
       completes the review path in the real local consumer and the receipt is
       independently checked; synthetic tests do not establish the local human
       decision.
+      Live candidate-readiness check (2026-10-29): the configured profile read
+      31 project goals (26 active, five planned, none complete) and zero pending
+      SDE candidates. There is no completed, evidence-verified pilot fact to
+      submit for a real SDE decision yet; no candidate was manufactured from an
+      unverified operation report. Keep the review and cleanup items open until
+      the pilot has verified evidence and `eaglesvn` makes the actual decision.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are
