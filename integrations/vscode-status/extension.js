@@ -40,6 +40,7 @@ const REQUIRED_HEALTH_PROBES = Object.freeze([
 const REPORT_FACT_ID_PATTERN = /^- `([^`]{1,256})` — /;
 let dashboardStatusItem;
 let statusRefreshTimer;
+let statusRefreshGeneration = 0;
 
 function statusTooltip(message) {
   return `${STATUS_LABEL} ${EXTENSION_VERSION}. ${message}`;
@@ -634,6 +635,7 @@ function resetStatusBarHealth() {
 }
 
 async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
+  const generation = ++statusRefreshGeneration;
   const workspace = vscode.workspace
     && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
   if (!workspace) {
@@ -681,12 +683,19 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
         .catch(() => null),
     ]);
     const reviews = validateReviewQueue(reviewWire, page.project_id);
+    if (generation !== statusRefreshGeneration
+      || vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath !== projectRoot) {
+      return 'unknown';
+    }
     updateStatusBarHealth(health, page.project_id, reviews, storage);
     if (reviews === null) return 'unknown';
     if (health.status !== 'healthy') return health.status;
     return reviews.length > 0 ? 'review' : 'healthy';
   } catch {
-    updateStatusBarHealth(null, null, null);
+    if (generation === statusRefreshGeneration
+      && vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath === projectRoot) {
+      updateStatusBarHealth(null, null, null);
+    }
     return 'unknown';
   } finally {
     client.close();

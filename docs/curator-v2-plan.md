@@ -9977,6 +9977,15 @@ substitute for evidence at a later integration boundary.
       foreign-key violations. Only two daily copies are present; the seven-copy
       live rotation and full backup-tree classification remain open. No
       maintenance or cleanup was triggered.
+      Workspace-switch status fence (2026-10-30 02:49 +07:00): V2 extension
+      0.9.11 discards any health response whose refresh was superseded or whose
+      workspace changed before completion. A regression holds an old project's
+      healthy response until after the new workspace reports degraded and
+      confirms the late response cannot turn the new workspace green. All 18
+      focused extension tests pass. Version 0.9.11 is installed; the packaged
+      and installed `extension.js` SHA-256 matches source
+      (`fc952a2ab898e5fcb1db33175b7c64f659e382b84c1d59502f2d6040df10622d`).
+      Dashboard visual acceptance remains open.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config

@@ -180,6 +180,17 @@ class FakeHermesProcess extends EventEmitter {
   }
 }
 
+class DeferredHermesProcess extends EventEmitter {
+  constructor() {
+    super();
+    this.stdout = new PassThrough();
+  }
+
+  respond(payload) {
+    this.stdout.end(JSON.stringify(payload), () => this.emit('close', 0, null));
+  }
+}
+
 function healthyHermesProbe(projectId = 'alpha') {
   const names = [
     'event_router', 'purge_scheduler', 'database_storage_adapter', 'host_identity',
@@ -429,6 +440,69 @@ test('status item follows Git Graph and uses project-bound health colors', async
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
   deactivate();
+});
+
+test('late status refresh cannot overwrite a newer workspace result', async () => {
+  const roots = [0, 1].map(() => fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-status-race-')));
+  roots.forEach((root) => fs.writeFileSync(path.join(root, '.curatormd-v2.toml'), 'project_id = "alpha"\n'));
+  const items = [];
+  vscodeMock.StatusBarAlignment = { Left: 1, Right: 2 };
+  vscodeMock.window = {
+    createStatusBarItem: (alignment, priority) => {
+      const item = { alignment, priority, show() {}, dispose() {} };
+      items.push(item);
+      return item;
+    },
+  };
+  vscodeMock.commands = { registerCommand: () => ({ dispose() {} }) };
+  const userSettings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  const subscriptions = [];
+  activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } });
+  try {
+    let delayedHermes;
+    vscodeMock.workspace.workspaceFolders = [{ uri: { fsPath: roots[0] } }];
+    const oldRefresh = refreshStatusBarHealthFromWorkspace((command) => {
+      if (command === 'fixture-hermes') {
+        delayedHermes = new DeferredHermesProcess();
+        return delayedHermes;
+      }
+      return new FakeMcpProcess('a'.repeat(64), false, null, null, true);
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(delayedHermes);
+
+    vscodeMock.workspace.workspaceFolders = [{ uri: { fsPath: roots[1] } }];
+    const degradedHealth = healthyHermesProbe();
+    degradedHealth.health.status = 'degraded';
+    degradedHealth.health.gate_codes = ['database_unavailable'];
+    const newStatus = await refreshStatusBarHealthFromWorkspace((command) => (
+      command === 'fixture-hermes'
+        ? new FakeHermesProcess(degradedHealth)
+        : new FakeMcpProcess('a'.repeat(64), false, null, null, true)
+    ));
+    assert.equal(newStatus, 'degraded');
+    assert.equal(items[0].color, '#ef2929');
+
+    delayedHermes.respond(healthyHermesProbe());
+    assert.equal(await oldRefresh, 'unknown');
+    assert.equal(items[0].color, '#ef2929');
+    assert.match(items[0].tooltip, /Project health: degraded/);
+  } finally {
+    deactivate();
+    roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true }));
+  }
 });
 
 test('dashboard maps Curator failures to actionable messages without backend details', () => {
