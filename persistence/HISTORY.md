@@ -11305,3 +11305,24 @@ while preserving explicit criteria and same-project parent validation.
   72-hour artifact remain unverified.
 - **Outcome:** Refresh operating evidence without treating a successful timer
   pass as proof of full retention/recovery acceptance.
+
+## 2026-10-30 — Record owner scope amendment and alpha acceptance
+
+- **Intent:** Keep Curator V2 completion focused on its backend, Hermes Core
+  integration, and V2-owned local editor plugin.
+- **Changed fact:** `eaglesvn` excluded Vhost Manager application and utility
+  workflows from Curator V2 scope and accepted the unchanged local-alpha packet
+  at SHA-256
+  `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`.
+  The plan now treats Vhost runs as historical evidence and records the
+  acceptance against that exact digest. No Vhost files or artifacts changed.
+- **Verification:** The accepted packet hash matched before this plan update.
+  `python3 tools/count_curator_v2_delivery.py` now reports 171/178 complete;
+  the raw checkbox count is 186/194, with Section 11 still excluded from
+  delivery progress.
+- **Open gate:** Seven delivery items remain for local privacy, live Hermes
+  task capture, dashboard acceptance, evidence-backed SDE/review behavior, and
+  local retention/recovery. Acceptance did not authorize deletion or change
+  retention policy.
+- **Outcome:** Apply the owner scope decision, close only the accepted-packet
+  review row, and continue V2/Hermes/plugin work.

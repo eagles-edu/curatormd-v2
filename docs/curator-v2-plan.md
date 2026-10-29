@@ -211,6 +211,15 @@ safe recovery, one-repository isolation, and the local integrations actually
 used by the alpha remain in scope. This scope decision does not itself close
 any implementation row.
 
+Owner scope amendment (2026-10-30): Vhost Manager application behavior and its
+certificate, DNS, Nginx, and other utility workflows are outside Curator V2
+completion. Do not modify or test those workflows for this goal. Existing
+Vhost-specific runs and target comparisons remain historical context, not open
+Curator V2 gates. Continue work on the Curator V2 backend, Hermes Core
+integration, and V2-owned local editor plugin. The previously accepted alpha
+snapshot remains immutable evidence for its recorded digest; this amendment
+does not authorize artifact deletion or other policy changes.
+
 ## Delivery checklist
 
 This is the implementation and rollout checklist for the proposed V2 landscape.
@@ -225,8 +234,8 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-30): **170 of 178 delivery rows are complete; 8 are open**.
-The full raw checkbox count is **185 of 194 complete; 9 are open**. Section 11
+recount (2026-10-30): **171 of 178 delivery rows are complete; 7 are open**.
+The full raw checkbox count is **186 of 194 complete; 8 are open**. Section 11
 contributes 15 complete rows and one open row; do not compare these two scopes
 as if their totals were the same. Historical narrative counts below are not
 current.
@@ -8767,15 +8776,15 @@ substitute for evidence at a later integration boundary.
       cleanup disabled until the Hermes account owner approves the target
       manifest, identity, supervision, recovery procedure, and recorded pilot
       evidence. This proposal does not authorize cleanup on a live host.
-- [ ] **I. Local alpha and owner review:** finish the approved V2 consumer
-      workflow for `vhost-manager-alpha`, then let `eaglesvn` review one
-      content-free evidence snapshot. V1 is outside this plan; no additional
-      users, public endpoint, or production service is required. The current
-      snapshot is [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
-      It records the installed package/config binding, the 2026-10-28 and
-      2026-10-29 loopback Vhost apply/replay/rollback receipts, staging and
-      retention policy, backup/restore evidence, and current open issues. The
-      route smoke and exact receipt replay are verified. Progress
+- [ ] **I. Local alpha:** complete the Curator V2 backend, Hermes Core
+      integration, and V2-owned local editor plugin for one active repository
+      under `eaglesvn`. Vhost Manager application and utility workflows are
+      excluded by the 2026-10-30 owner scope amendment; their previous evidence
+      remains historical. The accepted content-free local evidence packet is
+      [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md),
+      SHA-256 `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`.
+      Finish only the in-scope backend, Hermes integration, editor dashboard,
+      privacy, and local storage/recovery criteria below. Progress
       (2026-10-28 11:32 +07:00):
       the owner-only local reviewer API projected the exact apply goal
       `vhost-op-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and rollback goal
@@ -8783,10 +8792,9 @@ substitute for evidence at a later integration boundary.
       Vhost `HISTORY.md`; read-only reconciliation returned `synced` for both.
       Their block hashes are recorded in
       [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
-      Remaining checks: complete comparisons for all applicable target classes;
-      the 2026-10-29 live run verified 16 unrelated Nginx entries and both
-      firewall files, but not every configured class. Keep project usage
-      report-only with its measurement age and coverage gaps visible; a fresh
+      Vhost-specific target comparisons are out of scope under the 2026-10-30
+      owner amendment. Keep project usage report-only with its measurement age
+      and coverage gaps visible; a fresh
       usage event, freshness threshold, or enforcement is not required.
       Rollback
       rehearsal (2026-10-28 11:37 +07:00):
@@ -8830,12 +8838,11 @@ substitute for evidence at a later integration boundary.
 
 ### Definition of done
 
-- [ ] A real request/checklist/subtask creates a correctly scoped goal with
-      its original problem and success criteria intact. Proposed acceptance,
-      tied to the separately approved one-run pilot in Slice I: submit one real
-      user request through the consumer's supported application entrypoint, with
-      the exact profile, project, repository/config fingerprints, source
-      checklist item, and persistence target bound before processing. Compare
+- [ ] A real local Codex/Hermes task creates a correctly scoped goal with
+      its original problem and success criteria intact. Proposed acceptance:
+      submit one real task through the supported Hermes Core integration, with
+      the exact local profile, project, repository/config fingerprints, source
+      task reference, and persistence target bound before processing. Compare
       the source request's authorized problem and success criteria with the
       created goal and a subsequent bounded `goal_report`; confirm no criterion
       is lost, merged, silently rewritten, or marked verified without its own
@@ -8843,14 +8850,15 @@ substitute for evidence at a later integration boundary.
       approved criteria without retaining the raw conversation or request body
       in canonical records, logs, traces, metrics, or backups. A missing,
       ambiguous, expired, or cross-project binding must create no goal and leave
-      a visible denial/open gate. Replay the same request/event and restart at
+      a visible denial/open gate. Replay the same task event and restart at
       the durable boundary; verify one correctly scoped goal and stable receipts,
       with another project's goal list and targets unchanged. Retain a
-      content-free acceptance record containing the request reference/digest,
+      content-free acceptance record containing the task reference/digest,
       goal and project IDs, approved bindings/fingerprints, criterion count and
       evidence dispositions, receipt IDs, and before/after out-of-scope hashes.
-      Keep this item open until the named real-consumer run and owner-reviewed
-      evidence packet exist; synthetic API/MCP fixtures do not close it.
+      Keep this item open until a real Hermes Core/Codex task and owner-reviewed
+      evidence packet exist; synthetic API/MCP fixtures do not close it. Vhost
+      Manager application and utility workflows are explicitly out of scope.
       Focused recheck (2026-10-27): the disposable Vhost apply-route
       persistence/retry contract passed again (1 test, 72.444 seconds) using
       the alpha virtualenv. It exercised a temporary project/database and
@@ -9650,14 +9658,12 @@ substitute for evidence at a later integration boundary.
       multi-consumer support is outside the approved alpha scope.
 - [ ] The single-user local alpha has evidence for the operating and recovery
       behavior that this development utility actually uses. Acceptance scope is
-      the approved OS account `eaglesvn`, one active repository, the configured
-      `vhost-manager-alpha` project, and its local Curator V2/Hermes/Vhost
-      integration. Keep one content-free evidence record bound to the source
+      the approved OS account `eaglesvn` and one active repository. Keep one
+      content-free evidence record bound to the source
       commit, installed wheel hash, repository/config fingerprint, project ID,
       local database, and evidence time. Record the result and evidence for each
       applicable local check: focused/full quality gates; local service and
-      profile probes; loopback Vhost preview/apply/rollback with exact receipt
-      replay and out-of-scope target checks; the 250 MiB staging warning
+      profile probes; the 250 MiB staging warning
       boundary (warning only, writes allowed); 72-hour live transient-file
       expiry; the approved seven-copy SQLite backup rotation and restore to a
       new path; and package upgrade rollback. Keep missing, stale, or failed
@@ -9857,16 +9863,10 @@ substitute for evidence at a later integration boundary.
       facts/evidence page, revision/stale behavior, access revocation, evidence
       freshness, goal reopen, and rendered privacy cases remain open. This
       partial rendering does not close the dashboard acceptance item.
-- [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
-      one explicit accept/reject decision for the named V2 alpha scope. The
-      record must list the exact local package/project/config binding, the
-      verified results, and each remaining local issue, including stale or
-      incomplete token usage, the incomplete backup-tree inventory and
-      live enforcement of the approved retention/recovery rules, and any
-      unverified source-to-sink path. An acceptance applies only to this
-      single-user, one-repository development utility and the reviewed package
-      and evidence snapshot. It does not silently approve a new retention rule,
-      cleanup inventory, or changed target; those keep their existing explicit
-      review requirements. Preserve a rejected or incomplete review as open and
-      record the next action. Keep this item open until the owner has reviewed
-      the actual packet and the decision is durably recorded against its digest.
+- [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
+      packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
+      on 2026-10-30. The accepted packet records its exact package/project/config
+      binding, verified results, and remaining local issues. Acceptance applies
+      only to that single-user development snapshot; it does not approve a new
+      retention rule, cleanup inventory, or changed target. The packet is kept
+      unchanged so the accepted digest remains valid.

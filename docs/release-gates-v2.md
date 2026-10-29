@@ -5,15 +5,18 @@ claim. Statuses describe the strongest evidence currently present in this
 checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
-Current delivery checklist snapshot (2026-10-30): **170/178 complete, 8 open**.
+Current delivery checklist snapshot (2026-10-30): **171/178 complete, 7 open**.
 This is the authoritative count from
 [`tools/count_curator_v2_delivery.py`](../tools/count_curator_v2_delivery.py),
 which counts sections 0–10, 12, and Definition of done. Section 11's reusable
 workflow-contract checklist has 15/16 rows checked and is excluded. A raw count
 of every plan checkbox therefore has a different denominator; use the delivery
-script for progress reports. The Vhost source/artifact audit for the approved
-development snapshot is complete; the local alpha acceptance gates below remain
-separate.
+script for progress reports. The owner has explicitly excluded Vhost Manager
+application and utility workflows from Curator V2 completion. The accepted
+local-alpha evidence packet is historical and immutable; its review is complete
+for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`.
+Current work is limited to the Curator V2 backend, Hermes Core integration,
+and V2-owned local editor plugin.
 
 Latest local-alpha package refresh (2026-10-29): wheel SHA-256
 `042dc1fcb0cf40a154ff898c9275dd00b97c03eb49d104b141e83f85707419b1` from
@@ -162,8 +165,13 @@ disposition of the six active goals or production/release readiness.
 | --- | --- | --- |
 | Hermes-authenticated identity for shared use (deferred) | Local alpha is provisioned for the approved `eaglesvn` Linux account (`local-uid:1000`) with exact `vhost-manager-alpha` read/write/review grants. One repository is active at a time. | No additional identity work is required for the current single-user development scope. If the owner later enables shared or multi-user use, authenticate Hermes people and bind exact subject/project/action grants before widening access. |
 | Local purge scheduler and journal reporting | The `eaglesvn` user timer is enabled and active for `vhost-manager-alpha` every six hours at 00:00, 06:00, 12:00, and 18:00, with 15-second spread, five-minute timeout, 100-item limit, and journal-only failures. The timer and service were rechecked on 2026-10-26: the 00:00 pass exited successfully with zero pending or processed targets, and the next timer trigger is 06:00. This verifies the approved local timer schedule. | No further local-cadence check is pending. External alert delivery is outside the current alpha. The zero-work pass does not demonstrate a live deletion; approved purge retry and expiry still need a real receipt-backed operation. |
-| Live Vhost workflow | Disposable acceptance runs the consumer-owned hook through Hermes Core managed MCP into the installed Curator stdio server; exact receipts, retry/replay, readable goal-history reconciliation, and privacy canaries are checked. Three reserved local `.test` sites have been applied and rolled back through the root service with exact processed receipts. The first five apply/rollback and fake-ACME goals were written by the authorized local reviewer to Vhost `HISTORY.md` and reconciled to ledger hashes. The newest apply and rollback each produced one active review goal and one compact path-free fact; both records are projected and reconcile as `synced`. The test site is absent from Vhost inventory. The root ACME bridge preserves its four daily times and has disposable outage-queue recovery coverage. A 2026-10-26 read-only browser capture rendered the Vhost home page through system Chrome and revalidated its content-free digest for the bound local project. The owner-reviewed source/artifact matrix and four standalone utility workflows are covered for the current development snapshot in [the coverage record](vhost-producer-coverage-v2.md). The approved local 72-hour manual-DNS log-expiry timer is enabled and active; its first pass removed two expired logs and retained no matching expired files. | Vhost Manager is a local utility. The browser check covered only the home-page render, not the request-bound workflow acceptance below. The five earlier projected goals remain planned; the two newest goals await human disposition. No SDE review/purge flow was exercised. Fake ACME does not prove real certificate-renewal behavior; that behavior is outside this Curator alpha. Local content-free snapshot review remains open. |
-| Other owner decisions | The local reviewer, exact-inventory cleanup, 72-hour transient retention, one-repo scope, and SQLite/Markdown recovery decisions are recorded above. | No additional policy values are required for the current single-user alpha. The remaining owner action is review of the exact local-alpha evidence snapshot and any displayed cleanup inventory. |
+| Vhost Manager workflows | Vhost application and utility workflows are explicitly outside Curator V2 completion scope by the 2026-10-30 owner decision. Existing Vhost-specific notes below are historical evidence only. | No Curator V2 gate. Do not modify or test Vhost workflows as part of this goal. |
+| Accepted local-alpha packet | `eaglesvn` accepted the unchanged content-free packet for SHA-256 `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28` on 2026-10-30. | Packet review is complete for that snapshot only; this does not authorize deletion or alter retention policy. |
+| Remaining in-scope implementation | Seven delivery checklist items remain, covering sensitive-data source-to-sink proof, real Hermes task capture, dashboard behavior, evidence-backed SDE assessment and disposition, and local retention/recovery evidence. | Complete the backend, Hermes Core, and editor-plugin acceptance criteria in the plan. Do not reopen the excluded Vhost workflow. |
+
+Everything below this current-gates summary is a dated historical record unless
+it is explicitly referenced by the current plan acceptance criteria. Historical
+Vhost workflow statements do not reopen that scope.
 
 Current local-alpha recheck (2026-10-25): through the running root Vhost
 Manager HTTP service, a disposable `.test` site was applied and rolled back.
