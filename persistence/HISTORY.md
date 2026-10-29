@@ -10531,3 +10531,24 @@ while preserving explicit criteria and same-project parent validation.
   target comparisons, and explicit alpha owner review remain open.
 - **Outcome:** Keep the acceptance criteria consistent with the approved scope
   without hiding incomplete usage data or claiming full accounting.
+
+## 2026-10-29 — Refresh local-alpha backup and timer evidence
+
+- **Intent:** Replace the older backup-directory summary in the local-alpha
+  packet with a current read and verify the six-hour maintenance schedule.
+- **Changed fact:** The installed bounded scanner observed 32 backup-tree
+  entries, two recognized daily snapshots totaling 1,064,960 bytes, and 30
+  unclassified entries. It measured 5,215,696 file bytes and 5,259,264
+  allocated bytes, with the warning state below the approved 250 MiB threshold.
+  The Vhost alpha timer is active, last ran at 12:00:06 +07, and is next
+  scheduled at 18:00:09; the service exited successfully, and the bounded
+  journal summary reports `backup_status=verified`.
+- **Verification:** Both reads were metadata/content-minimized: the inventory
+  recorded no names or contents, and the journal output retained only the
+  allowlisted backup status. No files or services were changed. `git diff
+  --check` and the plan checklist counter pass.
+- **Open gate:** The 30 legacy entries remain unclassified, the current scan
+  does not prove seven-copy rotation, and class-specific recovery horizons and
+  the shared database-size threshold remain open. No checklist marker changed.
+- **Outcome:** Refresh current operational evidence without deleting legacy
+  files or overstating backup retention verification.
