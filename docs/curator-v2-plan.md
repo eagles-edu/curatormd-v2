@@ -9543,6 +9543,12 @@ substitute for evidence at a later integration boundary.
       the alpha acceptance row remains open. A unit test or an unrelated
       profile probe cannot stand
       in for a local workflow check.
+      Focused expiry/backup regressions (2026-10-29): four disposable-source
+      tests pass for exact 72-hour expiry approval/purge, immediate expiry
+      eligibility after post-stage facts, stable occurrence age on replay, and
+      seven verified backup copies including unresolved retry payloads; older
+      copies are pruned only after successful backups. These tests do not
+      establish live timer expiry or a complete live backup rotation.
       Fresh profile probe (2026-10-29 09:54 UTC): ran the exact Hermes Core
       wrapper configured for the V2 extension from the `renew_ssl` workspace.
       It returned schema version 1 for `vhost-manager-alpha`, `healthy`, all

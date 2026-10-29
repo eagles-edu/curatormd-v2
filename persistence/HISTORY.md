@@ -10620,3 +10620,20 @@ while preserving explicit criteria and same-project parent validation.
   awaits reconciliation of its other local checks and explicit owner review.
 - **Outcome:** Refresh profile-side evidence without claiming a UI render or
   full local-alpha acceptance.
+
+## 2026-10-29 — Verify focused expiry and backup rotation paths
+
+- **Intent:** Close the source-level expiry and backup checks missing from the
+  local-alpha evidence packet.
+- **Changed fact:** The disposable fixture path covers 72-hour eligibility,
+  explicit expiry approval and purge, immediate eligibility after facts are
+  recorded, stable occurrence age on replay, and seven verified backups
+  retaining unresolved retry payloads.
+- **Verification:** Four focused unittest cases pass from the Curator source
+  tree. Rotation prunes the oldest backup only after a new verified copy. No
+  live consumer file or backup was changed.
+- **Open gate:** A due 72-hour artifact has not been processed by the live
+  maintenance timer, and seven-copy live rotation has not been observed. Keep
+  the full alpha evidence criterion open.
+- **Outcome:** Verify destructive paths in isolated disposable fixtures without
+  claiming live runtime evidence.
