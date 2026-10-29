@@ -4848,6 +4848,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       inspect the gateway's own `LimitCORE=infinity` setting, Apport retention,
       host journals, or other sinks, and no crash canary was generated. The
       source-to-sink checklist remains open.
+      Hermes Core work-summary privacy check (2026-10-30 02:25 +07:00): the
+      durable Codex outbox now rejects changed-file paths containing common
+      credential-shaped values (OpenAI, GitHub, Stripe, AWS, Slack, and Google
+      API token formats). A focused regression verifies the summary is omitted
+      from both the returned event and persisted outbox context. Four focused
+      tests pass; Ruff passes. This closes that Hermes outbox path only; broad
+      producer coverage, logs, traces, backups, crash sinks, and other privacy
+      paths remain open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
