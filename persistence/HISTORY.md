@@ -10809,3 +10809,21 @@ while preserving explicit criteria and same-project parent validation.
   `eaglesvn` to review. Do not use unverified operation reports as SDEs.
 - **Outcome:** Preserve an empty review queue instead of fabricating a review
   candidate; keep SDE disposition and exact cleanup open.
+
+## 2026-10-29 — Verify the scheduled six-hour maintenance pass
+
+- **Intent:** Verify the approved local-alpha purge-retry timer and fresh daily
+  backup without authorizing a new cleanup decision.
+- **Changed fact:** The 18:00 +07 timer run exited 0, reported a verified
+  backup, zero due purge/expiry receipts, and zero pending failures. The
+  following read-only backup-tree scan found two recognized snapshots and 30
+  unclassified legacy files; observed allocation is 5,259,264 bytes, below
+  the 250 MiB warning.
+- **Verification:** `systemctl --user show` confirms the latest run exited 0
+  at 18:00:11; the bounded journal JSON reports the stated counts. The next
+  timer run is scheduled for 00:00. The source scanner read only entry metadata.
+- **Open gate:** This does not prove seven-copy live rotation, complete legacy
+  backup classification, or live 72-hour artifact expiry. No purge was due, so
+  no artifact was deleted.
+- **Outcome:** Verify routine live operation while preserving unclassified
+  backup files and all open acceptance checks.

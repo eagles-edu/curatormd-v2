@@ -9664,6 +9664,14 @@ substitute for evidence at a later integration boundary.
       status item model was green (`#73d216`), and a trusted local UID review
       queue read found zero pending candidates. The VS Code API object was
       stubbed, so the desktop button and tooltip remain visually unverified.
+      Scheduled maintenance recheck (2026-10-29 18:00 +07): the active
+      six-hour user timer completed with exit 0. Its content-free journal result
+      reported a verified daily backup, zero processed purge/expiry receipts,
+      and zero pending failures; the next run is scheduled for 00:00. A
+      read-only backup-tree scan reports two recognized daily snapshots and 30
+      unclassified legacy files (5,259,264 allocated bytes; below 250 MiB).
+      This verifies another live maintenance pass, not seven-copy live
+      rotation, full legacy classification, or 72-hour expiry.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the
