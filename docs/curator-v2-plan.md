@@ -9689,6 +9689,12 @@ substitute for evidence at a later integration boundary.
       unclassified legacy files (5,259,264 allocated bytes; below 250 MiB).
       This verifies another live maintenance pass, not seven-copy live
       rotation, full legacy classification, or 72-hour expiry.
+      Fresh trusted-profile probe (2026-10-29 18:08 +07): the supported Hermes
+      Core profile command exits 0 and returns `healthy` for
+      `vhost-manager-alpha`; all seven dependencies are healthy, health gates
+      and pending event/review/purge/expiry counts are zero, and the staging
+      inventory is complete and empty. This is a fresh local profile read, not
+      rendered VS Code color or owner SDE/cleanup disposition.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the

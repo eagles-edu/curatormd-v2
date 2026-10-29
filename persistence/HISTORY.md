@@ -10864,3 +10864,19 @@ while preserving explicit criteria and same-project parent validation.
   acceptance and owner review remain open.
 - **Outcome:** Preserve the exact digest and replay evidence without changing
   the live goal or marking criteria verified.
+
+## 2026-10-29 — Refresh trusted Vhost alpha health
+
+- **Intent:** Confirm the current local Hermes-to-Curator profile path and
+  refresh the alpha health snapshot without changing project state.
+- **Changed fact:** The configured `renew-ssl-coding` Hermes Core profile
+  connected to `vhost-manager-alpha`, reported `healthy`, and returned all
+  seven dependencies healthy with zero gates and zero pending event, review,
+  purge, or expiry work. The staging inventory was complete and empty.
+- **Verification:** The exact supported profile health command exited 0 at
+  2026-10-29 18:08 +07. This was a read-only profile call.
+- **Open gate:** The Codex-hosted MCP caller still has no trusted profile
+  context. The local snapshot does not establish rendered VS Code color or
+  owner review and cleanup decisions.
+- **Outcome:** Refresh local health evidence without claiming the separate
+  chat-hosted MCP identity is authenticated.
