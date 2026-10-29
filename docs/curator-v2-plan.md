@@ -8737,7 +8737,13 @@ substitute for evidence at a later integration boundary.
       bodies, transcripts, tool arguments, provider output, credentials, or raw
       exception text. Keep Slice I open until the local evidence is reconciled
       and `eaglesvn` records an explicit accept/reject decision against the
-      snapshot digest.
+      snapshot digest. Fresh live profile read (2026-10-29 10:37 UTC): the
+      configured `renew-ssl-coding` profile connected to the installed Curator
+      V2 MCP and returned 70 processed receipts, 31 goals, 28 facts, zero event
+      failures/backlog, zero pending SDE candidates, and healthy project status
+      with all seven dependencies healthy. This read was content-free and
+      read-only. It refreshes the profile/health observation only; it does not
+      verify a new Vhost operation, rendered dashboard details, or owner review.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.

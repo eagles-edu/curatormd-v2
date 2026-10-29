@@ -10696,3 +10696,22 @@ while preserving explicit criteria and same-project parent validation.
   criteria remain open.
 - **Outcome:** Close the approved local-alpha event-inbox policy and
   replay-preserving archive implementation without claiming live installation.
+
+## 2026-10-29 — Refresh the bound local-alpha profile read
+
+- **Intent:** Refresh the live profile and health evidence in the local-alpha
+  packet without modifying the consumer or ledger.
+- **Changed fact:** The `renew-ssl-coding` profile connected to the installed
+  Curator V2 MCP for `vhost-manager-alpha`. The content-free read returned
+  70/70 processed event receipts, 31 goals, 28 facts, no event backlog or
+  failures, no pending SDE candidates, and healthy status with all seven
+  dependencies healthy. The installed distribution reports `0.1.0a1`.
+- **Verification:** `/home/eaglesvn/.hermes/hermes-agent/hermes -p
+  renew-ssl-coding mcp test curator_v2 --probe-curator-status` exited 0 at
+  `2026-10-29T10:37:04Z`; its separate health observation reported no gates.
+- **Open gate:** This read does not prove that the installed wheel matches the
+  current Curator source commit, verify a new Vhost operation or rendered
+  dashboard details, or provide human SDE/cleanup approval. Those criteria
+  remain open.
+- **Outcome:** Refresh profile-bound runtime evidence while preserving all
+  remaining checklist gates.
