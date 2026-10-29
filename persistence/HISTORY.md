@@ -10637,3 +10637,19 @@ while preserving explicit criteria and same-project parent validation.
   the full alpha evidence criterion open.
 - **Outcome:** Verify destructive paths in isolated disposable fixtures without
   claiming live runtime evidence.
+
+## 2026-10-29 — Verify the Curator status refresh path
+
+- **Intent:** Separate a stale yellow editor display from failure in the real
+  V2 profile-bound status read.
+- **Changed fact:** The extension's `refreshStatusBarHealthFromWorkspace` path
+  was called against the real Vhost config, Curator alpha MCP launcher/database,
+  and configured Hermes Core profile command. It returned `healthy`.
+- **Verification:** The VS Code host API was stubbed; the MCP/Curator/Hermes
+  processes and profile reads were real. Exit status was 0. The current visible
+  status item was not read from the shell.
+- **Open gate:** The open editor host has not loaded extension 0.9.6. Reload it
+  once to verify visible green status and the SQLite warning tooltip. The
+  automatic status refresh interval is 60 seconds; reopening is not required for
+  later health updates.
+- **Outcome:** Confirm the live data path without claiming visual verification.

@@ -9543,6 +9543,12 @@ substitute for evidence at a later integration boundary.
       the alpha acceptance row remains open. A unit test or an unrelated
       profile probe cannot stand
       in for a local workflow check.
+      Live V2 status-refresh path (2026-10-29): invoked the extension's actual
+      `refreshStatusBarHealthFromWorkspace` source with the real Vhost project,
+      User settings, Curator alpha MCP launcher/database, and configured Hermes
+      Core command. The live profile-bound reads completed and the method returned
+      `healthy` (exit 0). Only the VS Code API host was mocked; the rendered status
+      bar remains unverified, and the open extension host still needs to load 0.9.6.
       Focused expiry/backup regressions (2026-10-29): four disposable-source
       tests pass for exact 72-hour expiry approval/purge, immediate expiry
       eligibility after post-stage facts, stable occurrence age on replay, and
