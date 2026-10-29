@@ -11378,3 +11378,23 @@ while preserving explicit criteria and same-project parent validation.
   open.
 - **Outcome:** Record the completed producer-boundary fix without closing the
   overall privacy criterion.
+
+## 2026-10-30 — Clear Hermes Core integration code-health blockers
+
+- **Intent:** Keep the Curator V2 Hermes integration within Hermes Core's
+  code-health ratchet while preserving profile-bound identity behavior.
+- **Changed fact:** Split the MCP status probe into topical phases, moved the
+  legacy session spawn-tree reader to its own module, and relocated the
+  authenticated-subject regressions. No consumer application source changed.
+- **Verification:** Hermes `python3 scripts/check --only health` passes with
+  zero blocking or advisory findings against the fork/main merge base. The
+  affected test files each reported green results (614 TUI server, 48 MCP
+  configuration, 40 MCP redaction, and two authenticated-subject tests); the
+  aggregate runner ended with exit 130 during final collection. A focused
+  rerun of the subject module passes all three tests. `git diff --check` passes.
+  Hermes commit `cae1158404` is pushed to the configured development fork.
+- **Open gate:** A real bound Hermes Codex task and readback of its compact fact
+  from the Curator ledger remain unverified; alpha operating evidence remains
+  open.
+- **Outcome:** Record the health cleanup without treating local refactors as
+  end-to-end task evidence.

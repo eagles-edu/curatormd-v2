@@ -9719,6 +9719,19 @@ substitute for evidence at a later integration boundary.
       knowledge. Local Hermes Core tests verify the root-account plugin boundary
       and confirm that an approved disposable cleanup leaves Curator project
       history unchanged; live root-account activation remains a deployment gate.
+      Hermes Core integration quality follow-up (2026-10-30 03:12 +07:00):
+      refactored the profile-bound Curator status CLI into setup, probe, and
+      result phases; moved the legacy session spawn-tree reader into its own
+      module; and moved authenticated-subject regressions into a focused test
+      module. Hermes code-health reports zero blocking and advisory findings
+      against its fork/main merge base. Four affected test files each reported
+      green results (614 TUI server, 48 MCP config, 40 MCP redaction, and two
+      initial subject tests); the aggregate runner ended with exit 130 during
+      final collection, so it is not recorded as a completed suite. The focused
+      subject module was rerun and passed all three tests. Hermes commit
+      `cae1158404` is pushed to the configured development fork. No checklist
+      marker changed; the real bound Hermes task/readback and alpha operating
+      evidence remain open.
 - [x] The local alpha plugin is scoped to its repository config and persistence
       target, denies access to an unrelated project, and does not copy or mix
       global backend state or repository roots. The installed Vhost consumer
