@@ -11360,3 +11360,21 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** Full logs, traces, backups, journals, and crash-dump source-to-
   sink coverage remains unproven. The broad privacy criterion stays open.
 - **Outcome:** Add defense in depth without overstating universal privacy proof.
+
+## 2026-10-30 — Filter provider-token paths at the Hermes producer boundary
+
+- **Intent:** Prevent credential-shaped changed-file paths from entering the
+  durable Hermes Codex event and its retry payload.
+- **Changed fact:** Hermes Core's Codex work-summary producer now rejects
+  common provider-token values in relative paths before calling the durable
+  event callback. This is a V2 integration change; no consumer application
+  source changed.
+- **Verification:** `scripts/run_tests.sh
+  tests/agent/test_codex_work_summary.py` passes 5 tests;
+  `git diff --check` passes. Hermes commit `8890aa4b8c` is pushed to the
+  configured development fork.
+- **Open gate:** Other producer and sink paths, logs, traces, backups, and
+  crash sinks remain outside this focused check; broad privacy proof remains
+  open.
+- **Outcome:** Record the completed producer-boundary fix without closing the
+  overall privacy criterion.

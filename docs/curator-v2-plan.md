@@ -4861,6 +4861,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       (for example, `password=...` and `dns_txt=...`). Four outbox tests pass,
       including OpenAI, GitHub, custom-password, and DNS-value canaries. The
       full source-to-sink privacy review remains open.
+      Hermes producer-boundary follow-up (2026-10-30 03:01 +07:00): the
+      upstream Codex work-summary producer now filters common provider-token
+      values from changed-file paths before invoking the durable event
+      callback, preventing those paths from entering the Hermes outbox retry
+      payload. Five focused summary tests pass and `git diff --check` passes.
+      Hermes commit `8890aa4b8c` is pushed to the configured development fork.
+      This closes one producer boundary; the broader privacy audit remains
+      open. Hermes Core is an in-scope V2 integration; consumer application
+      repositories remain outside this work.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
