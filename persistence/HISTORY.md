@@ -10776,3 +10776,21 @@ while preserving explicit criteria and same-project parent validation.
   review remain open.
 - **Outcome:** Refresh report evidence without claiming request acceptance or
   criterion verification.
+
+## 2026-10-29 — Replay the latest Vhost apply bridge event
+
+- **Intent:** Verify live idempotency for the latest Vhost apply event and its
+  change fact without applying or rolling back another site.
+- **Changed fact:** The stored `vhost-manager-alpha` goal matched the replay
+  payload's project, exact problem, ordered criteria and descriptions, active
+  status, and next action. The bridge returned `processed` receipts for both
+  the apply event and its linked fact.
+- **Verification:** A bounded `goal_status` read before and after has identical
+  SHA-256 `18eed64a2471554b660401b759319acaf633862aa024f23098363b6b7f47383a`;
+  both show one fact and three open criteria. The replay used the existing
+  Vhost bridge and configured profile; no Vhost operation or source file was
+  changed.
+- **Open gate:** This does not recover or compare the original UI-preview
+  digest. The real source request binding and owner review remain open.
+- **Outcome:** Verify exact bridge replay without duplicating the goal, fact, or
+  criteria.

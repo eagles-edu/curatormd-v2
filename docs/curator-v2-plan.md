@@ -8871,8 +8871,19 @@ substitute for evidence at a later integration boundary.
       The apply report contains three open criteria; the rollback report
       contains one open criterion. Neither report marked a criterion verified,
       and neither contained `/home`, `/etc`, or `/var/lib` path strings. This
-      verifies current bounded report reads; request-digest comparison, live
-      same-event replay, and owner review remain open.
+      verifies current bounded report reads; at that time request-digest
+      comparison, live same-event replay, and owner review remained open.
+      Exact bridge replay (2026-10-29): replayed operation
+      `8a770ef0-42cb-495a-a696-303a968b861d` through the Vhost-owned
+      `apply_bridge.py` using the stored Curator goal's exact problem, ordered
+      criteria, and next action. The project, active goal, descriptions, and
+      event-derived fact binding matched the approved bridge contract before
+      replay. The apply and fact receipts both returned `processed`. A bounded
+      `goal_status` read before and after has the same SHA-256
+      `18eed64a2471554b660401b759319acaf633862aa024f23098363b6b7f47383a`;
+      both reads show one fact and the same three open criteria. This verifies
+      idempotent live replay of the stored goal/fact payload. It does not supply
+      the source-preview request digest, and owner review remains open.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Proposed acceptance, using the same approved pilot
