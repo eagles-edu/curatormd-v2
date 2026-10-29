@@ -11262,7 +11262,8 @@ while preserving explicit criteria and same-project parent validation.
   script and recheck the current source quality gate.
 - **Changed fact:** Updated the plan to 170/178 delivery rows complete and
   185/194 raw checkboxes complete; these totals differ because Section 11 is
-  excluded from delivery progress.
+  excluded from delivery progress. Refreshed the release-gate snapshot date
+  to 2026-10-30 while keeping the same authoritative count.
 - **Verification:** `python3 tools/count_curator_v2_delivery.py` reports
   170/178. Pyright reports zero diagnostics; errors-only Pylint, Bandit, the
   locked dependency audit, and `git diff --check` exit successfully. Bandit

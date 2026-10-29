@@ -5,7 +5,7 @@ claim. Statuses describe the strongest evidence currently present in this
 checkout. A passing local unit test cannot close a deployment or owner-approval
 gate.
 
-Current delivery checklist snapshot (2026-10-29): **170/178 complete, 8 open**.
+Current delivery checklist snapshot (2026-10-30): **170/178 complete, 8 open**.
 This is the authoritative count from
 [`tools/count_curator_v2_delivery.py`](../tools/count_curator_v2_delivery.py),
 which counts sections 0–10, 12, and Definition of done. Section 11's reusable
