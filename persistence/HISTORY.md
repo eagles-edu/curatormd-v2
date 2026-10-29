@@ -10880,3 +10880,23 @@ while preserving explicit criteria and same-project parent validation.
   owner review and cleanup decisions.
 - **Outcome:** Refresh local health evidence without claiming the separate
   chat-hosted MCP identity is authenticated.
+
+## 2026-10-29 — Scope dashboard acceptance to local alpha
+
+- **Intent:** Align the remaining dashboard checklist with the owner's
+  approved single-user, one-repository development scope.
+- **Changed fact:** The dashboard item now requires local kernel-UID identity,
+  an exact project grant checked on every page read, stale-page clearing, and
+  cross-project denial. It no longer requires client bearer tokens, multiple
+  user subjects, or remote trust-root rotation. Evidence freshness, pagination,
+  disposable-goal lifecycle behavior, and actual rendered-dashboard acceptance
+  remain in scope.
+- **Verification:** Compared the revised item with the approved Vhost alpha
+  scope and the existing project-pinned VS Code/MCP implementation. This was a
+  documentation-only edit; `git diff --check` passes.
+- **Open gate:** The locked workstation prevented an attended rendered-UI
+  inspection in this turn; the dashboard acceptance remains open until an
+  approved user inspects the real window and the remaining local transitions
+  are evidenced.
+- **Outcome:** Remove multi-user requirements that do not apply to the alpha
+  while retaining its local authorization and evidence-integrity checks.

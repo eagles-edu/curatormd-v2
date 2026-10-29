@@ -8903,9 +8903,10 @@ substitute for evidence at a later integration boundary.
       recovery, another-project target comparison, and owner review remain open.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
-      claims remain open. Proposed acceptance, using the same approved pilot
-      goal: render the goal card and paged fact report in the authenticated,
-      project-scoped user-facing dashboard, not only through API/MCP output.
+      claims remain open. Acceptance is for the approved local alpha only:
+      `eaglesvn` (kernel UID 1000), one active repository, and the pinned
+      `vhost-manager-alpha` project. Render the goal card and paged fact report
+      in the actual V2 VS Code dashboard, not only through API/MCP output.
       Show recorded facts, currently evidence-verified facts, unverified claims,
       and current open gates as distinct states; show page/total information so
       truncation is explicit. Bind pages to a stable report revision/snapshot
@@ -8913,25 +8914,16 @@ substitute for evidence at a later integration boundary.
       review state changed between page reads; never combine pages from different
       revisions and present them as one complete report. If the snapshot expires
       or changes, mark the report stale and require a bounded refresh from the
-      first page. If the dashboard uses a client-held cursor or snapshot token,
-      make it opaque and integrity-bound to the authenticated subject, project,
-      goal, page offsets, snapshot revision, and expiry; it never grants access.
-      Reject tampered, expired, or cross-subject/project/goal tokens without
-      returning page data, and restart at the first page under fresh
-      authorization. Test token replay and substitution independently of the
-      per-request authorization check. Bind the snapshot to each verifier or
-      adapter and trust-root or revocation version, plus the source observation
-      time and validity bound;
-      external trust can change without a database revision. At every page read,
-      revalidate that binding or expire the whole snapshot as stale/unknown.
-      Reauthorize each page request against the current user, project, and read
-      grant; revocation, expiry, suspension, or role change invalidates the page
-      cursor and report snapshot. Inject grant changes between page requests and
-      prove no subsequent page or cached response is served under stale access;
-      clear the rendered report and require a newly authorized first-page read.
-      Inject trust-version change, revocation, and evidence expiry between pages;
-      prove earlier verification pages are not combined with later state as one
-      current report. Exercise fact append, correction/supersession, goal reopen,
+      first page. This local single-user alpha does not require client-held
+      cursors, bearer tokens, multi-user subject binding, or remote trust-root
+      rotation. Bind each read to the kernel-derived local UID, the pinned
+      project, and its active read grant; reauthorize every page request. Test
+      revocation or project suspension between pages and prove no subsequent
+      page or cached response is served under stale access; clear the rendered
+      report and require a newly authorized first-page read. Bind evidence to
+      its local verifier, source observation time, and validity bound; an
+      expired or changed local observation must render stale/unknown. Exercise
+      evidence expiry, fact append, correction/supersession, goal reopen,
       and archive/compaction between page requests; prove there are no silent gaps
       or duplicates and that page totals and evidence labels correspond to the
       displayed revision. For the reopen case, use a disposable goal through the
