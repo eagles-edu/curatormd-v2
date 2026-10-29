@@ -63,7 +63,10 @@ verified facts, recorded facts, unverified claims, open gates, and page total.
 Each report shows a revision label. If the ledger changes between fact-page
 requests, the extension clears the page and reloads from page one.
 Reports missing a valid revision or fact total are rejected and the old view is
-cleared.
+cleared. If any authorized project read fails or is denied, the panel clears
+reports, evidence, goal and review cards, and project summaries; the extension
+also discards its cached project, candidate, and report identifiers before
+accepting another request.
 Each page is a new authorized read; the prior page is cleared before requesting
 the next one. The dashboard does not cache reports across requests.
 Each visible fact has an **Evidence for ...** action. It fetches only that

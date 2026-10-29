@@ -712,6 +712,8 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     messages.filter((message) => message.type === 'error').at(-1).message,
     'Curator V2 denied this read. Check the configured project and its active local read grant.',
   );
+  await receiveMessage({ type: 'openReview', candidateId: 'candidate-1' });
+  assert.equal(terminalCalls.length, 2, 'a denied read clears cached review authority');
   disposePanel();
 });
 
@@ -937,10 +939,23 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   } });
   assert.equal(elements.get('report').textContent, 'Private facts');
   assert.equal(elements.get('goals').children.length, 1);
+  receiveWindowMessage({ data: {
+    type: 'evidence',
+    factOffset: 0,
+    evidence: {
+      goal_id: 'goal-1', fact_id: 'fact-1', fact_kind: 'change',
+      verification_status: 'verified', criterion_id: null,
+      report_revision: 'a'.repeat(64),
+      evidence: [{ evidence_kind: 'test', outcome: 'pass', locator: 'private-locator', sha256: 'b'.repeat(64) }],
+    },
+  } });
+  assert.equal(elements.get('evidenceRefs').children.length, 1);
 
   receiveWindowMessage({ data: { type: 'error', message: 'Curator read failed.' } });
 
   assert.equal(elements.get('report').textContent, '');
+  assert.equal(elements.get('evidenceRefs').children.length, 0);
+  assert.equal(elements.get('evidenceButtons').children.length, 0);
   assert.equal(elements.get('goals').children.length, 0);
   assert.equal(elements.get('selected').textContent, '');
   assert.equal(elements.get('goalPage').textContent, '');

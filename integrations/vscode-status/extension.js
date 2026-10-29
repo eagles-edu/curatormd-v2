@@ -903,6 +903,12 @@ async function showDashboard(spawnProcess = spawn) {
         terminal.sendText(command, true);
       }
     } catch (error) {
+      goalIds.clear();
+      candidateIds.clear();
+      reportRevisions.clear();
+      reportFacts.clear();
+      reportPages.clear();
+      projectId = null;
       updateStatusBarHealth(null, null);
       panel.webview.postMessage({
         type: 'error',
@@ -1071,7 +1077,8 @@ function dashboardHtml(webview) {
         result[part.type] = part.value;
         return result;
       }, {});
-      return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} +07:00`;
+      return parts.year + '-' + parts.month + '-' + parts.day + ' '
+        + parts.hour + ':' + parts.minute + ':' + parts.second + ' +07:00';
     }
     function renderEvidenceButtons() {
       evidenceButtons.replaceChildren();
