@@ -49,7 +49,7 @@ from .mcp_tool_support import (
     safe_tool_handler,
 )
 from .mcp_tool_cleanup_registration import register_cleanup_tools
-from .store import FactCompactionApprovalRequest
+from .store import EventReceiptArchiveRequest, FactCompactionApprovalRequest
 
 class _McpToolRegistrar:
     """Capture trusted project context and share safe registration helpers."""
@@ -148,6 +148,38 @@ def _register_status_tools(registrar: _McpToolRegistrar) -> None:
 
         return json_result(
             api.propose_event_receipt_compaction(caller, project_id, offset, limit)
+        )
+
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            destructive_hint=True,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
+    def event_receipt_compaction_archive(
+        archive_id: str,
+        event_ids: list[str],
+        inventory_sha256: str,
+        offset: int,
+        approval_reason: str,
+    ) -> str:
+        """Archive the exact displayed page after explicit project review."""
+
+        return json_result(
+            api.archive_event_receipt_page(
+                caller,
+                project_id,
+                EventReceiptArchiveRequest(
+                    archive_id=archive_id,
+                    project_id=project_id,
+                    reviewer_id=caller.subject_id,
+                    event_ids=tuple(event_ids),
+                    inventory_sha256=inventory_sha256,
+                    offset=offset,
+                    approval_reason=approval_reason,
+                ),
+            )
         )
 
     @_safe_tool(

@@ -52,6 +52,8 @@ PROJECT_USAGE_COLUMNS = {
             "last_error", "next_attempt_at", "lease_owner", "lease_expires_at",
             "disposition", "attempts", "source_id", "source_sequence",
             "idempotency_sha256",
+            "archive_id", "archived_at", "archived_by",
+            "archive_inventory_sha256", "archive_offset", "archive_reason",
         }
     ),
     "event_payload_scrub_queue": frozenset(

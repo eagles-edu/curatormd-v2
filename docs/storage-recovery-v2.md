@@ -82,7 +82,7 @@ managed-snapshot inventory complete.
 | Class | Retention/replay rule | Current limit or alert | Recovery source |
 | --- | --- | --- | --- |
 | Goals, criteria, facts, archives, SDE/review/cleanup decisions and receipts | Keep durable records until `eaglesvn` approves cleanup of an exact inventory; never auto-prune. Event-backed facts retain their source event reference. | Facts: 10,000/project and 16 MiB/project; archives: 64 MiB/project. No separate row cap is implemented for every receipt class. | Verified daily SQLite snapshot; restore manually to a new path. Fact archives additionally retain the approved, hash-verified compacted source. |
-| Event receipts, cursors, retry audit, scrub queue, terminal dispositions | Keep processed receipts and replay cursors until exact approved cleanup. Keep failed/quarantined source payloads until processed or explicitly resolved; age alone does not discard them. | Global inbox: 250,000 receipts / 128 MiB retained row bytes. Event payload input: 16 KiB/event. | Source retry/redelivery while pending; verified SQLite snapshots. Resolved events scrub live payloads; copies roll out within seven days. |
+| Event receipts, cursors, retry audit, scrub queue, terminal dispositions | Keep receipts, archive decisions, and replay cursors until exact approved cleanup. Keep failed/quarantined source payloads until processed or explicitly resolved; age alone does not discard them. | Active inbox: 250,000 unarchived receipts / 128 MiB active logical row bytes. Event payload input: 16 KiB/event. Archive rows remain in SQLite and in project logical totals; the shared database-plus-WAL warning is 250 MiB, warning only. | Source retry/redelivery while pending; verified SQLite snapshots. Resolved events scrub live payloads; copies roll out within seven days. Archived receipts keep their exact event ID and payload/idempotency hashes for replay matching. |
 | Staging files and artifact/expiry metadata | Remove transient source files promptly after facts are recorded and SDE disposition completes, with a 72-hour live-file maximum. Honor explicit artifact holds. Keep durable cleanup receipts until exact approved cleanup. | Project staging: 250 MiB warning only, with warning at 75%; no file-count limit. Per-file/per-goal hard limits remain. | Exact staged-file manifest and purge receipts; reacquire from the producer if needed. SQLite backup preserves receipts, not staging file contents. |
 | Project registry, grants, bindings, audits, drain history, retirement state | Keep access and lifecycle receipts until exact approved cleanup; retain source epoch/cursor state needed to reject stale replay. | Request-rate buckets: 10,000 rows with idle-only pruning. No other independent class threshold is implemented. | Verified SQLite snapshot and reviewed restore to a new path. |
 | SQLite pages, indexes, WAL, and SHM | Shared storage for all classes; preserve the database and active sidecars together during recovery. | Warn when the main database plus WAL exceeds 262,144,000 bytes (250 MiB). Warning only: writes continue and Curator does not checkpoint, prune, or delete SQLite files; SQLite manages WAL checkpointing. Existing schema/inbox/fact/archive caps above remain in force. | SQLite online backup, integrity and foreign-key checks, then owner-reviewed restore to a new path. Never auto-switch the active database. |
@@ -93,9 +93,11 @@ and physical table/index allocation for all 30 schema tables. It does not turn
 shared page allocation into project data, identify the contents of unclassified
 backups, or prove seven-copy rotation from the present directory scan. The
 SQLite warning is policy-approved and displayed by the Curator V2 dashboard;
-boundary behavior is covered by its focused test. Rendered warning delivery,
-complete retention/recovery accounting, and remaining runtime evidence keep
-the broader storage-accounting checklist open.
+boundary behavior is covered by its focused test. This is a schema-v38 runtime
+snapshot. Schema v39 adds six archive-audit fields to `event_inbox`; source-level
+logical accounting includes those fields, and archival leaves the receipts and
+references in place. The current alpha database has not yet migrated to v39, so
+no live archive-capacity recovery is claimed.
 
 ## Backups and restore
 
@@ -113,6 +115,22 @@ non-private snapshot, unsafe directory, read error, or scan overflow makes the
 inventory incomplete or unavailable;
 partial measurements must not be treated as a full total. This view is
 observational only and never prunes, repairs, or verifies snapshots.
+
+When the active inbox reaches its count or byte limit, new event IDs are
+rejected before insertion; exact existing replays continue to return their
+stored receipt. An attended reviewer can call `event_receipt_compaction_propose`
+to inspect a bounded page of processed receipts whose source payloads have been
+scrubbed. `event_receipt_compaction_archive` accepts only the exact event IDs,
+offset, and manifest digest shown for the current proposal, requires the exact
+project review grant, and records the reviewer, reason, digest, and archive ID
+on those same SQLite rows. It marks the rows outside active inbox capacity but
+does not delete or rewrite their receipt, payload hash, idempotency hash, retry
+audit, terminal decision, or consumer-drain references. Exact replay still
+resolves to the original processed receipt. A stale manifest, changed reference
+count, or mismatched page is rejected atomically; review and retry must start
+from a fresh proposal. No archive is automatic. Archiving frees active inbox
+capacity but does not reduce SQLite file size; the warning-only shared size
+threshold and reviewed backup/restore process remain the disk-recovery controls.
 
 `curatormd_v2.backup_database(source, destination)` makes a consistent SQLite
 online snapshot, verifies `integrity_check` and `foreign_key_check`, and installs
@@ -166,6 +184,7 @@ status, not paths or raw SQLite errors.
 | SQLite/Markdown comparison, projection retry, and interruption before receipt commit | [`tests/test_markdown_persistence.py`](../tests/test_markdown_persistence.py) | Comparison is read-only; retries reconcile the projection and receipt after reopen. |
 | Purge interruption and retry after deletion before receipt update | [`tests/test_purge_lifecycle.py`](../tests/test_purge_lifecycle.py) | Pending work remains visible and exact retry records the already-absent target. |
 | Blocked WAL cleanup across restart | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py) | Cleanup stays pending while a reader blocks truncation and is retried after restart. |
+| Exact event-receipt page archive, stale-manifest rejection, review authorization, and replay | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py), [`tests/test_api_goal_access.py`](../tests/test_api_goal_access.py), [`tests/test_mcp_client_workflow.py`](../tests/test_mcp_client_workflow.py) | Archiving moves only reviewed processed/payload-free receipts outside active capacity, keeps each durable receipt and its exact replay behavior, and rejects stale pages without partial updates. |
 
 Live local-alpha restore (2026-10-28 13:14 UTC): the installed
 `curatormd-v2-storage` command restored the verified daily backup

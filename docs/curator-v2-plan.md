@@ -565,7 +565,7 @@ plugin or Hermes integration is installed and working end to end.
       logical row bytes across all projects; reserve room for failure metadata,
       reject new IDs before writes at the ceiling, preserve idempotent replays,
       never auto-prune, and expose aggregate-only capacity/gate status.
-- [ ] Define an approved retention/compaction and recovery workflow for a full
+- [x] Define an approved retention/compaction and recovery workflow for a full
       event inbox, plus budgets for every other permanent data class; prove safe
       recovery before enabling broad automatic capture. Proposed owner-gated
       closure: inventory every durable data class in the current schema and
@@ -598,15 +598,19 @@ plugin or Hermes integration is installed and working end to end.
       quarantined inbox payloads until the event is processed or explicitly
       resolved; do not discard them solely because of age. The seven-copy
       backups may retain unresolved payloads; once the live payload is scrubbed,
-      those copies age out within seven days. This records policy approval, not
-      implementation proof or complete data accounting.
-      Complete logical and physical accounting, class capacity thresholds, and
-      recovery-source accounting remain open. Do not treat current totals as
-      complete database accounting.
+      those copies age out within seven days. Owner-approved local-alpha budget
+      rule (2026-10-29): retain each durable database class under its existing
+      hard cap, if any; apply the shared main-database-plus-WAL warning at
+      250 MiB to all classes together; never prune based on that warning. Keep
+      the seven-copy backup-tree warning separate and warning-only. No new
+      per-class hard caps or automatic deletion are authorized. This is a
+      local-alpha policy, not complete physical accounting of unclassified
+      legacy backup files or live proof.
       Existing local controls include a 10,000-row maximum for request-rate
       buckets with idle-only pruning and deletion of WAL-scrub queue rows after
-      a successful checkpoint. These controls do not establish a complete
-      class-level storage budget or approved retention policy.
+      a successful checkpoint. Other durable receipt classes rely on the shared
+      warning and owner-approved exact-inventory cleanup; they have no separate
+      row caps.
       Further accounting progress (2026-10-23): the host-authorized access
       storage view now reports unassigned `event_payload_scrub_queue` rows as
       a separate global class with record count and logical bytes. It does not
@@ -977,16 +981,27 @@ plugin or Hermes integration is installed and working end to end.
       net increase when active facts are moved. The focused scenario, strict
       Pyright, errors-only Pylint for the changed test, and `git diff --check`
       pass. Physical allocation and owner-approved budgets remain open.
-      Event-inbox recovery progress (2026-10-29): added a project-bound,
-      review-authorized, paged read-only proposal for eligible processed
-      receipts whose payloads are scrubbed. Each page carries a stable manifest
-      digest and exact retry, terminal-disposition, and consumer-drain reference
-      counts; the inventory streams from one SQLite snapshot and changes no
-      rows. Focused store/API tests and the MCP client registration/call pass.
-      This supplies an attended
-      inventory input only: archival, replay-preserving recovery, full permanent
-      class budgets, and safe capacity recovery remain unimplemented, so the
-      item remains open.
+      Event-inbox recovery (2026-10-29): schema v39 adds a review-authorized
+      archive action for an exact page from the streamed, stable-digest proposal.
+      The write transaction rechecks the complete manifest and exact ordered
+      page before setting immutable reviewer, rationale, digest, and archive
+      fields. It retains each original receipt, all audit references, and exact
+      replay behavior while removing archived rows from the active inbox
+      count/byte budget; it does not claim physical file-size reduction. Stale
+      or changed inventories are rejected without partial updates. The current
+      30-table census and recovery map are in
+      [`storage-recovery-v2.md`](storage-recovery-v2.md); the approved shared
+      250 MiB SQLite-main-plus-WAL and backup-tree rules are warning-only, while
+      class-specific row/payload limits and no-auto-prune retention remain
+      explicit. Focused coverage verifies the v38-to-v39 migration, exact review
+      authority, page staleness, retained receipt/replay, and MCP archive call.
+      Full-suite and quality results are recorded in `persistence/HISTORY.md`.
+      This closes the approved local-alpha storage/recovery policy and
+      replay-preserving event-inbox capacity-recovery implementation. The
+      live alpha database has not yet migrated to schema v39, so installation
+      and live capacity-recovery observation remain separate gates. Backup
+      inventory completeness and full local-alpha evidence remain tracked in
+      their separate criteria below.
 - [x] Enforce explicit domain ceilings for criteria, dependencies, evidence
       references, SDE supporting facts, and per-receipt artifact paths, including
       direct callers that bypass serialized-event limits; cover limit and

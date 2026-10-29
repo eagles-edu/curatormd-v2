@@ -9,6 +9,8 @@ from __future__ import annotations
 # pylint: disable=too-many-ancestors,duplicate-code
 from .store_support_01 import (
     ConflictError,
+    EventReceiptArchiveReceipt,
+    EventReceiptArchiveRequest,
     EventReceiptCompactionItem,
     EventReceiptCompactionProposal,
     EventQueueStatus,
@@ -18,6 +20,7 @@ from .store_support_01 import (
     GoalStatus,
     MAX_CRITERIA_REVISIONS,
     MAX_EVENT_COMPACTION_PAGE,
+    MAX_EVENT_ARCHIVE_BATCH,
     MAX_SUCCESS_CRITERIA,
     NotFoundError,
     ProjectOperationalCounts,
@@ -34,6 +37,7 @@ from .store_support_01 import (
     hashlib,
     is_exact_int,
     json,
+    sqlite3,
     new_id,
     utc_now,
 )
@@ -42,16 +46,14 @@ from .store_operations_13 import StoreOperations5Part0
 class StoreOperations5(StoreOperations5Part0):
     """Continuation of StoreOperations5 operations."""
 
-    def propose_event_receipt_compaction(
-        self, project_id: str, offset: int = 0, limit: int = 50
+    @staticmethod
+    def _event_receipt_compaction_snapshot(
+        connection: sqlite3.Connection,
+        project_id: str,
+        offset: int,
+        limit: int,
     ) -> EventReceiptCompactionProposal:
-        """Return a paged, read-only manifest of processed payload-free events."""
-
-        self._validate_access_identity(project_id, "project_id")
-        if not is_exact_int(offset) or offset < 0:
-            raise ValueError("offset must be a non-negative integer")
-        if not is_exact_int(limit) or not 1 <= limit <= MAX_EVENT_COMPACTION_PAGE:
-            raise ValueError("limit is outside the bounded event compaction page size")
+        """Build one manifest and page inside the caller's read/write snapshot."""
 
         query = """SELECT e.project_id, e.event_id, e.event_type,
                    e.payload_sha256, e.idempotency_sha256, e.received_at,
@@ -68,44 +70,164 @@ class StoreOperations5(StoreOperations5Part0):
                FROM event_inbox AS e
                WHERE e.project_id = ? AND e.status = 'processed'
                  AND e.payload_json IS NULL AND e.processed_at IS NOT NULL
-                 AND e.lease_owner IS NULL
+                 AND e.lease_owner IS NULL AND e.archive_id IS NULL
                  AND NOT EXISTS (
                      SELECT 1 FROM event_payload_scrub_queue AS q
                      WHERE q.project_id = e.project_id AND q.event_id = e.event_id
                  )
                ORDER BY e.event_id"""
-        with self._lock:
-            if self._connection.in_transaction:
-                raise RuntimeError("event compaction inventory cannot nest a transaction")
-            self._connection.execute("BEGIN")
-            try:
-                digest = hashlib.sha256()
-                eligible_count = 0
-                page: list[EventReceiptCompactionItem] = []
-                cursor = self._connection.execute(query, (project_id,))
-                for row in cursor:
-                    canonical = {key: row[key] for key in row.keys()}
-                    digest.update(
-                        json.dumps(
-                            canonical, sort_keys=True, separators=(",", ":")
-                        ).encode("utf-8")
-                    )
-                    digest.update(b"\n")
-                    if offset <= eligible_count < offset + limit:
-                        page.append(EventReceiptCompactionItem(**canonical))
-                    eligible_count += 1
-                manifest_sha256 = digest.hexdigest()
-            except BaseException:
-                self._connection.rollback()
-                raise
-            self._connection.commit()
+        digest = hashlib.sha256()
+        eligible_count = 0
+        page: list[EventReceiptCompactionItem] = []
+        cursor = connection.execute(query, (project_id,))
+        for row in cursor:
+            canonical = {key: row[key] for key in row.keys()}
+            digest.update(
+                json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+                .encode("utf-8")
+            )
+            digest.update(b"\n")
+            if offset <= eligible_count < offset + limit:
+                page.append(EventReceiptCompactionItem(**canonical))
+            eligible_count += 1
         return EventReceiptCompactionProposal(
             project_id=project_id,
             eligible_count=eligible_count,
             offset=offset,
             limit=limit,
-            manifest_sha256=manifest_sha256,
+            manifest_sha256=digest.hexdigest(),
             items=tuple(page),
+        )
+
+    def propose_event_receipt_compaction(
+        self, project_id: str, offset: int = 0, limit: int = 50
+    ) -> EventReceiptCompactionProposal:
+        """Return a paged, read-only manifest of processed payload-free events."""
+
+        self._validate_access_identity(project_id, "project_id")
+        if not is_exact_int(offset) or offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if not is_exact_int(limit) or not 1 <= limit <= MAX_EVENT_COMPACTION_PAGE:
+            raise ValueError("limit is outside the bounded event compaction page size")
+
+        with self._lock:
+            if self._connection.in_transaction:
+                raise RuntimeError("event compaction inventory cannot nest a transaction")
+            self._connection.execute("BEGIN")
+            try:
+                proposal = self._event_receipt_compaction_snapshot(
+                    self._connection, project_id, offset, limit
+                )
+            except BaseException:
+                self._connection.rollback()
+                raise
+            self._connection.commit()
+        return proposal
+
+    def archive_event_receipt_page(
+        self, request: EventReceiptArchiveRequest
+    ) -> EventReceiptArchiveReceipt:
+        """Mark an exact reviewed page archived while keeping receipts replayable."""
+
+        self._validate_access_identity(request.archive_id, "archive_id")
+        self._validate_access_identity(request.project_id, "project_id")
+        self._validate_access_identity(request.reviewer_id, "reviewer_id")
+        if not is_exact_int(request.offset) or request.offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if not 1 <= len(request.event_ids) <= MAX_EVENT_ARCHIVE_BATCH:
+            raise ValueError("event_ids must contain 1-100 receipts")
+        if len(set(request.event_ids)) != len(request.event_ids):
+            raise ValueError("event_ids must be unique")
+        for event_id in request.event_ids:
+            self._validate_access_identity(event_id, "event_id")
+        self._validate_access_digest(request.inventory_sha256, "inventory_sha256")
+        self._validate_access_rationale(request.approval_reason)
+        approval_reason = request.approval_reason.strip()
+
+        with self._transaction() as connection:
+            archived_rows = connection.execute(
+                "SELECT * FROM event_inbox WHERE project_id = ? AND archive_id = ? "
+                "ORDER BY event_id",
+                (request.project_id, request.archive_id),
+            ).fetchall()
+            if archived_rows:
+                receipt = self._event_receipt_archive_receipt(archived_rows)
+                if (
+                    receipt.reviewer_id != request.reviewer_id
+                    or receipt.inventory_sha256 != request.inventory_sha256
+                    or receipt.offset != request.offset
+                    or receipt.event_ids != request.event_ids
+                    or receipt.approval_reason != approval_reason
+                ):
+                    raise ConflictError("archive ID was already used for another inventory")
+                return receipt
+
+            proposal = self._event_receipt_compaction_snapshot(
+                connection,
+                request.project_id,
+                request.offset,
+                len(request.event_ids),
+            )
+            if proposal.manifest_sha256 != request.inventory_sha256:
+                raise ConflictError("event inventory changed; review a fresh proposal")
+            proposed_ids = tuple(item.event_id for item in proposal.items)
+            if proposed_ids != request.event_ids:
+                raise ConflictError("event IDs do not match the reviewed inventory page")
+
+            archived_at = utc_now()
+            for event_id in request.event_ids:
+                cursor = connection.execute(
+                    """UPDATE event_inbox SET archive_id = ?, archived_at = ?,
+                           archived_by = ?, archive_inventory_sha256 = ?,
+                           archive_offset = ?, archive_reason = ?
+                       WHERE project_id = ? AND event_id = ? AND archive_id IS NULL""",
+                    (
+                        request.archive_id,
+                        archived_at,
+                        request.reviewer_id,
+                        request.inventory_sha256,
+                        request.offset,
+                        approval_reason,
+                        request.project_id,
+                        event_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise ConflictError("event inventory changed during archive")
+            return EventReceiptArchiveReceipt(
+                archive_id=request.archive_id,
+                project_id=request.project_id,
+                reviewer_id=request.reviewer_id,
+                inventory_sha256=request.inventory_sha256,
+                offset=request.offset,
+                event_ids=request.event_ids,
+                approval_reason=approval_reason,
+                archived_at=archived_at,
+            )
+
+    @staticmethod
+    def _event_receipt_archive_receipt(
+        rows: list[sqlite3.Row],
+    ) -> EventReceiptArchiveReceipt:
+        """Recover a consistent exact archive receipt from its marked event rows."""
+
+        first = rows[0]
+        keys = (
+            "archive_id", "project_id", "archived_by", "archive_inventory_sha256",
+            "archive_offset", "archive_reason", "archived_at",
+        )
+        for row in rows[1:]:
+            if any(row[key] != first[key] for key in keys):
+                raise RuntimeError("event archive receipt rows are inconsistent")
+        return EventReceiptArchiveReceipt(
+            archive_id=first["archive_id"],
+            project_id=first["project_id"],
+            reviewer_id=first["archived_by"],
+            inventory_sha256=first["archive_inventory_sha256"],
+            offset=first["archive_offset"],
+            event_ids=tuple(row["event_id"] for row in rows),
+            approval_reason=first["archive_reason"],
+            archived_at=first["archived_at"],
         )
 
 

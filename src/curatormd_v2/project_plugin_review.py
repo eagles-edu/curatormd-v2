@@ -28,6 +28,8 @@ from .service import (
     SDEAssessmentRequest,
 )
 from .store import (
+    EventReceiptArchiveReceipt,
+    EventReceiptArchiveRequest,
     FactCompactionApprovalRequest,
     ConflictError,
 )
@@ -56,6 +58,16 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
         with self._active_project_revision_fence():
             return self.service.fact_compaction_approve(
                 replace(approval, project_id=self.config.project_id)
+            )
+
+    def event_receipt_archive(
+        self, request: EventReceiptArchiveRequest
+    ) -> EventReceiptArchiveReceipt:
+        """Archive only the exact event inventory page approved for this project."""
+
+        with self._active_project_revision_fence():
+            return self.service.store.archive_event_receipt_page(
+                replace(request, project_id=self.config.project_id)
             )
 
     def fact_archive_receipts(

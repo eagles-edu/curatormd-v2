@@ -62,6 +62,53 @@ class SchemaMigrationTests(unittest.TestCase):
             PROJECT_USAGE_COLUMNS | CONTROL_PLANE_USAGE_COLUMNS,
         )
 
+    def test_v38_migration_adds_attended_event_archive_receipt_fields(self) -> None:
+        """Upgrade v38 inboxes without losing receipts or creating partial archive state."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v38.sqlite3"
+            store = CuratorStore(database_path)
+            store.close()
+            connection = sqlite3.connect(database_path)
+            for name in (
+                "event_archive_fields_complete",
+                "event_archive_eligibility",
+                "event_archive_immutable",
+            ):
+                connection.execute(f"DROP TRIGGER {name}")
+            connection.execute("DROP INDEX event_inbox_archive")
+            connection.execute("DROP INDEX event_inbox_active_capacity")
+            for column in (
+                "archive_reason", "archive_offset", "archive_inventory_sha256",
+                "archived_by", "archived_at", "archive_id",
+            ):
+                connection.execute(f"ALTER TABLE event_inbox DROP COLUMN {column}")
+            connection.execute("PRAGMA user_version = 38")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as upgraded:
+                    columns = {
+                        row["name"]
+                        for row in upgraded.execute(
+                            "PRAGMA table_info(event_inbox)"
+                        ).fetchall()
+                    }
+                    self.assertTrue(
+                        {
+                            "archive_id", "archived_at", "archived_by",
+                            "archive_inventory_sha256", "archive_offset", "archive_reason",
+                        }.issubset(columns)
+                    )
+                    self.assertEqual(
+                        upgraded.execute("PRAGMA user_version").fetchone()[0],
+                        SQLITE_SCHEMA_VERSION,
+                    )
+            finally:
+                migrated.close()
+
     def test_v35_migration_adds_terminal_event_disposition_audit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database_path = Path(temporary) / "v35.sqlite3"

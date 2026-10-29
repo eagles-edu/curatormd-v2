@@ -28,7 +28,7 @@ from .schema_migration_steps_v2_v20 import (
 )
 
 
-SQLITE_SCHEMA_VERSION = 38
+SQLITE_SCHEMA_VERSION = 39
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -638,6 +638,77 @@ def migrate_purge_target_outcomes_v38(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 38")
 
 
+def migrate_event_receipt_archives_v39(connection: sqlite3.Connection) -> None:
+    """Mark exactly reviewed event receipts archived while retaining replay rows."""
+
+    table_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'event_inbox'"
+    ).fetchone()
+    if table_exists is None:
+        connection.execute("PRAGMA user_version = 39")
+        return
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(event_inbox)")
+    }
+    if not {"project_id", "event_id", "status"}.issubset(columns):
+        connection.execute("PRAGMA user_version = 39")
+        return
+    additions = (
+        ("archive_id", "TEXT"),
+        ("archived_at", "TEXT"),
+        ("archived_by", "TEXT"),
+        ("archive_inventory_sha256", "TEXT"),
+        ("archive_offset", "INTEGER"),
+        ("archive_reason", "TEXT"),
+    )
+    for name, declaration in additions:
+        if name not in columns:
+            connection.execute(
+                f"ALTER TABLE event_inbox ADD COLUMN {name} {declaration}"
+            )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_inbox_archive "
+        "ON event_inbox(project_id, archive_id, event_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS event_inbox_active_capacity "
+        "ON event_inbox(archive_id, project_id, status)"
+    )
+    connection.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_archive_fields_complete
+           BEFORE UPDATE OF archive_id, archived_at, archived_by,
+               archive_inventory_sha256, archive_offset, archive_reason
+           ON event_inbox
+           WHEN NOT (
+               (NEW.archive_id IS NULL AND NEW.archived_at IS NULL
+                AND NEW.archived_by IS NULL
+                AND NEW.archive_inventory_sha256 IS NULL
+                AND NEW.archive_offset IS NULL AND NEW.archive_reason IS NULL)
+               OR
+               (NEW.archive_id IS NOT NULL AND NEW.archived_at IS NOT NULL
+                AND NEW.archived_by IS NOT NULL
+                AND NEW.archive_inventory_sha256 IS NOT NULL
+                AND NEW.archive_offset IS NOT NULL AND NEW.archive_reason IS NOT NULL)
+           )
+           BEGIN SELECT RAISE(ABORT, 'incomplete event archive receipt'); END"""
+    )
+    connection.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_archive_eligibility
+           BEFORE UPDATE OF archive_id ON event_inbox
+           WHEN OLD.archive_id IS NULL AND NEW.archive_id IS NOT NULL
+             AND (OLD.status != 'processed' OR OLD.payload_json IS NOT NULL
+                  OR OLD.processed_at IS NULL)
+           BEGIN SELECT RAISE(ABORT, 'event receipt is not archive eligible'); END"""
+    )
+    connection.execute(
+        """CREATE TRIGGER IF NOT EXISTS event_archive_immutable
+           BEFORE UPDATE ON event_inbox
+           WHEN OLD.archive_id IS NOT NULL
+           BEGIN SELECT RAISE(ABORT, 'event archive receipt is immutable'); END"""
+    )
+    connection.execute("PRAGMA user_version = 39")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -676,6 +747,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_terminal_event_dispositions_v36,
     migrate_reactivation_review_receipts_v37,
     migrate_purge_target_outcomes_v38,
+    migrate_event_receipt_archives_v39,
 )
 
 

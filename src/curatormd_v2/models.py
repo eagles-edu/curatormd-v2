@@ -52,6 +52,7 @@ MAX_EVENT_RECEIPTS_GLOBAL = 250_000
 MAX_EVENT_RECEIPT_BYTES_GLOBAL = 128 * 1024 * 1024
 EVENT_FAILURE_METADATA_RESERVE_BYTES = 160
 MAX_EVENT_COMPACTION_PAGE = 100
+MAX_EVENT_ARCHIVE_BATCH = 100
 MAX_GOAL_LIST_PAGE = 100
 MAX_GOAL_STATUS_CANDIDATES = 32
 MAX_GOAL_STATUS_PURGE_RECEIPTS = 16
@@ -76,6 +77,7 @@ __all__ = [
     "EventClassStorageUsage",
     "EventReceiptCompactionItem",
     "EventReceiptCompactionProposal",
+    "EventReceiptArchiveReceipt",
     "EventPayloadScrubUsage",
     "EventFailureCategory",
     "EventFailureCategoryUsage",
@@ -150,6 +152,7 @@ if TYPE_CHECKING:
         EventFailureCategoryUsage,
         EventReceiptCompactionItem,
         EventReceiptCompactionProposal,
+        EventReceiptArchiveReceipt,
         ExpiryPurgeReceipt,
         FactArchiveReceipt,
         GoalBullet,

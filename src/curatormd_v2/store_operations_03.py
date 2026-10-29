@@ -335,16 +335,20 @@ class StoreOperations1Part0(StoreOperations0):
 
     @staticmethod
     def _event_inbox_usage(connection: sqlite3.Connection) -> tuple[int, int]:
-        """Measure retained event-row content across every project in the DB."""
+        """Measure active inbox rows and retry metadata against the live cap."""
 
         row = connection.execute(_EVENT_INBOX_USAGE_SQL).fetchone()
         audit = connection.execute(
             """SELECT COALESCE(SUM(
-                   length(CAST(project_id AS BLOB)) +
-                   length(CAST(event_id AS BLOB)) +
-                   length(CAST(actor_id AS BLOB)) +
-                   length(CAST(created_at AS BLOB))
-                 ), 0) AS bytes FROM event_retry_audit"""
+                   length(CAST(retry.project_id AS BLOB)) +
+                   length(CAST(retry.event_id AS BLOB)) +
+                   length(CAST(retry.actor_id AS BLOB)) +
+                   length(CAST(retry.created_at AS BLOB))
+                 ), 0) AS bytes FROM event_retry_audit AS retry
+               JOIN event_inbox AS inbox
+                 ON inbox.project_id = retry.project_id
+                AND inbox.event_id = retry.event_id
+               WHERE inbox.archive_id IS NULL"""
         ).fetchone()
         return int(row["count"]), int(row["bytes"]) + int(audit["bytes"])
 

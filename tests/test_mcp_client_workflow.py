@@ -24,9 +24,11 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     CuratorStore,
+    EventEnvelope,
     EvidenceOutcome,
     EvidenceRef,
     FactKind,
+    GoalStarted,
     InMemoryTokenBucket,
     Materiality,
     ProjectPlugin,
@@ -130,10 +132,44 @@ class McpClientWorkflowTests(McpServerTestSupport):
         """Drive the same goal, review, archive, and health flow over MCP."""
         async with Client(workflow.server, raise_exceptions=True) as client:
             names = await self._assert_mcp_tool_annotations(client)
+            event = EventEnvelope(
+                event_id="mcp-archive-event",
+                project_id="mcp-project",
+                payload=GoalStarted(
+                    goal_id="mcp-archive-goal",
+                    problem="Retain a processed event receipt",
+                    success_criteria=(
+                        SuccessCriterion("retained", "The receipt remains replayable"),
+                    ),
+                ),
+            )
+            workflow.store.ingest_event(event)
+            workflow.store.mark_event_processed("mcp-project", event.event_id)
             inventory = await client.call_tool(
                 "event_receipt_compaction_propose", {}
             )
             self.assertFalse(inventory.is_error)
+            inventory_content = inventory.content[0]
+            assert isinstance(inventory_content, TextContent)
+            proposal = json.loads(inventory_content.text)
+            page = proposal["items"]
+            page_ids = [item["event_id"] for item in page]
+            self.assertIn(event.event_id, page_ids)
+            offset = page_ids.index(event.event_id)
+            archived = await client.call_tool(
+                "event_receipt_compaction_archive",
+                {
+                    "archive_id": "mcp-archive-batch",
+                    "event_ids": [event.event_id],
+                    "inventory_sha256": proposal["manifest_sha256"],
+                    "offset": offset,
+                    "approval_reason": "Archive the displayed processed receipt",
+                },
+            )
+            self.assertFalse(archived.is_error)
+            self.assertEqual(
+                workflow.plugin.process_event(event).status.value, "processed"
+            )
             await self._record_mcp_sde_correction(client, workflow.candidate_id)
             await self._assert_mcp_goal_stays_open(client)
             await self._complete_mcp_goal(client)
@@ -190,7 +226,12 @@ class McpClientWorkflowTests(McpServerTestSupport):
             self.assertIsNotNone(annotations, name)
             assert annotations is not None
             self.assertTrue(annotations.read_only_hint, name)
-        for name in ("goal_start", "sde_confirm", "retry_pending_purges"):
+        for name in (
+            "goal_start",
+            "sde_confirm",
+            "retry_pending_purges",
+            "event_receipt_compaction_archive",
+        ):
             annotations = tools_by_name[name].annotations
             self.assertFalse(
                 bool(annotations and annotations.read_only_hint), name

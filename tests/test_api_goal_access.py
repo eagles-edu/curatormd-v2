@@ -9,6 +9,7 @@ from test_api import (
     ConsumerBindingTransitionRequest,
     EventEnvelope,
     EventInboxStatus,
+    EventReceiptArchiveRequest,
     EvidenceOutcome,
     EvidenceRef,
     FactKind,
@@ -42,6 +43,20 @@ class ApiGoalAccessTests(_ApiTestSupport):
     def test_event_compaction_inventory_requires_review_scope(self) -> None:
         """Only the exact project's review grant can read receipt inventories."""
 
+        event = EventEnvelope(
+            event_id="api-archive-event",
+            project_id="project-a",
+            payload=GoalStarted(
+                goal_id="api-archive-goal",
+                problem="Record one processed test event",
+                success_criteria=(
+                    SuccessCriterion("stored", "The event is retained"),
+                ),
+            ),
+        )
+        self.store.ingest_event(event)
+        self.store.mark_event_processed("project-a", event.event_id)
+
         api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
         with self.assertRaisesRegex(PermissionError, "not authorized"):
             api.propose_event_receipt_compaction(self.caller, "project-a")
@@ -54,7 +69,22 @@ class ApiGoalAccessTests(_ApiTestSupport):
             self.caller, "project-a"
         )
         self.assertEqual(proposal.project_id, "project-a")
-        self.assertEqual(proposal.eligible_count, 0)
+        self.assertEqual(proposal.eligible_count, 1)
+        receipt = review_api.archive_event_receipt_page(
+            self.caller,
+            "project-a",
+            EventReceiptArchiveRequest(
+                archive_id="api-archive-batch",
+                project_id="project-a",
+                reviewer_id="spoofed-subject",
+                event_ids=(event.event_id,),
+                inventory_sha256=proposal.manifest_sha256,
+                offset=0,
+                approval_reason="Archive the displayed local receipt",
+            ),
+        )
+        self.assertEqual(receipt.reviewer_id, self.caller.subject_id)
+        self.assertEqual(receipt.event_ids, (event.event_id,))
 
     def test_fact_evidence_read_requires_exact_project_read_grant(self) -> None:
         goal = self.plugin.service.goal_start(

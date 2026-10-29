@@ -7,7 +7,15 @@ import sqlite3
 import tempfile
 import unittest
 
-from curatormd_v2 import CuratorStore, EventEnvelope, GoalStarted, SuccessCriterion
+from curatormd_v2 import (
+    CuratorStore,
+    CuratorService,
+    EventEnvelope,
+    EventReceiptArchiveRequest,
+    GoalStarted,
+    ArtifactPurger,
+    SuccessCriterion,
+)
 
 
 class EventPayloadScrubTests(unittest.TestCase):
@@ -88,6 +96,82 @@ class EventPayloadScrubTests(unittest.TestCase):
         self.assertEqual(self.store.event_receipt("project-a", "compact-pending").status.value, "received")
         with self.assertRaises(ValueError):
             self.store.propose_event_receipt_compaction("project-a", 0, 101)
+
+    def test_exact_reviewed_event_page_archives_without_losing_replay_receipt(self) -> None:
+        """Archive frees active capacity while preserving the durable event row."""
+
+        self.ingest_canary("archive-a", "transient-a")
+        self.ingest_canary("archive-b", "transient-b")
+        self.store.mark_event_processed("project-a", "archive-a")
+        self.store.mark_event_processed("project-a", "archive-b")
+        proposal = self.store.propose_event_receipt_compaction("project-a", 0, 1)
+        event_id = proposal.items[0].event_id
+        request = EventReceiptArchiveRequest(
+            archive_id="archive-batch-1",
+            project_id="project-a",
+            reviewer_id="eaglesvn",
+            event_ids=(event_id,),
+            inventory_sha256=proposal.manifest_sha256,
+            offset=0,
+            approval_reason="Archive the reviewed processed receipt page",
+        )
+
+        before = self.store.global_event_inbox_usage()
+        receipt = self.store.archive_event_receipt_page(request)
+        after = self.store.global_event_inbox_usage()
+        event = EventEnvelope(
+            event_id=event_id,
+            project_id="project-a",
+            payload=GoalStarted(
+                goal_id=f"goal-{event_id}",
+                problem=f"transient-{event_id[-1]}",
+                success_criteria=(
+                    SuccessCriterion("stored", "The event is disposed"),
+                ),
+            ),
+        )
+        replay, inserted = self.store.ingest_event(event)
+        staging = self.database.parent / "staging"
+        staging.mkdir()
+        service_replay = CuratorService(
+            self.store, ArtifactPurger(staging),
+            project_id="project-a",
+        ).process_event(event)
+
+        self.assertEqual(receipt.event_ids, (event_id,))
+        self.assertEqual(before.receipt_count, 2)
+        self.assertEqual(after.receipt_count, 1)
+        self.assertFalse(inserted)
+        self.assertEqual(replay.status.value, "processed")
+        self.assertEqual(service_replay.status.value, "processed")
+        self.assertEqual(self.store.event_receipt("project-a", event_id), replay)
+        self.assertEqual(self.store.archive_event_receipt_page(request), receipt)
+
+    def test_archive_rejects_stale_manifest_without_marking_any_receipt(self) -> None:
+        """Require a fresh exact review when the eligible receipt set changes."""
+
+        self.ingest_canary("stale-archive-a", "transient-a")
+        self.store.mark_event_processed("project-a", "stale-archive-a")
+        proposal = self.store.propose_event_receipt_compaction("project-a")
+        self.ingest_canary("stale-archive-b", "transient-b")
+        self.store.mark_event_processed("project-a", "stale-archive-b")
+        with self.assertRaisesRegex(RuntimeError, "inventory changed"):
+            self.store.archive_event_receipt_page(
+                EventReceiptArchiveRequest(
+                    archive_id="stale-archive-batch",
+                    project_id="project-a",
+                    reviewer_id="eaglesvn",
+                    event_ids=(proposal.items[0].event_id,),
+                    inventory_sha256=proposal.manifest_sha256,
+                    offset=0,
+                    approval_reason="Reject stale receipt inventory",
+                )
+            )
+        with sqlite3.connect(self.database) as reader:
+            archived = reader.execute(
+                "SELECT COUNT(*) FROM event_inbox WHERE archive_id IS NOT NULL"
+            ).fetchone()[0]
+        self.assertEqual(archived, 0)
 
     def test_failed_payload_remains_until_explicit_terminal_disposition(self) -> None:
         """A failed payload stays available until retry or reviewed disposition."""

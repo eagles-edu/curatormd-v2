@@ -41,6 +41,7 @@ from .models import (
     EventFailureCategoryUsage,
     EventReceiptCompactionItem,
     EventReceiptCompactionProposal,
+    EventReceiptArchiveReceipt,
     Fact,
     FactArchiveReceipt,
     FactCapacity,
@@ -68,6 +69,7 @@ from .models import (
     MAX_EVENT_RECEIPTS_GLOBAL,
     MAX_EVENT_RECEIPT_BYTES_GLOBAL,
     MAX_EVENT_COMPACTION_PAGE,
+    MAX_EVENT_ARCHIVE_BATCH,
     EVENT_FAILURE_METADATA_RESERVE_BYTES,
     MAX_SDE_CORRECTIONS_PER_CANDIDATE,
     MAX_SDE_CORRECTIONS_PER_PROJECT,
@@ -148,12 +150,18 @@ COALESCE(length(CAST(last_error AS BLOB)), 0) +
 COALESCE(length(CAST(next_attempt_at AS BLOB)), 0) +
 COALESCE(length(CAST(lease_owner AS BLOB)), 0) +
 COALESCE(length(CAST(lease_expires_at AS BLOB)), 0) +
-COALESCE(length(CAST(disposition AS BLOB)), 0)"""
+COALESCE(length(CAST(disposition AS BLOB)), 0) +
+COALESCE(length(CAST(archive_id AS BLOB)), 0) +
+COALESCE(length(CAST(archived_at AS BLOB)), 0) +
+COALESCE(length(CAST(archived_by AS BLOB)), 0) +
+COALESCE(length(CAST(archive_inventory_sha256 AS BLOB)), 0) +
+COALESCE(length(CAST(archive_offset AS TEXT)), 0) +
+COALESCE(length(CAST(archive_reason AS BLOB)), 0)"""
 _EVENT_INBOX_USAGE_SQL = (
     "SELECT COUNT(*) AS count, COALESCE(SUM("  # nosec B608
     + _EVENT_INBOX_METADATA_BYTES_SQL
     + " + COALESCE(length(CAST(payload_json AS BLOB)), 0)), 0) "
-    "AS bytes FROM event_inbox"  # nosec B608 - fixed SQL and module constant only.
+    "AS bytes FROM event_inbox WHERE archive_id IS NULL"  # nosec B608 - fixed SQL and module constant only.
 )
 _PROJECT_EVENT_USAGE_SQL = (  # nosec B608 - fixed SQL and module constant only.
     "SELECT event_type, status, COUNT(*) AS count, "  # nosec B608
@@ -836,6 +844,7 @@ __all__ = [
     'EventFailureCategoryUsage',
     'EventReceiptCompactionItem',
     'EventReceiptCompactionProposal',
+    'EventReceiptArchiveReceipt',
     'Fact',
     'FactArchiveReceipt',
     'FactCapacity',
@@ -863,6 +872,7 @@ __all__ = [
     'MAX_EVENT_RECEIPTS_GLOBAL',
     'MAX_EVENT_RECEIPT_BYTES_GLOBAL',
     'MAX_EVENT_COMPACTION_PAGE',
+    'MAX_EVENT_ARCHIVE_BATCH',
     'EVENT_FAILURE_METADATA_RESERVE_BYTES',
     'MAX_SDE_CORRECTIONS_PER_CANDIDATE',
     'MAX_SDE_CORRECTIONS_PER_PROJECT',

@@ -50,6 +50,7 @@ from .store_support_00 import (
     EventFailureCategoryUsage,
     EventReceiptCompactionItem,
     EventReceiptCompactionProposal,
+    EventReceiptArchiveReceipt,
     Fact,
     FactArchiveReceipt,
     FactCapacity,
@@ -77,6 +78,7 @@ from .store_support_00 import (
     MAX_EVENT_RECEIPTS_GLOBAL,
     MAX_EVENT_RECEIPT_BYTES_GLOBAL,
     MAX_EVENT_COMPACTION_PAGE,
+    MAX_EVENT_ARCHIVE_BATCH,
     EVENT_FAILURE_METADATA_RESERVE_BYTES,
     MAX_SDE_CORRECTIONS_PER_CANDIDATE,
     MAX_SDE_CORRECTIONS_PER_PROJECT,
@@ -291,6 +293,19 @@ class FactCompactionApprovalRequest:
     fact_ids: tuple[str, ...]
     source_sha256: str
     reviewer_id: str
+    approval_reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class EventReceiptArchiveRequest:
+    """One exact reviewer-approved page of eligible event receipts."""
+
+    archive_id: str
+    project_id: str
+    reviewer_id: str
+    event_ids: tuple[str, ...]
+    inventory_sha256: str
+    offset: int
     approval_reason: str
 
 
@@ -570,6 +585,8 @@ __all__ = [*_STORE_SUPPORT_EXPORTS,
     '_stored_artifact_manifest',
     '_insert_purge_targets_from_inventory',
     'FactCompactionApprovalRequest',
+    'EventReceiptArchiveRequest',
+    'MAX_EVENT_ARCHIVE_BATCH',
     '_PreparedFactArchive',
     '_ProjectRecordUsageRows',
     '_ProjectAuxiliaryUsageRows',

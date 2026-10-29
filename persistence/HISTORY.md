@@ -10673,3 +10673,26 @@ while preserving explicit criteria and same-project parent validation.
   data-class budgets remain open.
 - **Outcome:** Add a safe inventory step without claiming inbox compaction or
   recovery is complete.
+
+## 2026-10-29 — Add reviewed event-receipt archive recovery
+
+- **Intent:** Complete the approved local-alpha recovery action for a full
+  event inbox while preserving exact receipts, references, and replay behavior.
+- **Changed fact:** Schema v39 and the review-authorized API/MCP archive action
+  bind one immutable archive receipt to the exact ordered page, manifest digest,
+  project reviewer, and rationale. The transaction rechecks the proposal,
+  rejects stale inventories atomically, and moves archived rows out of active
+  inbox count/byte capacity without deleting receipts or audit references.
+  The owner-approved storage policy in the plan now states that the shared
+  database-plus-WAL 250 MiB threshold and backup-tree threshold are
+  warning-only; no live schema migration or file-size reduction is claimed.
+- **Verification:** The full unittest suite passes (533 tests). Strict Pyright,
+  errors-only Pylint, and Bandit pass; `git diff --check` passes. Focused tests
+  cover v38-to-v39 migration, review authorization, stale-page rejection,
+  retained receipts and replay, and the MCP archive call.
+- **Open gate:** The configured alpha database remains schema v38. Live
+  migration and observed capacity recovery remain unverified. Backup-tree
+  inventory completeness and the separate local-alpha evidence/owner-review
+  criteria remain open.
+- **Outcome:** Close the approved local-alpha event-inbox policy and
+  replay-preserving archive implementation without claiming live installation.

@@ -41,6 +41,7 @@ from .models import (
     FactArchiveReceipt,
     FactCompactionProposal,
     EventReceiptCompactionProposal,
+    EventReceiptArchiveReceipt,
     GoalListPage,
     GoalChildrenPageRequest,
     GoalSnapshot,
@@ -74,6 +75,7 @@ from .project_plugin import ProjectPlugin
 from .reporting import GoalFactEvidence, GoalReportPage
 from .service import PurgeTargetStatus, SDEAssessmentRequest
 from .store import (
+    EventReceiptArchiveRequest,
     FactCompactionApprovalRequest,
     NotFoundError,
     ProjectRegistrationRecord,
@@ -211,6 +213,29 @@ class _APIEventMethods(_APIState):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).propose_event_receipt_compaction(offset, limit)
+
+    @_project_effect_fenced(ProjectAction.REVIEW)
+    def archive_event_receipt_page(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        request: EventReceiptArchiveRequest,
+    ) -> EventReceiptArchiveReceipt:
+        """Require exact project review authority for attended receipt archiving."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).event_receipt_archive(
+            EventReceiptArchiveRequest(
+                archive_id=request.archive_id,
+                project_id=project_id,
+                reviewer_id=caller.subject_id,
+                event_ids=request.event_ids,
+                inventory_sha256=request.inventory_sha256,
+                offset=request.offset,
+                approval_reason=request.approval_reason,
+            )
+        )
 
     def process_event_json(
         self,

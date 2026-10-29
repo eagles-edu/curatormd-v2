@@ -17,6 +17,7 @@ from .models import (
     MAX_FACT_BYTES_PER_PROJECT,
     MAX_FACT_COMPACTION_BATCH_FACTS,
     MAX_EVENT_COMPACTION_PAGE,
+    MAX_EVENT_ARCHIVE_BATCH,
     ArtifactRef,
     AuditReceipt,
     CriterionProgress,
@@ -241,6 +242,42 @@ class EventReceiptCompactionProposal:
             raise ValueError("manifest_sha256 must be lowercase SHA-256")
         if len(self.items) > self.limit or self.offset + len(self.items) > self.eligible_count:
             raise ValueError("event compaction page exceeds its inventory")
+
+
+@dataclass(frozen=True, slots=True)
+class EventReceiptArchiveReceipt:
+    """Durable receipt for an attended active-inbox archival batch."""
+
+    archive_id: str
+    project_id: str
+    reviewer_id: str
+    inventory_sha256: str
+    offset: int
+    event_ids: tuple[str, ...]
+    approval_reason: str
+    archived_at: str
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("archive_id", self.archive_id),
+            ("project_id", self.project_id),
+            ("reviewer_id", self.reviewer_id),
+        ):
+            if not value or len(value) > 128 or "\n" in value or "\r" in value:
+                raise ValueError(f"{name} must be a bounded single-line identity")
+        if not _SHA256_RE.fullmatch(self.inventory_sha256):
+            raise ValueError("inventory_sha256 must be lowercase SHA-256")
+        if not is_exact_int(self.offset) or self.offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if not self.event_ids or len(self.event_ids) > MAX_EVENT_ARCHIVE_BATCH:
+            raise ValueError("event_ids must contain 1-100 archived receipts")
+        if len(set(self.event_ids)) != len(self.event_ids):
+            raise ValueError("event_ids must be unique")
+        if not self.approval_reason or len(self.approval_reason) > 1000:
+            raise ValueError("approval_reason must be bounded and non-empty")
+        if "\n" in self.approval_reason or "\r" in self.approval_reason:
+            raise ValueError("approval_reason must be a single line")
+        _parse_aware_timestamp("archived_at", self.archived_at)
 
 
 @dataclass(frozen=True, slots=True)
