@@ -9930,8 +9930,12 @@ substitute for evidence at a later integration boundary.
       database hash and an unclassified sentinel file unchanged. This verifies
       the rotation/restore code path without using a consumer repo or the live
       alpha database. The live alpha still has only two recognized daily
-      copies; its due-expiry run, complete backup-tree classification, and
-      package rollback evidence remain open.
+      copies; its live seven-copy rotation, due-expiry run, and complete
+      backup-tree classification remain open. Package-upgrade rollback was
+      already exercised in an isolated site-packages copy: the accepted
+      evidence packet records a hash-verified 182-file rollback archive, both
+      package versions loading, and a successful launcher `--help` before and
+      after rollback. The active alpha package was not replaced by that test.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
