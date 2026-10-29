@@ -4856,6 +4856,11 @@ unknown. The dashboard and live event-delivery gates remain open.
       tests pass; Ruff passes. This closes that Hermes outbox path only; broad
       producer coverage, logs, traces, backups, crash sinks, and other privacy
       paths remain open.
+      Follow-up (2026-10-30 02:27 +07:00): the same path filter also rejects
+      custom credential and DNS challenge values written as key/value text
+      (for example, `password=...` and `dns_txt=...`). Four outbox tests pass,
+      including OpenAI, GitHub, custom-password, and DNS-value canaries. The
+      full source-to-sink privacy review remains open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
