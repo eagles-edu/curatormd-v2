@@ -580,6 +580,19 @@ function activate(context) {
       void refreshStatusBarHealthFromWorkspace();
     }));
   }
+  if (vscode.workspace && typeof vscode.workspace.onDidChangeConfiguration === 'function') {
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event || typeof event.affectsConfiguration !== 'function'
+        || !event.affectsConfiguration('curatormdV2')) return;
+      resetStatusBarHealth();
+      void refreshStatusBarHealthFromWorkspace();
+    }));
+  }
+  if (vscode.window && typeof vscode.window.onDidChangeWindowState === 'function') {
+    context.subscriptions.push(vscode.window.onDidChangeWindowState((event) => {
+      if (event && event.focused) void refreshStatusBarHealthFromWorkspace();
+    }));
+  }
 }
 
 function deactivate() {

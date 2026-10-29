@@ -505,6 +505,53 @@ test('late status refresh cannot overwrite a newer workspace result', async () =
   }
 });
 
+test('status refreshes after Curator settings changes and window focus returns', () => {
+  let onConfigurationChange;
+  let onWindowStateChange;
+  const items = [];
+  vscodeMock.StatusBarAlignment = { Left: 1, Right: 2 };
+  vscodeMock.window = {
+    createStatusBarItem: () => {
+      const item = { show() {}, dispose() {} };
+      items.push(item);
+      return item;
+    },
+    onDidChangeWindowState: (listener) => {
+      onWindowStateChange = listener;
+      return { dispose() {} };
+    },
+  };
+  vscodeMock.commands = { registerCommand: () => ({ dispose() {} }) };
+  vscodeMock.workspace = {
+    workspaceFolders: [],
+    getConfiguration: () => ({ get: (_key, fallback) => fallback, inspect: () => ({}) }),
+    onDidChangeConfiguration: (listener) => {
+      onConfigurationChange = listener;
+      return { dispose() {} };
+    },
+  };
+  const subscriptions = [];
+  activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } });
+  try {
+    assert.equal(typeof onConfigurationChange, 'function');
+    assert.equal(typeof onWindowStateChange, 'function');
+
+    updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []);
+    onConfigurationChange({ affectsConfiguration: (key) => key === 'curatormdV2' });
+    assert.equal(items[0].color, '#888888');
+
+    updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []);
+    onWindowStateChange({ focused: true });
+    assert.equal(items[0].color, '#888888');
+
+    updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []);
+    onConfigurationChange({ affectsConfiguration: () => false });
+    assert.equal(items[0].color, '#73d216');
+  } finally {
+    deactivate();
+  }
+});
+
 test('dashboard maps Curator failures to actionable messages without backend details', () => {
   assert.match(dashboardErrorMessage({ code: 'read-denied' }), /configured project and its active local read grant/);
   assert.match(dashboardErrorMessage({ code: 'launcher-start' }), /serverCommand and the installed launcher/);
