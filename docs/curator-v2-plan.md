@@ -845,6 +845,15 @@ plugin or Hermes integration is installed and working end to end.
       `uv pip check`, and the installed MCP launcher help check. This completes
       the local backup-tree byte-warning measurement; retention horizons and
       permanent-data class budgets remain open.
+      Owner decision and warning implementation (2026-10-29): warn only when
+      the shared SQLite main database plus WAL exceeds 262,144,000 bytes
+      (250 MiB). The V2 dashboard and status-bar tooltip display this warning;
+      writes continue and Curator leaves WAL checkpointing to SQLite. The
+      focused status-extension suite verifies the exact threshold and an
+      above-threshold case. Extension source/UI tests do not prove the updated
+      package is loaded in the active VS Code window or that a live warning has
+      rendered; class budgets, retention horizons, and recovery evidence remain
+      open. No checklist marker changed.
       Schema-coverage guard (2026-10-26): the attended storage-view regression
       now compares the current SQLite application-table inventory with the
       `dbstat` physical-class results when that extension is available. The

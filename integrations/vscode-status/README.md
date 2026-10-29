@@ -32,7 +32,9 @@ times. Retained activity is not a capture-completeness measure. Project logical
 record bytes and retained event payload bytes are separate from the shared
 SQLite database/WAL file sizes. It also reports the staging byte scan,
 completeness, and warning-only byte threshold; writes remain allowed above the
-threshold. Model/token use is not reported. Refreshing or changing pages
+threshold. The status item and dashboard warn when the shared SQLite main file
+and WAL together exceed 250 MiB; the warning does not block writes or control
+SQLite checkpointing. Model/token use is not reported. Refreshing or changing pages
 replaces the old view, so pages from separate report reads are never combined.
 
 Configure these **User** settings in VS Code:

@@ -85,15 +85,17 @@ managed-snapshot inventory complete.
 | Event receipts, cursors, retry audit, scrub queue, terminal dispositions | Keep processed receipts and replay cursors until exact approved cleanup. Keep failed/quarantined source payloads until processed or explicitly resolved; age alone does not discard them. | Global inbox: 250,000 receipts / 128 MiB retained row bytes. Event payload input: 16 KiB/event. | Source retry/redelivery while pending; verified SQLite snapshots. Resolved events scrub live payloads; copies roll out within seven days. |
 | Staging files and artifact/expiry metadata | Remove transient source files promptly after facts are recorded and SDE disposition completes, with a 72-hour live-file maximum. Honor explicit artifact holds. Keep durable cleanup receipts until exact approved cleanup. | Project staging: 250 MiB warning only, with warning at 75%; no file-count limit. Per-file/per-goal hard limits remain. | Exact staged-file manifest and purge receipts; reacquire from the producer if needed. SQLite backup preserves receipts, not staging file contents. |
 | Project registry, grants, bindings, audits, drain history, retirement state | Keep access and lifecycle receipts until exact approved cleanup; retain source epoch/cursor state needed to reject stale replay. | Request-rate buckets: 10,000 rows with idle-only pruning. No other independent class threshold is implemented. | Verified SQLite snapshot and reviewed restore to a new path. |
-| SQLite pages, indexes, WAL, and SHM | Shared storage for all classes; preserve the database and active sidecars together during recovery. | Main database plus WAL warning threshold is awaiting the owner's decision. Existing schema/inbox/fact/archive caps above remain in force. | SQLite online backup, integrity and foreign-key checks, then owner-reviewed restore to a new path. Never auto-switch the active database. |
+| SQLite pages, indexes, WAL, and SHM | Shared storage for all classes; preserve the database and active sidecars together during recovery. | Warn when the main database plus WAL exceeds 262,144,000 bytes (250 MiB). Warning only: writes continue and Curator does not checkpoint, prune, or delete SQLite files; SQLite manages WAL checkpointing. Existing schema/inbox/fact/archive caps above remain in force. | SQLite online backup, integrity and foreign-key checks, then owner-reviewed restore to a new path. Never auto-switch the active database. |
 | Backup tree | Keep newest seven verified daily snapshots. Legacy/unclassified files remain until an exact deletion inventory is reviewed. | 250 MiB allocated-byte warning only; never prune due to the warning. | Select a verified snapshot and restore to a new path. |
 
 This census supplies current counts, logical sizes where the API defines them,
 and physical table/index allocation for all 30 schema tables. It does not turn
 shared page allocation into project data, identify the contents of unclassified
-backups, set the missing SQLite size warning, or prove seven-copy rotation from
-the present directory scan. Those limits keep the storage-accounting checklist
-open pending the remaining policy answer and runtime evidence.
+backups, or prove seven-copy rotation from the present directory scan. The
+SQLite warning is policy-approved and displayed by the Curator V2 dashboard;
+boundary behavior is covered by its focused test. Rendered warning delivery,
+complete retention/recovery accounting, and remaining runtime evidence keep
+the broader storage-accounting checklist open.
 
 ## Backups and restore
 

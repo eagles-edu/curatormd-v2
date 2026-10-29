@@ -30,6 +30,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
 const HERMES_HEALTH_MAX_BYTES = 32768;
 const STATUS_REFRESH_INTERVAL_MS = 60000;
+const SQLITE_WARNING_BYTES = 250 * 1024 * 1024;
 const REQUIRED_HEALTH_PROBES = Object.freeze([
   'event_router', 'purge_scheduler', 'database_storage_adapter', 'host_identity',
   'human_review', 'alert_delivery', 'artifact_producer_inventory',
@@ -57,6 +58,25 @@ function healthGateSummary(health, projectId) {
   if (codes.length === 0) return '';
   const suffix = omitted > 0 ? `; ${omitted} additional or invalid gate(s)` : '';
   return ` Health gates: ${codes.join(', ')}${suffix}.`;
+}
+
+function sqliteSizeWarning(storage, projectId) {
+  if (!storage || storage.project_id !== projectId
+    || !Number.isSafeInteger(storage.global_database_bytes)
+    || storage.global_database_bytes < 0
+    || !Number.isSafeInteger(storage.global_wal_bytes)
+    || storage.global_wal_bytes < 0) return null;
+  const combinedBytes = storage.global_database_bytes + storage.global_wal_bytes;
+  return Number.isSafeInteger(combinedBytes) && combinedBytes > SQLITE_WARNING_BYTES
+    ? `SQLite main database plus WAL is ${formatBytes(combinedBytes)}, above the 250 MiB warning threshold. Writes remain allowed; SQLite manages WAL checkpointing.`
+    : null;
+}
+
+function formatBytes(value) {
+  if (value === null || value === undefined) return 'unavailable';
+  if (value < 1024) return `${value} B`;
+  if (value < 1048576) return `${(value / 1024).toFixed(1)} KiB`;
+  return `${(value / 1048576).toFixed(1)} MiB`;
 }
 
 function reportFactIds(report) {
@@ -547,7 +567,7 @@ function deactivate() {
   dashboardStatusItem = undefined;
 }
 
-function updateStatusBarHealth(health, projectId, reviewItems = null) {
+function updateStatusBarHealth(health, projectId, reviewItems = null, storage = null) {
   if (!dashboardStatusItem) return 'unknown';
   const healthStatus = projectId
     && health?.project_id === projectId
@@ -570,12 +590,15 @@ function updateStatusBarHealth(health, projectId, reviewItems = null) {
     : pendingReviews === 0
       ? 'no SDE reviews pending'
       : `${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}`;
-  dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`;
+  const storageWarning = sqliteSizeWarning(storage, projectId);
+  dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`
+    + (storageWarning ? ' · SQLite size warning' : '');
   dashboardStatusItem.color = STATUS_COLORS[displayStatus];
   dashboardStatusItem.tooltip = statusTooltip(
     `${statusColorMeaning(displayStatus)} Project health: ${healthStatus}.`
       + healthGateSummary(health, projectId)
       + ` ${reviewSummary}. `
+      + (storageWarning ? `${storageWarning} ` : '')
       + 'Click to open the project-scoped dashboard.',
   );
   return healthStatus;
@@ -629,13 +652,16 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
     if (!page || typeof page.project_id !== 'string' || !page.project_id) {
       throw curatorError('status-project-invalid', 'Curator returned no project binding.');
     }
-    const [reviewWire, health] = await Promise.all([
+    const [reviewWire, health, storage] = await Promise.all([
       client.callTool('sde_review_queue_cards', { limit: REVIEW_QUEUE_SIZE })
         .then((wire) => JSON.parse(wire)),
       readHermesHealthProbe(hermesCommand, profileId, page.project_id, projectRoot, spawnProcess),
+      client.callTool('project_storage_usage', {})
+        .then((wire) => JSON.parse(wire))
+        .catch(() => null),
     ]);
     const reviews = validateReviewQueue(reviewWire, page.project_id);
-    updateStatusBarHealth(health, page.project_id, reviews);
+    updateStatusBarHealth(health, page.project_id, reviews, storage);
     if (reviews === null) return 'unknown';
     if (health.status !== 'healthy') return health.status;
     return reviews.length > 0 ? 'review' : 'healthy';
@@ -787,7 +813,7 @@ async function showDashboard(spawnProcess = spawn) {
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
         }
         const reviewItems = validateReviewQueue(reviews, page.project_id);
-        updateStatusBarHealth(health, page.project_id, reviewItems);
+        updateStatusBarHealth(health, page.project_id, reviewItems, storage);
         candidateIds = new Set((reviewItems || []).map((item) => item.candidate.candidate_id));
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage, reviews: reviewItems,
@@ -1244,7 +1270,21 @@ function dashboardHtml(webview) {
             + formatBytes(storageSnapshot.fact_record_bytes_limit) + '). Shared SQLite files: database '
             + formatBytes(storageSnapshot.global_database_bytes) + ', WAL '
             + formatBytes(storageSnapshot.global_wal_bytes)
-            + '. ' + stagingText + ' Model/token usage is not reported here.';
+            + ', combined ' + formatBytes(
+              storageSnapshot.global_database_bytes === null
+                || storageSnapshot.global_wal_bytes === null
+                ? null
+                : storageSnapshot.global_database_bytes + storageSnapshot.global_wal_bytes,
+            ) + ' / ' + formatBytes(${SQLITE_WARNING_BYTES})
+            + ' warning-only threshold; '
+            + (storageSnapshot.global_database_bytes === null
+              || storageSnapshot.global_wal_bytes === null
+              ? 'combined size unavailable'
+              : storageSnapshot.global_database_bytes + storageSnapshot.global_wal_bytes > ${SQLITE_WARNING_BYTES}
+                ? 'warning: combined SQLite size is above threshold'
+                : 'below threshold')
+            + '. SQLite manages WAL checkpointing; writes remain allowed. '
+            + stagingText + ' Model/token usage is not reported here.';
         }
         goalTotal = page.total || 0;
         goalOffset = page.offset || 0;
@@ -1416,6 +1456,7 @@ module.exports = {
   quotePosixShellArgument,
   showDashboard,
   statusColorMeaning,
+  sqliteSizeWarning,
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
   validateReviewQueue,

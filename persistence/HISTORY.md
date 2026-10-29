@@ -10575,3 +10575,29 @@ while preserving explicit criteria and same-project parent validation.
   checklist marker changed.
 - **Outcome:** Improve the inventory while preserving every legacy entry and
   keeping unsupported content and retention claims open.
+
+## 2026-10-29 — Warn on combined SQLite main and WAL size
+
+- **Intent:** Apply the owner's local-alpha warning decision without making
+  SQLite cache management or database writes Curator policy.
+- **Changed fact:** The owner approved an informational warning when the shared
+  SQLite main database plus WAL exceeds 262,144,000 bytes (250 MiB). The V2
+  VS Code status item and dashboard now display the combined size and warning;
+  writes remain allowed and WAL checkpointing remains SQLite-managed. The
+  owner-authorized storage-accounting test also confirms the unassigned payload
+  scrub queue is reported only as a content-free aggregate class.
+- **Verification:** `node --check integrations/vscode-status/extension.js` and
+  `node --test integrations/vscode-status/extension.test.js` pass (17 tests),
+  including the exact 250 MiB boundary, above-threshold warning, project match,
+  and status tooltip. The focused unittest
+  `test_control_plane_storage_is_project_scoped_and_requires_view` passes.
+  The repository's pinned Pyright, errors-only Pylint, and Bandit commands also
+  exit successfully; Bandit reports existing `nosec` annotation warnings.
+  `git diff --check` passes.
+- **Open gate:** VSIX 0.9.6 is installed and its `extension.js` hash matches
+  source, but the existing VS Code extension host has not reloaded it; live
+  rendered warning delivery is unverified. Permanent class budgets, retention
+  horizons, backup inventory/provenance, and recovery evidence remain open. No
+  checklist marker changed.
+- **Outcome:** Make the approved size warning visible without a write block,
+  checkpoint request, or automatic deletion.

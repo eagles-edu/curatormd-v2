@@ -312,6 +312,28 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.match(items[0].tooltip, /no SDE reviews pending/);
   assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Green means health is healthy with no SDE reviews pending/);
+  assert.equal(updateStatusBarHealth(
+    { project_id: 'alpha', status: 'healthy' }, 'alpha', [], {
+      project_id: 'alpha', global_database_bytes: 262144000, global_wal_bytes: 0,
+    },
+  ), 'healthy');
+  assert.equal(items[0].text, '$(circle-filled) CuratorMD V2: healthy');
+  const sqliteWarningStorage = {
+    project_id: 'alpha', global_database_bytes: 262144001, global_wal_bytes: 0,
+  };
+  assert.equal(updateStatusBarHealth(
+    { project_id: 'alpha', status: 'healthy' }, 'alpha', [], sqliteWarningStorage,
+  ), 'healthy');
+  assert.equal(items[0].color, '#73d216');
+  assert.match(items[0].text, /SQLite size warning/);
+  assert.match(items[0].tooltip, /above the 250 MiB warning threshold/);
+  assert.match(items[0].tooltip, /Writes remain allowed; SQLite manages WAL checkpointing/);
+  assert.equal(updateStatusBarHealth(
+    { project_id: 'alpha', status: 'healthy' }, 'alpha', [], {
+      ...sqliteWarningStorage, project_id: 'other',
+    },
+  ), 'healthy');
+  assert.doesNotMatch(items[0].tooltip, /SQLite size warning/);
   const pendingReview = { candidate: { candidate_id: 'review-1' } };
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', [pendingReview],
@@ -836,7 +858,25 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   assert.equal(elements.get('goalStates').textContent, 'Goal states: planned 0, active 1, complete 0, open 0, blocked 0, deferred 0, cancelled 0, superseded 0.');
   assert.equal(elements.get('queues').textContent, 'Events received 1, failed 0, quarantined 0, active claims 0, expired claims 0; oldest pending age none. Reviews pending 1; purge pending 0 receipts / 0 artifacts; expiry pending 0 receipts / 0 artifacts.');
   assert.match(elements.get('activity').textContent, /Retained receipts: 3 \(processed 2, received 1, failed 0, quarantined 0\); goals 1; facts 2; SDE candidates pending 1, approved 0, rejected 0\./);
-  assert.match(elements.get('storage').textContent, /Project logical records 4\.0 KiB; retained event payload 256 B; facts 2\/10000 \(512 B\/16\.0 MiB\)\. Shared SQLite files: database 8\.0 KiB, WAL 1\.0 KiB\. Staging 128 B \/ 250\.0 MiB warning-only threshold; below warning level, and writes remain allowed\. Model\/token usage is not reported here\./);
+  assert.match(elements.get('storage').textContent, /Project logical records 4\.0 KiB; retained event payload 256 B; facts 2\/10000 \(512 B\/16\.0 MiB\)\. Shared SQLite files: database 8\.0 KiB, WAL 1\.0 KiB, combined 9\.0 KiB \/ 250\.0 MiB warning-only threshold; below threshold\. SQLite manages WAL checkpointing; writes remain allowed\. Staging 128 B \/ 250\.0 MiB warning-only threshold; below warning level, and writes remain allowed\. Model\/token usage is not reported here\./);
+  const sqliteAtThreshold = {
+    ...storageSnapshot,
+    global_database_bytes: 262144000,
+    global_wal_bytes: 0,
+  };
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha', total: 1, offset: 0, goals: [], next_offset: null,
+  }, storage: sqliteAtThreshold } });
+  assert.match(elements.get('storage').textContent, /combined 250\.0 MiB \/ 250\.0 MiB warning-only threshold; below threshold/);
+  const sqliteAboveThreshold = {
+    ...storageSnapshot,
+    global_database_bytes: 262144001,
+    global_wal_bytes: 0,
+  };
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha', total: 1, offset: 0, goals: [], next_offset: null,
+  }, storage: sqliteAboveThreshold } });
+  assert.match(elements.get('storage').textContent, /combined 250\.0 MiB \/ 250\.0 MiB warning-only threshold; warning: combined SQLite size is above threshold\. SQLite manages WAL checkpointing; writes remain allowed/);
   const stagingAtWarning = {
     ...storageSnapshot,
     staging: { observed_file_bytes: 196608000, inventory_complete: true, error_code: null },
