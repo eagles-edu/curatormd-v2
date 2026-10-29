@@ -225,8 +225,8 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-29): **168 of 178 delivery rows are complete; 10 are open**.
-The full raw checkbox count is **183 of 194 complete; 11 are open**. Section 11
+recount (2026-10-30): **170 of 178 delivery rows are complete; 8 are open**.
+The full raw checkbox count is **185 of 194 complete; 9 are open**. Section 11
 contributes 15 complete rows and one open row; do not compare these two scopes
 as if their totals were the same. Historical narrative counts below are not
 current.

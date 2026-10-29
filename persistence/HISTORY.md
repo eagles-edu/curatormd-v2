@@ -11255,3 +11255,20 @@ while preserving explicit criteria and same-project parent validation.
   owner-review evidence listed in the plan.
 - **Outcome:** Keep the canonical delivery denominator stable in progress
   reports; no checklist marker changed.
+
+## 2026-10-30 — Correct plan count and refresh source quality evidence
+
+- **Intent:** Make the plan's displayed checklist totals match its counting
+  script and recheck the current source quality gate.
+- **Changed fact:** Updated the plan to 170/178 delivery rows complete and
+  185/194 raw checkboxes complete; these totals differ because Section 11 is
+  excluded from delivery progress.
+- **Verification:** `python3 tools/count_curator_v2_delivery.py` reports
+  170/178. Pyright reports zero diagnostics; errors-only Pylint, Bandit, the
+  locked dependency audit, and `git diff --check` exit successfully. Bandit
+  emits existing `nosec`/test-comment warnings.
+- **Open gate:** Eight delivery rows remain open. This refresh establishes
+  source quality only, not local consumer workflow, privacy, review, or runtime
+  acceptance.
+- **Outcome:** Correct the visible progress count and retain all open gates;
+  no checklist marker changed.
