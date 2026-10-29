@@ -37,6 +37,15 @@ _OPTIONAL_METADATA_LIMITS = {
 }
 _SUMMARY_PATH_RE = re.compile(r"^[A-Za-z0-9_./ @+-]{1,256}$")
 _SUMMARY_CHANGE_KINDS = frozenset({"add", "update", "delete", "rename"})
+_SUMMARY_PRIVATE_NAMES = frozenset({
+    ".env", ".npmrc", ".pypirc", ".netrc", "credentials", "secrets",
+    "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", "authorized_keys",
+    "known_hosts", "application_default_credentials.json",
+})
+_SUMMARY_PRIVATE_DIRECTORIES = frozenset(
+    {".aws", ".azure", ".docker", ".gnupg", ".kube", ".ssh"}
+)
+_SUMMARY_PRIVATE_SUFFIXES = (".key", ".pem", ".p12", ".pfx", ".jks", ".keystore")
 _SUMMARY_CHECKS = frozenset(
     {"scripts/check", "scripts/run_tests.sh", "git diff --check", "pytest", "npm test"}
 )
@@ -227,10 +236,7 @@ def _work_summary_bullet(value: object, repository_fingerprint: str | None) -> s
         if (
             not isinstance(path, str) or not _SUMMARY_PATH_RE.fullmatch(path)
             or path.startswith("/") or ".." in path.split("/")
-            or any(
-                part.lower().startswith((".env", "secret", "credential"))
-                for part in path.split("/")
-            )
+            or _private_summary_path(path)
             or not isinstance(change, str) or change not in _SUMMARY_CHANGE_KINDS
         ):
             return None
@@ -268,6 +274,19 @@ def _work_summary_bullet(value: object, repository_fingerprint: str | None) -> s
     return " ".join(parts)[:900] if not has_failed_check else (
         "A recorded development check failed. " + " ".join(parts)
     )[:900]
+
+
+def _private_summary_path(path: str) -> bool:
+    """Reject paths that commonly identify credentials, keys, or certs."""
+
+    parts = tuple(part.lower() for part in path.split("/"))
+    basename = parts[-1] if parts else ""
+    return (
+        basename in _SUMMARY_PRIVATE_NAMES
+        or basename.endswith(_SUMMARY_PRIVATE_SUFFIXES)
+        or any(part in _SUMMARY_PRIVATE_DIRECTORIES for part in parts)
+        or any(part.startswith((".env", "secret", "credential")) for part in parts)
+    )
 
 
 def _stable_ids(source_id: str, event_type: str, attempt_id: str) -> tuple[str, str]:

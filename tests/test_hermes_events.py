@@ -194,6 +194,46 @@ class HermesCodexEventTests(unittest.TestCase):
         self.assertEqual(failed.payload.kind, FactKind.OPEN_GATE)
         self.assertIn("pytest exited 2", failed.payload.bullet)
 
+    def test_work_summary_rejects_credential_paths_at_curator_boundary(self) -> None:
+        fingerprint = "a" * 64
+        binding = CodexGoalBinding(
+            profile_id="gptmd-coding",
+            project_id="gptmd",
+            session_id="session-1",
+            goal_id="goal-1",
+            source_id="hermes.gptmd-coding",
+            repository_fingerprint=fingerprint,
+        )
+        for private_path in (".aws/credentials", ".ssh/id_ed25519", "certs/private.pem"):
+            with self.subTest(path=private_path):
+                summary = json.dumps({
+                    "schema_version": 1,
+                    "repository_fingerprint": fingerprint,
+                    "changed_files": [{"path": private_path, "change": "update"}],
+                    "omitted_files": 0,
+                    "checks": [],
+                    "omitted_checks": 0,
+                })
+                event = codex_hook_to_event(
+                    "codex:turn:end",
+                    {
+                        "attempt_id": "attempt-private-path",
+                        "session_id": "session-1",
+                        "turn_id": "turn-private-path",
+                        "outcome": "completed",
+                        "work_summary_json": summary,
+                    },
+                    binding,
+                    source_sequence=2,
+                    occurred_at="2026-10-19T00:01:00+00:00",
+                )
+
+                assert isinstance(event.payload, GoalActivityObserved)
+                self.assertNotIn(private_path, event.payload.bullet)
+                self.assertNotIn("credentials", event.payload.bullet)
+                self.assertNotIn("id_ed25519", event.payload.bullet)
+                self.assertNotIn("private.pem", event.payload.bullet)
+
     def test_failed_or_interrupted_turn_remains_an_open_gate(self) -> None:
         for outcome in ("failed", "interrupted"):
             with self.subTest(outcome=outcome):
