@@ -10917,3 +10917,22 @@ while preserving explicit criteria and same-project parent validation.
   loaded; a reload is not the remaining action.
 - **Outcome:** Correct the stale reload claim and retain the visual UI check as
   open until the workstation is unlocked.
+
+## 2026-10-29 — Diagnose V2 yellow status
+
+- **Intent:** Determine whether the yellow status came from a current health or
+  review-queue failure in the configured V2 consumer workspace.
+- **Changed fact:** The bound profile health read returned healthy for
+  `vhost-manager-alpha`, with all seven dependencies healthy and no gates or
+  pending review, purge, or expiry work. The project-bound review queue was
+  valid and empty. Running the 0.9.6 extension refresh logic against the real
+  workspace settings and live Curator/Hermes child processes computed green
+  `#73d216` and included the versioned tooltip model.
+- **Verification:** The configured profile probe exited 0. The refresh returned
+  green in 8.5 seconds. The active VS Code window is `renew_ssl`, and its
+  extension host has loaded 0.9.6. No consumer source or service was changed.
+- **Open gate:** The Xfce screensaver is active, preventing inspection of the
+  rendered button; this evidence does not establish what the locked display
+  currently shows. The dashboard checklist remains open.
+- **Outcome:** The V2 backend and refresh path are healthy at this observation;
+  keep the rendered UI state unverified.

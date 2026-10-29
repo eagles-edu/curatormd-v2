@@ -9182,6 +9182,16 @@ substitute for evidence at a later integration boundary.
       status and overview/list rendering; paged fact details, revision-stale
       handling in the rendered UI, grant changes, evidence resolution, and SDE/
       cleanup review remain open. No checklist marker changed.
+      Fresh status diagnosis (2026-10-29 11:20 UTC): the configured Hermes
+      profile probe returned `healthy`, all seven dependencies healthy, zero
+      gates, and no pending review/purge/expiry work. The 0.9.6 extension's
+      refresh logic, using the real project settings and Curator/Hermes child
+      processes, returned `healthy` and computed green `#73d216`; the review
+      queue was valid and empty. This confirms the live data path at that time,
+      not the rendered status item. The Xfce screensaver was active, so the
+      visible button could not be inspected. The dashboard item remains open
+      for rendered page/evidence states, stale-page behavior, authorization
+      changes, and owner SDE/cleanup review.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
