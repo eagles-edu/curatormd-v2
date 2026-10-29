@@ -11287,3 +11287,20 @@ while preserving explicit criteria and same-project parent validation.
   acceptance, complete privacy coverage, live expiry/backup recovery, or owner
   review. No checklist marker changed.
 - **Outcome:** Refresh the alpha snapshot without changing ledger state.
+
+## 2026-10-30 — Recheck local maintenance and backup inventory
+
+- **Intent:** Verify the scheduled alpha maintenance pass and the approved
+  backup-tree warning/inventory state.
+- **Changed fact:** The six-hour timer ran at 00:00 +07 and exited 0 with a
+  verified daily backup and zero due/pending purge work. The current backup
+  tree has two recognized daily snapshots and 30 unclassified entries; its
+  observed allocation is 5,259,264 bytes, below the 250 MiB warning.
+- **Verification:** Read the user timer/service state and bounded journal
+  output; used `measure_backup_directory` against the private alpha backup
+  directory without reading file contents or changing data.
+- **Open gate:** The inventory remains incomplete; no legacy entries were
+  classified or deleted. Seven-copy live rotation and processing of a due
+  72-hour artifact remain unverified.
+- **Outcome:** Refresh operating evidence without treating a successful timer
+  pass as proof of full retention/recovery acceptance.
