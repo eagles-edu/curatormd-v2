@@ -29,6 +29,8 @@ const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
 const HERMES_HEALTH_MAX_BYTES = 32768;
+const MAX_HEALTH_PROBE_AGE_SECONDS = 60;
+const MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS = 5;
 const STATUS_REFRESH_INTERVAL_MS = 60000;
 const SQLITE_WARNING_BYTES = 250 * 1024 * 1024;
 const REQUIRED_HEALTH_PROBES = Object.freeze([
@@ -139,6 +141,16 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
   const dependencies = health && health.dependencies;
   const dependencyNames = Array.isArray(dependencies)
     ? dependencies.map((dependency) => dependency && dependency.name) : [];
+  const dependencyObservationsFresh = Array.isArray(dependencies)
+    && dependencies.every((dependency) => {
+      if (!dependency || typeof dependency.observed_at !== 'string') return false;
+      const observedAt = Date.parse(dependency.observed_at);
+      const age = (Date.now() - observedAt) / 1000;
+      return Number.isFinite(observedAt)
+        && dependency.age_seconds <= MAX_HEALTH_PROBE_AGE_SECONDS
+        && age <= MAX_HEALTH_PROBE_AGE_SECONDS + MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS
+        && age >= -MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS;
+    });
   const dependenciesValid = Array.isArray(dependencies)
     && dependencies.length === REQUIRED_HEALTH_PROBES.length
     && new Set(dependencyNames).size === REQUIRED_HEALTH_PROBES.length
@@ -159,7 +171,8 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
   }
   if (health.status === 'healthy'
     && (health.gate_codes.length > 0
-      || dependencies.some((dependency) => dependency.status !== 'healthy'))) {
+      || dependencies.some((dependency) => dependency.status !== 'healthy')
+      || !dependencyObservationsFresh)) {
     throw curatorError('hermes-probe-invalid', 'Hermes health response did not reconcile.');
   }
   return health;

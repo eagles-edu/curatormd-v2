@@ -9946,6 +9946,13 @@ substitute for evidence at a later integration boundary.
       runner and receipt-before-unlink ordering on a disposable project. It is
       not evidence of 72 hours of elapsed runtime or attended human approval;
       the installed six-hour timer and live-alpha expiry remain unverified.
+      VS Code health freshness fix (2026-10-30 02:37 +07:00): status extension
+      0.9.9 now refuses to show `healthy` when any required Hermes dependency
+      observation is older than 60 seconds, more than 5 seconds in the future,
+      or reports an age over 60 seconds. The focused 17-test suite passes; the
+      installed extension version is 0.9.9 and its packaged JavaScript hash
+      matches the source. This closes the stale-probe green-state defect only;
+      the broader rendered-dashboard acceptance item remains open.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
