@@ -10956,3 +10956,20 @@ while preserving explicit criteria and same-project parent validation.
   command-history coverage is incomplete; the privacy checklist remains open.
 - **Outcome:** State the owner's existing policy without weakening the pending
   source-to-sink review.
+
+## 2026-10-29 — Inventory Curator V2 log call sites
+
+- **Intent:** Advance the local source-to-sink review for the owned Curator V2
+  package without claiming operating-system or consumer coverage.
+- **Changed fact:** The Curator package's logger emits a sanitized public error
+  code and exception type. Startup, staging, maintenance, router, and
+  evidence-capture failure paths use fixed error text rather than exception
+  details.
+- **Verification:** Searched every `logging`, `logger`, and `print` call site
+  under `src/curatormd_v2` and inspected the logger and relevant CLI boundaries.
+  No tests were run; this was a read-only source review.
+- **Open gate:** This does not inspect all Hermes/consumer producers, actual
+  journals, shell history, or OS crash reporting. The full privacy criterion
+  remains open.
+- **Outcome:** Record one bounded package-level sink review and keep the
+  cross-boundary privacy requirement open.

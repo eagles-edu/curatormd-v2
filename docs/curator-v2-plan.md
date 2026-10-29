@@ -4824,6 +4824,13 @@ unknown. The dashboard and live event-delivery gates remain open.
       unresolved-event retry payload exception remains limited to its inbox and
       approved daily backups. These scoped tests do not cover all host and
       producer sinks; keep this item open.
+      Curator source-output review (2026-10-29): scanned all `logging`,
+      `logger`, and `print` call sites under `src/curatormd_v2`. The only logger
+      emits the sanitized public error code and exception type; startup,
+      staging, maintenance, router, and evidence-capture failures use fixed
+      text. This source review does not inspect every Hermes/consumer producer,
+      actual journals, shell history, or OS crash reporting; keep this item
+      open.
       Hermes-child limit check (2026-10-28 04:47 UTC): traced the Curator MCP
       process spawned by the Hermes Core checkout's profile status probe. Its
       syscall trace shows `prlimit64(... RLIMIT_CORE, {0, 0}) = 0` and
