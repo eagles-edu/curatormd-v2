@@ -7387,6 +7387,11 @@ Final report: completed facts, open items, recovery path, next action
       delivery. No rejected action was retried. The missing acceptance step is
       still a genuine bound Hermes Codex app-server turn followed by readback
       of its compact work-summary fact.
+      Goal-report audit (2026-10-29 11:34 UTC): read all 31 paged goals through
+      the same configured profile and checked every current fact page for the
+      producer's `Codex changed files:` summary form. No goal report contains a
+      work-summary fact. This directly confirms the current ledger has not yet
+      received the new summary payload; the rejected event was not retried.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer

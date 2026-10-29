@@ -11005,3 +11005,16 @@ while preserving explicit criteria and same-project parent validation.
   readback of its summary fact are still required.
 - **Outcome:** Keep the live producer-to-ledger criterion open and record the
   exact next evidence needed.
+
+## 2026-10-29 — Audit current ledger for work-summary facts
+
+- **Intent:** Check whether any existing bound Hermes Codex turn already meets
+  the required live work-summary readback.
+- **Changed fact:** The profile contains 31 goals and 28 facts, but no current
+  goal report contains the producer's `Codex changed files:` fact form.
+- **Verification:** Read every project goal and its current fact page through
+  the configured `renew-ssl-coding` profile; the search emitted only counts and
+  matching goal IDs, not fact text. No write or retry was made.
+- **Open gate:** A real bound Hermes Codex app-server turn must still deliver
+  the summary through the durable outbox and its fact must be read back.
+- **Outcome:** Existing profile data does not satisfy the live producer gate.
