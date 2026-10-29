@@ -74,10 +74,18 @@ non-daily files by type and suffix: three older SQLite snapshots, ten WAL/SHM
 sidecars, five rollback archives, one YAML file, one VS Code settings file,
 and eight nested files in two extension-backup directories (two JavaScript,
 two JSON, two Markdown, and two suffixless files). Twelve entries are not
-owner-only. No filenames or file contents were retained; the archives and
-suffixless files were not opened. This narrows entry-type uncertainty but does
-not identify archive contents, justify permission changes, or make the V2
-managed-snapshot inventory complete.
+owner-only. A 2026-10-29 20:13 +07 header-only listing of the five `.tar.gz`
+archives counted 455 regular members: 211 `.py`, 189 `.pyc`, 10 `.txt`, eight
+`.json`, and 37 suffixless files. No member names containing `codex`,
+`proposal`, `transcript`, `chat`, or `history` were found; names were not
+retained, and no member payload was extracted or read except for the standard
+package metadata headers. All five metadata headers identify the distribution
+as `curatormd-v2` version `0.1.0a1`; all 211 `.py` members are under the
+`curatormd_v2` package path, and there are no other Python source files. This
+classifies them as Curator V2 package/source snapshots, not raw transcript or
+proposal collections. The exact source revisions and contents of the text and
+suffixless members remain unknown. It does not justify permission changes or
+make the V2 managed-snapshot inventory complete.
 
 | Class | Retention/replay rule | Current limit or alert | Recovery source |
 | --- | --- | --- | --- |
@@ -93,19 +101,22 @@ and physical table/index allocation for all 30 schema tables. It does not turn
 shared page allocation into project data, identify the contents of unclassified
 backups, or prove seven-copy rotation from the present directory scan. The
 SQLite warning is policy-approved and displayed by the Curator V2 dashboard;
-boundary behavior is covered by its focused test. This is a schema-v38 runtime
-snapshot. Schema v39 adds six archive-audit fields to `event_inbox`; source-level
-logical accounting includes those fields, and archival leaves the receipts and
-references in place. The current alpha database has not yet migrated to v39, so
-no live archive-capacity recovery is claimed.
+boundary behavior is covered by its focused test. This census is a schema-v38
+runtime snapshot from its recorded observation time. Schema v39 adds six
+archive-audit fields to `event_inbox`; source-level logical accounting includes
+those fields, and archival leaves the receipts and references in place. The
+alpha database has since migrated to schema 39; its current integrity and
+foreign-key result is recorded in
+[`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
+This older census does not establish live archive-capacity recovery.
 
 ## Backups and restore
 
-The local six-hour maintenance run creates one verified online backup per UTC
-day in the private Curator state directory. It retains the newest seven daily
-copies and removes older copies only after the new snapshot passes SQLite
-integrity checks. A backup failure leaves existing copies intact and stops that
-maintenance pass before purge retries.
+The local six-hour maintenance run creates one verified online backup per
+`Asia/Ho_Chi_Minh` calendar day in the private Curator state directory. It
+retains the newest seven daily copies and removes older copies only after the new snapshot passes SQLite
+integrity checks. A backup failure leaves existing copies intact and stops
+that maintenance pass before purge retries.
 
 The host-authorized attended storage view also measures the sibling `backups`
 directory without opening snapshot contents. It reports recognized daily-file
@@ -186,7 +197,7 @@ status, not paths or raw SQLite errors.
 | Blocked WAL cleanup across restart | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py) | Cleanup stays pending while a reader blocks truncation and is retried after restart. |
 | Exact event-receipt page archive, stale-manifest rejection, review authorization, and replay | [`tests/test_event_payload_scrub.py`](../tests/test_event_payload_scrub.py), [`tests/test_api_goal_access.py`](../tests/test_api_goal_access.py), [`tests/test_mcp_client_workflow.py`](../tests/test_mcp_client_workflow.py) | Archiving moves only reviewed processed/payload-free receipts outside active capacity, keeps each durable receipt and its exact replay behavior, and rejects stale pages without partial updates. |
 
-Live local-alpha restore (2026-10-28 13:14 UTC): the installed
+Live local-alpha restore (2026-10-28 20:14 +07:00): the installed
 `curatormd-v2-storage` command restored the verified daily backup
 `curator-v2-2026-10-28.sqlite3` to the new owner-only path
 `/home/eaglesvn/.local/share/curatormd-v2-alpha/recovery-review-2026-10-28.sqlite3`.

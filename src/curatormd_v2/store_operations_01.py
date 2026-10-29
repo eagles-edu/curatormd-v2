@@ -242,27 +242,41 @@ class StoreOperations0Part1(StoreOperations0Part0):
     def staging_artifact_expiry_readiness(
         self,
         project_id: str,
-        artifact_goal_times: dict[str, tuple[str, str]],
+        artifact_goal_times: dict[str, tuple[str, str, str | None, str]],
     ) -> dict[str, tuple[bool, bool, int]]:
-        """Read post-publication fact/review evidence and pending SDE counts.
+        """Read fact and review state tied to each staged occurrence.
 
         The returned tuple is `(fact_after_stage, review_after_stage,
-        pending_sde_count)`, keyed by the exact staged path. Only compact
-        ledger timestamps and project/goal identifiers enter this query.
+        pending_sde_count)`, keyed by the exact staged path. Fact evidence must
+        match both the occurrence ID and content digest; unrelated facts or SDEs
+        in the same goal cannot change this file's expiry state.
         """
 
         if not re.fullmatch(
             r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", project_id
         ):
             raise ValueError("project_id must be a bounded opaque identifier")
-        requested_items: list[dict[str, str]] = []
-        for path, (goal_id, staged_at) in artifact_goal_times.items():
+        requested_items: list[dict[str, str | None]] = []
+        for path, (goal_id, staged_at, occurrence_id, sha256) in artifact_goal_times.items():
             if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}", goal_id):
                 raise ValueError("goal_id must be a bounded opaque identifier")
-            if not path or len(path) > 1024 or len(staged_at) > 64:
+            if (
+                not path or len(path) > 1024 or len(staged_at) > 64
+                or not re.fullmatch(r"[a-f0-9]{64}", sha256)
+                or (
+                    occurrence_id is not None
+                    and not re.fullmatch(r"[a-f0-9]{32}", occurrence_id)
+                )
+            ):
                 raise ValueError("staged artifact readiness fields exceed their bounds")
             requested_items.append(
-                {"path": path, "goal_id": goal_id, "staged_at": staged_at}
+                {
+                    "path": path,
+                    "goal_id": goal_id,
+                    "staged_at": staged_at,
+                    "occurrence_id": occurrence_id,
+                    "sha256": sha256,
+                }
             )
         readiness: dict[str, tuple[bool, bool, int]] = {}
         for offset in range(0, len(requested_items), 400):
@@ -275,7 +289,9 @@ class StoreOperations0Part1(StoreOperations0Part0):
                     """WITH requested AS (
                            SELECT json_extract(value, '$.path') AS path,
                                   json_extract(value, '$.goal_id') AS goal_id,
-                                  json_extract(value, '$.staged_at') AS staged_at
+                                  json_extract(value, '$.staged_at') AS staged_at,
+                                  json_extract(value, '$.occurrence_id') AS occurrence_id,
+                                  json_extract(value, '$.sha256') AS sha256
                            FROM json_each(?)
                        )
                        SELECT q.path,
@@ -284,19 +300,41 @@ class StoreOperations0Part1(StoreOperations0Part0):
                            JOIN goals AS g ON g.goal_id = f.goal_id
                            WHERE f.goal_id = q.goal_id AND g.project_id = ?
                              AND f.created_at >= q.staged_at
+                             AND EXISTS (
+                               SELECT 1 FROM json_each(f.evidence_json) AS e
+                               WHERE json_extract(e.value, '$.occurrence_id') = q.occurrence_id
+                                 AND json_extract(e.value, '$.sha256') = q.sha256
+                             )
                          ) AS fact_after_stage,
                          EXISTS (
                            SELECT 1 FROM audit_receipts AS r
                            JOIN sde_candidates AS s
                              ON s.candidate_id = r.candidate_id
                            JOIN goals AS g ON g.goal_id = s.goal_id
+                           JOIN json_each(s.fact_ids_json) AS candidate_fact
+                           JOIN facts AS f ON f.fact_id = candidate_fact.value
                            WHERE s.goal_id = q.goal_id AND g.project_id = ?
+                             AND EXISTS (
+                               SELECT 1 FROM json_each(f.evidence_json) AS e
+                               WHERE json_extract(e.value, '$.occurrence_id') = q.occurrence_id
+                                 AND json_extract(e.value, '$.sha256') = q.sha256
+                             )
                              AND r.created_at >= q.staged_at
                          ) AS review_after_stage,
                          (SELECT COUNT(*) FROM sde_candidates AS s
                           JOIN goals AS g ON g.goal_id = s.goal_id
                           WHERE s.goal_id = q.goal_id AND g.project_id = ?
-                            AND s.status = ?) AS pending_sde_count
+                            AND s.status = ?
+                            AND EXISTS (
+                              SELECT 1 FROM json_each(s.fact_ids_json) AS candidate_fact
+                              JOIN facts AS f ON f.fact_id = candidate_fact.value
+                              WHERE f.goal_id = s.goal_id
+                                AND EXISTS (
+                                  SELECT 1 FROM json_each(f.evidence_json) AS e
+                                  WHERE json_extract(e.value, '$.occurrence_id') = q.occurrence_id
+                                    AND json_extract(e.value, '$.sha256') = q.sha256
+                                )
+                            )) AS pending_sde_count
                        FROM requested AS q""",
                     (
                         requested,

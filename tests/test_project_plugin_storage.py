@@ -24,7 +24,14 @@ from curatormd_v2 import (
     backup_database,
     restore_database,
 )
-from curatormd_v2.models import FactKind, Materiality, SDECandidate, SDEStatus
+from curatormd_v2.models import (
+    EvidenceOutcome,
+    EvidenceRef,
+    FactKind,
+    Materiality,
+    SDECandidate,
+    SDEStatus,
+)
 from curatormd_v2.project_config import ProjectConfig
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
@@ -489,6 +496,13 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
             goal_id,
             FactKind.RESEARCH,
             "Compact facts were recorded from the temporary source",
+            evidence=(EvidenceRef(
+                "staged_artifact",
+                f"artifact:{artifact.occurrence_id}",
+                artifact.sha256,
+                EvidenceOutcome.OBSERVED,
+                occurrence_id=artifact.occurrence_id,
+            ),),
         )
         after_facts = plugin.discover_expired_staging_artifacts(
             staged_at + timedelta(minutes=1)
@@ -497,6 +511,74 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
         self.assertTrue(after_facts.inventory_complete)
         self.assertEqual(after_facts.eligible_artifacts, (artifact,))
         self.assertEqual(after_facts.pending_sde_artifact_count, 0)
+
+    def test_expiry_fact_and_pending_review_are_scoped_to_artifact_occurrence(self) -> None:
+        """Same-goal evidence and review cannot change another file's expiry."""
+
+        config = self._register_project("Register occurrence-scoped expiry")
+        plugin = ProjectPlugin.bind(config, self.store)
+        goal_id = "expiry-occurrence-scope-goal"
+        self._goal(plugin, goal_id)
+        staged_at = datetime.now(UTC)
+        with patch_store_symbol("utc_now", return_value=staged_at.isoformat()):
+            first = plugin.stage_artifact(
+                goal_id, "cue", "source-first", io.BytesIO(b"first source")
+            )
+            second = plugin.stage_artifact(
+                goal_id, "cue", "source-second", io.BytesIO(b"second source")
+            )
+
+        first_fact, _ = plugin.service.goal_fact(
+            goal_id,
+            FactKind.RESEARCH,
+            "A compact fact from the first source",
+            evidence=(EvidenceRef(
+                "staged_artifact",
+                f"artifact:{first.occurrence_id}",
+                first.sha256,
+                EvidenceOutcome.OBSERVED,
+                occurrence_id=first.occurrence_id,
+            ),),
+        )
+        self.store.add_sde_candidate(
+            SDECandidate(
+                goal_id=goal_id,
+                materiality=Materiality.IMPLEMENTATION,
+                rationale="Review the fact tied to the first source",
+                fact_ids=(first_fact.fact_id,),
+                impact="The first source may contain a durable implementation detail",
+                retrieval_value="The first source has a compact linked fact",
+            ),
+            project_id=config.project_id,
+        )
+
+        before_second_fact = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(minutes=1)
+        )
+        self.assertEqual(before_second_fact.eligible_artifacts, ())
+        self.assertEqual(before_second_fact.pending_sde_artifact_count, 1)
+
+        plugin.service.goal_fact(
+            goal_id,
+            FactKind.RESEARCH,
+            "A compact fact from the second source",
+            evidence=(EvidenceRef(
+                "staged_artifact",
+                f"artifact:{second.occurrence_id}",
+                second.sha256,
+                EvidenceOutcome.OBSERVED,
+                occurrence_id=second.occurrence_id,
+            ),),
+        )
+        after_second_fact = plugin.discover_expired_staging_artifacts(
+            staged_at + timedelta(minutes=2)
+        )
+
+        self.assertTrue(after_second_fact.inventory_complete)
+        self.assertEqual(after_second_fact.eligible_artifacts, (second,))
+        self.assertEqual(after_second_fact.pending_sde_artifact_count, 1)
+        self.assertTrue(Path(first.path).is_file())
+        self.assertTrue(Path(second.path).is_file())
 
     def test_expiry_retry_preserves_same_content_replacement_after_approval(
         self,
@@ -655,7 +737,16 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
                 goal_id, "cue", "pending-sde-cue", io.BytesIO(b"temporary source")
             )
         fact, _ = plugin.service.goal_fact(
-            goal_id, FactKind.RESEARCH, "A compact fact for the pending review"
+            goal_id,
+            FactKind.RESEARCH,
+            "A compact fact for the pending review",
+            evidence=(EvidenceRef(
+                "staged_artifact",
+                f"artifact:{artifact.occurrence_id}",
+                artifact.sha256,
+                EvidenceOutcome.OBSERVED,
+                occurrence_id=artifact.occurrence_id,
+            ),),
         )
         self.store.add_sde_candidate(
             SDECandidate(

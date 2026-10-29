@@ -635,7 +635,7 @@ plugin or Hermes integration is installed and working end to end.
       4,636,672 allocated bytes) without reading contents or following
       symlinks. It does not descend into the two group-writable directories
       (mode 0775), so this is not a complete tree-size observation. A separate
-      bounded metadata-only walk at 2026-10-28 04:52 UTC followed neither
+      bounded metadata-only walk at 2026-10-28 11:52 +07:00 followed neither
       symlinks nor file contents and counted 29 entries: 27 regular files, two
       directories, zero symlinks, 4,642,256 logical file bytes, and 4,681,728
       allocated bytes across files and directories. Twelve entries have
@@ -656,7 +656,7 @@ plugin or Hermes integration is installed and working end to end.
       measurement is incomplete or allocation units are unsupported. A reached
       threshold remains a warning even when backup classification is incomplete
       because observed bytes are a lower bound. The refreshed installed read
-      (2026-10-28 12:03 UTC) traversed all 29 entries, including both
+      (2026-10-28 19:03 +07:00) traversed all 29 entries, including both
       group-writable directories, using descriptor-relative no-follow opens.
       It measured 4,642,256 logical file bytes and 4,685,824 allocated bytes
       including the root directory. One daily SQLite snapshot was recognized;
@@ -674,7 +674,7 @@ plugin or Hermes integration is installed and working end to end.
       archive/settings contents were not opened. A content-free size breakdown
       by these classes is recorded in
       [`Curator V2 Pilot Default Policy.md`](Curator%20V2%20Pilot%20Default%20Policy.md).
-      Fresh local-alpha accounting (2026-10-28 04:49:06 UTC): the authorized
+      Fresh local-alpha accounting (2026-10-28 11:49:06 +07:00): the authorized
       Vhost project read reports 43,912 logical project-record bytes across
       25 goals, 22 facts, 56 event receipts, and zero SDE candidates or retained
       event payload bytes. The inbox has 18,885 retained logical row bytes of
@@ -726,7 +726,7 @@ plugin or Hermes integration is installed and working end to end.
       recorded in [`storage-recovery-v2.md`](storage-recovery-v2.md); the
       unanswered SQLite warning rule and incomplete backup classification keep
       this checklist item open.
-      Metadata-only `lstat` at 2026-10-28 05:34 UTC found the SQLite main file
+      Metadata-only `lstat` at 2026-10-28 12:34 +07:00 found the SQLite main file
       at 524,288 bytes, WAL at 457,352 bytes, and SHM at 32,768 bytes; each is a
       UID-1000-owned regular file with mode 0600. The backup directory is
       UID-1000-owned mode 0700. No file contents were read. WAL and SHM sizes
@@ -841,7 +841,7 @@ plugin or Hermes integration is installed and working end to end.
       scrubbed payloads roll out within seven days. Replay-horizon retirement
       and budgets for every permanent class are still unresolved; no
       permanent-data budget marker changes here.
-      Whole-tree measurement follow-up (2026-10-28 12:03 UTC): the scanner now
+      Whole-tree measurement follow-up (2026-10-28 19:03 +07:00): the scanner now
       traverses owner-owned group-writable child directories using
       descriptor-relative `O_NOFOLLOW` opens and verifies each child inode
       after opening. Allocated-size completeness is independent of whether
@@ -1247,7 +1247,7 @@ plugin or Hermes integration is installed and working end to end.
       verified; person identity, reviewer authority from the profile,
       managed-gateway delivery, live capture, and writes from the direct Codex
       client remain open.
-      Current runtime evidence (2026-10-28 05:36 UTC): the supported
+      Current runtime evidence (2026-10-28 12:36 +07:00): the supported
       `renew-ssl-coding` profile probe exited successfully, discovered 50 tools,
       and read 56 processed receipts, 25 goals, 22 facts, and zero SDE
       candidates. Its separate health observation was `healthy`, with complete
@@ -1532,7 +1532,7 @@ plugin or Hermes integration is installed and working end to end.
       The next scheduled run has not occurred since the cadence change; verify
       that run separately. The active `/usr/local` Hermes install is unchanged.
       Production alert delivery and restart/reconciliation remain open.
-      Fresh profile-health recheck (2026-10-26T15:41:09Z): the checkout CLI's
+      Fresh profile-health recheck (2026-10-26T22:41:09+07:00): the checkout CLI's
       host-injected `renew-ssl-coding` profile read reports
       `project_health=healthy` for `vhost-manager-alpha`, with all seven
       required dependencies healthy, no gate codes, a complete zero-file
@@ -1553,7 +1553,7 @@ plugin or Hermes integration is installed and working end to end.
       reports zero processed or pending targets for `vhost-manager-alpha`.
       This verifies the six-hour local retry cadence and an idle pass; it does
       not prove deletion or close production scheduler/alert/recovery gates.
-      Fresh source-checkout/profile read (2026-10-24T16:14:47Z): the Hermes
+      Fresh source-checkout/profile read (2026-10-24T23:14:47+07:00): the Hermes
       `renew-ssl-coding` probe connects through the configured V2 stdio server,
       discovers 48 tools, and returns 12 processed receipts, one goal, two
       facts, and `project_health=healthy` with no gates. The active timer remains
@@ -1782,7 +1782,7 @@ plugin or Hermes integration is installed and working end to end.
       run. This closes the single-user local-alpha health contract. External
       alert delivery, production monitoring, and cross-system reconciliation
       remain open in [release gates](release-gates-v2.md).
-      Fresh health recheck (2026-10-25 06:24 UTC): the Hermes development
+      Fresh health recheck (2026-10-25 13:24 +07:00): the Hermes development
       checkout's `renew-ssl-coding` profile probe connects to the installed
       Curator V2 stdio package, discovers 48 tools, reads the same 12 retained
       receipts, one goal, and two facts, and reports `project_health=healthy`
@@ -2291,7 +2291,7 @@ plugin or Hermes integration is installed and working end to end.
       records the decision. Existing checksum and reconciliation tests verify
       divergent Markdown is preserved, reported read-only, and not overwritten.
 - [x] Provide local verified database backups and manual restore to a new path.
-      Each six-hour local maintenance pass creates one UTC-dated backup when
+      Each six-hour local maintenance pass creates one local-day-dated backup when
       needed, retains the newest seven verified daily copies in a private
       directory, and prunes older dated backups only after a successful new
       snapshot. A backup failure stops the purge pass and leaves older backups
@@ -2604,7 +2604,7 @@ plugin or Hermes integration is installed and working end to end.
       cleanup. The local project health/dashboard warning is the required
       notification; no external alert service or model/token budget is
       required. Token use remains report-only. A read-only report at
-      2026-10-28 13:10 UTC returned seven retained bound turns (six reported,
+      2026-10-28 20:10 +07:00 returned seven retained bound turns (six reported,
       one unknown), sourced only from Codex app-server, with latest retained
       event age 26,401 seconds. `coverage_complete=false` and
       `tokens_complete=false`; it lists auxiliary calls outside active-turn
@@ -2650,20 +2650,20 @@ plugin or Hermes integration is installed and working end to end.
       records this usage table from `codex:turn:end`; the enabled profile plugin
       currently sees only `codex_app_server` rows. A read-only ledger query
       confirms six turns (five reported, one unknown), with the latest still
-      `2026-10-21T10:40:21Z`. This Codex session has not generated a new event
+      `2026-10-21T17:40:21+07:00`. This Codex session has not generated a new event
       in that Hermes profile. Do not insert synthetic usage to refresh it; the
       next proof must come from a real turn through the bound profile.
-      Profile-runtime progress (2026-10-28 04:58 UTC): the configured Codex
+      Profile-runtime progress (2026-10-28 11:58 +07:00): the configured Codex
       binary pointed to a removed VS Code extension path. Updated only the
       `renew-ssl-coding` profile's `codex_bin` to the installed Codex CLI
       `0.162.0-alpha.17.2` and retained a mode-0600 config backup. A one-shot
       Hermes CLI turn returned successfully, but the read-only usage report
       stayed at six turns (five reported, one unknown; last event
-      `2026-10-21T10:40:21Z`): the CLI session had no durable project/goal
+      `2026-10-21T17:40:21+07:00`): the CLI session had no durable project/goal
       binding and is correctly excluded. A fresh profile MCP probe connected
       with host-injected profile/session context, discovered 50 tools, read
       56/56 processed Curator receipts, and returned a separate healthy project
-      health observation at 2026-10-28 04:58 UTC. This verifies the profile
+      health observation at 2026-10-28 11:58 +07:00. This verifies the profile
       runtime repair and ledger read, not a bound usage event; a real
       project/goal-bound turn and complete source coverage remain open.
       Provider/model token usage is not collected by Curator. It belongs to
@@ -2783,7 +2783,7 @@ plugin or Hermes integration is installed and working end to end.
       Freshness recheck (2026-10-27): a query-only read of the profile-local
       Hermes ledger passes `PRAGMA quick_check` and still shows the same six
       turns: five reported and one unknown, with the retained interval ending
-      at `2026-10-21T10:40:21.453664+00:00`. The unknown row has no provider/model route
+      at `2026-10-21T17:40:21.453664+07:00`. The unknown row has no provider/model route
       labels. The last usage is six days old; no token counts, event IDs, or
       session IDs were displayed, and no row was changed. The retained event
       envelope excludes provider/model fields, so the missing route cannot be
@@ -2791,7 +2791,7 @@ plugin or Hermes integration is installed and working end to end.
       local usage report explicitly stale/partial; live capture, project-wide
       coverage, budget policy, billing reconciliation, and alerting remain open.
       Local freshness-measurement progress (2026-10-27): the Hermes
-      `project_usage` report now returns its UTC measurement time and the age in
+      `project_usage` report now returns a machine-normalized measurement instant for local-time display and the age in
       seconds of the latest retained usage event. Empty or invalid timestamps
       report a null age; no freshness cutoff is inferred. Five focused plugin
       tests pass, the installed profile tool registers successfully, and its
@@ -2799,21 +2799,21 @@ plugin or Hermes integration is installed and working end to end.
       `coverage_complete=false` and `tokens_complete=false`. This makes staleness
       measurable but does not supply missing usage, approve a budget, or close
       this checklist item.
-      Local usage refresh (2026-10-28 05:57 UTC): the read-only installed
+      Local usage refresh (2026-10-28 12:57 +07:00): the read-only installed
       `project-usage` handler matches the Hermes checkout source by SHA-256
       `28bdc821866b2814737dd9cdca155f19389b008044435121af1a79d5ea302428`.
       After the real local app-server turn, the report shows seven retained
-      turns (six reported, one unknown), ending at `2026-10-28T05:50:47Z`; the
+      turns (six reported, one unknown), ending at `2026-10-28T12:50:47+07:00`; the
       latest event age was 380 seconds. Both completeness flags remain false
       and the report lists auxiliary calls outside active-turn context,
       auxiliary attempts without response, and unbound sessions as exclusions.
       No token totals were displayed. This refreshes freshness evidence only;
       project-wide completeness, budget/alert policy, and retention remain open.
-      Read-only profile usage refresh (2026-10-28 21:40 UTC): the installed
+      Read-only profile usage refresh (2026-10-29 04:40 +07:00): the installed
       `project_usage` handler returns seven retained turns for
       `vhost-manager-alpha` (six reported, one unknown), sourced from
       `codex_app_server`. The newest retained usage event is
-      `2026-10-28T05:50:47Z`, 56,953 seconds old at measurement. Both
+      `2026-10-28T12:50:47+07:00`, 56,953 seconds old at measurement. Both
       `coverage_complete` and `tokens_complete` remain false; the report lists
       the known auxiliary-call and unbound-session exclusions. No token totals
       were displayed and the read changed no ledger rows. This refreshes the
@@ -2827,7 +2827,7 @@ plugin or Hermes integration is installed and working end to end.
       measurement time, latest-event age, and separate `coverage_complete=false`
       / `tokens_complete=false` flags; unknown usage stays distinct from zero,
       and totals are not used for budgets or enforcement. A read-only profile
-      query at 2026-10-29 09:26:14 UTC returned seven turns (six reported, one
+      query at 2026-10-29 16:26:14 +07:00 returned seven turns (six reported, one
       unknown), with latest-event age 99,326 seconds; no token values or private
       IDs were copied into this record. Staging bytes remain measured through a
       complete project-scoped scan and the owner-approved 250 MiB warning-only
@@ -2999,7 +2999,7 @@ plugin or Hermes integration is installed and working end to end.
       acceptance passes both installed MCP tests, seven CLI entrypoints, and
       SQLite backup/restore verification. The read-only Hermes profile probe
       connects and discovers 48 tools; its reconciled `vhost-manager-alpha`
-      snapshot at `2026-10-25T18:57:17Z` reports 29/29 processed event receipts,
+      snapshot at `2026-10-26T01:57:17+07:00` reports 29/29 processed event receipts,
       12 goals, eight facts, a complete empty staging inventory, and seven
       healthy local dependencies. The Vhost consumer contract passes eight
       disposable tests, and its Hermes-managed harness passes five events with
@@ -4363,7 +4363,7 @@ exits 0, connects to the profile's local stdio Curator server, and discovers
 16 goals, 12 facts, no pending SDEs, and a separate `healthy` project-health
 snapshot with seven required dependencies healthy, complete staging inventory,
 and no gate codes. The activity and health observations are timestamped at
-`2026-10-26T19:11Z`; the latest event is `2026-10-26T18:52Z`. This is trusted
+`2026-10-27T02:11+07:00`; the latest event is `2026-10-27T01:52+07:00`. This is trusted
 local profile-context evidence, not a live gateway/app-server lifecycle event,
 human authentication, or production-readiness proof. The direct VS Code stdio
 route still lacks Hermes readiness metadata and correctly shows host health as
@@ -4774,7 +4774,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       `LimitCORE=0` and `UMask=0077`; the active Hermes gateway initially had
       `LimitCORE=infinity` and `UMask=0022`. The kernel routes core dumps to
       Apport, whose service is enabled. No crash canary was generated.
-      Gateway follow-up (2026-10-28 05:13 UTC): Hermes Core's root-owned systemd
+      Gateway follow-up (2026-10-28 12:13 +07:00): Hermes Core's root-owned systemd
       drop-in `/etc/systemd/system/hermes-gateway.service.d/90-local-privacy.conf`
       now sets `LimitCORE=0` and `UMask=0077`. After daemon reload and gateway
       restart, `systemctl show` reports the unit active/running with those
@@ -4783,7 +4783,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       process. This covers the gateway process on this host. Apport retention,
       journals, other producers, upstream crash reporting, and crash-canary
       handling remain unverified; keep the full source-to-sink item open.
-      Live recheck (2026-10-28 05:40 UTC): `hermes-gateway.service` remains
+      Live recheck (2026-10-28 12:40 +07:00): `hermes-gateway.service` remains
       active/running with `LimitCORE=0` and `UMask=0077`; its active UID-1000
       process reports the same umask and zero core-file limit. The Curator
       maintenance service reports `Result=success`, exit status 0,
@@ -4831,7 +4831,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       text. This source review does not inspect every Hermes/consumer producer,
       actual journals, shell history, or OS crash reporting; keep this item
       open.
-      Hermes-child limit check (2026-10-28 04:47 UTC): traced the Curator MCP
+      Hermes-child limit check (2026-10-28 11:47 +07:00): traced the Curator MCP
       process spawned by the Hermes Core checkout's profile status probe. Its
       syscall trace shows `prlimit64(... RLIMIT_CORE, {0, 0}) = 0` and
       `umask(077)` before serving; the profile probe exits 0. This verifies
@@ -7380,18 +7380,33 @@ Final report: completed facts, open items, recovery path, next action
       exact goal binding before running a read-only Git check. The managed MCP
       call returned `user rejected MCP tool call`; the command did not run and
       no new Curator receipt or fact was produced. The criterion remains open.
-      Profile activity recheck (2026-10-29 11:31 UTC): the configured local
+      Profile activity recheck (2026-10-29 18:31 +07:00): the configured local
       profile read returned 70 processed event receipts, 31 goals, and 28 facts;
-      the most recent receipt was processed at 06:52 UTC. No receipt from the
+      the most recent receipt was processed at 2026-10-29 13:52 +07:00. No receipt from the
       current Codex work was present, so this does not verify work-summary
       delivery. No rejected action was retried. The missing acceptance step is
       still a genuine bound Hermes Codex app-server turn followed by readback
       of its compact work-summary fact.
-      Goal-report audit (2026-10-29 11:34 UTC): read all 31 paged goals through
+      Goal-report audit (2026-10-29 18:34 +07:00): read all 31 paged goals through
       the same configured profile and checked every current fact page for the
       producer's `Codex changed files:` summary form. No goal report contains a
       work-summary fact. This directly confirms the current ledger has not yet
       received the new summary payload; the rejected event was not retried.
+      Focused source recheck (2026-10-29): Hermes Core's producer, app-server
+      integration, and durable-outbox tests passed 46/46; Curator's work-summary
+      event mapping and managed-hook tests passed 13/13. The active Hermes
+      installation at `/usr/local/lib/hermes-agent` does not contain the new
+      producer, and the configured profile still has no matching fact. This
+      verifies the source implementation and preserves the live-readback gate;
+      no install or service change was made.
+      End-to-end fixture recheck (2026-10-29): the focused Hermes event test
+      now sends a repository-bound work summary through the adapter, durable
+      inbox, ordered router, and SQLite goal ledger, then reads the processed
+      receipt and rendered goal report. The fact retains its source event ID,
+      includes only the allowlisted changed path and check exit result, and
+      remains non-verifying. The focused eight-test Hermes event suite passes.
+      This synthetic pipeline recheck does not prove delivery and readback for
+      the live current goal; that local-alpha evidence remains open.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer
@@ -8212,7 +8227,7 @@ substitute for evidence at a later integration boundary.
       Fresh profile probe (2026-10-23): the Hermes checkout connects to the
       configured local stdio server, discovers 48 tools, and reads the
       `vhost-manager-alpha` ledger with host-injected profile/session context.
-      At `2026-10-23T13:30:35Z` it reports 12 receipts, all processed, one goal,
+      At `2026-10-23T20:30:35+07:00` it reports 12 receipts, all processed, one goal,
       two facts, zero pending SDEs, and goal-list total 1. Health remains
       `unknown` with event-router, purge-scheduler, host-identity, human-review,
       and artifact-producer-inventory gates. This read is not a new app-server
@@ -8264,7 +8279,7 @@ substitute for evidence at a later integration boundary.
       single-host alpha, while authenticated person identity is not. No Vhost
       application request was made; this does not close the live-workflow gate.
       Multi-user/production identity is deferred, not a current alpha blocker.
-      Recheck (2026-10-24T12:04:34Z) through the
+      Recheck (2026-10-24T19:04:34+07:00) through the
       supported Hermes profile-context probe again discovers 48 tools and
       returns 12 processed receipts, one goal, two facts, and the same two
       degraded gates. The direct Codex MCP call remains unauthenticated because
@@ -8390,7 +8405,7 @@ substitute for evidence at a later integration boundary.
       All 51 installed Python module hashes match source and `pip check` passes.
       Hermes focused tests (3), Curator API tests (41), MCP workflow regression
       (1), strict Pyright, focused errors-only Pylint, Hermes Ruff, and
-      `git diff --check` pass. The profile probe at `2026-10-25T11:53:27Z`
+      `git diff --check` pass. The profile probe at `2026-10-25T18:53:27+07:00`
       reports 21 processed receipts, eight goals reconciled with the paginated
       total, four facts, zero SDE candidates/purge backlog, and healthy
       timestamped health observations. This closes local status display only;
@@ -8422,7 +8437,7 @@ substitute for evidence at a later integration boundary.
       12 checks and Hermes `git diff --check` is clean. The new test still uses
       a fake Codex app-server session and mocked MCP server, so no live
       app-server or deployed gateway event is claimed; Slice G remains open.
-      Latest local profile verification (2026-10-25T18:36:52Z): the supported
+      Latest local profile verification (2026-10-26T01:36:52+07:00): the supported
       `renew-ssl-coding` Hermes command connects with host profile/session
       context, discovers 48 tools, and reads `vhost-manager-alpha`. It reports
       27/27 processed event receipts, 11 goals (five planned, six active), and
@@ -8518,7 +8533,7 @@ substitute for evidence at a later integration boundary.
       was produced; the call was not retried. Slice G remains open pending a
       successfully approved, real app-server lifecycle event through the active
       gateway.
-      Current-source Vhost alpha refresh (2026-10-26T14:38Z): the 478-test
+      Current-source Vhost alpha refresh (2026-10-26T21:38+07:00): the 478-test
       Curator suite and blocking CI quality/security checks pass. A clean
       Python 3.12 wheel passed both installed-MCP tests, all eight CLI
       entrypoints, and backup/restore integrity; wheel SHA-256 is
@@ -8591,9 +8606,10 @@ substitute for evidence at a later integration boundary.
       interval visible; it does not refresh historical usage or close token
       coverage, budgets, retention, or alert requirements.
       Usage freshness source update (2026-10-27): Hermes Core commit `707c64a58`
-      adds a UTC measurement timestamp and latest-retained-event age to the
-      read-only report. Invalid, timezone-naive, and future event timestamps
-      leave age unknown rather than reporting a negative or misleading value.
+      adds a UTC-normalized machine timestamp and latest-retained-event age to
+      the read-only report, which renders timestamps for people in `+07:00`.
+      Invalid, timezone-naive, and future event timestamps leave age unknown
+      rather than reporting a negative or misleading value.
       The six-test project-usage file and Hermes `scripts/check --base
       d2aac32b8` (12 checks) pass. This source change has not been installed into the
       profile plugin copy. The current outbox snapshot below remains stale and
@@ -8613,20 +8629,20 @@ substitute for evidence at a later integration boundary.
       The Hermes checkout remains clean. This is repository-check evidence,
       not active gateway or deployed app-server event evidence; Slice G remains
       open.
-      Read-only profile refresh (2026-10-27 08:51 UTC): the Hermes development
+      Read-only profile refresh (2026-10-27 15:51 +07:00): the Hermes development
       CLI connects through the `renew-ssl-coding` profile to the installed
       V2 stdio server and discovers 49 tools. It reads `vhost-manager-alpha`
       with 41/41 processed receipts, 18 goals (13 active, five planned), 14
       facts, and no pending review or purge work. The separate health snapshot
       reports healthy, a complete empty staging inventory, and seven fresh
-      dependencies. The last processed event is from 06:52 UTC; this probe
+      dependencies. The last processed event is from 2026-10-27 13:52 +07:00; this probe
       creates no new app-server lifecycle event. Slice G remains open.
-      Trusted-profile status recheck (2026-10-27 10:52 UTC): the supported
+      Trusted-profile status recheck (2026-10-27 17:52 +07:00): the supported
       `renew-ssl-coding` CLI path again connects with host-injected Hermes
       profile/session context, discovers 49 tools, and reads the same
       `vhost-manager-alpha` project: 41/41 processed receipts, 18 goals, 14
       facts, and no pending review or purge work. The separate health read is
-      healthy with complete empty staging. The last event remains at 06:52 UTC,
+      healthy with complete empty staging. The last event remains at 2026-10-27 13:52 +07:00,
       so this confirms profile-bound ledger access, not a new app-server event
       or human identity. A direct Codex MCP call without Hermes context remains
       unauthenticated by design; it is not evidence that the supported Hermes
@@ -8636,13 +8652,13 @@ substitute for evidence at a later integration boundary.
       Hermes gateway active as PID `444545` since 06:13 +07. A read-only query
       of the configured `renew-ssl-coding` outbox found 11 acknowledged
       lifecycle events (five `codex:turn:start`, six `codex:turn:end`); the
-      latest event is `2026-10-21T10:40:21Z`. No event payload was read. The
+      latest event is `2026-10-21T17:40:21+07:00`. No event payload was read. The
       project-usage ledger has five reported turns and one unknown turn, with
       the same latest timestamp. The gateway process is active, but the
       profile-bound lifecycle and usage ledgers are stale; this does not prove
       current app-server delivery or complete token coverage. Slice G remains
       open pending a fresh approved real-route event and its receipt.
-      Fresh local-profile verification (2026-10-28 01:01 UTC): the Hermes Core
+      Fresh local-profile verification (2026-10-28 08:01 +07:00): the Hermes Core
       checkout command exits 0, connects with host-injected
       `renew-ssl-coding` profile/session context, and discovers 49 Curator V2
       tools. The bound `vhost-manager-alpha` read reports 51/51 processed event
@@ -8654,14 +8670,14 @@ substitute for evidence at a later integration boundary.
       the latest two processed receipts are `goal.started` and `fact.recorded`
       from `hermes-profile:renew-ssl-coding`; neither is a Codex turn event.
       The Hermes Codex outbox cursor remains at sequence 11 from
-      `2026-10-21T10:40:21Z`. No event payload was read. The VS Code launcher
+      `2026-10-21T17:40:21+07:00`. No event payload was read. The VS Code launcher
       still supplies no trusted `hermes/readiness` context and correctly
       remains `unknown`; direct MCP without Hermes context remains
       `unauthenticated`. Slice G remains open pending live lifecycle delivery
       and its remaining acceptance evidence.
       Outbox follow-up (2026-10-28): read-only metadata confirms 11/11 profile
       outbox events acknowledged, with the latest still sequence 11 at
-      `2026-10-21T10:40:21Z`; no newer Codex turn event exists in this outbox.
+      `2026-10-21T17:40:21+07:00`; no newer Codex turn event exists in this outbox.
       The currently running Hermes gateway process uses the root Hermes home,
       whose configuration enables profile multiplexing. This configuration
       does not substitute for a recent `renew-ssl-coding` app-server event and
@@ -8670,17 +8686,17 @@ substitute for evidence at a later integration boundary.
       against active goal `vhost-alpha-curator-smoke-20261020`, linked to
       criterion `durable-hermes-event`. The fact records that the profile
       outbox remains at 11 acknowledged events through sequence 11, latest
-      `2026-10-21T10:40:21Z`, and that a real managed-gateway Codex turn is
+      `2026-10-21T17:40:21+07:00`, and that a real managed-gateway Codex turn is
       still required. A post-write `goal_report` confirms the fact is present
       and the criterion remains open. No checklist marker changed; this is
       durable status evidence, not lifecycle-delivery proof.
-      Persistence/health recheck (2026-10-28 01:20 UTC): the supported Hermes
+      Persistence/health recheck (2026-10-28 08:20 +07:00): the supported Hermes
       profile probe exits 0 and reads the same bound project: 52/52 processed
       receipts, 23 goals, and 20 facts. Its separate health observation is
       `healthy`, with all seven dependencies fresh and an empty complete
       staging inventory. A metadata-only outbox query still finds 11/11
       acknowledged Codex lifecycle events, latest sequence 11 at
-      `2026-10-21T10:40:21Z`; no event payload was read. Ledger persistence and
+      `2026-10-21T17:40:21+07:00`; no event payload was read. Ledger persistence and
       local profile health are verified; new managed-gateway lifecycle
       delivery remains open.
       Hermes health-bridge recheck (2026-10-28): the current source checkout
@@ -8692,7 +8708,7 @@ substitute for evidence at a later integration boundary.
       (`Auth: none`), but that connection test does not call `project_health`.
       The healthy source-checkout probe is not active-install health evidence;
       runtime readiness and authenticated human identity remain open.
-      Supported local-profile refresh (2026-10-28 04:41:50 UTC): from the
+      Supported local-profile refresh (2026-10-28 11:41:50 +07:00): from the
       Hermes Core checkout, `./.venv/bin/hermes --profile renew-ssl-coding mcp
       test curator_v2 --probe-curator-status` exits 0, reports host-injected
       profile/session context, connects to the installed stdio server, and
@@ -8702,10 +8718,10 @@ substitute for evidence at a later integration boundary.
       inventory and no event, review, purge, or expiry backlog. This confirms
       the direct-call `unauthenticated` response is absence of Hermes context
       in that caller, not missing local project access. The newest ledger event
-      remains at 01:25:39 UTC; this is a read-only profile check, not a new
+      remains at 2026-10-28 08:25:39 +07:00; this is a read-only profile check, not a new
       managed-gateway lifecycle event or a token-usage refresh. Slice G remains
       open for a real managed-gateway turn and receipt.
-      Local app-server route verified (2026-10-28 05:50 UTC): one bounded
+      Local app-server route verified (2026-10-28 12:50 +07:00): one bounded
       Hermes Core CLI turn under the `renew-ssl-coding` profile generated
       `codex:turn:start` and `codex:turn:end` as outbox sequences 12 and 13.
       Both were acknowledged for `vhost-manager-alpha` and active goal
@@ -8755,7 +8771,7 @@ substitute for evidence at a later integration boundary.
       It records the installed package/config binding, the 2026-10-28 loopback
       Vhost apply/replay/rollback receipts, staging and retention policy,
       backup/restore evidence, and the current open issues. The route smoke
-      and exact receipt replay are verified. Progress (2026-10-28 04:32 UTC):
+      and exact receipt replay are verified. Progress (2026-10-28 11:32 +07:00):
       the owner-only local reviewer API projected the exact apply goal
       `vhost-op-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and rollback goal
       `vhost-rollback-b3cfa643-c3e1-456b-89a8-996479be6b4b` to the configured
@@ -8764,7 +8780,7 @@ substitute for evidence at a later integration boundary.
       [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
       Remaining checks: compare approved out-of-scope target hashes before and
       after a workflow run, and keep the profile usage read current. Rollback
-      rehearsal (2026-10-28 04:37 UTC):
+      rehearsal (2026-10-28 11:37 +07:00):
       in a temporary site-packages copy, the installed package tree was replaced
       by the verified archive; both versions loaded and the MCP launcher
       `--help` passed. The active profile install was untouched. Preserve any
@@ -8777,7 +8793,7 @@ substitute for evidence at a later integration boundary.
       bodies, transcripts, tool arguments, provider output, credentials, or raw
       exception text. Keep Slice I open until the local evidence is reconciled
       and `eaglesvn` records an explicit accept/reject decision against the
-      snapshot digest. Fresh live profile read (2026-10-29 10:37 UTC): the
+      snapshot digest. Fresh live profile read (2026-10-29 17:37 +07:00): the
       configured `renew-ssl-coding` profile connected to the installed Curator
       V2 MCP and returned 70 processed receipts, 31 goals, 28 facts, zero event
       failures/backlog, zero pending SDE candidates, and healthy project status
@@ -9169,7 +9185,7 @@ substitute for evidence at a later integration boundary.
       `1f863844c655c0ddd9bb76ecbb8f609fb61f4b9ade920896065def34525551bf`.
       The attempted VS Code CLI reload used an unsupported `--command` option,
       so activation of 0.9.2 in the already-open window is not claimed.
-      Editor interaction follow-up (2026-10-28 05:18 UTC): the reloaded
+      Editor interaction follow-up (2026-10-28 12:18 +07:00): the reloaded
       `renew_ssl` VS Code window visibly renders the V2 status item immediately
       after Git Graph in yellow `unknown` state and displays a project-scoped
       report page with the recorded-fact classification and evidence action.
@@ -9214,7 +9230,7 @@ substitute for evidence at a later integration boundary.
       status and overview/list rendering; paged fact details, revision-stale
       handling in the rendered UI, grant changes, evidence resolution, and SDE/
       cleanup review remain open. No checklist marker changed.
-      Fresh status diagnosis (2026-10-29 11:20 UTC): the configured Hermes
+      Fresh status diagnosis (2026-10-29 18:20 +07:00): the configured Hermes
       profile probe returned `healthy`, all seven dependencies healthy, zero
       gates, and no pending review/purge/expiry work. The 0.9.6 extension's
       refresh logic, using the real project settings and Curator/Hermes child
@@ -9224,6 +9240,16 @@ substitute for evidence at a later integration boundary.
       visible button could not be inspected. The dashboard item remains open
       for rendered page/evidence states, stale-page behavior, authorization
       changes, and owner SDE/cleanup review.
+      Project-scoped dashboard-client recheck (2026-10-29 20:30 +07): the
+      configured Vhost launcher returned page 1 of 32 goals (20 displayed; 27
+      active, five planned). A bounded active-goal report carried a valid
+      revision; its evidence read matched project, goal, fact, and report
+      revision. The selected fact had no evidence references. Read-only report
+      checks across all 27 active goals found no currently evidence-verified
+      fact in their first pages. No records were changed. This verifies a live
+      local API/read boundary and explains why there is no supported pilot fact
+      for SDE review, but it is not rendered evidence-page or grant/revision-
+      change acceptance; keep the dashboard and review items open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
@@ -9254,6 +9280,11 @@ substitute for evidence at a later integration boundary.
       submit for a real SDE decision yet; no candidate was manufactured from an
       unverified operation report. Keep the review and cleanup items open until
       the pilot has verified evidence and `eaglesvn` makes the actual decision.
+      The 2026-10-29 20:30 +07 local dashboard-client recheck read all 32 Vhost
+      goals and the 27 active first-page reports; none exposed a currently
+      verified fact with evidence. The trusted profile status probe separately
+      reports zero pending review work. No candidate was created from these
+      reads.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are
@@ -9402,6 +9433,17 @@ substitute for evidence at a later integration boundary.
       visible. The dashboard response has not been confirmed in either window,
       so project reads, reviewer interaction, and cleanup remain open; no
       checklist marker changed.
+      Occurrence-scoped expiry progress (2026-10-29): prompt expiry readiness
+      now requires a fact's evidence reference to match the staged file's exact
+      occurrence ID and SHA-256. Pending SDE counts and post-decision review
+      receipts are scoped through candidate fact IDs to that same occurrence;
+      another file's facts or pending review in the same goal cannot make this
+      file eligible or extend its prompt-expiry hold. The focused storage and
+      expiry suite passes 25 tests, including a two-file same-goal regression;
+      Pyright, errors-only Pylint, and `git diff --check` pass. This closes only
+      the backend eligibility join. The attended packet's complete dependency
+      map, one-action reviewer flow, canonical durability, purge recovery, and
+      real owner decision remain open.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging
@@ -9419,7 +9461,7 @@ substitute for evidence at a later integration boundary.
       statuses, open gates, and pending review/purge counts. After a verified
       117-file rollback archive, the current wheel was installed only into the
       dedicated `renew-ssl-coding` V2 virtualenv. The supported profile read at
-      `2026-10-25T11:53:27Z` reports 21/21 processed event receipts; 8/8 goals
+      `2026-10-25T18:53:27+07:00` reports 21/21 processed event receipts; 8/8 goals
       reconciled, with five planned, three active, and zero in every other
       lifecycle state; four facts; no SDE candidates or purge backlog; a
       complete zero-file staging inventory; and seven healthy local dependency
@@ -9613,14 +9655,14 @@ substitute for evidence at a later integration boundary.
       hours. Its 12:00 run exited successfully, reported a verified daily backup,
       and reported zero due purge/expiry items and zero pending failures. The
       run's service result and bounded journal output were checked. Readiness
-      panel repair (2026-10-28 12:17 UTC): Hermes Core's bounded profile health
+      panel repair (2026-10-28 19:17 +07:00): Hermes Core's bounded profile health
       command now emits a schema-versioned JSON snapshot, and the installed V2
       extension consumes it only after exact project, seven-probe, freshness,
       and gate validation. The extension probe returned `vhost-manager-alpha`,
       all seven dependencies healthy, and zero gates. Its 17 focused Node tests
       and Hermes Core's 49 focused CLI tests pass. The VS Code `window3`
-      extension-host log records Curator V2 activation at 12:17:49 UTC. An
-      end-to-end data-path check (12:25 UTC) invoked `showDashboard` with the
+      extension-host log records Curator V2 activation at 2026-10-28 19:17:49 +07:00. An
+      end-to-end data-path check (2026-10-28 19:25 +07:00) invoked `showDashboard` with the
       actual Vhost workspace, User settings, Curator launcher, and Hermes CLI
       under a stubbed VS Code host. The real goal page loaded with all seven
       dependencies healthy and zero gates. The host and webview were stubbed,
@@ -9629,7 +9671,7 @@ substitute for evidence at a later integration boundary.
       logical project-record bytes, zero retained event-payload bytes, a
       524,288-byte shared database, a 300,792-byte WAL, and a complete empty
       staging inventory below the 262,144,000-byte warning threshold.
-      Fresh readiness recheck (2026-10-28 12:49 UTC): from the configured
+      Fresh readiness recheck (2026-10-28 19:49 +07:00): from the configured
       Vhost workspace, the exact Hermes Core profile probe used by the installed
       extension returned `healthy`, all seven dependencies healthy, and zero
       gates (exit 0, project `vhost-manager-alpha`). This refreshes the prior
@@ -9637,7 +9679,7 @@ substitute for evidence at a later integration boundary.
       context remains unauthenticated and is not a health observation. This
       does not verify the currently rendered desktop panel or close the other
       local acceptance checks.
-      Fresh readiness recheck (2026-10-28 13:02 UTC): the same configured
+      Fresh readiness recheck (2026-10-28 20:02 +07:00): the same configured
       profile probe connected successfully and returned schema version 1,
       project `vhost-manager-alpha`, status `healthy`, all seven dependency
       observations fresh and healthy, and zero gates. Exit status was 0. This
@@ -9645,7 +9687,7 @@ substitute for evidence at a later integration boundary.
       the trusted probe; visible desktop rendering remains unverified.
       This repairs the reported unknown status source; it does not close
       unrelated acceptance checks. Restore-to-new-path progress
-      (2026-10-28 13:14 UTC): the installed storage CLI restored the verified
+      (2026-10-28 20:14 +07:00): the installed storage CLI restored the verified
       2026-10-28 daily SQLite backup to a new owner-only review path. The
       command verified SQLite integrity and foreign keys, the restored file is
       mode 0600, and the live database's SHA-256 was unchanged before and after.
@@ -9684,7 +9726,7 @@ substitute for evidence at a later integration boundary.
       seven verified backup copies including unresolved retry payloads; older
       copies are pruned only after successful backups. These tests do not
       establish live timer expiry or a complete live backup rotation.
-      Fresh profile probe (2026-10-29 09:54 UTC): ran the exact Hermes Core
+      Fresh profile probe (2026-10-29 16:54 +07:00): ran the exact Hermes Core
       wrapper configured for the V2 extension from the `renew_ssl` workspace.
       It returned schema version 1 for `vhost-manager-alpha`, `healthy`, all
       seven required dependencies healthy and 0–1 seconds old, no gates, no
@@ -9721,7 +9763,7 @@ substitute for evidence at a later integration boundary.
       Hermes or Vhost service was restarted, and no live Vhost operation was
       run. Package binding is now verified; live consumer workflow evidence,
       remaining acceptance checks, and owner review remain open.
-      VS Code load recheck (2026-10-29 04:43 UTC): the active `renew_ssl`
+      VS Code load recheck (2026-10-29 11:43 +07:00): the active `renew_ssl`
       window's extension-host log records activation of
       `curatormd.curatormd-v2-status`; `code --list-extensions --show-versions`
       reports 0.9.6. This resolves the package-load check. The rendered status
@@ -9756,13 +9798,55 @@ substitute for evidence at a later integration boundary.
       still finds only two recognized daily copies, with 30 legacy entries,
       including archives of unknown provenance. Seven-copy live rotation,
       class-specific retention, and a live due-expiry run remain open.
+      Backup archive header classification (2026-10-29 20:13 +07): a
+      read-only listing of the five `.tar.gz` rollback archives found 455
+      regular members: 211 `.py`, 189 `.pyc`, 10 `.txt`, eight `.json`, and 37
+      suffixless. All five package metadata headers identify
+      `curatormd-v2` version `0.1.0a1`; all Python source members are under the
+      `curatormd_v2` package path. No member path matched `codex`, `proposal`,
+      `transcript`, `chat`, or `history`; no names were retained and no source
+      payload was read. The archives are Curator V2 package/source snapshots,
+      not raw transcript or proposal collections. Exact source revisions and
+      the contents of `.txt` and suffixless members remain unknown. No
+      permissions or files changed; archive inventory and alpha acceptance
+      remain open.
+      Retention matrix reconciliation (2026-10-29): the approved per-class
+      horizons and recovery sources are already documented in
+      [`storage-recovery-v2.md`](storage-recovery-v2.md). The remaining gaps are
+      implementation/live verification of those rules, complete logical and
+      physical accounting, seven-copy rotation, and due 72-hour expiry; the
+      plan no longer treats the approved policy values themselves as undecided.
+      Source-to-alpha sync (2026-10-29 19:59 +07): built wheel
+      `630b60d8bbadd992d755bafe6c48a96b00d4d6d022ebb9feae3f4d12bf63e66c`
+      from source `e406a31`; all 88 module hashes match. The pre-update package
+      and live database rollback copies are recorded in
+      [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
+      Schema 38-to-39 migration passed on a temporary snapshot before install.
+      The dedicated `renew-ssl-coding` alpha now uses the wheel; its profile
+      probe loaded 52 tools and returned 72/72 processed receipts, 32 goals,
+      29 facts, healthy status, all seven dependencies healthy, and no pending
+      work. The live database passes integrity and foreign-key checks at schema
+      39. Existing VS Code MCP processes were not restarted; the backup tree
+      still has only two recognized daily copies and the live expiry, rendered
+      dashboard, and owner review remain open. No Hermes active-install update
+      or Vhost operation was made.
+      Rendered dashboard progress (2026-10-29 20:00–20:04 +07): opened the
+      configured Curator V2 panel in the actual `renew_ssl` VS Code window. The
+      status item rendered green; the dashboard showed healthy project status,
+      72 processed event receipts, 32 goals, 29 facts, no pending SDE or
+      operational work, and page 1–20 of 32 goals. Storage showed 1.0 MiB
+      combined SQLite/WAL below the 250 MiB warning and zero staging bytes;
+      model/token usage is visibly labeled not reported. The actual report
+      facts/evidence page, revision/stale behavior, access revocation, evidence
+      freshness, goal reopen, and rendered privacy cases remain open. This
+      partial rendering does not close the dashboard acceptance item.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the
       verified results, and each remaining local issue, including stale or
       incomplete token usage, the incomplete backup-tree inventory and
-      class-specific retention horizons, and any unverified source-to-sink
-      path. An acceptance applies only to this
+      live enforcement of the approved retention/recovery rules, and any
+      unverified source-to-sink path. An acceptance applies only to this
       single-user, one-repository development utility and the reviewed package
       and evidence snapshot. It does not silently approve a new retention rule,
       cleanup inventory, or changed target; those keep their existing explicit

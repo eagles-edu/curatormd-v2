@@ -63,11 +63,11 @@ def _staged_artifact_goal_times(
     config: ProjectConfig,
     artifacts: tuple[ArtifactRef, ...],
     timestamps: Mapping[str, str],
-) -> dict[str, tuple[str, str]]:
-    """Select exact staged files that can be joined to goal review evidence."""
+) -> dict[str, tuple[str, str, str | None, str]]:
+    """Select exact staged occurrences for evidence-scoped expiry checks."""
 
     staging_root = config.validated_staging_root()
-    result: dict[str, tuple[str, str]] = {}
+    result: dict[str, tuple[str, str, str | None, str]] = {}
     for artifact in artifacts:
         staged_at = timestamps.get(artifact.path)
         try:
@@ -79,7 +79,9 @@ def _staged_artifact_goal_times(
             and len(path_parts) == 3
             and _STAGING_SCOPE_ID_RE.fullmatch(path_parts[0])
         ):
-            result[artifact.path] = (path_parts[0], staged_at)
+            result[artifact.path] = (
+                path_parts[0], staged_at, artifact.occurrence_id, artifact.sha256
+            )
     return result
 
 def _select_expiry_eligible_artifacts(

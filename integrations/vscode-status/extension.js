@@ -1059,6 +1059,20 @@ function dashboardHtml(webview) {
       api.postMessage({ type: 'loadReport', goalId: selectedGoal, factOffset: offset });
       error.textContent = '';
     }
+    function formatLocalTimestamp(value) {
+      if (typeof value !== 'string' || value.length > 64) return 'unknown';
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit',
+        day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(parsed).reduce((result, part) => {
+        result[part.type] = part.value;
+        return result;
+      }, {});
+      return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} +07:00`;
+    }
     function renderEvidenceButtons() {
       evidenceButtons.replaceChildren();
       const delimiter = String.fromCharCode(96);
@@ -1111,9 +1125,9 @@ function dashboardHtml(webview) {
           fields.push('Verifier: ' + attestation.adapter_id);
           fields.push('Subject: ' + attestation.authenticated_subject);
           fields.push('Source revision: ' + attestation.source_revision);
-          fields.push('Observed: ' + attestation.observed_at);
-          fields.push('Valid until: ' + attestation.valid_until);
-          fields.push('Revocation checked: ' + attestation.revocation_checked_at);
+          fields.push('Observed: ' + formatLocalTimestamp(attestation.observed_at));
+          fields.push('Valid until: ' + formatLocalTimestamp(attestation.valid_until));
+          fields.push('Revocation checked: ' + formatLocalTimestamp(attestation.revocation_checked_at));
         }
         paragraph.textContent = fields.filter(Boolean).join(' · ');
         evidenceRefs.appendChild(paragraph);

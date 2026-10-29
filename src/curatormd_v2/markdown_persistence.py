@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+from zoneinfo import ZoneInfo
 
 from .evidence import (
     EvidenceVerificationContext,
@@ -882,9 +883,21 @@ def _render_corrections(corrections: tuple[SDECorrection, ...]) -> list[str]:
             f"{_markdown_text(item.correction)} "
             f"(rationale: {_markdown_text(item.rationale)}; "
             f"reviewer: `{_markdown_text(item.reviewer_id)}`; "
-            f"at: `{_markdown_text(item.created_at)}`)"
+            f"at: `{_markdown_text(_local_timestamp(item.created_at))}`)"
         )
     return lines
+
+
+def _local_timestamp(value: str) -> str:
+    """Render an ISO timestamp in the owner's local +07:00 timezone."""
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is None:
+        return value
+    return parsed.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).isoformat(timespec="seconds")
 
 
 def _upsert_block(text: str, block: str, start: str, end: str) -> str:

@@ -15,3 +15,16 @@
    local check, or operator assertion into a completed runtime claim.
 7. Verify the resulting files, `git diff --check`, and Curator persistence
    status. Do not stage, commit, publish, or delete evidence automatically.
+8. Show every human-facing Curator V2 date and time in `Asia/Ho_Chi_Minh`
+   with an explicit `+07:00` offset. When converting an existing timestamp,
+   convert the instant; never replace a UTC label without adjusting the clock
+   and date. Keep UTC normalization for machine storage and calculations, and
+   convert it at Markdown, report, and UI display boundaries. Use the local
+   calendar date for daily backup names and other local-day policies.
+9. When `eaglesvn` explicitly requests a commit and push of the entire
+   worktree, inspect tracked and untracked changes, include the whole worktree,
+   then commit and push it to the configured upstream. Do not silently stage
+   only selected files or leave requested changes unsynced. This explicit
+   instruction overrides the normal requirement to wait for publication
+   authorization. After each item is completed, commit and push when this
+   standing instruction applies.

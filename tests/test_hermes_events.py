@@ -278,6 +278,15 @@ class HermesCodexEventTests(unittest.TestCase):
                     store, ArtifactPurger(staging), project_id="gptmd"
                 )
                 router = DurableEventRouter(store, {"gptmd": service})
+                fingerprint = "a" * 64
+                binding = CodexGoalBinding(
+                    profile_id="gptmd-coding",
+                    project_id="gptmd",
+                    session_id="session-1",
+                    goal_id="goal-1",
+                    source_id="hermes.gptmd-coding",
+                    repository_fingerprint=fingerprint,
+                )
                 store.ingest_event(
                     EventEnvelope(
                         "intake-goal-1",
@@ -296,7 +305,7 @@ class HermesCodexEventTests(unittest.TestCase):
                 start = codex_hook_to_event(
                     "codex:turn:start",
                     {"attempt_id": "attempt-1", "session_id": "session-1"},
-                    self.binding,
+                    binding,
                     source_sequence=1,
                     occurred_at="2026-10-19T00:00:00+00:00",
                 )
@@ -308,28 +317,64 @@ class HermesCodexEventTests(unittest.TestCase):
                         "turn_id": "turn-1",
                         "outcome": "completed",
                     },
-                    self.binding,
+                    binding,
                     source_sequence=2,
                     occurred_at="2026-10-19T00:01:00+00:00",
                 )
+                summary_json = json.dumps({
+                    "schema_version": 1,
+                    "repository_fingerprint": fingerprint,
+                    "changed_files": [
+                        {"path": "src/change.py", "change": "update"}
+                    ],
+                    "omitted_files": 0,
+                    "checks": [{"name": "git diff --check", "exit_code": 0}],
+                    "omitted_checks": 0,
+                })
+                summary_event = codex_hook_to_event(
+                    "codex:turn:end",
+                    {
+                        "attempt_id": "attempt-summary",
+                        "session_id": "session-1",
+                        "turn_id": "turn-summary",
+                        "outcome": "completed",
+                        "work_summary_json": summary_json,
+                    },
+                    binding,
+                    source_sequence=3,
+                    occurred_at="2026-10-19T00:02:00+00:00",
+                )
                 self.assertTrue(store.ingest_event(start)[1])
                 self.assertTrue(store.ingest_event(end)[1])
+                self.assertTrue(store.ingest_event(summary_event)[1])
+                self.assertEqual(router.route_once().processed_count, 1)
                 self.assertEqual(router.route_once().processed_count, 1)
                 self.assertEqual(router.route_once().processed_count, 1)
                 snapshot = service.goal_status("goal-1")
                 self.assertEqual(
                     [fact.kind for fact in snapshot.facts],
-                    [FactKind.INTENT, FactKind.CHANGE],
+                    [FactKind.INTENT, FactKind.CHANGE, FactKind.CHANGE],
                 )
                 self.assertTrue(
                     all(fact.criterion_id is None for fact in snapshot.facts)
                 )
+                summary_fact = snapshot.facts[-1]
+                self.assertIn("src/change.py (update)", summary_fact.bullet)
+                self.assertIn("git diff --check exited 0", summary_fact.bullet)
+                self.assertEqual(summary_fact.source_event_id, summary_event.event_id)
+                receipt = store.event_receipt("gptmd", summary_event.event_id)
+                self.assertEqual(receipt.status.value, "processed")
+                report = service.goal_report("goal-1")
+                self.assertIn("src/change.py (update)", report)
+                self.assertIn("git diff --check exited 0", report)
+                self.assertNotIn("work_summary_json", report)
+                self.assertNotIn(fingerprint, report)
                 self.assertNotEqual(snapshot.goal.status, GoalStatus.COMPLETE)
 
                 duplicate, inserted = store.ingest_event(start)
                 self.assertFalse(inserted)
                 self.assertEqual(duplicate.status.value, "processed")
-                self.assertEqual(len(service.goal_status("goal-1").facts), 2)
+                self.assertEqual(len(service.goal_status("goal-1").facts), 3)
             finally:
                 store.close()
 

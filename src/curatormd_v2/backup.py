@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 import re
 import sqlite3
 import stat
 import tempfile
+from zoneinfo import ZoneInfo
 
 from .read_models import BACKUP_TREE_WARNING_THRESHOLD_BYTES, BackupDirectoryUsage
 
@@ -337,7 +338,7 @@ def backup_daily(
     if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
         raise PermissionError("backup directory must be private and owner-owned")
 
-    backup_day = today or datetime.now(timezone.utc).date()
+    backup_day = today or datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
     destination = backup_directory / f"curator-v2-{backup_day.isoformat()}.sqlite3"
     try:
         backup_database(source, destination)

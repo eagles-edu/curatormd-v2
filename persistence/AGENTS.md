@@ -9,6 +9,9 @@
 - Record verified facts and explicit decisions only. Label proposals, local
   test results, and runtime observations so none imply deployment or end-to-end
   operation. Preserve unresolved criteria as open gates.
+- Human-facing timestamps use `Asia/Ho_Chi_Minh` with an explicit `+07:00`
+  offset. Preserve UTC-normalized machine timestamps internally, convert them
+  when rendering, and use the local calendar date for daily backup names.
 - Never store raw chats, transcripts, imports, cues, scratch artifacts,
   credentials, personal data, or unreviewed native projections here.
 - CuratorMD owns its global backend; consuming projects own their plugins,

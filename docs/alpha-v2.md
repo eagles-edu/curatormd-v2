@@ -66,7 +66,7 @@ Vhost service was restarted, and no live Vhost application operation was run.
 This refresh verifies the installed package and disposable consumer path; live
 application acceptance and owner review remain open.
 
-## Historical local-alpha snapshot (2026-10-26T14:38:13Z)
+## Historical local-alpha snapshot (2026-10-26T21:38:13+07:00)
 
 The supported `renew-ssl-coding` Hermes profile connects to the installed
 Curator V2 stdio server, discovers 48 tools, and reads `vhost-manager-alpha`:
