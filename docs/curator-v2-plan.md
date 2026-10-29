@@ -7380,6 +7380,13 @@ Final report: completed facts, open items, recovery path, next action
       exact goal binding before running a read-only Git check. The managed MCP
       call returned `user rejected MCP tool call`; the command did not run and
       no new Curator receipt or fact was produced. The criterion remains open.
+      Profile activity recheck (2026-10-29 11:31 UTC): the configured local
+      profile read returned 70 processed event receipts, 31 goals, and 28 facts;
+      the most recent receipt was processed at 06:52 UTC. No receipt from the
+      current Codex work was present, so this does not verify work-summary
+      delivery. No rejected action was retried. The missing acceptance step is
+      still a genuine bound Hermes Codex app-server turn followed by readback
+      of its compact work-summary fact.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer

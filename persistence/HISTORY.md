@@ -10990,3 +10990,18 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** Seven-copy live rotation, class-specific retention, approved
   legacy disposition, and a live due-expiry run remain open.
 - **Outcome:** Refresh the local recovery evidence while preserving every file.
+
+## 2026-10-29 — Recheck Hermes work-summary delivery
+
+- **Intent:** Determine whether the configured local profile had since delivered
+  the required Hermes Codex work-summary fact.
+- **Changed fact:** The profile-bound read returned 70 processed event receipts,
+  31 goals, and 28 facts. Its newest processed receipt was at 06:52 UTC, before
+  this Codex work; no work-summary receipt from the current task was available.
+- **Verification:** Read `project_activity_status` and `goal_list_page` through
+  the configured `renew-ssl-coding` profile and local V2 launcher. The read was
+  content-free and did not retry the prior rejected lifecycle action.
+- **Open gate:** A real, correctly bound Hermes Codex app-server turn and
+  readback of its summary fact are still required.
+- **Outcome:** Keep the live producer-to-ledger criterion open and record the
+  exact next evidence needed.
