@@ -8784,15 +8784,15 @@ substitute for evidence at a later integration boundary.
       route and closes Slice G for the approved single-user development scope.
       It does not claim conventional human authentication, a public endpoint,
       or production deployment.
-      Fresh profile-health read (2026-10-30 02:40 +07:00): the Hermes Core
-      checkout CLI, with `HERMES_HOME` explicitly set to the existing
-      `renew-ssl-coding` profile, returned a connected schema-version-1 health
-      snapshot for its configured project. All seven dependencies were healthy
-      and freshly observed, with no gate codes or pending review/purge work and
-      a complete empty staging inventory. This was a read-only profile probe;
-      it did not exercise a Vhost workflow or produce a new Codex work-summary
-      event. Direct Codex calls without Hermes-injected context still return
-      `unauthenticated` by design.
+      Fresh profile-health read (2026-10-30 02:42 +07:00): the exact Hermes Core
+      executable configured in VS Code (`/home/eaglesvn/.hermes/hermes-agent/hermes`),
+      with `HERMES_HOME` set to the existing `renew-ssl-coding` profile, returned
+      a connected schema-version-1 health snapshot for its configured project.
+      All seven dependencies were healthy and freshly observed, with no gate
+      codes or pending review/purge work and a complete empty staging inventory.
+      This was a read-only profile probe; it did not exercise a Vhost workflow
+      or produce a new Codex work-summary event. Direct Codex calls without
+      Hermes-injected context still return `unauthenticated` by design.
 - [x] **H. Validate Host Steward separately:** test inventory attribution,
       explicit approval, managed cleanup, post-cleanup verification, receipt, and
       inability to write Curator project knowledge. Progress (2026-10-22): the
