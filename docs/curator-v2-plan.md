@@ -692,6 +692,16 @@ plugin or Hermes integration is installed and working end to end.
       legacy backup classification has expanded since the prior scan; it does
       not close class-specific budgets, retention horizons, or recovery-source
       accounting.
+      Supplementary backup metadata inventory (2026-10-29 16:35 +07): a bounded
+      no-follow walk groups the same 32 entries by type/suffix: two daily
+      snapshots, three older SQLite snapshots, ten WAL/SHM sidecars, five
+      rollback archives, one YAML file, one VS Code settings file, two extension
+      backup directories, and eight nested files (two each JavaScript, JSON,
+      Markdown, and suffixless). Twelve entries are not owner-only. The V2
+      scanner still recognizes only the two daily snapshots as managed backups;
+      archive/suffixless contents and provenance remain unknown. No names or
+      contents were recorded and no files or permissions were changed. This
+      narrows metadata classification but does not close the storage item.
       Fresh profile-bound project read (2026-10-29): `project_storage_usage`
       reports 31 goals, 28 facts, and 70 processed event receipts. Logical
       project records total 54,951 bytes; the global inbox is 70/250,000

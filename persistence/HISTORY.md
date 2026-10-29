@@ -10552,3 +10552,26 @@ while preserving explicit criteria and same-project parent validation.
   the shared database-size threshold remain open. No checklist marker changed.
 - **Outcome:** Refresh current operational evidence without deleting legacy
   files or overstating backup retention verification.
+
+## 2026-10-29 — Classify backup entries by metadata only
+
+- **Intent:** Reduce uncertainty in the legacy backup inventory without opening
+  snapshots, archives, settings, or documentation files.
+- **Changed fact:** The no-follow walk grouped all 32 entries by file type and
+  suffix: two daily snapshots, three older SQLite snapshots, ten WAL/SHM
+  sidecars, five rollback archives, one YAML file, one VS Code settings file,
+  two extension-backup directories, and eight nested files (two each
+  JavaScript, JSON, Markdown, and suffixless). Twelve entries are not
+  owner-only. The bounded scanner recognizes the daily snapshots, measures
+  5,215,696 file bytes and 5,259,264 allocated bytes including the root, and
+  reports below the 250 MiB warning threshold.
+- **Verification:** A metadata-only no-follow scan at `2026-10-29T16:35:22+07:00`
+  inspected 32 entries within the 256-entry/eight-level bound. It recorded no
+  names or contents and changed no files or permissions. The type/suffix totals
+  reconcile to the scanner's 32 entries and 30 regular files.
+- **Open gate:** Archive and suffixless-file contents/provenance remain unknown;
+  twelve entries are not owner-only; seven-copy rotation, class-specific
+  recovery horizons, and the main-database size threshold remain open. No
+  checklist marker changed.
+- **Outcome:** Improve the inventory while preserving every legacy entry and
+  keeping unsupported content and retention claims open.

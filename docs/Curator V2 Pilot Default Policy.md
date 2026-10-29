@@ -17,23 +17,36 @@
 
 ## Still open
 
-- remaining local SQLite/staging failure cases; complete per-class logical and physical storage accounting; recovery-source and class-specific horizon documentation; the local database-size warning threshold; and full classification of the backup tree. The latest content-free inventory is in [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md). Keep unclassified files unless `eaglesvn` approves an exact deletion inventory. Implementation of the approved pending-payload retention and seven-copy rolloff rules still needs verification.
+- remaining local SQLite/staging failure cases; complete per-class logical and physical storage accounting; recovery-source and class-specific horizon documentation; the local database-size warning threshold; and content/provenance classification of backup archives. The latest metadata-only inventory is in [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md). Twelve entries are not owner-only; do not change modes or delete files without `eaglesvn` reviewing the exact inventory. Implementation of the approved pending-payload retention and seven-copy rolloff rules still needs verification.
 
-The following breakdown uses entry type and filename suffix only. No file
-contents were read. The V2 scanner's rows cover the visible top-level entries;
-its incomplete status is due to the two group-writable directories. The nested
-row comes from the separate metadata-only walk above.
+The following content-free breakdown was refreshed at 2026-10-29 16:35 +07
+using no-follow metadata inspection of 32 entries. It groups by entry type,
+suffix, and whether an entry is nested; no filenames or contents were retained,
+and no archives were opened. The V2 scanner recognizes only the two daily
+SQLite snapshots as managed backups; the other 30 files remain unclassified by
+that scanner. Twelve entries are not owner-only (one archive, one settings
+file, two directories, and eight nested extension-backup files). The scanner's
+separate byte measurement is complete and below the warning threshold, though
+its classification status remains incomplete.
 
 | Class | Entries | Logical file bytes | Allocated bytes | Entries not owner-only |
 | --- | ---: | ---: | ---: | ---: |
-| Daily SQLite snapshot | 1 | 524,288 | 524,288 | 0 |
+| Daily SQLite snapshots | 2 | 1,064,960 | 1,064,960 | 0 |
 | Other SQLite snapshots | 3 | 1,060,864 | 1,060,864 | 0 |
-| SQLite WAL/SHM sidecars | 8 | 131,072 | 131,072 | 0 |
+| SQLite WAL/SHM sidecars | 10 | 163,840 | 163,840 | 0 |
 | Package rollback archives | 5 | 2,893,904 | 2,908,160 | 1 |
 | YAML configuration snapshot | 1 | 3,264 | 4,096 | 0 |
 | VS Code settings snapshot | 1 | 5,233 | 8,192 | 1 |
 | Prior extension-backup directories | 2 | 0 | 0 | 2 |
-| Nested files in those directories | 8 | 23,631 | 45,056 | 8 |
-| **Total including nested files** | **29** | **4,642,256** | **4,681,728** | **12** |
+| Nested extension JavaScript | 2 | 14,616 | 20,480 | 2 |
+| Nested extension JSON | 2 | 2,112 | 8,192 | 2 |
+| Nested extension Markdown | 2 | 2,163 | 8,192 | 2 |
+| Nested suffixless extension files | 2 | 4,740 | 8,192 | 2 |
+| **Total entries, excluding root directory** | **32** | **5,215,696** | **5,255,168** | **12** |
+
+The bounded V2 scanner reports 5,259,264 allocated bytes including the root
+directory. The metadata table's 5,255,168-byte sum covers listed entries only.
+The archive and suffixless-file contents and provenance remain unknown; the
+type/suffix breakdown is not content classification.
 
 The approved values above define the supported local development utility. No multi-user or public-service behavior is required.

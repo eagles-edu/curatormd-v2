@@ -69,6 +69,15 @@ entries, 5,215,696 file bytes, and 5,259,264 allocated bytes, but could classify
 only two managed daily snapshots (1,064,960 bytes); 30 files remain
 unclassified. The measured size is below the approved 262,144,000-byte
 warning-only backup-tree threshold. No legacy entry was read, moved, or removed.
+At 2026-10-29 16:35 +07, a separate no-follow metadata walk grouped the 30
+non-daily files by type and suffix: three older SQLite snapshots, ten WAL/SHM
+sidecars, five rollback archives, one YAML file, one VS Code settings file,
+and eight nested files in two extension-backup directories (two JavaScript,
+two JSON, two Markdown, and two suffixless files). Twelve entries are not
+owner-only. No filenames or file contents were retained; the archives and
+suffixless files were not opened. This narrows entry-type uncertainty but does
+not identify archive contents, justify permission changes, or make the V2
+managed-snapshot inventory complete.
 
 | Class | Retention/replay rule | Current limit or alert | Recovery source |
 | --- | --- | --- | --- |
