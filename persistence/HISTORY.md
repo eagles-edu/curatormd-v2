@@ -11018,3 +11018,22 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** A real bound Hermes Codex app-server turn must still deliver
   the summary through the durable outbox and its fact must be read back.
 - **Outcome:** Existing profile data does not satisfy the live producer gate.
+
+## 2026-10-29 — Correct the rendered VS Code version observation
+
+- **Intent:** Verify the active Curator V2 status item and its installed-version
+  tooltip in the actual `renew_ssl` editor window.
+- **Changed fact:** After the desktop was woken, the `renew_ssl` status item
+  rendered green without reopening. Its tooltip identified version 0.9.3,
+  although the registry and source package are 0.9.6 and their JavaScript hashes
+  match. The separate Curator source window has no project config and correctly
+  displays neutral gray.
+- **Verification:** Inspected the rendered status bar and hover; checked the
+  extension registry entry, package version, and source/installed JavaScript
+  hashes. This corrects the earlier inference that activation plus package-list
+  output proved the running window had loaded 0.9.6.
+- **Open gate:** Reload the `renew_ssl` window once and verify the rendered
+  tooltip reports 0.9.6; render the dashboard and verify its paged evidence
+  states and stale-page behavior.
+- **Outcome:** The health refresh does not require reopening, but the stale
+  loaded version and remaining dashboard acceptance are still open.

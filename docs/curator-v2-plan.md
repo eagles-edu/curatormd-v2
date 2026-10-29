@@ -9664,6 +9664,20 @@ substitute for evidence at a later integration boundary.
       after its 16:45 install; installed and source JS hashes match. The Xfce
       screensaver covered the display, so visible color and dashboard rendering
       remain open; no further reload is needed to load 0.9.6.
+      Rendered-window correction (2026-10-29 18:40–18:46 +07): after waking the
+      desktop, the configured `renew_ssl` window rendered the Curator status
+      green (`healthy`) immediately to the right of Git Graph without reopening
+      the workspace. Hover displayed `CuratorMD V2 0.9.3`, although the
+      extension registry, on-disk package, and repository source are 0.9.6 with
+      matching JavaScript hashes. The earlier activation-log/package-list check
+      did not prove which version the running window loaded; withdraw its claim
+      that no reload is needed. A one-time window reload and a new rendered
+      hover are still required to verify 0.9.6. The separate Curator source
+      window has no `.curatormd-v2.toml` and correctly remains neutral gray.
+      The dashboard was not opened in this check. The periodic health refresh
+      works without reopening, but the dashboard item remains open for current
+      rendered page/evidence states, stale-page behavior, authorization changes,
+      and owner SDE/cleanup review.
       Focused expiry/backup regressions (2026-10-29): four disposable-source
       tests pass for exact 72-hour expiry approval/purge, immediate expiry
       eligibility after post-stage facts, stable occurrence age on replay, and
