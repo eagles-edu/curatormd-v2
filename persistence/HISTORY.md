@@ -10663,10 +10663,11 @@ while preserving explicit criteria and same-project parent validation.
   active lease. The proposal includes counts of retry, terminal-disposition,
   and consumer-drain references, and is exposed through the review-authorized
   API and project-bound MCP tool.
-- **Verification:** Focused event-payload and API-access suites pass (20 tests).
-  Coverage verifies paging, stable manifest digest, unchanged receipt capacity,
-  bounded page size, and denial without the exact project review grant. Strict
-  Pyright passes for source and focused tests.
+- **Verification:** Focused event-payload and API-access suites pass (20 tests),
+  and the MCP client workflow discovers and calls the new read-only tool. Coverage
+  verifies paging, stable manifest digest, unchanged receipt capacity, bounded
+  page size, exact review authorization, and MCP registration. Strict Pyright
+  and errors-only Pylint pass for the changed source and focused tests.
 - **Open gate:** This proposal neither archives nor deletes receipts. A
   replay-preserving attended archive/recovery action and complete permanent
   data-class budgets remain open.

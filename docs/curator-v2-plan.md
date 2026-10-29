@@ -982,7 +982,8 @@ plugin or Hermes integration is installed and working end to end.
       receipts whose payloads are scrubbed. Each page carries a stable manifest
       digest and exact retry, terminal-disposition, and consumer-drain reference
       counts; the inventory streams from one SQLite snapshot and changes no
-      rows. Focused store and API tests pass. This supplies an attended
+      rows. Focused store/API tests and the MCP client registration/call pass.
+      This supplies an attended
       inventory input only: archival, replay-preserving recovery, full permanent
       class budgets, and safe capacity recovery remain unimplemented, so the
       item remains open.

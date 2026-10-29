@@ -130,6 +130,10 @@ class McpClientWorkflowTests(McpServerTestSupport):
         """Drive the same goal, review, archive, and health flow over MCP."""
         async with Client(workflow.server, raise_exceptions=True) as client:
             names = await self._assert_mcp_tool_annotations(client)
+            inventory = await client.call_tool(
+                "event_receipt_compaction_propose", {}
+            )
+            self.assertFalse(inventory.is_error)
             await self._record_mcp_sde_correction(client, workflow.candidate_id)
             await self._assert_mcp_goal_stays_open(client)
             await self._complete_mcp_goal(client)
@@ -158,6 +162,7 @@ class McpClientWorkflowTests(McpServerTestSupport):
         tools_by_name = {tool.name: tool for tool in tool_result.tools}
         read_only_names = {
             "event_queue_status",
+            "event_receipt_compaction_propose",
             "project_activity_status",
             "project_health",
             "project_metrics",
