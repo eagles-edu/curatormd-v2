@@ -10513,3 +10513,21 @@ while preserving explicit criteria and same-project parent validation.
   database warning decision and broader storage-class evidence remain open.
 - **Outcome:** Close the requested usage/policy item without claiming complete
   token measurement or changing the approved alpha scope.
+
+## 2026-10-29 — Align local-alpha acceptance with approved usage scope
+
+- **Intent:** Remove stale acceptance wording that still required resolving
+  incomplete project-usage coverage after the owner excluded complete token
+  coverage from this single-repository alpha.
+- **Changed fact:** The Slice I acceptance text now allows the report to remain
+  incomplete while requiring unknown usage, exclusions, and measurement age to
+  stay visible. The local-alpha evidence lists this as an approved limitation,
+  not remaining acceptance work.
+- **Verification:** The wording matches the owner-approved policy and the
+  existing 2026-10-29 09:26 UTC measurement; no newer usage measurement is
+  claimed. `git diff --check` and the plan checklist counter pass. No checkbox
+  changed.
+- **Open gate:** Storage accounting, source-to-sink privacy review, exact
+  target comparisons, and explicit alpha owner review remain open.
+- **Outcome:** Keep the acceptance criteria consistent with the approved scope
+  without hiding incomplete usage data or claiming full accounting.

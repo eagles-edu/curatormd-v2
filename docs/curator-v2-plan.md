@@ -9473,9 +9473,10 @@ substitute for evidence at a later integration boundary.
       expiry; the approved seven-copy SQLite backup rotation and restore to a
       new path; and package upgrade rollback. Keep missing, stale, or failed
       checks open with their next action. The configured token report is
-      report-only and explicitly incomplete until real profile usage refreshes
-      it and its known coverage gaps are resolved; it must not enforce an
-      invented budget. Do not require a multi-user identity service, public
+      report-only; it may remain incomplete with its known source gaps, which
+      must stay visible with unknown usage and measurement age. Complete token
+      coverage, freshness enforcement, and a token budget are excluded from
+      this approved alpha scope. Do not require a multi-user identity service, public
       endpoint, hosted CI, production deployment, or separate deployment,
       policy, and release owners for this local alpha. Current runtime progress
       (2026-10-28 12:30 +07): the active per-user timer is scheduled every six

@@ -67,12 +67,11 @@ universal source-to-sink guarantee.
 
 ## Remaining local acceptance work
 
-- Resolve the project-usage report's known coverage gaps or obtain an explicit
-  owner decision to exclude those sources. The 2026-10-29 09:09 UTC read still
-  reports seven retained turns (six reported, one unknown); the newest event is
-  98,323 seconds old. Durable unmatched Codex starts are now counted as unknown
-  without retaining their provider/model labels. Coverage remains incomplete
-  and report-only. No model/token budget is defined or enforced.
+- Project usage remains an owner-approved report-only limitation, not an alpha
+  acceptance gate. The 2026-10-29 09:26 UTC read reports seven retained turns
+  (six reported, one unknown); the newest event was 99,326 seconds old at that
+  measurement. Coverage remains incomplete, and unknown usage is not zero. No
+  model/token budget or freshness enforcement is defined.
 - Complete class-specific long-term retention/recovery horizons for the legacy
   backup entries and permanent database classes.
 - Review the local-alpha privacy sink matrix and close its listed unverified
