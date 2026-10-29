@@ -11272,3 +11272,18 @@ while preserving explicit criteria and same-project parent validation.
   acceptance.
 - **Outcome:** Correct the visible progress count and retain all open gates;
   no checklist marker changed.
+
+## 2026-10-30 — Refresh the Vhost alpha profile evidence
+
+- **Intent:** Confirm the current local Curator V2 profile and ledger state for
+  the owner-review packet.
+- **Changed fact:** The configured `renew-ssl-coding` profile reads the
+  `vhost-manager-alpha` ledger with 72 processed receipts, 32 goals, 29 facts,
+  seven healthy probes, and no event, review, purge, or expiry backlog.
+- **Verification:** Ran the trusted profile-context
+  `mcp test curator_v2 --probe-curator-status` command; it exited 0. Appended
+  only bounded counts/status to the content-free alpha evidence snapshot.
+- **Open gate:** This read does not prove request creation, rendered report
+  acceptance, complete privacy coverage, live expiry/backup recovery, or owner
+  review. No checklist marker changed.
+- **Outcome:** Refresh the alpha snapshot without changing ledger state.
