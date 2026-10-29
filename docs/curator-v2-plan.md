@@ -8593,7 +8593,9 @@ substitute for evidence at a later integration boundary.
       or complete usage capture. Its five focused tests and Hermes Core's 12
       `scripts/check` checks pass. Commit `d2aac32b8` is pushed to the configured
       Hermes fork branch. Missing usage classes and real app-server coverage
-      remain open; this does not close Slice G or the project token-usage gate.
+      remain open in the broader integration checklist. The approved local
+      alpha permits incomplete, report-only usage and does not make this an
+      alpha blocker. Slice G lifecycle acceptance remains a separate check.
       Enabled-profile refresh (2026-10-27): the `renew-ssl-coding` profile had
       an older `project-usage` plugin copy. It now matches the Hermes Core source
       at SHA-256 `75ac7048626b3d274ed0d3b93fed2d2b9f91275d64394e1427bedcb7c1ad25f2`;
@@ -8620,7 +8622,9 @@ substitute for evidence at a later integration boundary.
       provider-usage post-turn writer. Its gateway unit is inactive. The active
       install has unrelated local modifications and untracked files, so it was
       left untouched. The local source change and read-only report do not prove
-      current provider-token capture; keep the usage gate open.
+      current provider-token capture. Keep that broader integration check open;
+      it does not change the approved report-only usage scope for the local
+      alpha.
       Hermes Core quality recheck (2026-10-27): the checkout has no local
       `main` or `origin/main` ref, so the default `scripts/check` base cannot be
       resolved. Re-running the same check with the current commit's parent
@@ -8768,18 +8772,23 @@ substitute for evidence at a later integration boundary.
       content-free evidence snapshot. V1 is outside this plan; no additional
       users, public endpoint, or production service is required. The current
       snapshot is [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
-      It records the installed package/config binding, the 2026-10-28 loopback
-      Vhost apply/replay/rollback receipts, staging and retention policy,
-      backup/restore evidence, and the current open issues. The route smoke
-      and exact receipt replay are verified. Progress (2026-10-28 11:32 +07:00):
+      It records the installed package/config binding, the 2026-10-28 and
+      2026-10-29 loopback Vhost apply/replay/rollback receipts, staging and
+      retention policy, backup/restore evidence, and current open issues. The
+      route smoke and exact receipt replay are verified. Progress
+      (2026-10-28 11:32 +07:00):
       the owner-only local reviewer API projected the exact apply goal
       `vhost-op-65bb1c01-11e3-4cd3-b73a-57d0b7161d8c` and rollback goal
       `vhost-rollback-b3cfa643-c3e1-456b-89a8-996479be6b4b` to the configured
       Vhost `HISTORY.md`; read-only reconciliation returned `synced` for both.
       Their block hashes are recorded in
       [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md).
-      Remaining checks: compare approved out-of-scope target hashes before and
-      after a workflow run, and keep the profile usage read current. Rollback
+      Remaining checks: complete comparisons for all applicable target classes;
+      the 2026-10-29 live run verified 16 unrelated Nginx entries and both
+      firewall files, but not every configured class. Keep project usage
+      report-only with its measurement age and coverage gaps visible; a fresh
+      usage event, freshness threshold, or enforcement is not required.
+      Rollback
       rehearsal (2026-10-28 11:37 +07:00):
       in a temporary site-packages copy, the installed package tree was replaced
       by the verified archive; both versions loaded and the MCP launcher
@@ -8800,6 +8809,13 @@ substitute for evidence at a later integration boundary.
       with all seven dependencies healthy. This read was content-free and
       read-only. It refreshes the profile/health observation only; it does not
       verify a new Vhost operation, rendered dashboard details, or owner review.
+      Snapshot reconciliation (2026-10-29 20:30 +07:00): the alpha ledger read
+      reports schema 39, 72 processed receipts, 32 goals (27 active, five
+      planned), and 29 facts. A fresh trusted-profile probe reports healthy
+      status, all seven dependencies healthy, and no event/review/purge/expiry
+      backlog. The snapshot still leaves seven-copy backup rotation, live
+      72-hour expiry, complete target-class comparison, privacy sink review,
+      and explicit owner acceptance open.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
@@ -9274,12 +9290,13 @@ substitute for evidence at a later integration boundary.
       completes the review path in the real local consumer and the receipt is
       independently checked; synthetic tests do not establish the local human
       decision.
-      Live candidate-readiness check (2026-10-29): the configured profile read
-      31 project goals (26 active, five planned, none complete) and zero pending
-      SDE candidates. There is no completed, evidence-verified pilot fact to
-      submit for a real SDE decision yet; no candidate was manufactured from an
-      unverified operation report. Keep the review and cleanup items open until
-      the pilot has verified evidence and `eaglesvn` makes the actual decision.
+      Candidate-readiness check (2026-10-29 20:24–20:30 +07): the local ledger
+      reports 32 project goals (27 active, five planned, none complete), and
+      the trusted profile reports zero pending SDE candidates. There is no
+      completed, evidence-verified pilot fact to submit for a real SDE decision
+      yet; no candidate was manufactured from an unverified operation report.
+      Keep the review and cleanup items open until the pilot has verified
+      evidence and `eaglesvn` makes the actual decision.
       The 2026-10-29 20:30 +07 local dashboard-client recheck read all 32 Vhost
       goals and the 27 active first-page reports; none exposed a currently
       verified fact with evidence. The trusted profile status probe separately
