@@ -9922,6 +9922,16 @@ substitute for evidence at a later integration boundary.
       facts/evidence page, revision/stale behavior, access revocation, evidence
       freshness, goal reopen, and rendered privacy cases remain open. This
       partial rendering does not close the dashboard acceptance item.
+      Disposable backup/restore operation (2026-10-30 02:33 +07:00): ran the
+      actual `backup_daily` implementation for eight consecutive dates against
+      a temporary SQLite source. It retained the newest seven verified daily
+      snapshots, restored the newest to a new path, passed `integrity_check`,
+      created an owner-only `0600` restore, and left both the source
+      database hash and an unclassified sentinel file unchanged. This verifies
+      the rotation/restore code path without using a consumer repo or the live
+      alpha database. The live alpha still has only two recognized daily
+      copies; its due-expiry run, complete backup-tree classification, and
+      package rollback evidence remain open.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
