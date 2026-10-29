@@ -9936,6 +9936,16 @@ substitute for evidence at a later integration boundary.
       evidence packet records a hash-verified 182-file rollback archive, both
       package versions loading, and a successful launcher `--help` before and
       after rollback. The active alpha package was not replaced by that test.
+      Disposable due-expiry maintenance path (2026-10-30 02:36 +07:00): ran
+      the real one-shot maintenance CLI against a temporary configured project
+      with a synthetic 73-hour-old staged artifact. A compact fact and a
+      synthetic test-authorized `purge_pending` receipt were independently
+      visible in SQLite while the file still existed. The CLI exited 0; the
+      receipt then became `complete`, its target `purged`, the staged file was
+      absent, and the compact fact remained. This verifies the due-expiry
+      runner and receipt-before-unlink ordering on a disposable project. It is
+      not evidence of 72 hours of elapsed runtime or attended human approval;
+      the installed six-hour timer and live-alpha expiry remain unverified.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
