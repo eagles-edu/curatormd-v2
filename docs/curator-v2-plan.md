@@ -8845,6 +8845,16 @@ substitute for evidence at a later integration boundary.
       backlog. The snapshot still leaves seven-copy backup rotation, live
       72-hour expiry, complete target-class comparison, privacy sink review,
       and explicit owner acceptance open.
+      Rendered plugin progress (2026-10-30 02:20 +07:00): the active VS Code
+      window displayed the V2 status item green; its hover tooltip showed
+      version 0.9.7, healthy project status, and zero pending SDE reviews. The
+      dashboard rendered the queue/storage summaries and first goal page
+      (1–20 of 32). A contemporaneous profile-bound health read reported all
+      seven dependencies healthy with no gates or backlog. This is read-only
+      UI evidence; no consumer source was changed. It does not verify rendered
+      fact/evidence pages, revision-change behavior, an attended SDE decision,
+      backup rotation/restore, live expiry, or explicit alpha acceptance, so
+      Slice I and its checklist item remain open.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
