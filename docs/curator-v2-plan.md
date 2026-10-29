@@ -9631,6 +9631,12 @@ substitute for evidence at a later integration boundary.
       reports 0.9.6. This resolves the package-load check. The rendered status
       color and tooltip were not inspected, so visible UI and complete alpha
       acceptance remain open.
+      Live status refresh recheck (2026-10-29): the extension's 0.9.6 refresh
+      function used current User settings and real Curator MCP/Hermes child
+      processes against the `renew_ssl` workspace. It returned `healthy`; its
+      status item model was green (`#73d216`), and a trusted local UID review
+      queue read found zero pending candidates. The VS Code API object was
+      stubbed, so the desktop button and tooltip remain visually unverified.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the

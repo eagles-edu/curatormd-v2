@@ -10744,3 +10744,19 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** The visible panel color and tooltip were not inspected. No
   checklist item is closed by package activation alone.
 - **Outcome:** Mark package loading verified; retain the visual UI gate.
+
+## 2026-10-29 — Recheck the live Curator status refresh
+
+- **Intent:** Determine whether a yellow status item comes from project health
+  or from the SDE review count/read path.
+- **Changed fact:** The configured local project is `vhost-manager-alpha`; the
+  local reviewer queue has zero pending candidates. The installed extension's
+  refresh function, using real Curator MCP and Hermes child processes, returned
+  `healthy` and computed the green color `#73d216`.
+- **Verification:** The local reviewer queue command returned exit 0 with valid
+  project-bound JSON. A one-off Node invocation of the current extension source
+  returned `healthy`, green, with the real User settings and project root.
+- **Open gate:** VS Code's API object was stubbed for the refresh call. The
+  rendered status button and tooltip have not been inspected in the desktop UI.
+- **Outcome:** Verify the live read and computed state; keep rendered UI proof
+  open.
