@@ -935,21 +935,54 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     factOffset: 0,
     factTotal: 1,
     reportRevision: 'a'.repeat(64),
-    report: 'Private facts',
+    report: '- Report snapshot: `' + 'a'.repeat(64) + '`\n'
+      + '## Facts to date (showing 1–1 of 1)\n'
+      + '### Verified facts\n- `fact-1` — Verification: test passed',
   } });
-  assert.equal(elements.get('report').textContent, 'Private facts');
+  assert.match(elements.get('report').textContent, /Verification: test passed/);
   assert.equal(elements.get('goals').children.length, 1);
   receiveWindowMessage({ data: {
     type: 'evidence',
     factOffset: 0,
     evidence: {
-      goal_id: 'goal-1', fact_id: 'fact-1', fact_kind: 'change',
-      verification_status: 'verified', criterion_id: null,
+      goal_id: 'goal-1', fact_id: 'fact-1', fact_kind: 'verification',
+      verification_status: 'verified_fact', criterion_id: 'criterion-1',
       report_revision: 'a'.repeat(64),
-      evidence: [{ evidence_kind: 'test', outcome: 'pass', locator: 'private-locator', sha256: 'b'.repeat(64) }],
+      evidence: [{
+        evidence_kind: 'test', outcome: 'passed', locator: 'private-locator',
+        sha256: 'b'.repeat(64), occurrence_id: null,
+        attestation: {
+          adapter_id: 'adapter-1', authenticated_subject: 'local-uid:1000',
+          source_revision: 'abc123', observed_at: '2026-10-27T00:00:00+00:00',
+          valid_until: '2026-10-27T00:05:00+00:00',
+          revocation_checked_at: '2026-10-27T00:00:00+00:00',
+        },
+      }],
     },
   } });
   assert.equal(elements.get('evidenceRefs').children.length, 1);
+  assert.match(elements.get('evidenceStatus').textContent, /stale\/unknown/);
+
+  receiveWindowMessage({ data: {
+    type: 'evidence',
+    factOffset: 0,
+    evidence: {
+      goal_id: 'goal-1', fact_id: 'fact-1', fact_kind: 'verification',
+      verification_status: 'verified_fact', criterion_id: 'criterion-1',
+      report_revision: 'a'.repeat(64),
+      evidence: [{
+        evidence_kind: 'test', outcome: 'passed', locator: 'private-locator',
+        sha256: 'b'.repeat(64), occurrence_id: null,
+        attestation: {
+          adapter_id: 'adapter-1', authenticated_subject: 'local-uid:1000',
+          source_revision: 'abc123', observed_at: new Date().toISOString(),
+          valid_until: new Date(Date.now() + 60_000).toISOString(),
+          revocation_checked_at: new Date().toISOString(),
+        },
+      }],
+    },
+  } });
+  assert.match(elements.get('evidenceStatus').textContent, /verified_fact/);
 
   receiveWindowMessage({ data: { type: 'error', message: 'Curator read failed.' } });
 

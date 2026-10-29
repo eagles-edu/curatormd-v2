@@ -9318,6 +9318,21 @@ substitute for evidence at a later integration boundary.
       local API/read boundary and explains why there is no supported pilot fact
       for SDE review, but it is not rendered evidence-page or grant/revision-
       change acceptance; keep the dashboard and review items open.
+      Editor evidence-expiry rendering (2026-10-30 02:30 +07:00): the V2
+      dashboard now downgrades a `verified_fact` evidence panel to
+      `stale/unknown` if any required receipt is absent, failed, invalid, or past
+      its `valid_until` time. A webview-level regression verifies expired proof
+      is shown stale and still-current proof remains verified; the focused
+      extension suite passes 17 tests. This is local renderer evidence only;
+      actual approved-consumer page review, live grant revocation, and SDE/cleanup
+      acceptance remain open.
+      Package/install follow-up (2026-10-30 02:31 +07:00): built and installed
+      V2 extension 0.9.8. The installed `extension.js` SHA-256 matches source
+      (`dd0550b66426fa4ae421dc5f0594ee124487c930da3139a97587f7e7b826beec`).
+      The package is `curatormd-v2-status-0.9.8.vsix` (SHA-256
+      `9c373602b0730b11403feb32a992082f2cffa3bdc218542be0600969ebd982fc`).
+      The running editor window still needs a reload before rendered 0.9.8
+      behavior can be checked; broader dashboard and owner-review gates remain.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

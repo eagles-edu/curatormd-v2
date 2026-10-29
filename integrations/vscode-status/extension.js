@@ -1111,7 +1111,15 @@ function dashboardHtml(webview) {
     }
     function renderEvidence(value) {
       evidenceRefs.replaceChildren();
-      evidenceStatus.textContent = value.fact_kind + ' ' + value.verification_status
+      const evidenceIsCurrent = value.evidence.length > 0 && value.evidence.every((reference) => {
+        if (reference.outcome !== 'passed' || !reference.attestation) return false;
+        const validUntil = Date.parse(reference.attestation.valid_until);
+        return Number.isFinite(validUntil) && validUntil > Date.now();
+      });
+      const verificationStatus = value.verification_status === 'verified_fact'
+        && (!evidenceIsCurrent || value.fact_kind !== 'verification')
+        ? 'stale/unknown' : value.verification_status;
+      evidenceStatus.textContent = value.fact_kind + ' ' + verificationStatus
         + '; criterion ' + (value.criterion_id || 'not applicable')
         + '; report ' + value.report_revision.slice(0, 12) + '.';
       if (!value.evidence.length) {
