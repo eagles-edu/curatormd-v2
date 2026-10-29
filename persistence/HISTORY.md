@@ -10715,3 +10715,18 @@ while preserving explicit criteria and same-project parent validation.
   remain open.
 - **Outcome:** Refresh profile-bound runtime evidence while preserving all
   remaining checklist gates.
+
+## 2026-10-29 — Verify the combined SQLite warning boundary
+
+- **Intent:** Check the approved 250 MiB warning against the main database and
+  WAL together, rather than treating either file as the full measurement.
+- **Changed fact:** The status-extension regression now sets the main database
+  to 200 MiB and WAL to 50 MiB at the exact 250 MiB boundary, then adds one WAL
+  byte to verify the warning. The warning remains informational and allows
+  writes.
+- **Verification:** The focused VS Code extension suite passes all 17 tests.
+- **Open gate:** The active VS Code host still needs one reload before the
+  installed 0.9.6 status color and SQLite warning can be visually confirmed.
+  No checklist item is closed by this source-level regression.
+- **Outcome:** Verify combined-size behavior without claiming rendered UI or
+  live above-threshold storage.

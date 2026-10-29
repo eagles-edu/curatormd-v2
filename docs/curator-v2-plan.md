@@ -854,7 +854,9 @@ plugin or Hermes integration is installed and working end to end.
       (250 MiB). The V2 dashboard and status-bar tooltip display this warning;
       writes continue and Curator leaves WAL checkpointing to SQLite. The
       focused status-extension suite verifies the exact threshold and an
-      above-threshold case. Extension source/UI tests do not prove the updated
+      above-threshold case using the combined main-database-plus-WAL total
+      (200 MiB main plus 50 MiB WAL at the boundary, then one byte over).
+      Extension source/UI tests do not prove the updated
       package is loaded in the active VS Code window or that a live warning has
       rendered; class budgets, retention horizons, and recovery evidence remain
       open. No checklist marker changed.

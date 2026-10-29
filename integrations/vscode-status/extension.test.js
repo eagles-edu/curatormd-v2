@@ -314,12 +314,14 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.match(items[0].tooltip, /Green means health is healthy with no SDE reviews pending/);
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', [], {
-      project_id: 'alpha', global_database_bytes: 262144000, global_wal_bytes: 0,
+      project_id: 'alpha', global_database_bytes: 200 * 1024 * 1024,
+      global_wal_bytes: 50 * 1024 * 1024,
     },
   ), 'healthy');
   assert.equal(items[0].text, '$(circle-filled) CuratorMD V2: healthy');
   const sqliteWarningStorage = {
-    project_id: 'alpha', global_database_bytes: 262144001, global_wal_bytes: 0,
+    project_id: 'alpha', global_database_bytes: 200 * 1024 * 1024,
+    global_wal_bytes: 50 * 1024 * 1024 + 1,
   };
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', [], sqliteWarningStorage,
