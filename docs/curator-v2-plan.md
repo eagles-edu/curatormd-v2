@@ -9962,6 +9962,13 @@ substitute for evidence at a later integration boundary.
       installed extension version is 0.9.9 and its packaged JavaScript hash
       matches the source. This closes the stale-probe green-state defect only;
       the broader rendered-dashboard acceptance item remains open.
+      Health-snapshot timestamp follow-up (2026-10-30 02:45 +07:00): extension
+      0.9.10 also rejects a `healthy` result whose own `observed_at` is missing,
+      invalid, older than 60 seconds, or more than 5 seconds in the future.
+      The focused 17-test suite passes, including stale and future snapshot
+      regressions. Version 0.9.10 is installed; source, VSIX, and installed
+      `extension.js` hashes match (`2a4c1fe702f8fcf98d0eef108af3c16eadd9cde18dc18410d369cb3f4cbc191e`).
+      The rendered-dashboard acceptance item remains open.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config

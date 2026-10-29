@@ -139,6 +139,12 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
   const validCode = (code) => typeof code === 'string'
     && /^[a-z][a-z0-9_:.-]{0,127}$/.test(code);
   const dependencies = health && health.dependencies;
+  const healthObservedAt = health && typeof health.observed_at === 'string'
+    ? Date.parse(health.observed_at) : Number.NaN;
+  const healthAgeSeconds = (Date.now() - healthObservedAt) / 1000;
+  const healthObservationFresh = Number.isFinite(healthObservedAt)
+    && healthAgeSeconds <= MAX_HEALTH_PROBE_AGE_SECONDS + MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS
+    && healthAgeSeconds >= -MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS;
   const dependencyNames = Array.isArray(dependencies)
     ? dependencies.map((dependency) => dependency && dependency.name) : [];
   const dependencyObservationsFresh = Array.isArray(dependencies)
@@ -172,6 +178,7 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
   if (health.status === 'healthy'
     && (health.gate_codes.length > 0
       || dependencies.some((dependency) => dependency.status !== 'healthy')
+      || !healthObservationFresh
       || !dependencyObservationsFresh)) {
     throw curatorError('hermes-probe-invalid', 'Hermes health response did not reconcile.');
   }

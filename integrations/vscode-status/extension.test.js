@@ -192,6 +192,7 @@ function healthyHermesProbe(projectId = 'alpha') {
     health: {
       project_id: projectId,
       status: 'healthy',
+      observed_at: new Date().toISOString(),
       gate_codes: [],
       database_observation_complete: true,
       dependencies: names.map((name) => ({
@@ -229,6 +230,18 @@ test('Hermes health probe requires a complete fresh-schema project-bound result'
   staleTimestamp.health.dependencies[0].observed_at = new Date(Date.now() - 66_000).toISOString();
   assert.throws(
     () => parseHermesHealthProbe(JSON.stringify(staleTimestamp), 'alpha'),
+    /did not reconcile/,
+  );
+  const staleHealth = healthyHermesProbe();
+  staleHealth.health.observed_at = new Date(Date.now() - 66_000).toISOString();
+  assert.throws(
+    () => parseHermesHealthProbe(JSON.stringify(staleHealth), 'alpha'),
+    /did not reconcile/,
+  );
+  const futureHealth = healthyHermesProbe();
+  futureHealth.health.observed_at = new Date(Date.now() + 6_000).toISOString();
+  assert.throws(
+    () => parseHermesHealthProbe(JSON.stringify(futureHealth), 'alpha'),
     /did not reconcile/,
   );
   assert.throws(() => parseHermesHealthProbe(JSON.stringify(payload), 'other'), /incomplete or project-mismatched/);
