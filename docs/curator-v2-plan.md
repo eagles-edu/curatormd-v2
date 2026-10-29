@@ -9625,6 +9625,12 @@ substitute for evidence at a later integration boundary.
       Hermes or Vhost service was restarted, and no live Vhost operation was
       run. Package binding is now verified; live consumer workflow evidence,
       remaining acceptance checks, and owner review remain open.
+      VS Code load recheck (2026-10-29 04:43 UTC): the active `renew_ssl`
+      window's extension-host log records activation of
+      `curatormd.curatormd-v2-status`; `code --list-extensions --show-versions`
+      reports 0.9.6. This resolves the package-load check. The rendered status
+      color and tooltip were not inspected, so visible UI and complete alpha
+      acceptance remain open.
 - [ ] `eaglesvn` reviews the content-free local-alpha evidence record and makes
       one explicit accept/reject decision for the named V2 alpha scope. The
       record must list the exact local package/project/config binding, the

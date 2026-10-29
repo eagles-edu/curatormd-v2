@@ -10730,3 +10730,17 @@ while preserving explicit criteria and same-project parent validation.
   No checklist item is closed by this source-level regression.
 - **Outcome:** Verify combined-size behavior without claiming rendered UI or
   live above-threshold storage.
+
+## 2026-10-29 — Confirm the VS Code extension host loaded 0.9.6
+
+- **Intent:** Resolve whether the active `renew_ssl` window still needed a
+  reload to load the current V2 status extension.
+- **Changed fact:** The extension-host log records activation of
+  `curatormd.curatormd-v2-status` at 04:43:24 UTC, and the installed extension
+  list reports version 0.9.6.
+- **Verification:** Read-only VS Code status and installed-extension queries,
+  plus the active extension-host log, identify the `renew_ssl` window and
+  package version.
+- **Open gate:** The visible panel color and tooltip were not inspected. No
+  checklist item is closed by package activation alone.
+- **Outcome:** Mark package loading verified; retain the visual UI gate.
