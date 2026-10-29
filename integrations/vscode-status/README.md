@@ -137,3 +137,8 @@ receipts.
 Install locally by opening this directory in VS Code and selecting **Developer:
 Install Extension from Location...**. Reload the window, set the User settings,
 then click `CuratorMD V2` in the bottom status bar.
+
+Reload once after installing or updating the extension so VS Code activates the
+new files. After activation, the status item reads health at startup and refreshes
+every 60 seconds. Clicking the item opens the dashboard and performs a fresh
+health read; reopening the repository is not needed for later health changes.
