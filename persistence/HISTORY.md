@@ -11396,5 +11396,7 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** A real bound Hermes Codex task and readback of its compact fact
   from the Curator ledger remain unverified; alpha operating evidence remains
   open.
+- **Follow-up verification (03:14 +07):** the full Hermes `python3 scripts/check`
+  passes all 12 checks on the committed state.
 - **Outcome:** Record the health cleanup without treating local refactors as
   end-to-end task evidence.

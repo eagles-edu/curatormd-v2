@@ -9732,6 +9732,8 @@ substitute for evidence at a later integration boundary.
       `cae1158404` is pushed to the configured development fork. No checklist
       marker changed; the real bound Hermes task/readback and alpha operating
       evidence remain open.
+      Final verification (2026-10-30 03:14 +07:00): `python3 scripts/check`
+      passes all 12 checks on the committed Hermes state.
 - [x] The local alpha plugin is scoped to its repository config and persistence
       target, denies access to an unrelated project, and does not copy or mix
       global backend state or repository roots. The installed Vhost consumer
