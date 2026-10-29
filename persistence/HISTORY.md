@@ -10601,3 +10601,22 @@ while preserving explicit criteria and same-project parent validation.
   checklist marker changed.
 - **Outcome:** Make the approved size warning visible without a write block,
   checkpoint request, or automatic deletion.
+
+## 2026-10-29 — Refresh trusted profile health evidence
+
+- **Intent:** Diagnose the yellow Curator V2 status item with the same trusted
+  profile probe the extension is configured to run.
+- **Changed fact:** The `renew-ssl-coding` Hermes Core checkout wrapper returned
+  a healthy `vhost-manager-alpha` snapshot, all seven required dependencies
+  healthy, zero gates, and no received/failed/quarantined events or pending
+  review/purge/expiry work. The global Hermes shim is older and does not accept
+  the probe flags; the configured checkout wrapper does.
+- **Verification:** The configured probe exited 0 at `2026-10-29T09:54:29Z`.
+  `code --status` confirmed the `renew_ssl` window and extension host remain
+  active. The visible status color was not accessible from the shell, and the
+  active host has not loaded extension 0.9.6.
+- **Open gate:** Confirm the rendered status color and 0.9.6 SQLite warning
+  after the existing editor window reloads. The alpha checklist item also
+  awaits reconciliation of its other local checks and explicit owner review.
+- **Outcome:** Refresh profile-side evidence without claiming a UI render or
+  full local-alpha acceptance.

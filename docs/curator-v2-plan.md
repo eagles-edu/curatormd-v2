@@ -9543,6 +9543,17 @@ substitute for evidence at a later integration boundary.
       the alpha acceptance row remains open. A unit test or an unrelated
       profile probe cannot stand
       in for a local workflow check.
+      Fresh profile probe (2026-10-29 09:54 UTC): ran the exact Hermes Core
+      wrapper configured for the V2 extension from the `renew_ssl` workspace.
+      It returned schema version 1 for `vhost-manager-alpha`, `healthy`, all
+      seven required dependencies healthy and 0–1 seconds old, no gates, no
+      received/failed/quarantined events, and zero pending review, purge, or
+      expiry work (exit 0). The installed VS Code extension host remains
+      active and has not loaded 0.9.6; the visible status color and new SQLite
+      warning render therefore remain unverified. The global `hermes` command
+      is a different, older shim and does not accept the probe options; the
+      configured checkout wrapper does. This is a fresh profile observation,
+      not closure of the alpha acceptance item.
       Disposable Hermes integration recheck (2026-10-29): ran the documented
       Vhost-owned managed-MCP harness against Curator source commit `5d7d040`
       via `PYTHONPATH`, with temporary Hermes profile, database, checkout, and
