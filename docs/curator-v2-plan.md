@@ -9035,6 +9035,35 @@ substitute for evidence at a later integration boundary.
       with one fact and the same three open criteria. This verifies the exact
       preview digest and idempotent event replay for this request. Restart
       recovery, another-project target comparison, and owner review remain open.
+      Hermes Core task-path recheck (2026-10-30): the dedicated
+      `curatorv2hermes` profile initially used Codex App Server, whose direct
+      MCP call lacked Hermes profile/session metadata and was denied as
+      unauthenticated. The profile's native `codex_responses` transport then
+      successfully created active goal
+      `2e7db177-906a-46cc-84d7-0f18488aef59` in
+      `hermes-core-v2-alpha`. Hermes validated the host binding for profile
+      `curatorv2hermes` at source epoch 1; bounded `goal_report` preserved all
+      three requested criteria as open. A fresh Hermes CLI process replayed
+      the exact goal-start event `0e1354e1-f9c7-4a31-8cbf-ca6cd8f8f79f`;
+      the receipt remained `processed`/`applied`, and the report still showed
+      one goal with three open criteria. The registered project fingerprint is
+      `3cb9084c7ab444d3ec8d03ff8ecbb1067200f957b5c6ffa028f608b4340c40c2`
+      and config hash is
+      `3667b21ea67b45ae1ebef97df785277d5c82dff6b6adec64710a081e45477206`.
+      A verification fact with unattested evidence was correctly rejected;
+      its failed event remains visible, so project health is degraded. Owner
+      review, another-project isolation evidence, source-task digest and
+      persistence-target acceptance record remain open. This advances real
+      Hermes task capture, profile binding, bounded readback, and process-level
+      replay only; the checklist item remains open. Follow-up local readiness
+      (2026-10-30 03:43 +07): the approved `local-uid:1000` review grant is
+      active, and the six-hour `hermes-core-v2-alpha` user timer is enabled.
+      Its first scheduled service run exited 0 with `backup_status=verified`
+      and no due purge or expiry work; the next calendar run is 06:00 +07.
+      The fresh Hermes probe reports five dependencies healthy; the remaining
+      gates are the intentionally visible failed fact event and unknown
+      artifact-producer manifest. Health remains degraded; no criterion was
+      marked verified.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Acceptance is for the approved local alpha only:
@@ -9351,6 +9380,13 @@ substitute for evidence at a later integration boundary.
       `9c373602b0730b11403feb32a992082f2cffa3bdc218542be0600969ebd982fc`).
       The running editor window still needs a reload before rendered 0.9.8
       behavior can be checked; broader dashboard and owner-review gates remain.
+      Live status-bar inspection (2026-10-30 03:50 +07): the Curator V2
+      workspace renders the item immediately after Git Graph. Its gray color
+      and tooltip explanation are correct because this backend workspace has no
+      `.curatormd-v2.toml`; the tooltip reports loaded version 0.9.6 while
+      version 0.9.11 is installed. This confirms placement and the neutral
+      legend only. The running window still needs a reload, and no dashboard
+      report/evidence page was rendered; this checklist item remains open.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
