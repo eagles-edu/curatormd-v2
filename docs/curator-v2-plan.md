@@ -4881,7 +4881,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       system Python lacked the MCP dependency; no application state changed.
       This closes the tested input patterns only;
       it does not prove that arbitrary conversation text or every runtime sink
-      is private, so the privacy row remains open.
+      is private, so the privacy row remains open. Hermes gateway logging
+      follow-up (2026-10-30): inbound message and quoted-reply text are no
+      longer written to gateway logs; the log records their character counts
+      and routing metadata. A canary regression exercises the real handler and
+      proves both text values are absent. The focused Hermes test passes, the
+      full `python3 scripts/check` passes all 12 checks, and `git diff --check`
+      passes. Hermes commit `d3cd8671c3` is pushed to the configured development
+      fork. Other message-content sinks and the full source-to-sink privacy
+      review remain open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
