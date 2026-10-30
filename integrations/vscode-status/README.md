@@ -8,6 +8,8 @@ red for other degraded health, and yellow when health or the review queue is
 unknown.
 The tooltip shows the installed extension version, health, the pending review
 count or its unavailable state, and a short explanation of the active color.
+When a health read fails, it gives a fixed next step for the known failure
+instead of showing exception text or file paths.
 For a same-project health result it also lists up to 12 valid gate codes, so a
 yellow unknown state points to the reported reason without exposing arbitrary
 server text.
@@ -22,7 +24,12 @@ For configured consumer workspaces, health and the review queue are read when
 the extension activates and when the workspace folder changes, so the status
 bar does not wait for the dashboard to be opened.
 The button opens a
-project-scoped dashboard for the first workspace folder. Goal, health, activity,
+project-scoped dashboard for the first workspace folder. The **CuratorMD V2:
+Start Task** command asks for a short problem statement and one or more separate,
+checkable success statements, shows the complete entry for confirmation, then
+creates an active goal in the configured project and reads it back to confirm
+that the saved text matches. It does not copy the chat or task transcript.
+Goal, health, activity,
 storage, and SDE queue reads are read-only. It shows project health, exact
 goal-state totals, event/review/purge/expiry queue counts, storage estimates,
 paged goal cards, and one

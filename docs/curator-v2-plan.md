@@ -9406,6 +9406,24 @@ substitute for evidence at a later integration boundary.
       version 0.9.11 is installed. This confirms placement and the neutral
       legend only. The running window still needs a reload, and no dashboard
       report/evidence page was rendered; this checklist item remains open.
+      Task-intake implementation (2026-10-30): extension 0.9.13 adds an
+      explicit **Start Task** command. It collects only a short problem and
+      separate success checks, shows them for confirmation, writes them through
+      the configured project's authorized Curator connection, and compares the
+      saved fields with a fresh project read before reporting success. Failed
+      health reads now show a fixed, actionable explanation without printing
+      exception text or paths. The focused extension suite passes 20 tests and
+      `git diff --check` is clean. This is implementation and simulated-MCP
+      evidence; the installed editor, real local task, rendered task report,
+      and human review still need your check, so this dashboard/alpha row stays
+      open. Package/install follow-up (2026-10-30): extension 0.9.13 was built
+      and installed. The packaged file is
+      `integrations/vscode-status/curatormd-v2-status-0.9.13.vsix` with SHA-256
+      `ab8f4a9f7f386ba24a6f973ded48b5f61933220b93789fe8a106cf2aec416ebb`;
+      installed `extension.js` matches the repository source at SHA-256
+      `97dd3b1ce9b02723850a6a8fc9c67107821c867056e2b6136db0c8d0a073fef7`.
+      The open VS Code window has not been reloaded, so rendered 0.9.13 behavior
+      remains for the owner to confirm.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

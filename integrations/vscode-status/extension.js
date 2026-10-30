@@ -23,8 +23,23 @@ const STATUS_COLOR_MEANINGS = Object.freeze({
   degraded: 'Red means health is degraded beyond the review-only state.',
   neutral: 'Gray means no health read has been attempted.',
 });
+const STATUS_READ_FAILURES = Object.freeze({
+  'launcher-start': 'Curator did not start; check the Curator launcher in VS Code User settings.',
+  'launcher-exit': 'Curator stopped before replying; check the local Curator installation.',
+  'read-denied': 'Curator denied the project read; check its local project access grant.',
+  'mcp-request': 'Curator could not complete the project read; refresh to try again.',
+  'invalid-response': 'Curator returned an unreadable response; check the local installation.',
+  timeout: 'Curator did not reply within 15 seconds; refresh to try again.',
+  'hermes-probe-start': 'Hermes readiness check did not start; check the Hermes command in User settings.',
+  'hermes-probe-exit': 'Hermes readiness check stopped early; use a Hermes version with the Curator status probe.',
+  'hermes-probe-timeout': 'Hermes readiness check timed out; refresh to try again.',
+  'hermes-probe-invalid': 'Hermes readiness data was incomplete or for another project; check the profile settings.',
+  'hermes-probe-profile': 'The Hermes profile setting is invalid; check the User settings value.',
+  'status-project-invalid': 'Curator did not identify the configured project; check its project file and grant.',
+});
 const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
+const MAX_GOAL_CRITERIA = 12;
 const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
@@ -48,6 +63,27 @@ function statusTooltip(message) {
 
 function statusColorMeaning(status) {
   return STATUS_COLOR_MEANINGS[status] || STATUS_COLOR_MEANINGS.unknown;
+}
+
+function statusReadFailure(error) {
+  return error && typeof error.code === 'string'
+    ? STATUS_READ_FAILURES[error.code] || 'The local health read failed; open the dashboard for details.'
+    : 'The local health read failed; open the dashboard for details.';
+}
+
+function goalStartFailure(error) {
+  const messages = {
+    'launcher-start': 'Curator could not start. Check the local launcher in VS Code User settings.',
+    'launcher-exit': 'Curator stopped before saving the task. Check the local installation.',
+    'read-denied': 'Curator denied access to this project. Check its local project grant.',
+    'mcp-request': 'Curator could not save the task. Refresh and try again.',
+    'invalid-response': 'Curator returned an unreadable result. Check the local installation.',
+    timeout: 'Curator did not respond in time. Refresh and try again.',
+    'goal-start-rejected': 'Curator did not confirm that the task was saved.',
+    'goal-readback-mismatch': 'The saved task differs from what you entered. Review it in the dashboard.',
+    'goal-report-unavailable': 'The task was saved, but Curator could not return its report.',
+  };
+  return messages[error && error.code] || 'Curator could not confirm task creation. Open the dashboard for details.';
 }
 
 function healthGateSummary(health, projectId) {
@@ -124,6 +160,149 @@ function curatorError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function validGoalText(value, limit) {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && value.length <= limit
+    && !/[\r\n]/.test(value);
+}
+
+async function promptForGoalDefinition() {
+  const problem = await vscode.window.showInputBox({
+    title: 'Start a Curator V2 task',
+    prompt: 'Write a short problem statement. Do not paste a transcript, password, or key.',
+    placeHolder: 'What needs to change?',
+    ignoreFocusOut: true,
+    validateInput: (value) => validGoalText(value, 2000)
+      ? undefined
+      : 'Enter one line with at most 2,000 characters.',
+  });
+  if (!problem) return null;
+
+  const criteria = [];
+  while (criteria.length < MAX_GOAL_CRITERIA) {
+    const description = await vscode.window.showInputBox({
+      title: `Success check ${criteria.length + 1}`,
+      prompt: 'Enter one observable result. Each check stays separate in the saved task.',
+      placeHolder: 'What result can be checked?',
+      ignoreFocusOut: true,
+      validateInput: (value) => validGoalText(value, 500)
+        ? undefined
+        : 'Enter one line with at most 500 characters.',
+    });
+    if (!description) return null;
+    criteria.push({
+      criterion_id: `criterion-${String(criteria.length + 1).padStart(2, '0')}`,
+      description: description.trim(),
+    });
+    if (criteria.length >= MAX_GOAL_CRITERIA) break;
+    const choice = await vscode.window.showQuickPick(
+      ['Add another success check', 'Create this active task'],
+      {
+        title: 'Task success checks',
+        placeHolder: `${criteria.length} check(s) entered. Add another or continue.`,
+        ignoreFocusOut: true,
+      },
+    );
+    if (!choice) return null;
+    if (choice === 'Create this active task') break;
+  }
+
+  const summary = `${problem.trim()}\n\nSuccess checks:\n${criteria
+    .map((criterion, index) => `${index + 1}. ${criterion.description}`)
+    .join('\n')}`;
+  const confirmation = await vscode.window.showInformationMessage(
+    summary,
+    { modal: true, detail: 'Only this summary and the separate checks will be saved.' },
+    'Start task',
+    'Cancel',
+  );
+  if (confirmation !== 'Start task') return null;
+  return { problem: problem.trim(), criteria };
+}
+
+async function startGoalFromWorkspace(spawnProcess = spawn) {
+  const workspace = vscode.workspace
+    && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+  if (!workspace) {
+    vscode.window.showWarningMessage('Open a configured Curator V2 project first.');
+    return null;
+  }
+  const projectRoot = workspace.uri.fsPath;
+  if (!fs.existsSync(projectRoot) || !fs.existsSync(path.join(projectRoot, '.curatormd-v2.toml'))) {
+    vscode.window.showErrorMessage('This folder is not configured for Curator V2.');
+    return null;
+  }
+  const configuration = vscode.workspace.getConfiguration('curatormdV2');
+  if (hasWorkspaceSettingOverride(configuration,
+    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand'])) {
+    vscode.window.showErrorMessage('Curator V2 uses User settings for its local connection.');
+    return null;
+  }
+  const databasePath = configuration.get('databasePath', '');
+  const profileId = configuration.get('profileId', '');
+  const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
+  if (!databasePath || !profileId || !serverCommand) {
+    vscode.window.showErrorMessage('Set the Curator V2 database, profile, and launcher in User settings.');
+    return null;
+  }
+
+  const definition = await promptForGoalDefinition();
+  if (!definition) return null;
+  const client = new McpStdioClient(serverCommand, [
+    '--project-root', projectRoot,
+    '--database', databasePath,
+    '--profile-id', profileId,
+  ], projectRoot, profileId, spawnProcess);
+  const suffix = randomBytes(16).toString('hex');
+  const eventId = `vscode-task-${suffix}`;
+  const goalId = `vscode-task-${suffix}`;
+  try {
+    await client.initialize();
+    const projectPage = JSON.parse(await client.callTool('goal_list_page', { offset: 0, limit: 1 }));
+    if (!projectPage || typeof projectPage.project_id !== 'string' || !projectPage.project_id) {
+      throw curatorError('status-project-invalid', 'Curator did not return the configured project.');
+    }
+    const receipt = JSON.parse(await client.callTool('goal_start', {
+      event_id: eventId,
+      goal_id: goalId,
+      problem: definition.problem,
+      success_criteria: definition.criteria,
+      initial_status: 'active',
+    }));
+    if (!receipt || receipt.project_id !== projectPage.project_id
+      || receipt.event_id !== eventId || !['processed', 'duplicate'].includes(receipt.status)) {
+      throw curatorError('goal-start-rejected', 'Curator did not confirm that the task was saved.');
+    }
+    const saved = JSON.parse(await client.callTool('goal_status', { goal_id: goalId }));
+    const savedGoal = saved && saved.goal;
+    const savedCriteria = savedGoal && savedGoal.success_criteria;
+    const exactCriteria = Array.isArray(savedCriteria)
+      && savedCriteria.length === definition.criteria.length
+      && savedCriteria.every((criterion, index) => (
+        criterion.criterion_id === definition.criteria[index].criterion_id
+        && criterion.description === definition.criteria[index].description
+      ));
+    if (!savedGoal || savedGoal.goal_id !== goalId
+      || savedGoal.project_id !== projectPage.project_id
+      || savedGoal.problem !== definition.problem || !exactCriteria) {
+      throw curatorError('goal-readback-mismatch', 'The saved task did not match the entered summary.');
+    }
+    const report = await client.callTool('goal_report', { goal_id: goalId, fact_limit: 1 });
+    if (!report.includes(`# Goal \`${goalId}\``)
+      || !report.includes('## Success criteria')) {
+      throw curatorError('goal-report-unavailable', 'Curator did not return the saved task report.');
+    }
+    vscode.window.showInformationMessage(`Curator V2 task started: ${goalId}`);
+    return { projectId: projectPage.project_id, goalId, eventId };
+  } catch (error) {
+    vscode.window.showErrorMessage(goalStartFailure(error));
+    return null;
+  } finally {
+    client.close();
+  }
 }
 
 function parseHermesHealthProbe(stdout, expectedProjectId) {
@@ -567,7 +746,11 @@ function activate(context) {
     'curatormdV2.openDashboard',
     () => showDashboard(),
   );
-  context.subscriptions.push(statusItem, openDashboard);
+  const startGoal = vscode.commands.registerCommand(
+    'curatormdV2.startGoal',
+    () => startGoalFromWorkspace(),
+  );
+  context.subscriptions.push(statusItem, openDashboard, startGoal);
   void refreshStatusBarHealthFromWorkspace();
   statusRefreshTimer = setInterval(() => {
     void refreshStatusBarHealthFromWorkspace();
@@ -601,7 +784,9 @@ function deactivate() {
   dashboardStatusItem = undefined;
 }
 
-function updateStatusBarHealth(health, projectId, reviewItems = null, storage = null) {
+function updateStatusBarHealth(
+  health, projectId, reviewItems = null, storage = null, readError = null,
+) {
   if (!dashboardStatusItem) return 'unknown';
   const healthStatus = projectId
     && health?.project_id === projectId
@@ -631,6 +816,7 @@ function updateStatusBarHealth(health, projectId, reviewItems = null, storage = 
   dashboardStatusItem.tooltip = statusTooltip(
     `${statusColorMeaning(displayStatus)} Project health: ${healthStatus}.`
       + healthGateSummary(health, projectId)
+      + (readError ? ` ${statusReadFailure(readError)}` : '')
       + ` ${reviewSummary}. `
       + (storageWarning ? `${storageWarning} ` : '')
       + 'Click to open the project-scoped dashboard.',
@@ -704,10 +890,10 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
     if (reviews === null) return 'unknown';
     if (health.status !== 'healthy') return health.status;
     return reviews.length > 0 ? 'review' : 'healthy';
-  } catch {
+  } catch (error) {
     if (generation === statusRefreshGeneration
       && vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath === projectRoot) {
-      updateStatusBarHealth(null, null, null);
+      updateStatusBarHealth(null, null, null, null, error);
     }
     return 'unknown';
   } finally {
@@ -1518,6 +1704,7 @@ module.exports = {
   defaultReviewCommand,
   parseHermesHealthProbe,
   readHermesHealthProbe,
+  startGoalFromWorkspace,
   dashboardErrorMessage,
   summarizeGoalStates,
   summarizeEventFailureCategories,

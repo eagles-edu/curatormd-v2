@@ -40,6 +40,7 @@ const {
   statusColorMeaning,
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
+  startGoalFromWorkspace,
   validateReviewQueue,
 } = require('./extension');
 Module._load = originalLoad;
@@ -56,6 +57,7 @@ class FakeMcpProcess extends EventEmitter {
     this.reportRevision = reportRevision;
     this.reportFactId = reportFactId;
     this.emptyReviewQueue = emptyReviewQueue;
+    this.startedGoal = null;
     this.stdout = new PassThrough();
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -114,6 +116,23 @@ class FakeMcpProcess extends EventEmitter {
               goals: [{ goal_id: 'goal-1', status: 'active', problem: 'Smoke goal' }],
               next_offset: null,
             }) }] };
+          } else if (request.params.name === 'goal_start') {
+            this.startedGoal = request.params.arguments;
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              project_id: 'alpha',
+              event_id: this.startedGoal.event_id,
+              status: 'processed',
+            }) }] };
+          } else if (request.params.name === 'goal_status' && this.startedGoal) {
+            result = { content: [{ type: 'text', text: JSON.stringify({
+              goal: {
+                goal_id: this.startedGoal.goal_id,
+                project_id: 'alpha',
+                problem: this.startedGoal.problem,
+                success_criteria: this.startedGoal.success_criteria,
+              },
+              criteria: [],
+            }) }] };
           } else if (request.params.name === 'sde_review_queue_cards') {
             result = { content: [{ type: 'text', text: JSON.stringify({
               project_id: 'alpha', candidates: this.emptyReviewQueue ? [] : [{
@@ -145,6 +164,12 @@ class FakeMcpProcess extends EventEmitter {
               }],
             }) }] };
           } else if (request.params.name === 'goal_report') {
+            if (this.startedGoal && request.params.arguments.goal_id === this.startedGoal.goal_id) {
+              result = { content: [{ type: 'text', text: `# Goal \`${this.startedGoal.goal_id}\`\n## Success criteria` }] };
+              queueMicrotask(() => this.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`));
+              callback();
+              return;
+            }
             const facts = this.reportFactId
               ? `\n## Facts to date (showing 1–1 of 1)\n### Verified facts\n- \`${this.reportFactId}\` — Verification: test passed; criterion \`criterion-1\`; 1 evidence reference(s)`
               : '\n## Facts to date (showing 0–0 of 0)';
@@ -340,7 +365,8 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Gray means no health read has been attempted/);
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
-  assert.equal(subscriptions.length, 3);
+  assert.equal(commands[1].name, 'curatormdV2.startGoal');
+  assert.equal(subscriptions.length, 4);
 
   assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
   assert.equal(items[0].color, '#73d216');
@@ -409,6 +435,12 @@ test('status item follows Git Graph and uses project-bound health colors', async
     { project_id: 'other', status: 'healthy', gate_codes: ['private_gate'] }, 'alpha', [],
   ), 'unknown');
   assert.doesNotMatch(items[0].tooltip, /private_gate/);
+  const privateError = Object.assign(new Error('/private/path and secret text'), {
+    code: 'launcher-start',
+  });
+  assert.equal(updateStatusBarHealth(null, null, null, null, privateError), 'unknown');
+  assert.match(items[0].tooltip, /check the Curator launcher in VS Code User settings/);
+  assert.doesNotMatch(items[0].tooltip, /private\/path|secret text/);
   assert.equal(statusColorMeaning('unknown'), 'Yellow means health or the SDE review count is unknown.');
 
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-status-'));
@@ -736,6 +768,68 @@ test('dashboard explains a missing consumer project config before starting the l
 test('POSIX command quoting keeps paths with spaces and quotes as one argument', () => {
   assert.equal(quotePosixShellArgument("/tmp/a user's project"), "'/tmp/a user'\\''s project'");
   assert.throws(() => quotePosixShellArgument('/tmp/project\nreview'), /control characters/);
+});
+
+test('Start Task saves only the confirmed problem and separate success checks, then reads them back', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-start-task-'));
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  const values = [
+    'Make the local alpha task visible.',
+    'The saved report shows the exact problem and success check.',
+  ];
+  const messages = [];
+  const calls = [];
+  const userSettings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+  };
+  let process;
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({}),
+    }),
+  };
+  vscodeMock.window = {
+    showInputBox: async () => values.shift(),
+    showQuickPick: async () => 'Create this active task',
+    showInformationMessage: async (...args) => {
+      messages.push(args);
+      return args[0].startsWith('Make the local alpha task visible.') ? 'Start task' : undefined;
+    },
+    showErrorMessage: assert.fail,
+    showWarningMessage: assert.fail,
+  };
+  try {
+    const result = await startGoalFromWorkspace((command, args, options) => {
+      calls.push({ command, args, options });
+      process = new FakeMcpProcess();
+      return process;
+    });
+    assert.ok(result && result.projectId === 'alpha');
+    assert.ok(process.startedGoal);
+    assert.equal(process.startedGoal.initial_status, 'active');
+    assert.equal(process.startedGoal.problem, 'Make the local alpha task visible.');
+    assert.deepEqual(process.startedGoal.success_criteria, [{
+      criterion_id: 'criterion-01',
+      description: 'The saved report shows the exact problem and success check.',
+    }]);
+    assert.deepEqual(Object.keys(process.startedGoal).sort(), [
+      'event_id', 'goal_id', 'initial_status', 'problem', 'success_criteria',
+    ]);
+    assert.ok(process.requests.some((request) => (
+      request.method === 'tools/call' && request.params.name === 'goal_status'
+    )));
+    assert.ok(process.requests.some((request) => (
+      request.method === 'tools/call' && request.params.name === 'goal_report'
+    )));
+    assert.match(messages[0][0], /The saved report shows the exact problem/);
+    assert.equal(calls[0].command, 'fixture-mcp');
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
 });
 
 test('review CLI defaults beside the configured MCP launcher', () => {
