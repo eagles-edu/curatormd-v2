@@ -10146,6 +10146,14 @@ substitute for evidence at a later integration boundary.
       and installed `extension.js` SHA-256 matches source
       (`fc952a2ab898e5fcb1db33175b7c64f659e382b84c1d59502f2d6040df10622d`).
       Dashboard visual acceptance remains open.
+      Hermes Core maintenance recheck (2026-10-30 13:10 +07:00): the
+      `hermes-core-v2-alpha` six-hour timer is active and waiting, with its next
+      run scheduled for 18:00:09. The 12:00:02 service run exited 0; its
+      content-free journal reports `backup_status=verified` and zero pending,
+      processed purge, or expiry work. The single recognized daily backup
+      (`2026-10-30.sqlite3`) passes read-only `quick_check`, schema version 39,
+      and has zero foreign-key violations. Only one daily copy exists, so seven-copy
+      live rotation remains open. No maintenance or cleanup was triggered.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
