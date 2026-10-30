@@ -8897,6 +8897,14 @@ substitute for evidence at a later integration boundary.
       fact/evidence pages, revision-change behavior, an attended SDE decision,
       backup rotation/restore, live expiry, or explicit alpha acceptance, so
       Slice I and its checklist item remain open.
+      Profile readiness recheck (2026-10-30 12:31 +07:00): the configured
+      `curatorv2hermes` profile connects to `hermes-core-v2-alpha`, and all
+      seven dependency probes are healthy. Project health is degraded by one
+      older failed verification event: its evidence was only observed, so
+      Curator correctly did not count it as passed. The event is not in the
+      Hermes Codex outbox and is unrelated to the new profile hook. No retry,
+      deletion, or terminal decision was made. The real-task and owner-review
+      checks remain open.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.

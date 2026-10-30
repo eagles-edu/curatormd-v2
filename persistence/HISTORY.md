@@ -1,5 +1,26 @@
 # Curator V2 history
 
+## 2026-10-30 — Recheck the dedicated Hermes profile
+
+- **Intent:** Confirm that the newly configured Hermes profile can reach the
+  Curator V2 project before a real task is run.
+- **Changed fact:** The profile-bound health read connects to
+  `hermes-core-v2-alpha`; all seven dependency probes are healthy. Overall
+  health is degraded by one older failed verification event. Its evidence was
+  observed, not passed, so Curator correctly rejected it as verification. The
+  event does not match any row in the Hermes Codex outbox and predates the new
+  hook delivery.
+- **Verification:** The Hermes source-checkout command with the dedicated
+  profile returned the bounded health snapshot. A read-only SQLite query
+  inspected only event status, error code, fact kind, and evidence outcome; it
+  did not print the fact text or raw payload. A direct MCP read without Hermes
+  profile context returned `unauthenticated`. No event was retried, deleted,
+  or resolved.
+- **Open gate:** The existing failed event needs human review. A real task must
+  still exercise the new hook and show its compact fact in a Curator report.
+- **Outcome:** Record the current profile state without changing the checklist
+  or altering the failed event.
+
 ## 2026-10-30 — Connect the Hermes profile hook to the V2 event tool
 
 - **Intent:** Finish the Hermes code path that forwards bounded Codex task
