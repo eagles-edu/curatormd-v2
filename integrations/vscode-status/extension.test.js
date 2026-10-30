@@ -441,6 +441,9 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.equal(updateStatusBarHealth(null, null, null, null, privateError), 'unknown');
   assert.match(items[0].tooltip, /check the Curator launcher in VS Code User settings/);
   assert.doesNotMatch(items[0].tooltip, /private\/path|secret text/);
+  updateStatusBarHealth(null, null, null, null, { code: 'toString' });
+  assert.match(items[0].tooltip, /The local health read failed; open the dashboard for details/);
+  assert.doesNotMatch(items[0].tooltip, /function toString/);
   assert.equal(statusColorMeaning('unknown'), 'Yellow means health or the SDE review count is unknown.');
 
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-status-'));

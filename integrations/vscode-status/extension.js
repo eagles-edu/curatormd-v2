@@ -66,9 +66,11 @@ function statusColorMeaning(status) {
 }
 
 function statusReadFailure(error) {
+  const fallback = 'The local health read failed; open the dashboard for details.';
   return error && typeof error.code === 'string'
-    ? STATUS_READ_FAILURES[error.code] || 'The local health read failed; open the dashboard for details.'
-    : 'The local health read failed; open the dashboard for details.';
+    && Object.prototype.hasOwnProperty.call(STATUS_READ_FAILURES, error.code)
+    ? STATUS_READ_FAILURES[error.code]
+    : fallback;
 }
 
 function goalStartFailure(error) {
@@ -83,7 +85,11 @@ function goalStartFailure(error) {
     'goal-readback-mismatch': 'The saved task differs from what you entered. Review it in the dashboard.',
     'goal-report-unavailable': 'The task was saved, but Curator could not return its report.',
   };
-  return messages[error && error.code] || 'Curator could not confirm task creation. Open the dashboard for details.';
+  const fallback = 'Curator could not confirm task creation. Open the dashboard for details.';
+  const code = error && error.code;
+  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(messages, code)
+    ? messages[code]
+    : fallback;
 }
 
 function healthGateSummary(health, projectId) {

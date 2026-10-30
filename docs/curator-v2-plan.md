@@ -9416,14 +9416,16 @@ substitute for evidence at a later integration boundary.
       `git diff --check` is clean. This is implementation and simulated-MCP
       evidence; the installed editor, real local task, rendered task report,
       and human review still need your check, so this dashboard/alpha row stays
-      open. Package/install follow-up (2026-10-30): extension 0.9.13 was built
+      open. Package/install follow-up (2026-10-30): extension 0.9.14 was built
       and installed. The packaged file is
-      `integrations/vscode-status/curatormd-v2-status-0.9.13.vsix` with SHA-256
-      `ab8f4a9f7f386ba24a6f973ded48b5f61933220b93789fe8a106cf2aec416ebb`;
+      `integrations/vscode-status/curatormd-v2-status-0.9.14.vsix` with SHA-256
+      `f15511e57986647a741f0f57035a65c5451081216e6d047c1d16569a42c9f7b2`;
       installed `extension.js` matches the repository source at SHA-256
-      `97dd3b1ce9b02723850a6a8fc9c67107821c867056e2b6136db0c8d0a073fef7`.
-      The open VS Code window has not been reloaded, so rendered 0.9.13 behavior
-      remains for the owner to confirm.
+      `0c4f7df7675598f1e69278a8fc35d2931484352dfa7bd58fdb15cb71071c210f`.
+      The open VS Code window has not been reloaded, so rendered 0.9.14 behavior
+      remains for the owner to confirm. The fixed-message lookup also rejects
+      inherited or unknown error-code properties; the focused 20-test suite and
+      `git diff --check` pass after that change.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:
