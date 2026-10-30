@@ -4895,7 +4895,9 @@ unknown. The dashboard and live event-delivery gates remain open.
       keys. This check runs in Curator, so it still applies if a producer filter
       is bypassed. The focused adapter file passes 9 tests and 8 subcases. This
       closes that input path only; the broader local privacy review remains
-      open.
+      open. Follow-up (2026-10-30): added rejection for DNS challenge values
+      embedded in hyphenated or underscored file names. The focused content
+      safety and Hermes adapter suites pass 13 tests and 41 subcases.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds

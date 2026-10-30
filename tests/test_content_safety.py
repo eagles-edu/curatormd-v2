@@ -23,6 +23,11 @@ class ContentSafetyTests(unittest.TestCase):
             ),
             ("fact.bullet", "pwd=synthetic-password", "credential_assignment"),
             ("fact.bullet", "TXT value: " + "A" * 43, "dns_challenge"),
+            (
+                "fact.bullet",
+                "Changed path: notes/dns-challenge-Q7mN4pL8xW2cR6vB.txt",
+                "dns_challenge",
+            ),
             ("fact.bullet", "Contact analyst@example.invalid for the report", "email_address"),
             ("goal.problem", "SSN 123-45-6789 was copied into the issue", "us_ssn"),
             ("fact.bullet", "phone: +1 (555) 123-4567", "labeled_phone"),

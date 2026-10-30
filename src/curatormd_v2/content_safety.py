@@ -34,6 +34,11 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"\s*(?::|=|\bis\b)\s*[\"']?[A-Za-z0-9_-]{12,}\b",
         re.IGNORECASE,
     )),
+    ("dns_challenge", re.compile(
+        r"\b(?:manual[-_ ]dns|dns)[-_ ](?:txt|challenge|code|token|value)"
+        r"[-_]+[A-Za-z0-9_-]{12,}\b",
+        re.IGNORECASE,
+    )),
     ("email_address", re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+")),
     ("us_ssn", re.compile(r"(?<!\d)(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?!\d)")),
     ("provider_token", re.compile(

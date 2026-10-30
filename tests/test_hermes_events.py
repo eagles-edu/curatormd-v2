@@ -210,6 +210,7 @@ class HermesCodexEventTests(unittest.TestCase):
             "certs/private.pem",
             "docs/password is Hunter2ABC.txt",
             "notes/manual DNS code is Q7mN4pL8xW2cR6vB.txt",
+            "notes/dns-challenge-Q7mN4pL8xW2cR6vB.txt",
             "docs/key sk-proj-1234567890abcdefghijklmn.txt",
         )
         for private_path in private_paths:
