@@ -358,6 +358,20 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
         self.assertEqual(tuple(class_directory.iterdir()), ())
         self.assertFalse((class_directory / "private-import.bin").exists())
 
+    def test_stage_artifact_allows_ordinary_contact_text(self) -> None:
+        """Do not treat ordinary documentation contact details as credentials."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "contact-writer-goal"
+        self._goal(plugin, goal_id)
+        payload = b"Contact the maintainer at author@example.invalid"
+
+        artifact = plugin.stage_artifact(
+            goal_id, "import", "contact-import", io.BytesIO(payload)
+        )
+
+        self.assertEqual(Path(artifact.path).read_bytes(), payload)
+
     def test_expired_staging_uses_72_hour_max_age_when_no_record_is_ready(self) -> None:
         """Unrecorded producer files reach the hard 72-hour age ceiling."""
 

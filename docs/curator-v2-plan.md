@@ -4906,6 +4906,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       passes 20 tests. Strict Pyright reports zero diagnostics. This is still a
       pattern filter rather than a complete content scanner; unknown sensitive
       forms and the other remaining data paths keep the privacy item open.
+      Scope correction (2026-10-30): staging rejects credential patterns but
+      permits ordinary contact details in temporary documentation imports;
+      canonical facts keep the stricter personal-data checks. A regression
+      covers the allowed contact text. The focused storage/privacy run passes
+      31 tests and 36 subcases; the bounded-memory staging run passes 20 tests,
+      Pyright reports zero diagnostics, and targeted Pylint passes.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds

@@ -55,6 +55,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.IGNORECASE,
     )),
 )
+_PERSONAL_DATA_CATEGORIES = frozenset({"email_address", "us_ssn", "labeled_phone"})
 
 
 class SensitiveContentError(ValueError):
@@ -81,14 +82,22 @@ class SensitiveContentCheckingReader:
         """Read and check one chunk while retaining enough tail for split labels."""
         chunk = self._source.read(size)
         window = self._tail + chunk
-        validate_safe_text(window.decode("utf-8", errors="ignore"), self._field_name)
+        validate_safe_text(
+            window.decode("utf-8", errors="ignore"),
+            self._field_name,
+            include_personal_data=False,
+        )
         self._tail = window[-self._OVERLAP_BYTES:]
         return chunk
 
 
-def validate_safe_text(value: str, field_name: str) -> None:
+def validate_safe_text(
+    value: str, field_name: str, *, include_personal_data: bool = True
+) -> None:
     """Reject recognized sensitive patterns without altering source text."""
 
     for category, pattern in _PATTERNS:
+        if not include_personal_data and category in _PERSONAL_DATA_CATEGORIES:
+            continue
         if pattern.search(value):
             raise SensitiveContentError(field_name, category)
