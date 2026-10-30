@@ -4889,7 +4889,13 @@ unknown. The dashboard and live event-delivery gates remain open.
       full `python3 scripts/check` passes all 12 checks, and `git diff --check`
       passes. Hermes commit `d3cd8671c3` is pushed to the configured development
       fork. Other message-content sinks and the full source-to-sink privacy
-      review remain open.
+      review remain open. Curator-side work-summary check (2026-10-30): the
+      Hermes summary reader now also rejects sensitive text in changed-file
+      paths, including password phrases, DNS challenge values, and provider
+      keys. This check runs in Curator, so it still applies if a producer filter
+      is bypassed. The focused adapter file passes 9 tests and 8 subcases. This
+      closes that input path only; the broader local privacy review remains
+      open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds

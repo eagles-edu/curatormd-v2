@@ -204,7 +204,15 @@ class HermesCodexEventTests(unittest.TestCase):
             source_id="hermes.gptmd-coding",
             repository_fingerprint=fingerprint,
         )
-        for private_path in (".aws/credentials", ".ssh/id_ed25519", "certs/private.pem"):
+        private_paths = (
+            ".aws/credentials",
+            ".ssh/id_ed25519",
+            "certs/private.pem",
+            "docs/password is Hunter2ABC.txt",
+            "notes/manual DNS code is Q7mN4pL8xW2cR6vB.txt",
+            "docs/key sk-proj-1234567890abcdefghijklmn.txt",
+        )
+        for private_path in private_paths:
             with self.subTest(path=private_path):
                 summary = json.dumps({
                     "schema_version": 1,

@@ -15,6 +15,7 @@ import json
 import re
 from typing import Mapping, cast
 
+from .content_safety import SensitiveContentError, validate_safe_text
 from .events import EventEnvelope, GoalActivityObserved
 from .models import FactKind
 from .validation import is_exact_int
@@ -279,6 +280,10 @@ def _work_summary_bullet(value: object, repository_fingerprint: str | None) -> s
 def _private_summary_path(path: str) -> bool:
     """Reject paths that commonly identify credentials, keys, or certs."""
 
+    try:
+        validate_safe_text(path, "work summary path")
+    except SensitiveContentError:
+        return True
     parts = tuple(part.lower() for part in path.split("/"))
     basename = parts[-1] if parts else ""
     return (
