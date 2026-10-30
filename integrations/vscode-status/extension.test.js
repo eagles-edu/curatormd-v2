@@ -851,7 +851,9 @@ test('Start Task saves only the confirmed problem and separate success checks, t
     });
     assert.equal(replay.goalId, result.goalId);
     assert.equal(replay.eventId, result.eventId);
+    assert.equal(replay.replayed, true);
     assert.equal(processes[1].startedReceiptStatus, 'duplicate');
+    assert.match(messages[3][0], /^Curator V2 reused the saved task:/);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

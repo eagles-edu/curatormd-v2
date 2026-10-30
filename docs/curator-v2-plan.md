@@ -9442,9 +9442,14 @@ substitute for evidence at a later integration boundary.
       and project-config digest; it rechecks the config before writing. A retry
       of the same entry therefore replays the same receipt rather than creating
       a second goal. The extension regression confirms a repeated request gets
-      the duplicate receipt and identical goal ID. Package 0.9.15 contains this
-      retry fix; real Hermes delivery and the rendered task page still need the
-      local acceptance run.
+      the duplicate receipt and identical goal ID; the editor now tells the user
+      that it reused the saved task. The focused suite passes 20 tests.
+      Package 0.9.16 was built and installed. Its VSIX SHA-256 is
+      `5c6c909b67377efc4dafe075b1284a51d18c9fec1134be372135610be64b94c7`, and
+      the installed `extension.js` matches the repository source at SHA-256
+      `e60ab6d66abd979526b477e4a9d3d29ae98be2f0b1437d5951cabc87511fcfdf`.
+      Real Hermes delivery and the rendered task page still need the local
+      acceptance run.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

@@ -341,8 +341,11 @@ async function startGoalFromWorkspace(spawnProcess = spawn) {
       || !report.includes('## Success criteria')) {
       throw curatorError('goal-report-unavailable', 'Curator did not return the saved task report.');
     }
-    vscode.window.showInformationMessage(`Curator V2 task started: ${goalId}`);
-    return { projectId: projectPage.project_id, goalId, eventId };
+    const replayed = receipt.status === 'duplicate';
+    vscode.window.showInformationMessage(
+      replayed ? `Curator V2 reused the saved task: ${goalId}` : `Curator V2 task started: ${goalId}`,
+    );
+    return { projectId: projectPage.project_id, goalId, eventId, replayed };
   } catch (error) {
     vscode.window.showErrorMessage(goalStartFailure(error));
     return null;
