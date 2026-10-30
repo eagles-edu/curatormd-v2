@@ -7459,6 +7459,17 @@ Final report: completed facts, open items, recovery path, next action
       producer filter, but it does not prove privacy for every log, trace,
       backup, journal, or crash-dump sink; the broad source-to-sink item stays
       open.
+      Profile-hook connection (2026-10-30 12:29 +07:00): Hermes Core now has a
+      profile hook installed for the dedicated `curatorv2hermes` profile. It
+      forwards the durable event's allowed fields to the existing
+      `hermes_codex_event` tool, excludes prompt/response and command text, and
+      acknowledges only a matching processed or duplicate receipt. The first
+      contract check caught an extra `project_id` tool argument; the hook now
+      follows Curator's actual tool schema. Its focused test passes 3/3, and
+      commits `aec29b66ad` and `fff119b2e1` are pushed to the Hermes development
+      fork. The local profile allowlist is configured. No gateway restart or
+      live task was run; this does not prove a real task created a goal or that
+      its work-summary fact was read back. Keep this item open for that check.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer

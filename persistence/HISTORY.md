@@ -1,5 +1,25 @@
 # Curator V2 history
 
+## 2026-10-30 — Connect the Hermes profile hook to the V2 event tool
+
+- **Intent:** Finish the Hermes code path that forwards bounded Codex task
+  summaries to the configured Curator V2 project.
+- **Changed fact:** Hermes now has a profile-local durable hook for Codex turn
+  start/end events. It forwards only the tool's supported event fields and
+  allowlisted summary, then acknowledges only a matching processed or duplicate
+  receipt. The dedicated local profile is configured to allow only the
+  `curator_v2` MCP server for this hook.
+- **Verification:** The focused hook suite passes 3/3. Its argument-shape
+  assertion caught and prevented an unsupported `project_id` argument from
+  being sent to Curator. Hermes commits `aec29b66ad` and `fff119b2e1` are pushed
+  to the configured development fork. No gateway restart or live event was
+  performed.
+- **Open gate:** A real bound Hermes task must still create/use the correct goal,
+  deliver the work-summary fact, and show it in Curator readback. This code test
+  does not prove live delivery or close the local-alpha checklist.
+- **Outcome:** Record the integration code and its remaining live check without
+  changing checklist markers.
+
 ## 2026-10-29 — Classify rollback archives from member metadata
 
 - **Intent:** Clarify whether the legacy backup archives are raw Codex or
