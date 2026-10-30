@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
-const { randomBytes } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const path = require('node:path');
 const vscode = require('vscode');
 const EXTENSION_VERSION = require('./package.json').version;
@@ -40,6 +40,7 @@ const STATUS_READ_FAILURES = Object.freeze({
 const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
 const MAX_GOAL_CRITERIA = 12;
+const MAX_PROJECT_CONFIG_BYTES = 16 * 1024;
 const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
@@ -84,6 +85,8 @@ function goalStartFailure(error) {
     'goal-start-rejected': 'Curator did not confirm that the task was saved.',
     'goal-readback-mismatch': 'The saved task differs from what you entered. Review it in the dashboard.',
     'goal-report-unavailable': 'The task was saved, but Curator could not return its report.',
+    'project-config-invalid': 'The Curator project file could not be read. Check the project setup.',
+    'project-config-changed': 'The project changed while you were entering the task. Run Start Task again.',
   };
   const fallback = 'Curator could not confirm task creation. Open the dashboard for details.';
   const code = error && error.code;
@@ -221,12 +224,39 @@ async function promptForGoalDefinition() {
     .join('\n')}`;
   const confirmation = await vscode.window.showInformationMessage(
     summary,
-    { modal: true, detail: 'Only this summary and the separate checks will be saved.' },
+    {
+      modal: true,
+      detail: 'Only this summary and the separate checks will be saved. Retrying the same entry reuses the same task.',
+    },
     'Start task',
     'Cancel',
   );
   if (confirmation !== 'Start task') return null;
   return { problem: problem.trim(), criteria };
+}
+
+function projectConfigDigest(projectRoot) {
+  const bytes = fs.readFileSync(path.join(projectRoot, '.curatormd-v2.toml'));
+  if (bytes.length > MAX_PROJECT_CONFIG_BYTES) {
+    throw curatorError('project-config-invalid', 'Curator project file is too large.');
+  }
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function stableGoalEventIds(projectRoot, profileId, projectId, configDigest, definition) {
+  const identity = JSON.stringify({
+    project_root: path.resolve(projectRoot),
+    profile_id: profileId,
+    project_id: projectId,
+    config_sha256: configDigest,
+    problem: definition.problem,
+    success_criteria: definition.criteria,
+  });
+  const digest = createHash('sha256').update(identity).digest('hex');
+  return {
+    eventId: `vscode-task-event-${digest}`,
+    goalId: `vscode-task-${digest}`,
+  };
 }
 
 async function startGoalFromWorkspace(spawnProcess = spawn) {
@@ -257,20 +287,30 @@ async function startGoalFromWorkspace(spawnProcess = spawn) {
 
   const definition = await promptForGoalDefinition();
   if (!definition) return null;
+  let configDigest;
+  try {
+    configDigest = projectConfigDigest(projectRoot);
+  } catch (error) {
+    vscode.window.showErrorMessage(goalStartFailure(error));
+    return null;
+  }
   const client = new McpStdioClient(serverCommand, [
     '--project-root', projectRoot,
     '--database', databasePath,
     '--profile-id', profileId,
   ], projectRoot, profileId, spawnProcess);
-  const suffix = randomBytes(16).toString('hex');
-  const eventId = `vscode-task-${suffix}`;
-  const goalId = `vscode-task-${suffix}`;
   try {
     await client.initialize();
     const projectPage = JSON.parse(await client.callTool('goal_list_page', { offset: 0, limit: 1 }));
     if (!projectPage || typeof projectPage.project_id !== 'string' || !projectPage.project_id) {
       throw curatorError('status-project-invalid', 'Curator did not return the configured project.');
     }
+    if (projectConfigDigest(projectRoot) !== configDigest) {
+      throw curatorError('project-config-changed', 'Curator project changed before task creation.');
+    }
+    const { eventId, goalId } = stableGoalEventIds(
+      projectRoot, profileId, projectPage.project_id, configDigest, definition,
+    );
     const receipt = JSON.parse(await client.callTool('goal_start', {
       event_id: eventId,
       goal_id: goalId,

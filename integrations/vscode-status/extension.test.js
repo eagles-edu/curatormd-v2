@@ -49,6 +49,7 @@ class FakeMcpProcess extends EventEmitter {
   constructor(
     reportRevision = 'a'.repeat(64), denyToolCall = false,
     denyToolName = null, reportFactId = null, emptyReviewQueue = false,
+    seenGoalEvents = new Set(),
   ) {
     super();
     this.requests = [];
@@ -57,7 +58,9 @@ class FakeMcpProcess extends EventEmitter {
     this.reportRevision = reportRevision;
     this.reportFactId = reportFactId;
     this.emptyReviewQueue = emptyReviewQueue;
+    this.seenGoalEvents = seenGoalEvents;
     this.startedGoal = null;
+    this.startedReceiptStatus = null;
     this.stdout = new PassThrough();
     this.stdin = new Writable({
       write: (chunk, _encoding, callback) => {
@@ -118,10 +121,13 @@ class FakeMcpProcess extends EventEmitter {
             }) }] };
           } else if (request.params.name === 'goal_start') {
             this.startedGoal = request.params.arguments;
+            this.startedReceiptStatus = this.seenGoalEvents.has(this.startedGoal.event_id)
+              ? 'duplicate' : 'processed';
+            this.seenGoalEvents.add(this.startedGoal.event_id);
             result = { content: [{ type: 'text', text: JSON.stringify({
               project_id: 'alpha',
               event_id: this.startedGoal.event_id,
-              status: 'processed',
+              status: this.startedReceiptStatus,
             }) }] };
           } else if (request.params.name === 'goal_status' && this.startedGoal) {
             result = { content: [{ type: 'text', text: JSON.stringify({
@@ -776,12 +782,14 @@ test('POSIX command quoting keeps paths with spaces and quotes as one argument',
 test('Start Task saves only the confirmed problem and separate success checks, then reads them back', async () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-start-task-'));
   fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
-  const values = [
+  let values = [
     'Make the local alpha task visible.',
     'The saved report shows the exact problem and success check.',
   ];
   const messages = [];
   const calls = [];
+  const processes = [];
+  const seenGoalEvents = new Set();
   const userSettings = {
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
@@ -808,7 +816,8 @@ test('Start Task saves only the confirmed problem and separate success checks, t
   try {
     const result = await startGoalFromWorkspace((command, args, options) => {
       calls.push({ command, args, options });
-      process = new FakeMcpProcess();
+      process = new FakeMcpProcess('a'.repeat(64), false, null, null, true, seenGoalEvents);
+      processes.push(process);
       return process;
     });
     assert.ok(result && result.projectId === 'alpha');
@@ -830,6 +839,19 @@ test('Start Task saves only the confirmed problem and separate success checks, t
     )));
     assert.match(messages[0][0], /The saved report shows the exact problem/);
     assert.equal(calls[0].command, 'fixture-mcp');
+    values = [
+      'Make the local alpha task visible.',
+      'The saved report shows the exact problem and success check.',
+    ];
+    const replay = await startGoalFromWorkspace((command, args, options) => {
+      calls.push({ command, args, options });
+      process = new FakeMcpProcess('a'.repeat(64), false, null, null, true, seenGoalEvents);
+      processes.push(process);
+      return process;
+    });
+    assert.equal(replay.goalId, result.goalId);
+    assert.equal(replay.eventId, result.eventId);
+    assert.equal(processes[1].startedReceiptStatus, 'duplicate');
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

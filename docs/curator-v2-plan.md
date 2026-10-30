@@ -9437,7 +9437,14 @@ substitute for evidence at a later integration boundary.
       The open VS Code window has not been reloaded, so rendered 0.9.14 behavior
       remains for the owner to confirm. The fixed-message lookup also rejects
       inherited or unknown error-code properties; the focused 20-test suite and
-      `git diff --check` pass after that change.
+      `git diff --check` pass after that change. Task intake now derives stable
+      event/goal IDs from the confirmed text, profile, project, repository path,
+      and project-config digest; it rechecks the config before writing. A retry
+      of the same entry therefore replays the same receipt rather than creating
+      a second goal. The extension regression confirms a repeated request gets
+      the duplicate receipt and identical goal ID. Package 0.9.15 contains this
+      retry fix; real Hermes delivery and the rendered task page still need the
+      local acceptance run.
 - [ ] SDE assessment produces reviewable candidates only for supported,
       material facts; a human's decision and rationale are auditable. Proposed
       acceptance, using a candidate from the approved real-consumer pilot:

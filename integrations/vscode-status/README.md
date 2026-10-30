@@ -28,7 +28,9 @@ project-scoped dashboard for the first workspace folder. The **CuratorMD V2:
 Start Task** command asks for a short problem statement and one or more separate,
 checkable success statements, shows the complete entry for confirmation, then
 creates an active goal in the configured project and reads it back to confirm
-that the saved text matches. It does not copy the chat or task transcript.
+that the saved text matches. If the reply is lost and you retry the exact same
+entry in the same project settings, it reuses the same task instead of creating
+a duplicate. It does not copy the chat or task transcript.
 Goal, health, activity,
 storage, and SDE queue reads are read-only. It shows project health, exact
 goal-state totals, event/review/purge/expiry queue counts, storage estimates,
