@@ -9833,6 +9833,13 @@ substitute for evidence at a later integration boundary.
       evidence remain open.
       Final verification (2026-10-30 03:14 +07:00): `python3 scripts/check`
       passes all 12 checks on the committed Hermes state.
+      Current-source recovery recheck (2026-10-30 12:49 +07:00):
+      `PYTHONPATH=src:tests .venv/bin/python -m unittest test_backup
+      test_project_plugin_storage` passes all 38 tests, covering verified
+      seven-copy rotation, restore to a new path, and 72-hour expiry decisions.
+      This confirms the current implementation and disposable tests; it does
+      not prove the live timer run, current live backup inventory, or attended
+      expiry review. This alpha row remains open for those real local checks.
 - [x] The local alpha plugin is scoped to its repository config and persistence
       target, denies access to an unrelated project, and does not copy or mix
       global backend state or repository roots. The installed Vhost consumer
