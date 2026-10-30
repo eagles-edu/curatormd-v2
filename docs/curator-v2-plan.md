@@ -4874,9 +4874,12 @@ unknown. The dashboard and live event-delivery gates remain open.
       password/API-key values written as ordinary `... is value` prose and
       manual DNS code/challenge values of 12 or more token characters. The
       synthetic privacy corpus is version 2. Five focused checks pass, including
-      the MCP error/log/database/sidecar/Markdown canaries, using the repository
-      virtual environment. The system Python lacked the MCP dependency; no
-      application state changed. This closes the tested input patterns only;
+      MCP rejection canaries for prose-form passwords and manual DNS codes
+      across the returned error, application log, SQLite files/sidecars, and
+      canonical Markdown, using the repository virtual environment. The
+      configured VS Code launcher imports this checkout's `src/` tree. The
+      system Python lacked the MCP dependency; no application state changed.
+      This closes the tested input patterns only;
       it does not prove that arbitrary conversation text or every runtime sink
       is private, so the privacy row remains open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact

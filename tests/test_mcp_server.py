@@ -664,6 +664,8 @@ class McpServerTests(McpServerTestSupport):
         secrets = (
             "ghs_1234567890_" + "A" * 480 + ".eyJhbGciOiJIUzI1NiJ9.signature",
             "TXT value: " + "B" * 43,
+            "The temporary password is examplePass123!",
+            "Manual DNS code: EXAMPLE_DNS_1234567890",
         )
 
         async def exercise() -> None:
