@@ -8,6 +8,7 @@ material and retry, preserving the meaning of evidence explicitly.
 from __future__ import annotations
 
 import re
+from typing import BinaryIO
 
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -64,6 +65,25 @@ class SensitiveContentError(ValueError):
         self.category = category
         # Never echo the rejected value: it may itself be a credential or PII.
         super().__init__(f"sensitive content rejected in {field_name}: {category}")
+
+
+class SensitiveContentCheckingReader:
+    """Check a binary input stream in bounded overlapping chunks before writes."""
+
+    _OVERLAP_BYTES = 512
+
+    def __init__(self, source: BinaryIO, field_name: str) -> None:
+        self._source = source
+        self._field_name = field_name
+        self._tail = b""
+
+    def read(self, size: int = -1) -> bytes:
+        """Read and check one chunk while retaining enough tail for split labels."""
+        chunk = self._source.read(size)
+        window = self._tail + chunk
+        validate_safe_text(window.decode("utf-8", errors="ignore"), self._field_name)
+        self._tail = window[-self._OVERLAP_BYTES:]
+        return chunk
 
 
 def validate_safe_text(value: str, field_name: str) -> None:

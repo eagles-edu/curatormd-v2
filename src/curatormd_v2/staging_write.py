@@ -7,7 +7,7 @@ import hashlib
 import os
 import secrets
 import stat
-from typing import BinaryIO, Callable
+from typing import Callable, Protocol
 
 from .models import ArtifactRef, new_id
 from .project_config import ProjectConfig, ProjectConfigError
@@ -22,7 +22,7 @@ class StagingArtifactWriteRequest:
     goal_id: str
     artifact_class: str
     artifact_id: str
-    source: BinaryIO
+    source: ReadableBinaryStream
     existing_goal_bytes: int
     existing_artifact: ArtifactRef | None
 
@@ -62,6 +62,14 @@ class StagingWriteCallbacks:
     bind_existing_occurrences: Callable[
         [str, tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]
     ]
+
+
+class ReadableBinaryStream(Protocol):
+    """The bounded read interface needed from staged artifact sources."""
+
+    def read(self, size: int = -1) -> bytes:
+        """Return up to ``size`` bytes, or all remaining bytes when negative."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,7 +309,7 @@ def _retry_descriptor_matches(
 
 
 def _compare_retry_content(
-    descriptor: int, source: BinaryIO, max_artifact_bytes: int
+    descriptor: int, source: ReadableBinaryStream, max_artifact_bytes: int
 ) -> tuple[str, int]:
     """Compare bounded source chunks with the existing file and hash the source."""
 

@@ -339,6 +339,25 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
         self.assertTrue(inventory.usage.inventory_complete)
         self.assertEqual(inventory.artifacts, (artifact,))
 
+    def test_stage_artifact_rejects_sensitive_text_split_across_chunks(self) -> None:
+        """Reject secret-like content at ingestion and remove the unpublished file."""
+
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "sensitive-writer-goal"
+        self._goal(plugin, goal_id)
+        marker = b"password=synthetic-password-value"
+        prefix = b"x" * (64 * 1024 - 5) + b" "
+        payload = prefix + marker
+
+        with self.assertRaisesRegex(ValueError, "sensitive content rejected"):
+            plugin.stage_artifact(
+                goal_id, "import", "private-import", io.BytesIO(payload)
+            )
+
+        class_directory = self.stage / goal_id / "import"
+        self.assertEqual(tuple(class_directory.iterdir()), ())
+        self.assertFalse((class_directory / "private-import.bin").exists())
+
     def test_expired_staging_uses_72_hour_max_age_when_no_record_is_ready(self) -> None:
         """Unrecorded producer files reach the hard 72-hour age ceiling."""
 

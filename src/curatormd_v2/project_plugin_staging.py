@@ -13,6 +13,7 @@ import re
 import stat
 from typing import BinaryIO, ContextManager, Mapping
 
+from .content_safety import SensitiveContentCheckingReader
 from .events import EventQueueStatus
 from .models import (
     MAX_ARTIFACTS_PER_RECEIPT,
@@ -616,7 +617,7 @@ class ProjectStagingMixin(ABC):
                 goal_id,
                 artifact_class,
                 artifact_id,
-                source,
+                SensitiveContentCheckingReader(source, "staged artifact content"),
                 existing_bytes,
                 existing_artifact,
             ),

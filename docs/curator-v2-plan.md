@@ -4898,6 +4898,14 @@ unknown. The dashboard and live event-delivery gates remain open.
       open. Follow-up (2026-10-30): added rejection for DNS challenge values
       embedded in hyphenated or underscored file names. The focused content
       safety and Hermes adapter suites pass 13 tests and 41 subcases.
+      Staging follow-up (2026-10-30): raw artifact streams now pass through the
+      same content checks in bounded chunks before publication. A sensitive
+      password value split across the 64 KiB read boundary is rejected, and the
+      unpublished staging file is removed. The storage and privacy suites pass
+      30 tests and 36 subcases; the separate 24 MiB bounded-memory staging test
+      passes 20 tests. Strict Pyright reports zero diagnostics. This is still a
+      pattern filter rather than a complete content scanner; unknown sensitive
+      forms and the other remaining data paths keep the privacy item open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
