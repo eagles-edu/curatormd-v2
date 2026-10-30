@@ -66,7 +66,7 @@ class ContentSafetyTests(unittest.TestCase):
     def test_versioned_local_alpha_synthetic_corpus(self) -> None:
         corpus_path = Path(__file__).parent / "fixtures" / "content-safety-v2-local-alpha.json"
         corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
-        self.assertEqual(corpus["version"], "local-alpha-v1")
+        self.assertEqual(corpus["version"], "local-alpha-v2")
         self.assertEqual(corpus["scope"], "synthetic examples for current reject-only patterns")
 
         for case in corpus["reject"]:

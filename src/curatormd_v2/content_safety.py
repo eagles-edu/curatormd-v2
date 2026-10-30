@@ -18,9 +18,20 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"\s*[:=]\s*[^\s,;]+",
         re.IGNORECASE,
     )),
+    ("credential_prose", re.compile(
+        r"\b(?:password|passwd|pwd|api[_-]?key|access[_-]?token|refresh[_-]?token)"
+        r"\s+is\s+(?!not\b|required\b|unknown\b|unset\b|redacted\b|managed\b)"
+        r"[^\s,;]{6,}",
+        re.IGNORECASE,
+    )),
     ("dns_challenge", re.compile(
         r"\b(?:TXT(?:\s+(?:record|value))?|DNS\s+(?:challenge|TXT)"
         r"(?:\s+(?:value|code|token))?)\s*[:=]\s*[\"']?[A-Za-z0-9_-]{32,}\b",
+        re.IGNORECASE,
+    )),
+    ("dns_challenge", re.compile(
+        r"\b(?:manual\s+)?DNS\s+(?:TXT\s+)?(?:code|challenge|value)"
+        r"\s*(?::|=|\bis\b)\s*[\"']?[A-Za-z0-9_-]{12,}\b",
         re.IGNORECASE,
     )),
     ("email_address", re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+")),

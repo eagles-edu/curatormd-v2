@@ -4870,6 +4870,15 @@ unknown. The dashboard and live event-delivery gates remain open.
       This closes one producer boundary; the broader privacy audit remains
       open. Hermes Core is an in-scope V2 integration; consumer application
       repositories remain outside this work.
+      Curator input-filter follow-up (2026-10-30): added reject-only checks for
+      password/API-key values written as ordinary `... is value` prose and
+      manual DNS code/challenge values of 12 or more token characters. The
+      synthetic privacy corpus is version 2. Five focused checks pass, including
+      the MCP error/log/database/sidecar/Markdown canaries, using the repository
+      virtual environment. The system Python lacked the MCP dependency; no
+      application state changed. This closes the tested input patterns only;
+      it does not prove that arbitrary conversation text or every runtime sink
+      is private, so the privacy row remains open.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds

@@ -1,5 +1,5 @@
 {
-  "version": "local-alpha-v1",
+  "version": "local-alpha-v2",
   "scope": "synthetic examples for current reject-only patterns",
   "reject": [
     {
@@ -11,6 +11,16 @@
       "id": "manual-dns-password-assignment",
       "text": "pwd=EXAMPLE_NOT_A_SECRET",
       "category": "credential_assignment"
+    },
+    {
+      "id": "password-in-prose",
+      "text": "The temporary password is examplePass123!",
+      "category": "credential_prose"
+    },
+    {
+      "id": "manual-dns-code-in-prose",
+      "text": "Manual DNS code: EXAMPLE_DNS_1234567890",
+      "category": "dns_challenge"
     },
     {
       "id": "labeled-acme-txt-value",
@@ -65,6 +75,10 @@
     {
       "id": "password-policy-prose",
       "text": "The operator enters the password directly into the service."
+    },
+    {
+      "id": "password-requirement-prose",
+      "text": "Password is required before deployment."
     }
   ]
 }
