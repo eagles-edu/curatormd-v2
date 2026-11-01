@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .evidence import EvidenceVerifier
 from .process_privacy import protect_process_data
 from .mcp_server import RequestHostReadiness, build_mcp_server
@@ -160,7 +161,7 @@ Curator V2 Codex workflow:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-codex-mcp",
         description="Run a local Curator V2 server for the active Codex workspace.",
     )
@@ -250,7 +251,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not protect_process_data():
             raise RuntimeError("local Codex privacy limits are unavailable")
-        args = _parser().parse_args(argv)
+        args = parse_safe_arguments(
+            _parser(),
+            argv,
+            sys.stderr,
+            "Curator V2 Codex server could not bind the active workspace.\n",
+        )
+        if args is None:
+            return 2
         root = _workspace_root(args.project_root)
         database = args.database.expanduser()
         if not database.is_absolute():

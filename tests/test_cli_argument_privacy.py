@@ -6,8 +6,10 @@ from contextlib import redirect_stderr
 from io import StringIO
 from typing import Callable, TextIO
 import unittest
+from unittest.mock import patch
 
 from curatormd_v2.access_cli import main as access_main
+from curatormd_v2.codex_mcp import main as codex_mcp_main
 from curatormd_v2.evidence_cli import main as evidence_main
 from curatormd_v2.hosted_mcp import main as hosted_mcp_main
 from curatormd_v2.maintenance_cli import main as maintenance_main
@@ -27,6 +29,14 @@ def _run_hosted_mcp(argv: list[str], errors: TextIO) -> int:
         return hosted_mcp_main(argv)
 
 
+def _run_codex_mcp(argv: list[str], errors: TextIO) -> int:
+    with (
+        redirect_stderr(errors),
+        patch("curatormd_v2.codex_mcp.protect_process_data", return_value=True),
+    ):
+        return codex_mcp_main(argv)
+
+
 class CliArgumentPrivacyTests(unittest.TestCase):
     """Reject malformed argv without reflecting its caller-controlled text."""
 
@@ -35,6 +45,7 @@ class CliArgumentPrivacyTests(unittest.TestCase):
         argv = [f"--unrecognized={marker}"]
         commands: tuple[tuple[str, Callable[[list[str], TextIO], int]], ...] = (
             ("access", lambda args, err: access_main(args, stderr=err)),
+            ("codex-mcp", _run_codex_mcp),
             ("evidence", _run_evidence),
             ("hosted-mcp", _run_hosted_mcp),
             ("maintenance", lambda args, err: maintenance_main(args, stderr=err)),

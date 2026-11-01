@@ -11415,6 +11415,13 @@ checking real summaries in steps 1 and 3.
       598 tests. This is local code/test evidence only; command-history, host
       journal, full log/trace/upstream, backup retry-payload, and rendered
       surfaces still require the planned sink audit and live evidence.
+      Codex MCP argument correction (2026-11-02): the dedicated
+      `curatormd-v2-codex-mcp` entry point now uses the same fixed-error parser
+      as the other V2 CLIs. Its credential-canary regression is included in the
+      all-entry-point argument test, bringing coverage to nine CLI entry points;
+      the test passes and the malformed value is absent from stderr. This closes
+      only that parser path; command history and cross-boundary privacy sinks
+      remain open.
       Codex SDE controls (2026-11-01): the V2 plugin now teaches the user the
       exact `Begin SDE capture`, `Pause SDE capture`, `Resume SDE capture`, and
       `End SDE capture` phrases once at task intake. Codex must wait for an
