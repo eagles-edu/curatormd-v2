@@ -9,13 +9,15 @@ import sys
 from typing import BinaryIO, TextIO
 
 from .cli_output import write_json_line
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
+from .process_privacy import protect_process_data
 from .store import CuratorStore
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-stage",
         description=(
             "Stream one temporary artifact from stdin into the configured "
@@ -43,9 +45,17 @@ def main(
 ) -> int:
     """Stage only bytes piped to stdin; never read arbitrary source paths."""
 
-    arguments = _parser().parse_args(argv)
-    output = stdout or sys.stdout
     errors = stderr or sys.stderr
+    if not protect_process_data():
+        print("Curator V2 staging failed (privacy limits unavailable).", file=errors)
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, errors,
+        "Curator V2 staging failed (invalid command arguments).\n",
+    )
+    if arguments is None:
+        return 2
+    output = stdout or sys.stdout
     database = arguments.database.expanduser()
     if not database.is_absolute():
         print("Curator V2 staging failed (invalid request or producer error).", file=errors)

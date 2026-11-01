@@ -28,7 +28,7 @@ from .schema_migration_steps_v2_v20 import (
 )
 
 
-SQLITE_SCHEMA_VERSION = 39
+SQLITE_SCHEMA_VERSION = 41
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -709,6 +709,48 @@ def migrate_event_receipt_archives_v39(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 39")
 
 
+def migrate_goal_source_event_replay_v40(connection: sqlite3.Connection) -> None:
+    """Make a project/source-event pair identify at most one goal."""
+
+    if not connection.execute("PRAGMA table_info(goals)").fetchall():
+        connection.execute("PRAGMA user_version = 40")
+        return
+    duplicate = connection.execute(
+        """SELECT 1 FROM goals
+           WHERE source_event_id IS NOT NULL
+           GROUP BY project_id, source_event_id
+           HAVING COUNT(*) > 1 LIMIT 1"""
+    ).fetchone()
+    if duplicate is not None:
+        raise RuntimeError(
+            "cannot enforce goal replay while duplicate source events exist"
+        )
+    connection.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS goals_project_source_event
+           ON goals(project_id, source_event_id)
+           WHERE source_event_id IS NOT NULL"""
+    )
+    connection.execute("PRAGMA user_version = 40")
+
+
+def migrate_goal_source_event_payload_fingerprint_v41(
+    connection: sqlite3.Connection,
+) -> None:
+    """Store the bounded goal request digest needed to verify source replay."""
+
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(goals)")
+    }
+    if not columns:
+        connection.execute("PRAGMA user_version = 41")
+        return
+    if "source_event_payload_sha256" not in columns:
+        connection.execute(
+            "ALTER TABLE goals ADD COLUMN source_event_payload_sha256 TEXT"
+        )
+    connection.execute("PRAGMA user_version = 41")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -748,6 +790,8 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_reactivation_review_receipts_v37,
     migrate_purge_target_outcomes_v38,
     migrate_event_receipt_archives_v39,
+    migrate_goal_source_event_replay_v40,
+    migrate_goal_source_event_payload_fingerprint_v41,
 )
 
 

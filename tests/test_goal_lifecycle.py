@@ -16,6 +16,7 @@ from curatormd_v2 import (
     ConflictError,
     CriterionStatus,
     CuratorService,
+    CuratorStore,
     Fact,
     FactKind,
     GoalStatus,
@@ -57,6 +58,21 @@ class GoalLifecycleTests(LifecycleTestSupport):
         self.assertIsNone(raised.exception.__cause__)
         self.assertIsNone(raised.exception.__context__)
 
+    def test_unknown_criterion_error_does_not_echo_caller_text(self) -> None:
+        """A rejected criterion identifier may itself contain sensitive text."""
+
+        sensitive_criterion_id = "PRIVATE_CRITERION_CANARY"
+        with self.assertRaisesRegex(ValueError, "unknown success criterion") as raised:
+            self.service.goal_fact(
+                self.goal.goal_id,
+                FactKind.CHANGE,
+                "Rejected fact remains unstored",
+                criterion_id=sensitive_criterion_id,
+            )
+        self.assertNotIn(sensitive_criterion_id, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
     def test_start_preserves_problem_criteria_and_checklist_link(self) -> None:
         stored = self.store.get_goal(self.goal.goal_id)
         self.assertEqual(stored.problem, "Implement a reliable release health check")
@@ -69,6 +85,53 @@ class GoalLifecycleTests(LifecycleTestSupport):
             [criterion.status for criterion in progress],
             [CriterionStatus.OPEN, CriterionStatus.OPEN],
         )
+
+    def test_goal_start_replays_same_source_event_after_store_reopen(self) -> None:
+        """An identical retry returns the existing task without resetting it."""
+
+        source_event_id = "codex-turn-replay-test"
+        request_criteria = (
+            SuccessCriterion("saved", "The request is stored exactly once"),
+        )
+        first = self.service.goal_start(
+            "Replay a Codex task safely",
+            request_criteria,
+            source_event_id=source_event_id,
+        )
+        self.service.goal_block(
+            first.goal_id, "Keep the reviewed task state", "Continue the review"
+        )
+        database = self.store.database
+        self.store.close()
+        self.store = CuratorStore(database)
+        self.service = CuratorService(
+            self.store, ArtifactPurger(self.stage), TestVerifier()
+        )
+
+        replayed = self.service.goal_start(
+            "Replay a Codex task safely",
+            request_criteria,
+            source_event_id=source_event_id,
+        )
+        self.assertEqual(replayed.goal_id, first.goal_id)
+        self.assertEqual(replayed.status, GoalStatus.BLOCKED)
+        replayed_events = [
+            goal
+            for goal in self.store.list_goals(project_id=replayed.project_id)
+            if self.store.goal_report_context(
+                goal.goal_id, replayed.project_id
+            ).source_event_id
+            == source_event_id
+        ]
+        self.assertEqual([goal.goal_id for goal in replayed_events], [first.goal_id])
+        with self.assertRaisesRegex(ConflictError, "different goal request"):
+            self.service.goal_start(
+                "Changed task under a reused event ID",
+                request_criteria,
+                source_event_id=source_event_id,
+            )
+        with self.assertRaisesRegex(ConflictError, "goal ID is already in use"):
+            self.store.add_goal(first, source_event_id="different-source-event")
 
     def test_planned_goal_requires_revision_checked_activation_before_work(self) -> None:
         planned = self.service.goal_start(
@@ -393,7 +456,11 @@ class GoalLifecycleTests(LifecycleTestSupport):
         """Exercise every public lifecycle action against every stored status."""
 
         actions = {
-            "activate": {GoalStatus.PLANNED},
+            "activate": {
+                GoalStatus.PLANNED,
+                GoalStatus.DEFERRED,
+                GoalStatus.BLOCKED,
+            },
             "change_fact": FACT_ACCEPTING_GOAL_STATUSES,
             "finish": FINISHABLE_GOAL_STATUSES,
             "block": UNFINISHED_GOAL_STATUSES,

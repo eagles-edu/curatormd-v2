@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "curator-v2",
+  "version": "0.1.60",
+  "description": "Natural Codex task intake and lifecycle tracking for Curator V2.",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Curator V2",
+        "shortDescription": "Track Codex work in the active Curator V2 project.",
+        "longDescription": "Turns normal Codex work requests into project-scoped Curator V2 goals with observable success checks.",
+        "developerName": "Curator V2",
+        "category": "Developer tools",
+        "capabilities": ["Read", "Write"],
+        "defaultPrompt": [
+          "Say `Problem: ... Success: ...`; use a Curator goal for every non-trivial task before edits.",
+          "After checks, save compact evidence facts; read the goal back after writes. Leave unsupported checks open.",
+          "At each task endpoint, prepare a pending SDE proposal for the user's decision."
+        ]
+      }
+    }
+  }
+}

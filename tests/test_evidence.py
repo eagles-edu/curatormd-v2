@@ -130,6 +130,43 @@ class EvidenceAdapterTests(unittest.TestCase):
         self.assertEqual(attestation.source_revision, "probe-receipt-42")
         self.assertEqual(self.resolver.calls, 1)
 
+    def test_capture_returns_only_the_host_receipt_digest(self) -> None:
+        reference = self.adapter.capture(
+            "service_probe", self.evidence.locator, self.context
+        )
+
+        self.assertIsNotNone(reference)
+        assert reference is not None
+        self.assertEqual(reference.sha256, self.receipt.evidence_sha256)
+        self.assertEqual(reference.outcome, EvidenceOutcome.PASSED)
+        self.assertEqual(reference.evidence_kind, self.evidence.evidence_kind)
+        self.assertEqual(reference.locator, self.evidence.locator)
+        self.assertEqual(self.resolver.calls, 1)
+
+    def test_capture_rejects_wrong_scope_or_expired_host_receipt(self) -> None:
+        self.resolver.receipt = replace(self.receipt, criterion_id="another-check")
+        self.assertIsNone(
+            self.adapter.capture("service_probe", self.evidence.locator, self.context)
+        )
+
+        self.resolver.receipt = replace(
+            self.receipt,
+            valid_until=(self.now - timedelta(seconds=1)).isoformat(),
+        )
+        self.assertIsNone(
+            self.adapter.capture("service_probe", self.evidence.locator, self.context)
+        )
+
+    def test_registry_capture_uses_only_registered_adapter(self) -> None:
+        registry = EvidenceAdapterRegistry((self.adapter,))
+        reference = registry.capture(
+            "service_probe", self.evidence.locator, self.context
+        )
+        self.assertIsNotNone(reference)
+        self.assertIsNone(
+            registry.capture("unsupported", self.evidence.locator, self.context)
+        )
+
     def test_attestation_binds_exact_staging_occurrence(self) -> None:
         occurrence_id = "d" * 32
         evidence = replace(self.evidence, occurrence_id=occurrence_id)

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
-from datetime import UTC, datetime
 
 from .browser_evidence import LocalBrowserProofResolver, LocalBrowserProofSpec
+from .content_safety import validate_safe_text
 from .evidence import (
     BrowserProofEvidenceAdapter,
     EvidenceAdapterPolicy,
@@ -36,6 +38,11 @@ from .service_evidence import LocalServiceProbeResolver, LocalServiceProbeSpec
 from .validation import is_exact_int
 
 MAX_LOCAL_EVIDENCE_CONFIG_BYTES = 16 * 1024
+_PRIVATE_COMMAND_OPTION = re.compile(
+    r"^--?(?:api[-_]?key|access[-_]?token|auth[-_]?token|token|password|passwd|pwd|"
+    r"passphrase|secret|client[-_]?secret|private[-_]?key|authorization|cookie)(?:=|$)",
+    re.IGNORECASE,
+)
 
 
 class _RepositoryDiffAdapter(ReceiptEvidenceAdapter):
@@ -121,6 +128,21 @@ def _required_string_array(value: object, name: str) -> tuple[str, ...]:
     return tuple(cast(str, item) for item in values)
 
 
+def _safe_command_arguments(values: tuple[str, ...]) -> tuple[str, ...]:
+    """Reject credentials that would be exposed through a child process argv."""
+
+    for value in values:
+        if _PRIVATE_COMMAND_OPTION.match(value):
+            raise ValueError("host evidence command contains a private option")
+        try:
+            validate_safe_text(
+                value, "host evidence command argument", include_personal_data=False
+            )
+        except ValueError:
+            raise ValueError("host evidence command contains sensitive content") from None
+    return values
+
+
 def _parse_probe(
     probe: dict[str, object], project_id: str
 ) -> tuple[str, LocalServiceProbeSpec]:
@@ -149,7 +171,7 @@ def _parse_probe(
     command_values = cast(list[object], raw_command)
     if any(not isinstance(item, str) for item in command_values):
         raise ValueError("host evidence config command must be a nonempty string array")
-    command = tuple(cast(str, item) for item in command_values)
+    command = _safe_command_arguments(tuple(cast(str, item) for item in command_values))
     raw_working_directory = _required_text(
         probe["working_directory"], "working_directory", max_chars=4096
     )
@@ -289,7 +311,9 @@ def _parse_repository_test_config(
     )
     if not Path(repository_root).is_absolute():
         raise ValueError("host evidence Git repository root must be absolute")
-    command = _required_string_array(runner["command"], "test command")
+    command = _safe_command_arguments(
+        _required_string_array(runner["command"], "test command")
+    )
     max_output_bytes = runner.get("max_output_bytes", 4 * 1024 * 1024)
     timeout_seconds = runner.get("timeout_seconds", 300)
     if not is_exact_int(max_output_bytes) or not is_exact_int(timeout_seconds):

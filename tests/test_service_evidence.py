@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import hashlib
 from pathlib import Path
+import socket
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from curatormd_v2 import (
     EvidenceAdapterPolicy,
@@ -59,21 +61,6 @@ class LocalServiceProbeResolverTests(unittest.TestCase):
         return EvidenceRef("service_probe", locator, digest, EvidenceOutcome.PASSED)
 
     def test_probe_attests_exact_host_output_without_retaining_it(self) -> None:
-        first = self.resolver.resolve(self._evidence("0" * 64), self.context)
-
-        self.assertIsNotNone(first)
-        assert first is not None
-        self.assertEqual(
-            first.evidence_sha256,
-            hashlib.sha256(b"private-output-canary\n").hexdigest(),
-        )
-        self.assertEqual(first.project_id, "vhost-manager-alpha")
-        self.assertEqual(first.goal_id, "goal-alpha")
-        self.assertEqual(first.criterion_id, "service-ready")
-        self.assertEqual(first.scope_id, "local-service-probe:vhost-readiness")
-        self.assertEqual(first.authenticated_subject, "local-probe:eaglesvn")
-        self.assertNotIn("private-output-canary", repr(first))
-
         adapter = ServiceProbeEvidenceAdapter(
             adapter_id="vhost-local-readiness",
             scope_id=self.resolver.spec.scope_id,
@@ -85,11 +72,23 @@ class LocalServiceProbeResolverTests(unittest.TestCase):
                 max_validity_seconds=30,
             ),
         )
-        attestation = adapter.attest(self._evidence(first.evidence_sha256), self.context)
+        reference = adapter.capture(
+            "service_probe", "service-probe:vhost-readiness", self.context
+        )
+        self.assertIsNotNone(reference)
+        assert reference is not None
+        self.assertEqual(
+            reference.sha256,
+            hashlib.sha256(b"private-output-canary\n").hexdigest(),
+        )
+        self.assertEqual(reference.outcome, EvidenceOutcome.PASSED)
+        self.assertNotIn("private-output-canary", repr(reference))
+
+        attestation = adapter.attest(reference, self.context)
 
         self.assertIsNotNone(attestation)
         assert attestation is not None
-        self.assertEqual(attestation.evidence_sha256, first.evidence_sha256)
+        self.assertEqual(attestation.evidence_sha256, reference.sha256)
         self.assertEqual(attestation.adapter_id, "vhost-local-readiness")
 
     def test_wrong_project_or_probe_locator_does_not_execute_probe(self) -> None:
@@ -118,3 +117,43 @@ class LocalServiceProbeResolverTests(unittest.TestCase):
         )
 
         self.assertIsNone(self.resolver.resolve(evidence, self.context))
+
+    def test_user_systemctl_probe_gets_only_its_derived_user_bus_environment(self) -> None:
+        """Keep the restricted child environment while allowing user-unit probes."""
+
+        runtime_root = self.root / "runtime"
+        runtime_directory = runtime_root / "1000"
+        runtime_directory.mkdir(parents=True)
+        bus_socket = runtime_directory / "bus"
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as bus:
+            bus.bind(str(bus_socket))
+            spec = LocalServiceProbeSpec(
+                project_id="vhost-manager-alpha",
+                probe_id="user-timer",
+                source_subject="local-probe:eaglesvn",
+                command=("systemctl", "--user", "is-active", "example.timer"),
+                working_directory=self.root,
+            )
+
+        with patch("curatormd_v2.service_evidence.USER_RUNTIME_ROOT", runtime_root):
+            environment = spec.environment
+
+        self.assertEqual(environment["XDG_RUNTIME_DIR"], str(runtime_directory))
+        self.assertEqual(
+            environment["DBUS_SESSION_BUS_ADDRESS"],
+            f"unix:path={bus_socket}",
+        )
+        self.assertEqual(set(environment), {
+            "PATH",
+            "LANG",
+            "LC_ALL",
+            "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS",
+        })
+
+    def test_other_probe_commands_do_not_receive_user_bus_environment(self) -> None:
+        """Do not widen the environment for commands that do not need systemd."""
+
+        self.assertEqual(
+            set(self.resolver.spec.environment), {"PATH", "LANG", "LC_ALL"}
+        )

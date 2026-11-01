@@ -90,6 +90,7 @@ __all__ = [
     "ProjectActivitySnapshot",
     "ProjectControlPlaneStorageUsage",
     "ProjectHealthSnapshot",
+    "ProjectQueueSnapshot",
     "ProjectOperationalCounts",
     "ProjectStorageUsage",
     "BackupDirectoryUsage",
@@ -162,6 +163,7 @@ if TYPE_CHECKING:
         ProjectActivitySnapshot,
         ProjectControlPlaneStorageUsage,
         ProjectHealthSnapshot,
+        ProjectQueueSnapshot,
         ProjectOperationalCounts,
         SQLiteDatabaseFileUsage,
         SQLiteDatabasePageUsage,
@@ -589,7 +591,7 @@ class Fact:  # pylint: disable=too-many-instance-attributes  # Immutable fact re
 
 @dataclass(frozen=True, slots=True)
 class SDECandidate:  # pylint: disable=too-many-instance-attributes  # Review candidate fields are persisted as one record.
-    """Reviewable significance proposal linked to supporting goal facts."""
+    """Owner-review proposal, including routine assessments, linked to facts."""
 
     goal_id: str
     materiality: Materiality
@@ -603,8 +605,6 @@ class SDECandidate:  # pylint: disable=too-many-instance-attributes  # Review ca
 
     def __post_init__(self) -> None:
         validate_safe_text(self.rationale, "sde.rationale")
-        if self.materiality is Materiality.ROUTINE:
-            raise ValueError("routine updates are not SDE candidates")
         if not self.rationale.strip() or len(self.rationale) > 1000:
             raise ValueError("SDE rationale must contain 1-1000 characters")
         if "\n" in self.rationale or "\r" in self.rationale:

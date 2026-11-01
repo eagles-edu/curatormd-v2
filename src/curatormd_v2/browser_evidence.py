@@ -13,6 +13,7 @@ import shutil
 import tempfile
 from urllib.parse import urlsplit
 
+from .content_safety import validate_safe_text
 from .evidence import (
     EvidenceSourceReceipt,
     EvidenceVerificationContext,
@@ -34,6 +35,10 @@ def _loopback_url(value: str) -> tuple[str, str]:
 
     if len(value) > 450 or any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise ValueError("browser proof URL must be bounded single-line text")
+    try:
+        validate_safe_text(value, "browser proof URL", include_personal_data=False)
+    except ValueError:
+        raise ValueError("browser proof URL must not contain sensitive content") from None
     parsed = urlsplit(value)
     try:
         parsed.port

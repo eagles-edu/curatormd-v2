@@ -30,21 +30,45 @@ hermes_subject_context: ContextVar[str | None] = ContextVar(
 __all__ = ["ArtifactInput", "build_mcp_server", "safe_tool_handler"]
 SERVER_INSTRUCTIONS = """\
 Curator V2 work protocol:
-1. At intake, bind the exact user request or configured checklist item to this
-   project. Before implementation, call goal_start with a concise problem and
-   observable success criteria; use planned status until the work is accepted.
-   Do not invent criteria or silently rewrite the source item. Once an existing
-   goal is active, call hermes_goal_bind to validate an explicit current-session
-   association; Hermes persists the host binding only after this succeeds.
+1. Intake happens from the user's normal Codex request; do not ask the user to
+   launch a VS Code palette command. By default, treat a direct request to do
+   work as one task. If the user asks for a plan, create one parent goal and
+   bounded child tasks for its steps. First reply briefly with the problem and
+   observable success checks you will save; keep the user's scope and limits as
+   guardrails. Do not invent checks or silently rewrite the request. State
+   them briefly to the user, then save before implementation; do not add a
+   confirmation round when the request already authorizes the work. First read
+   the project's goals and reuse only an exact problem-and-criteria match;
+   otherwise create a new goal. Use active status when the user asked you
+   to do the work, and planned status when they asked only for a plan or when
+   acceptance is still needed. For a plan, keep its parent and child tasks
+   planned until execution is requested. Once a goal is active, call hermes_goal_bind to
+   validate the current-session association; Hermes persists the host binding
+   only after this succeeds. If goal creation or binding fails, say so plainly
+   and do not claim the task is tracked or bound.
 2. At meaningful checkpoints, record deduplicated compact fact bullets with
    fact_record: distinguish research, advice, intent, change, verification,
    open gates, and outcomes. Verification needs evidence; claims, session end,
    and healthy readiness are not proof. Never store raw chats, transcripts,
    large command output, or source artifacts as canonical facts.
-3. Reconcile with goal_report. Show verified criteria separately from open
-   criteria, facts to date, TODOs, blocker/owner, and next action. Finish only
-   when every criterion has passing evidence; otherwise leave the goal open,
-   blocked, or deferred with the exact unmet work.
+3. Treat the user's ordinary words as lifecycle controls for both plan children
+   and one-off tasks. On hold/pause, record facts, reason, and next action and
+   call goal_defer. On resume/continue, read the checkpoint and call
+   goal_activate. On next/check-off/done, record the endpoint facts, reconcile
+   with goal_report, and call goal_finish; its result decides whether evidence
+   permits completion. For a plan, activate the next child only after the
+   current child finishes. Read goal_status before each lifecycle call and pass
+   its current lifecycle revision. Show verified checks separately from open checks,
+   TODOs, blocker/owner, and next action. Never claim a task was closed when
+   goal_finish leaves it open.
+   At each completed child or one-off task, prepare a pending proposal from
+   supported task facts, even when routine or not yet verified. Label missing
+   or stale proof; approval still requires current passing evidence. Show the facts and any suggested importance only as a
+   recommendation. The user decides what is memorialized, its importance, and
+   its disposition. Never silently suppress a proposal as routine.
+   Use evidence_capture for configured host sources and pass its returned
+   evidence fields unchanged to fact_record; it cannot accept arbitrary
+   commands or paths.
 4. Keep SDE disposition, cleanup authorization, canonical persistence, and
    artifact deletion as ordered durable steps. One explicit review action may
    authorize deletion only for its complete exact inventory; expiry eligibility
@@ -233,6 +257,7 @@ def build_mcp_server(
     source_id: str,
     *,
     hermes_context: HermesContextOptions | None = None,
+    instructions: str = SERVER_INSTRUCTIONS,
 ) -> MCPServer:
     """Build tools with trusted caller/project captured outside tool arguments.
 
@@ -247,7 +272,7 @@ def build_mcp_server(
     server = MCPServer(
         "CuratorMD V2",
         version="0.1.0",
-        instructions=SERVER_INSTRUCTIONS,
+        instructions=instructions,
         middleware=middleware,
     )
 

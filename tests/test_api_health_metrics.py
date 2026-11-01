@@ -197,6 +197,31 @@ class ApiHealthMetricsTests(_ApiTestSupport):
         self.assertNotIn("curatormd_event_queue_received", metrics)
         self.assertNotIn("curatormd_facts{", metrics)
 
+    def test_project_queue_snapshot_is_independent_and_fails_closed(self) -> None:
+        """Database counts stay readable when host readiness is unknown."""
+
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        snapshot = api.project_queue_snapshot(self.caller, "project-a")
+        self.assertEqual(snapshot.project_id, "project-a")
+        self.assertTrue(snapshot.database_observation_complete)
+        self.assertIsNotNone(snapshot.database_observed_at)
+        self.assertEqual(snapshot.event_received_count, 0)
+        assert snapshot.operational_counts is not None
+        self.assertEqual(snapshot.operational_counts.pending_review_count, 0)
+
+        with patch.object(
+            self.plugin,
+            "operational_queue_inputs",
+            side_effect=sqlite3.OperationalError("private SQLite diagnostic"),
+        ):
+            failed = api.project_queue_snapshot(self.caller, "project-a")
+        self.assertFalse(failed.database_observation_complete)
+        self.assertIsNone(failed.database_observed_at)
+        self.assertIsNone(failed.event_received_count)
+        self.assertIsNone(failed.operational_counts)
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.project_queue_snapshot(AuthenticatedCaller("other-user"), "project-a")
+
 
     def test_project_health_requires_storage_and_alert_delivery_observations(self) -> None:
         """Missing storage or alert observations cannot leave local health green."""

@@ -7,6 +7,9 @@ from test_api import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     DependencyReadiness,
+    EvidenceOutcome,
+    EvidenceRef,
+    EvidenceVerificationContext,
     EventEnvelope,
     EventInboxStatus,
     FactCompactionApprovalRequest,
@@ -36,8 +39,86 @@ from test_api import (
 )
 
 
+class _CaptureVerifier:  # pylint: disable=too-few-public-methods
+    """Expose a bounded capture result for the API authorization boundary."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, EvidenceVerificationContext]] = []
+
+    def attest(self, evidence: EvidenceRef, context: EvidenceVerificationContext):
+        """This test exercises capture dispatch, not evidence attestation."""
+
+        del evidence, context
+        return None
+
+    def capture(
+        self,
+        evidence_kind: str,
+        locator: str,
+        context: EvidenceVerificationContext,
+    ) -> EvidenceRef:
+        """Return one typed reference and retain only its scope arguments."""
+
+        self.calls.append((evidence_kind, locator, context))
+        return EvidenceRef(
+            evidence_kind,
+            locator,
+            "a" * 64,
+            EvidenceOutcome.PASSED,
+        )
+
+
 class ApiEvidenceIngressTests(_ApiTestSupport):
     """Exercise apievidenceingress behavior."""
+
+    def test_evidence_capture_is_project_read_authorized_and_criterion_bound(self) -> None:
+        api = AuthenticatedCuratorAPI({"project-a": self.plugin}, self.authorizer)
+        goal = self.plugin.service.goal_start(
+            "Capture one configured source",
+            (SuccessCriterion("probe", "The configured service is active"),),
+        )
+        verifier = _CaptureVerifier()
+        self.plugin.service.evidence_verifier = verifier
+
+        reference = api.evidence_capture(
+            self.caller,
+            "project-a",
+            goal.goal_id,
+            "probe",
+            "service_probe",
+            "service-probe:configured-probe",
+        )
+
+        self.assertIsNotNone(reference)
+        assert reference is not None
+        self.assertEqual(reference.sha256, "a" * 64)
+        self.assertEqual(reference.outcome, EvidenceOutcome.PASSED)
+        self.assertEqual(len(verifier.calls), 1)
+        kind, locator, context = verifier.calls[0]
+        self.assertEqual(kind, "service_probe")
+        self.assertEqual(locator, "service-probe:configured-probe")
+        self.assertEqual(context.project_id, "project-a")
+        self.assertEqual(context.goal_id, goal.goal_id)
+        self.assertEqual(context.criterion_id, "probe")
+
+        with self.assertRaisesRegex(ValueError, "criterion is not part"):
+            api.evidence_capture(
+                self.caller,
+                "project-a",
+                goal.goal_id,
+                "not-in-goal",
+                "service_probe",
+                "service-probe:configured-probe",
+            )
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.evidence_capture(
+                AuthenticatedCaller("other-user"),
+                "project-a",
+                goal.goal_id,
+                "probe",
+                "service_probe",
+                "service-probe:configured-probe",
+            )
 
     def test_markdown_reconciliation_is_authorized_read_only_and_reports_drift(self) -> None:
         api = AuthenticatedCuratorAPI(
@@ -422,6 +503,48 @@ class ApiEvidenceIngressTests(_ApiTestSupport):
                 "sensitive-goal-dns",
                 "TXT value: " + "A" * 43,
                 "dns_challenge",
+            ),
+            (
+                "sensitive-event-manual-dns",
+                "sensitive-goal-manual-dns",
+                "Manual DNS challenge value is Q7mN4pL8xW2cR6vB",
+                "dns_challenge",
+            ),
+            (
+                "sensitive-event-access-key",
+                "sensitive-goal-access-key",
+                "access_key=synthetic-access-key",
+                "credential_assignment",
+            ),
+            (
+                "sensitive-event-secret-key",
+                "sensitive-goal-secret-key",
+                "aws_secret_access_key=synthetic-cloud-secret",
+                "credential_assignment",
+            ),
+            (
+                "sensitive-event-password",
+                "sensitive-goal-password",
+                "pwd=synthetic-password-value",
+                "credential_assignment",
+            ),
+            (
+                "sensitive-event-prefixed-secret-key",
+                "sensitive-goal-prefixed-secret-key",
+                "MY_AWS_SECRET_ACCESS_KEY=synthetic-cloud-secret",
+                "credential_assignment",
+            ),
+            (
+                "sensitive-event-bearer",
+                "sensitive-goal-bearer",
+                "Authorization: Bearer synthetic-bearer-secret",
+                "credential_assignment",
+            ),
+            (
+                "sensitive-event-cookie",
+                "sensitive-goal-cookie",
+                "Cookie: session=synthetic-cookie-secret",
+                "credential_assignment",
             ),
         )
         for event_id, goal_id, sensitive_text, category in secrets:

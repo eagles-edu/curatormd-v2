@@ -15,12 +15,24 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private_key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("credential_url", re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@", re.IGNORECASE)),
     ("credential_assignment", re.compile(
-        r"\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passwd|pwd|secret)"
+        r"(?<![A-Za-z0-9])(?:api[\s_-]?(?:key|secret)|access[\s_-]?(?:key|token)|"
+        r"auth[\s_-]?(?:key|token)|secret[\s_-]?key|session[\s_-]?key|"
+        r"bearer[\s_-]?(?:token|key)|oauth[\s_-]?client[\s_-]?secret|"
+        r"aws[\s_-]?(?:secret[\s_-]?access[\s_-]?key|"
+        r"access[\s_-]?key(?:[\s_-]?id)?)|secret[\s_-]?access[\s_-]?key|"
+        r"refresh[\s_-]?token|client[\s_-]?secret|private[\s_-]?key|"
+        r"authorization|bearer|cookie|session[\s_-]?token|"
+        r"passphrase|token|password|passwd|pwd|secret|credential)"
         r"\s*[:=]\s*[^\s,;]+",
         re.IGNORECASE,
     )),
     ("credential_prose", re.compile(
-        r"\b(?:password|passwd|pwd|api[_-]?key|access[_-]?token|refresh[_-]?token)"
+        r"(?<![A-Za-z0-9])(?:password|passwd|pwd|passphrase|secret|token|"
+        r"api[\s_-]?(?:key|secret)|access[\s_-]?(?:key|token)|"
+        r"auth[\s_-]?(?:key|token)|secret[\s_-]?key|session[\s_-]?key|"
+        r"bearer[\s_-]?(?:token|key)|oauth[\s_-]?client[\s_-]?secret|"
+        r"refresh[\s_-]?token|client[\s_-]?secret|private[\s_-]?key|"
+        r"authorization|bearer|cookie|credential)"
         r"\s+is\s+(?!not\b|required\b|unknown\b|unset\b|redacted\b|managed\b)"
         r"[^\s,;]{6,}",
         re.IGNORECASE,
@@ -32,6 +44,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     )),
     ("dns_challenge", re.compile(
         r"\b(?:manual\s+)?DNS\s+(?:TXT\s+)?(?:code|challenge|value)"
+        r"(?:\s+(?:code|value))?"
         r"\s*(?::|=|\bis\b)\s*[\"']?[A-Za-z0-9_-]{12,}\b",
         re.IGNORECASE,
     )),

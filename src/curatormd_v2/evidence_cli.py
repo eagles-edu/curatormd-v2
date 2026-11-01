@@ -17,12 +17,15 @@ from .local_evidence_config import (
     capture_local_repository_test_reference,
     capture_local_service_probe_reference,
 )
+from .content_safety import validate_safe_text
 from .human_observation import new_human_confirmation_challenge
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .project_config import ProjectConfig
+from .process_privacy import protect_process_data
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-evidence",
         description="Capture a content-free reference from one host-configured source.",
     )
@@ -63,7 +66,14 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Capture one local evidence reference without printing source content."""
 
-    arguments = _parser().parse_args(argv)
+    if not protect_process_data():
+        print("local evidence capture failed", file=sys.stderr)
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, sys.stderr, "local evidence capture failed\n"
+    )
+    if arguments is None:
+        return 2
     try:
         project = ProjectConfig.load(arguments.project_root)
         host_config = validate_host_evidence_config_path(
@@ -96,6 +106,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if not sys.stdin.isatty() or not sys.stderr.isatty():
                 raise ValueError("human confirmation requires an attended terminal")
+            validate_safe_text(arguments.goal_id, "evidence.goal_id")
+            validate_safe_text(arguments.criterion_id, "evidence.criterion_id")
+            context = EvidenceVerificationContext(
+                project_id=project.project_id,
+                goal_id=arguments.goal_id,
+                criterion_id=arguments.criterion_id,
+                now=datetime.now(UTC),
+            )
             challenge = new_human_confirmation_challenge()
             print(
                 "Confirm that you personally observed the criterion pass in the "
@@ -110,12 +128,7 @@ def main(argv: list[str] | None = None) -> int:
             confirmation = sys.stdin.readline().rstrip("\r\n")
             evidence = capture_local_human_observation_reference(
                 host_config,
-                context=EvidenceVerificationContext(
-                    project_id=project.project_id,
-                    goal_id=arguments.goal_id,
-                    criterion_id=arguments.criterion_id,
-                    now=datetime.now(UTC),
-                ),
+                context=context,
                 challenge=challenge,
                 confirmation=confirmation,
             )

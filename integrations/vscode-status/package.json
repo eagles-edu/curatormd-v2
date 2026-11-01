@@ -2,7 +2,7 @@
   "name": "curatormd-v2-status",
   "displayName": "CuratorMD V2 Status",
   "description": "A local, project-scoped CuratorMD V2 dashboard and status bar integration.",
-  "version": "0.9.16",
+  "version": "0.9.51",
   "publisher": "curatormd",
   "repository": {
     "type": "git",
@@ -23,10 +23,6 @@
       {
         "command": "curatormdV2.openDashboard",
         "title": "CuratorMD V2: Open Project Dashboard"
-      },
-      {
-        "command": "curatormdV2.startGoal",
-        "title": "CuratorMD V2: Start Task"
       }
     ]
   },
@@ -45,11 +41,35 @@
         "scope": "application",
         "description": "Absolute path or PATH command for Hermes with the machine-readable Curator host-readiness probe."
       },
+      "curatormdV2.hermesProfileBindings": {
+        "type": "object",
+        "default": {},
+        "scope": "application",
+        "description": "Owner-managed map from exact Curator project IDs to Hermes profile IDs used for readiness checks."
+      },
+      "curatormdV2.databaseBindings": {
+        "type": "object",
+        "default": {},
+        "scope": "application",
+        "description": "Owner-managed map from exact Curator project IDs to absolute local SQLite database paths. Exact project entries override databasePath."
+      },
+      "curatormdV2.evidenceConfigBindings": {
+        "type": "object",
+        "default": {},
+        "scope": "application",
+        "description": "Owner-managed map from exact Curator project IDs to absolute host evidence files. An exact empty-string entry disables the fallback evidenceConfig for that project."
+      },
       "curatormdV2.reviewCommand": {
         "type": "string",
         "default": "",
         "scope": "application",
         "description": "Optional attended review CLI path or PATH command; defaults to the executable beside serverCommand, or curatormd-v2-review on PATH."
+      },
+      "curatormdV2.evidenceConfig": {
+        "type": "string",
+        "default": "",
+        "scope": "application",
+        "description": "Optional absolute path to the owner-only host evidence JSON config; never set this in workspace settings."
       },
       "curatormdV2.databasePath": {
         "type": "string",

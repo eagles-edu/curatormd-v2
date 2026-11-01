@@ -22,10 +22,57 @@ class ContentSafetyTests(unittest.TestCase):
                 "credential_assignment",
             ),
             ("fact.bullet", "pwd=synthetic-password", "credential_assignment"),
+            ("fact.bullet", "passphrase=synthetic-passphrase", "credential_assignment"),
+            ("fact.bullet", "client_secret=synthetic-client-secret", "credential_assignment"),
+            ("fact.bullet", "auth token=synthetic-auth-token", "credential_assignment"),
+            ("fact.bullet", "private key=synthetic-private-key", "credential_assignment"),
+            ("fact.bullet", "access_key=synthetic-access-key", "credential_assignment"),
+            ("fact.bullet", "secret_key=synthetic-secret-key", "credential_assignment"),
+            (
+                "fact.bullet",
+                "MY_AWS_SECRET_ACCESS_KEY=synthetic-cloud-secret",
+                "credential_assignment",
+            ),
+            (
+                "fact.bullet",
+                "OAUTH_CLIENT_SECRET=synthetic-oauth-secret",
+                "credential_assignment",
+            ),
+            (
+                "fact.bullet",
+                "MY_BEARER_TOKEN=synthetic-bearer-token",
+                "credential_assignment",
+            ),
+            (
+                "fact.bullet",
+                "aws_secret_access_key=synthetic-cloud-secret",
+                "credential_assignment",
+            ),
+            (
+                "fact.bullet",
+                "Authorization: Bearer synthetic-bearer-secret",
+                "credential_assignment",
+            ),
+            ("fact.bullet", "Cookie: session=synthetic-cookie-secret", "credential_assignment"),
+            ("fact.bullet", "passphrase is synthetic-secret", "credential_prose"),
+            ("fact.bullet", "client secret is synthetic-secret", "credential_prose"),
+            ("fact.bullet", "auth token is synthetic-secret", "credential_prose"),
+            ("fact.bullet", "secret key is synthetic-secret", "credential_prose"),
+            ("fact.bullet", "my client secret is synthetic-secret", "credential_prose"),
             ("fact.bullet", "TXT value: " + "A" * 43, "dns_challenge"),
             (
                 "fact.bullet",
                 "Changed path: notes/dns-challenge-Q7mN4pL8xW2cR6vB.txt",
+                "dns_challenge",
+            ),
+            (
+                "fact.bullet",
+                "Manual DNS challenge value is Q7mN4pL8xW2cR6vB",
+                "dns_challenge",
+            ),
+            (
+                "fact.bullet",
+                "Manual DNS TXT code: Q7mN4pL8xW2cR6vB",
                 "dns_challenge",
             ),
             ("fact.bullet", "Contact analyst@example.invalid for the report", "email_address"),
@@ -63,6 +110,12 @@ class ContentSafetyTests(unittest.TestCase):
         self.assertIsNone(
             validate_safe_text(
                 "Create TXT record _acme-challenge.example.invalid",
+                "fact.bullet",
+            )
+        )
+        self.assertIsNone(
+            validate_safe_text(
+                "A manual DNS challenge value is required before renewal",
                 "fact.bullet",
             )
         )

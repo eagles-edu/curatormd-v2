@@ -22,8 +22,26 @@ from .validation import is_exact_int
 
 MAX_SERVICE_PROBE_OUTPUT_BYTES = 64 * 1024
 MAX_SERVICE_PROBE_TIMEOUT_SECONDS = 30
+USER_RUNTIME_ROOT = Path("/run/user")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _LOCATOR_RE = re.compile(r"^service-probe:([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$")
+
+
+def _user_systemd_environment(
+    command: tuple[str, ...], uid: int
+) -> dict[str, str]:
+    """Expose only this UID's existing user bus to a configured systemctl probe."""
+
+    if Path(command[0]).name != "systemctl" or "--user" not in command[1:]:
+        return {}
+    runtime_directory = USER_RUNTIME_ROOT / str(uid)
+    bus_socket = runtime_directory / "bus"
+    if not runtime_directory.is_dir() or not bus_socket.is_socket():
+        return {}
+    return {
+        "XDG_RUNTIME_DIR": str(runtime_directory),
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={bus_socket}",
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +114,7 @@ class LocalServiceProbeSpec:  # pylint: disable=too-many-instance-attributes
             "PATH": os.path.dirname(self.command[0]),
             "LANG": "C",
             "LC_ALL": "C",
+            **_user_systemd_environment(self.command, os.geteuid()),
         }
 
 

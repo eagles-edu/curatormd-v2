@@ -36,7 +36,7 @@ from curatormd_v2 import (
     ReviewDecision,
     build_mcp_server,
 )
-from curatormd_v2.mcp_server import safe_tool_handler
+from curatormd_v2.mcp_server import SERVER_INSTRUCTIONS, safe_tool_handler
 from curatormd_v2.mcp_server import (
     _HermesRequestCaller,  # pyright: ignore[reportPrivateUsage]
     _hermes_identity_middleware,  # pyright: ignore[reportPrivateUsage]
@@ -350,10 +350,10 @@ class McpServerTestSupport(unittest.TestCase):
     def _assert_sde_instruction_contract(self, instructions: str) -> None:
         """Check safety guidance exposed alongside the MCP SDE tools."""
         for required_guidance in (
-            "observable success criteria",
+            "observable success checks",
             "record deduplicated compact fact bullets",
             "healthy readiness are not proof",
-            "verified criteria separately from open criteria",
+            "verified checks separately from open checks",
             "Store a distinct cleanup receipt and project it",
             "unapproved or failed cleanup visibly pending",
         ):
@@ -362,6 +362,31 @@ class McpServerTestSupport(unittest.TestCase):
 
 class McpServerTests(McpServerTestSupport):
     """Exercise schema discovery and goal lifecycle over real MCP framing."""
+
+    def test_mcp_intake_uses_normal_codex_requests_and_supports_tasks_or_plans(self) -> None:
+        """Expose the intended no-palette task and plan workflow to agents."""
+        guidance_text = " ".join(SERVER_INSTRUCTIONS.split())
+        for guidance in (
+            "normal Codex request",
+            "do not ask the user to launch a VS Code palette command",
+            "one task",
+            "one parent goal and bounded child tasks",
+            "problem and observable success checks",
+            "State them briefly to the user, then save before implementation",
+            "reuse only an exact problem-and-criteria match",
+            "For a plan, keep its parent and child tasks planned",
+            "do not claim the task is tracked or bound",
+            "call goal_defer",
+            "call goal_activate",
+            "call goal_finish",
+            "For a plan, activate the next child only after the current child finishes",
+            "Read goal_status before each lifecycle call",
+            "prepare a pending proposal from supported task facts, even when routine or not yet verified",
+            "approval still requires current passing evidence",
+            "The user decides what is memorialized, its importance",
+            "Use evidence_capture for configured host sources",
+        ):
+            self.assertIn(guidance, guidance_text)
 
     def test_mcp_identity_subject_is_request_scoped_and_required(self) -> None:
         """Bind the host subject to one request and deny calls without it."""
@@ -523,6 +548,13 @@ class McpServerTests(McpServerTestSupport):
                         )
                         self.assertNotIn("curatormd_event_queue_received", metrics_content.text)
                         self.assertNotIn("private SQLite diagnostic", health_content.text)
+                        queue_result = await client.call_tool("project_queue_snapshot", {})
+                        self.assertFalse(queue_result.is_error)
+                        queue_content = queue_result.content[0]
+                        assert isinstance(queue_content, TextContent)
+                        queue = json.loads(queue_content.text)
+                        self.assertEqual(queue["project_id"], "mcp-project")
+                        self.assertTrue(queue["database_observation_complete"])
                         self.assertNotIn("private SQLite diagnostic", metrics_content.text)
 
                 with patch.object(
@@ -559,6 +591,71 @@ class McpServerTests(McpServerTestSupport):
                     )
                     self.assertNotIn("project_id", goal_start_tool.input_schema["properties"])
                     self.assertNotIn("caller", goal_start_tool.input_schema["properties"])
+                    self.assertIn("active", goal_start_tool.input_schema["properties"]["initial_status"]["description"])
+                    sde_tool = next(
+                        tool for tool in tool_result.tools if tool.name == "sde_assess"
+                    )
+                    self.assertIn("routine", sde_tool.input_schema["properties"]["materiality"]["description"])
+                    invalid = await client.session.call_tool(
+                        "sde_assess",
+                        {"goal_id": "missing", "materiality": "PRIVATE_MATERIALITY_CANARY", "rationale": "test", "fact_ids": []},
+                    )
+                    self.assertTrue(invalid.is_error)
+                    self.assertNotIn("PRIVATE_MATERIALITY_CANARY", str(invalid.content))
+                    fact_record_tool = next(
+                        tool for tool in tool_result.tools if tool.name == "fact_record"
+                    )
+                    fact_schema = fact_record_tool.input_schema
+                    evidence_definitions = [fact_schema]
+                    definitions = cast(
+                        dict[str, object], fact_schema.get("$defs", {})
+                    )
+                    for value in definitions.values():
+                        if isinstance(value, dict):
+                            evidence_definitions.append(
+                                cast(dict[str, Any], value)
+                            )
+                    evidence_object = next(
+                        definition
+                        for definition in evidence_definitions
+                        if {
+                            "evidence_kind", "locator", "sha256", "outcome"
+                        }.issubset(definition.get("properties", {}))
+                    )
+                    self.assertEqual(
+                        set(evidence_object["required"]),
+                        {"evidence_kind", "locator", "sha256", "outcome"},
+                    )
+                    self.assertIn("occurrence_id", evidence_object["properties"])
+                    self.assertNotIn("occurrence_id", evidence_object["required"])
+                    goal_report_tool = next(
+                        tool for tool in tool_result.tools if tool.name == "goal_report"
+                    )
+                    fact_limit_schema = goal_report_tool.input_schema["properties"][
+                        "fact_limit"
+                    ]
+                    self.assertEqual(fact_limit_schema["minimum"], 1)
+                    self.assertEqual(fact_limit_schema["maximum"], 16)
+                    evidence_tool = next(
+                        tool
+                        for tool in tool_result.tools
+                        if tool.name == "goal_fact_evidence"
+                    )
+                    evidence_limit_schema = evidence_tool.input_schema["properties"][
+                        "fact_limit"
+                    ]
+                    self.assertEqual(evidence_limit_schema["minimum"], 1)
+                    self.assertEqual(evidence_limit_schema["maximum"], 16)
+                    capture_tool = next(
+                        tool
+                        for tool in tool_result.tools
+                        if tool.name == "evidence_capture"
+                    )
+                    capture_properties = capture_tool.input_schema["properties"]
+                    self.assertEqual(
+                        set(capture_properties),
+                        {"goal_id", "criterion_id", "evidence_kind", "locator"},
+                    )
                     started = await client.call_tool(
                         "goal_start",
                         {
@@ -574,6 +671,19 @@ class McpServerTests(McpServerTestSupport):
                         },
                     )
                     self.assertFalse(started.is_error)
+                    uncapturable = await client.call_tool(
+                        "evidence_capture",
+                        {
+                            "goal_id": "stdio-goal-1",
+                            "criterion_id": "connected",
+                            "evidence_kind": "service_probe",
+                            "locator": "service-probe:unconfigured",
+                        },
+                    )
+                    self.assertFalse(uncapturable.is_error)
+                    capture_content = uncapturable.content[0]
+                    assert isinstance(capture_content, TextContent)
+                    self.assertIsNone(json.loads(capture_content.text))
                     status = await client.call_tool(
                         "goal_status", {"goal_id": "stdio-goal-1"}
                     )

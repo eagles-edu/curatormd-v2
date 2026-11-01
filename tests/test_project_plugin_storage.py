@@ -20,7 +20,10 @@ from purge_fixtures import TestReviewAuthorizer, approved_empty_inventory_reques
 
 from curatormd_v2 import (
     CuratorStore,
+    EvidenceGateError,
     ProjectStatusChangeRequest,
+    ReviewDecision,
+    SDEConfirmationRequest,
     backup_database,
     restore_database,
 )
@@ -822,11 +825,18 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
 
         candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
         self.assertEqual(candidate.status, SDEStatus.PENDING_REVIEW)
-        plugin.service.sde_confirm(
-            approved_empty_inventory_request(candidate.candidate_id)
-        )
+        with self.assertRaisesRegex(EvidenceGateError, "current"):
+            plugin.service.sde_confirm(
+                approved_empty_inventory_request(candidate.candidate_id)
+            )
+        plugin.service.sde_confirm(SDEConfirmationRequest(
+            candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.REJECTED,
+            artifacts=(),
+            artifact_inventory_complete=True,
+        ))
         reviewed_candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
-        self.assertEqual(reviewed_candidate.status, SDEStatus.APPROVED)
+        self.assertEqual(reviewed_candidate.status, SDEStatus.REJECTED)
         self.assertFalse(Path(artifact.path).exists())
 
     def test_expired_staging_fails_closed_for_untracked_files(self) -> None:

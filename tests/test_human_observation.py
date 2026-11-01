@@ -214,6 +214,35 @@ class HumanObservationTests(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertEqual(list(self.receipt_directory.iterdir()), [])
 
+    def test_cli_rejects_sensitive_scope_ids_before_printing_the_prompt(self) -> None:
+        secret = "PRIVATE_SCOPE_CANARY_12345"
+        stdout = StringIO()
+        stderr = _TerminalOutput()
+        stdin = _TerminalInput("unused\n")
+        with (
+            patch("sys.stdin", stdin),
+            patch("sys.stdout", stdout),
+            patch("sys.stderr", stderr),
+        ):
+            status = main(
+                [
+                    "human-observation",
+                    "--project-root",
+                    str(self.project_root),
+                    "--host-config",
+                    str(self.config),
+                    "--goal-id",
+                    f"token={secret}",
+                    "--criterion-id",
+                    "criterion-alpha",
+                ]
+            )
+
+        self.assertEqual(status, 2)
+        self.assertNotIn(secret, stdout.getvalue())
+        self.assertNotIn(secret, stderr.getvalue())
+        self.assertEqual(list(self.receipt_directory.iterdir()), [])
+
 
 if __name__ == "__main__":
     unittest.main()

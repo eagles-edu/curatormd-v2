@@ -10,8 +10,10 @@ from typing import TextIO
 
 from .backup import backup_daily
 from .cli_args import positive_integer_limit
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .models import PurgeStatus
 from .project_config import ProjectConfig
+from .process_privacy import protect_process_data
 from .project_plugin import ProjectPlugin
 from .store import CuratorStore
 
@@ -23,7 +25,7 @@ def _positive_limit(value: str) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-maintenance",
         description=(
             "Create the daily local database backup and process only due, "
@@ -89,9 +91,17 @@ def main(
 ) -> int:
     """Execute a bounded purge-retry pass and emit content-free counters."""
 
-    arguments = _parser().parse_args(argv)
-    output = stdout or sys.stdout
     errors = stderr or sys.stderr
+    if not protect_process_data():
+        print("Curator V2 maintenance failed (privacy limits unavailable).", file=errors)
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, errors,
+        "Curator V2 maintenance failed (invalid command arguments).\n",
+    )
+    if arguments is None:
+        return 2
+    output = stdout or sys.stdout
     if not arguments.execute_due_purges:
         print(
             "Refusing purge retries without --execute-due-purges.", file=errors

@@ -1,29 +1,36 @@
 # SDE qualification and review policy, version 1
 
-This policy helps reviewers decide whether a verified goal outcome deserves a
-durable Significant Development Event (SDE) record. Significance is about
-lasting project value, not message count, diff size, emotional tone, or cue-word
-matches. A candidate is only a proposal until an authorized human approves it.
+This policy helps the owner review proposed Significant Development Event
+(SDE) records. Curator prepares a pending proposal from supported facts at each
+completed tracked task or plan-item endpoint; it does not decide that a task is
+too routine or unimportant to show for review. Materiality and retrieval value
+are recommendations. The owner decides what is memorialized, its importance,
+and its disposition. A candidate is only a proposal until the owner decides.
 
-## Qualification categories
+## Suggested materiality categories
 
-| Category | Qualifies when | Does not qualify by itself |
+The categories below help describe a pending proposal. They do not decide
+whether a proposal is created or whether a task fact is worth keeping.
+
+| Category | Suggested description | Evidence limits to show the owner |
 | --- | --- | --- |
-| Durable implementation | A user-visible or operational capability was implemented, its intended behavior is directly verified, and the compact facts will help a future maintainer understand or reuse it. | A code edit, refactor, dependency update, generated file, or passing test without evidence of a durable capability or useful project outcome. |
-| Consequential decision | An authorized decision changes an enduring boundary, contract, workflow, data policy, ownership rule, or supported operating mode; record the decision and rationale. | A temporary preference, speculative proposal, routine task ordering, or an agent's inferred decision. |
-| Verified recovery | A specific failure/root cause was established, the recovery was applied, and the relevant service or behavior was re-verified. Preserve the failure signal, causal finding, repair, and recovery proof as separate bullets. | An attempted fix, an unexplained green status, a transient restart, or a symptom without a verified cause/outcome. |
-| Reusable verified lesson | A recurring failure mode or boundary was directly demonstrated, and a concrete prevention/recovery rule follows from that evidence. | Generic advice, an untested hypothesis, copied documentation, or a lesson that merely restates the task. |
+| Durable implementation | A user-visible or operational capability was implemented and its intended behavior was checked. | A code edit or passing test alone does not prove lasting impact. |
+| Consequential decision | The owner made a decision that changes an enduring boundary, contract, workflow, data policy, ownership rule, or supported operating mode. | Do not present a temporary preference, speculation, or an agent-inferred choice as an owner decision. |
+| Verified recovery | A failure/root cause was established, the recovery was applied, and the relevant behavior was checked again. | An attempted fix or unexplained healthy status does not establish the cause or recovery. |
+| Reusable verified lesson | A recurring failure or boundary was demonstrated, with a concrete prevention or recovery rule. | Generic advice, an untested hypothesis, or copied documentation is not verification. |
 
-Routine progress remains on the goal ledger. Examples include ordinary
-maintenance, formatting, small fixes with no reusable outcome, repeated status
-checks, work already captured by an existing SDE, and activity represented only
-by transcript cues. A large diff or long session does not make routine work
-significant.
+Routine work may still have a pending proposal so the owner can approve,
+reject, or otherwise dispose of it. Examples include ordinary maintenance,
+formatting, small fixes, repeated status checks, or work already represented by
+an existing SDE. A large diff or long session does not make work significant;
+that judgment is offered to the owner rather than used to suppress the proposal.
 
 ## Evidence and claim language
 
 - Link each SDE assertion to selected immutable goal facts and bounded evidence
-  references. A passing check proves only the behavior covered by that check.
+  references. A proposal may be created before verification; label missing or
+  stale proof clearly. Approval requires current passing evidence. A passing
+  check proves only the behavior covered by that check.
 - Include a compact impact statement and a separate retrieval-value statement
   in every new candidate. Label impact as observed or expected where needed;
   retrieval value describes what a future maintainer may need to find and is

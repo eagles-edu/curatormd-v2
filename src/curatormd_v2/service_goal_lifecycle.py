@@ -127,11 +127,15 @@ class _GoalLifecycleMixin(_CuratorServiceState):
         )
         with self._effect_fence(expected_effect_revision):
             with self.store.transaction():
-                self._validate_goal_start_relations(
-                    options.get("parent_goal_id"),
-                    options.get("depends_on_goal_ids", ()),
-                    options.get("goal_id"),
-                )
+                source_event_id = options.get("source_event_id")
+                if source_event_id is None or not self.store.has_goal_source_event(
+                    self.project_id, source_event_id
+                ):
+                    self._validate_goal_start_relations(
+                        options.get("parent_goal_id"),
+                        options.get("depends_on_goal_ids", ()),
+                        options.get("goal_id"),
+                    )
                 goal = GoalCard(
                     goal_id=options.get("goal_id") or new_id(),
                     problem=problem,
@@ -146,8 +150,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
                     status=initial_status,
                     next_action=options.get("next_action"),
                 )
-                self.store.add_goal(goal, source_event_id=options.get("source_event_id"))
-                return goal
+                return self.store.add_goal(goal, source_event_id=source_event_id)
 
     def goal_activate(
         self,
@@ -155,7 +158,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
         reason: str,
         expected_lifecycle_revision: int,
     ) -> GoalCard:
-        """Activate planned work after explicit, revision-checked acceptance."""
+        """Activate planned work or resume deferred/blocked work at its revision."""
 
         expected_effect_revision = self._capture_effect_revision()
         reason = reason.strip()
@@ -202,7 +205,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
         if criterion_id is not None and criterion_id not in {
             item.criterion_id for item in goal.success_criteria
         }:
-            raise ValueError(f"unknown success criterion: {criterion_id}")
+            raise ValueError("unknown success criterion")
         attestations: tuple[EvidenceAttestation, ...] = ()
         if kind is FactKind.VERIFICATION:
             if not evidence or criterion_id is None:
@@ -245,7 +248,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
         if fact.criterion_id is not None and fact.criterion_id not in {
             item.criterion_id for item in current_goal.success_criteria
         }:
-            raise ValueError(f"unknown success criterion: {fact.criterion_id}")
+            raise ValueError("unknown success criterion")
         if fact.kind is FactKind.VERIFICATION and verified_goal_snapshot is not None and (
             current_goal.criteria_revision != verified_goal_snapshot.criteria_revision
             or current_goal.lifecycle_revision

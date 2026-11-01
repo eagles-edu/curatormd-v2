@@ -194,6 +194,21 @@ def _assert_review_packet_displayed(
         displayed_packet["artifact_inventory"]["artifacts"][0]["path"],
         prepared.staged_artifact.path,
     )
+    test.assertEqual(len(displayed_packet["artifact_dependencies"]), 1)
+    dependency = displayed_packet["artifact_dependencies"][0]
+    test.assertEqual(
+        dependency["artifact"]["occurrence_id"],
+        prepared.staged_artifact.occurrence_id,
+    )
+    test.assertEqual(dependency["reacquisition_action"], ReacquisitionAction.NOT_RECORDED.value)
+    decision_packet = json.loads(invocation.stdout.splitlines()[1])["decision_packet"]
+    test.assertEqual(
+        decision_packet["dependency_map_sha256"], prepared.dependency_map_sha256
+    )
+    test.assertEqual(
+        decision_packet["artifact_dependencies"][0]["reacquisition_action"],
+        ReacquisitionAction.REACQUIRE_FROM_SOURCE.value,
+    )
     displayed_facts = displayed_packet["detail"]["facts"]
     test.assertEqual(len(displayed_facts), 2)
     test.assertEqual(
@@ -216,21 +231,30 @@ def _approve_local_review(
     )
     stdout = _InteractiveOutput()
     stderr = _InteractiveErrors()
-    result = main(
-        [
-            "--project-root",
-            str(root),
-            "--database",
-            str(database),
-            "review",
-            prepared.candidate_id,
-        ],
-        stdin=_InteractiveInput(
-            f"approve\nreacquire_from_source\n{phrase}\nVerified in the disposable suite\n"
-        ),
-        stdout=stdout,
-        stderr=stderr,
-    )
+    evidence_config = root.parent / "host-evidence.json"
+    evidence_config.write_text("{}\n")
+    evidence_config.chmod(0o600)
+    with patch(
+        "curatormd_v2.review_cli.load_local_evidence_verifier",
+        return_value=_TestEvidenceVerifier(),
+    ):
+        result = main(
+            [
+                "--project-root",
+                str(root),
+                "--database",
+                str(database),
+                "--evidence-config",
+                str(evidence_config),
+                "review",
+                prepared.candidate_id,
+            ],
+            stdin=_InteractiveInput(
+                f"approve\nreacquire_from_source\n{phrase}\nVerified in the disposable suite\n"
+            ),
+            stdout=stdout,
+            stderr=stderr,
+        )
     return _CliInvocation(result, stdout.getvalue(), stderr.getvalue())
 
 
@@ -367,10 +391,8 @@ class ReviewCliTests(unittest.TestCase):
         ):
             errors = StringIO()
             result = access_main(
-                access_cli_args(
-                    operation, root, database, *extra, "--rationale", rationale
-                ),
-                stdin=_InteractiveInput(phrase + "\n"),
+                access_cli_args(operation, root, database, *extra),
+                stdin=_InteractiveInput(phrase + "\n" + rationale + "\n"),
                 stdout=StringIO(),
                 stderr=errors,
             )
@@ -433,8 +455,6 @@ class ReviewCliTests(unittest.TestCase):
                 retrieval_value="Useful when reviewing this local change",
             )
         )
-        if candidate is None:
-            raise AssertionError("verified implementation was not assessed as an SDE")
         return goal.goal_id, candidate.candidate_id
 
     @staticmethod

@@ -2,7 +2,32 @@
 
 from __future__ import annotations
 
+import argparse
+from typing import NoReturn
 from typing import TextIO
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    """Reject malformed CLI input without echoing its untrusted value."""
+
+    def error(self, message: str) -> NoReturn:
+        del message
+        raise ValueError("invalid command arguments")
+
+
+def parse_safe_arguments(
+    parser: argparse.ArgumentParser,
+    argv: list[str] | None,
+    errors: TextIO,
+    failure_message: str,
+) -> argparse.Namespace | None:
+    """Parse argv and emit only the caller-selected fixed failure message."""
+
+    try:
+        return parser.parse_args(argv)
+    except ValueError:
+        errors.write(failure_message)
+        return None
 
 
 def confirm_exact_phrase(

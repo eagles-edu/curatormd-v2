@@ -46,6 +46,16 @@ _SUMMARY_PRIVATE_NAMES = frozenset({
 _SUMMARY_PRIVATE_DIRECTORIES = frozenset(
     {".aws", ".azure", ".docker", ".gnupg", ".kube", ".ssh"}
 )
+_SUMMARY_PRIVATE_COMPONENT_RE = re.compile(
+    r"(?:^|[._-])(?:\.env|\.secret|secret|credential|passphrase|password|passwd|pwd|token|"
+    r"api[_-]?(?:key|secret|token)|(?:access|refresh)[_-]?(?:key|token)|"
+    r"(?:auth|secret|session)[_-]?(?:key|token)|bearer[_-]?(?:token|key)|"
+    r"oauth[_-]?client[_-]?secret|"
+    r"aws[_-]?(?:secret[_-]?access[_-]?key|access[_-]?key(?:[_-]?id)?)|"
+    r"client[_-]?secret|private[_-]?key|authorization|bearer|cookie)"
+    r"s?(?:$|[._-])",
+    re.IGNORECASE,
+)
 _SUMMARY_PRIVATE_SUFFIXES = (".key", ".pem", ".p12", ".pfx", ".jks", ".keystore")
 _SUMMARY_CHECKS = frozenset(
     {"scripts/check", "scripts/run_tests.sh", "git diff --check", "pytest", "npm test"}
@@ -203,7 +213,7 @@ def _work_summary_bullet(value: object, repository_fingerprint: str | None) -> s
     if set(summary) != {
         "schema_version", "repository_fingerprint", "changed_files",
         "omitted_files", "checks", "omitted_checks"
-    } or summary.get("schema_version") != 1:
+    } or not is_exact_int(summary.get("schema_version")) or summary.get("schema_version") != 1:
         return None
     if (
         repository_fingerprint is None
@@ -290,7 +300,7 @@ def _private_summary_path(path: str) -> bool:
         basename in _SUMMARY_PRIVATE_NAMES
         or basename.endswith(_SUMMARY_PRIVATE_SUFFIXES)
         or any(part in _SUMMARY_PRIVATE_DIRECTORIES for part in parts)
-        or any(part.startswith((".env", "secret", "credential")) for part in parts)
+        or any(_SUMMARY_PRIVATE_COMPONENT_RE.search(part) for part in parts)
     )
 
 

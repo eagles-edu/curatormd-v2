@@ -1,5 +1,78 @@
 # Curator V2 history
 
+## 2026-10-30 — Show disposition and update time on goal cards
+
+- **Intent:** Make repeated activity goals distinguishable by current status
+  and date in the V2 dashboard.
+- **Changed fact:** Extension 0.9.38 labels the goal status as its disposition
+  and renders the API's `updated_at` in the owner's +07 timezone. Missing or
+  malformed timestamps show an unavailable label; generated operation IDs
+  remain omitted.
+- **Verification:** The focused VS Code extension suite passes 25/25. VSIX
+  0.9.38 was packaged and installed locally.
+- **Open gate:** Reload and inspect an actual goal card in the rendered VS Code
+  dashboard; dashboard acceptance remains open until that visual check.
+- **Outcome:** Add visible dates and disposition without changing backend
+  records or treating a unit test as rendered acceptance.
+
+## 2026-10-30 — Initialize the local alpha profile outbox
+
+- **Intent:** Resolve the local alpha health snapshot's unknown event-router
+  dependency without masking unknown health in the VS Code extension.
+- **Changed fact:** The configured `curatormd-v2-dev-alpha` Hermes profile had
+  the Curator hook installed but no Codex outbox database. Initialized the
+  empty outbox schema through Hermes Core's `CodexLifecycleOutbox` class; no
+  event payloads or receipts were added.
+- **Verification:** Re-ran the same profile-bound Hermes health probe. It
+  returned project `curatormd-v2-dev-alpha`, status `healthy`, all seven
+  dependencies healthy, and no open gates.
+- **Open gate:** No real Codex lifecycle event was sent and acknowledged by
+  this profile; local alpha delivery and rendered VS Code refresh remain to be
+  confirmed.
+- **Outcome:** Restore truthful local readiness without weakening the
+  unknown-to-yellow status rule or claiming end-to-end producer delivery.
+
+## 2026-10-30 — Emphasize unknown dashboard rows in yellow
+
+- **Intent:** Make unknown values and explanations as visible as their state
+  labels in the compact project dashboard.
+- **Changed fact:** Extension 0.9.37 marks each metric row with its state and
+  renders every cell in an unknown row yellow. The extension is packaged and
+  installed locally.
+- **Verification:** The focused VS Code extension suite passes 25/25, including
+  a regression for the unknown-row color rule. The installed extension reports
+  version 0.9.37 and contains the row-state implementation; `git diff --check`
+  is clean. A fresh read-only extension listing still reports
+  `curatormd.curatormd-v2-status@0.9.37`; the source explicitly maps `unknown`
+  to yellow (`#fce94f`) for the status bar, dashboard cards, and every metric
+  row cell. The rendered window has not yet been rechecked after reload.
+- **Open gate:** VS Code reload and visible rendering still need confirmation.
+- **Outcome:** Prepare the dashboard correction for reload without changing
+  the plan checklist marker.
+
+## 2026-10-30 — Keep operator input out of command arguments and parser errors
+
+- **Intent:** Avoid placing owner-entered access rationale in shell command
+  history or echoing caller-supplied argument values in parser errors.
+- **Changed fact:** The attended access CLI now reads one bounded rationale
+  line from stdin after exact confirmation; it rejects empty, multiline, and
+  overlong input. Invalid arguments receive a fixed generic error. The local
+  reviewer setup and operator guide use the prompt instead of a command-line
+  rationale argument. All eight V2 CLI entry points use a shared parser that
+  does not echo malformed argument values. The hosted MCP launcher applies
+  core-dump and file-mode limits before parsing its arguments.
+- **Verification:** The focused access CLI suite passes 5/5, including a
+  credential-shaped canary passed to the removed `--rationale` option; the
+  marker is absent from stdout and stderr. Focused suites across all eight CLI
+  entry points pass 55/55, including the shared parser canary and hosted-MCP
+  startup checks. Strict Pyright reports zero diagnostics, errors-only Pylint
+  passes, and `git diff --check` is clean.
+- **Open gate:** This covers the access-rationale path only. Shell/terminal
+  recording settings and all other raw-data sinks remain unverified; the broad
+  privacy checklist item stays open.
+- **Outcome:** Record a bounded privacy improvement without changing the plan
+  checklist marker.
+
 ## 2026-10-30 — Recheck the dedicated Hermes profile
 
 - **Intent:** Confirm that the newly configured Hermes profile can reach the
@@ -11441,3 +11514,745 @@ while preserving explicit criteria and same-project parent validation.
   passes all 12 checks on the committed state.
 - **Outcome:** Record the health cleanup without treating local refactors as
   end-to-end task evidence.
+
+## 2026-10-30 — Continue local alpha dashboard and work-summary integration
+
+- **Intent:** Advance the V2-owned editor panel and Hermes work-summary path
+  without treating source checks as live workflow proof.
+- **Changed fact:** VS Code extension 0.9.21 places pending SDE review before
+  goal navigation, groups project summaries in a collapsible dashboard, and
+  labels goal cards with status and next action. Hermes source filters
+  credential-shaped paths and validates work-summary payloads at producer,
+  outbox, and profile-hook boundaries.
+- **Verification:** VS Code tests pass 24/24; Hermes focused producer/outbox/
+  hook tests pass 14/14; Curator event/hook tests pass 15 tests and nine
+  subtests; Hermes Ruff and both repository diff checks pass. The extension is
+  installed and its code hash matches the packaged workspace source.
+- **Open gate:** The actual VS Code window still needs a reload and rendered
+  interaction check. The installed Hermes runtime lacks the new producer, and
+  a real bound task plus Curator fact readback remains unverified. No checklist
+  marker changed.
+- **Outcome:** Record bounded local progress and continue the full V2 plan.
+
+### Dashboard visibility follow-up
+
+- **Changed fact:** The dashboard and its four metric cards now open expanded,
+  while the dashboard and cards remain collapsible; extension 0.9.22 is
+  installed.
+- **Verification:** The focused Node suite passes 24/24. Installed and source
+  extension code hashes match.
+- **Open gate:** Reload the V2 editor window and confirm the rendered layout
+  and review controls. A reload command was issued, but the follow-up desktop
+  capture did not show the V2 dashboard, so UI acceptance remains open.
+
+### Rendered dashboard check
+
+- **Verification:** Reloaded the V2 workspace and observed extension 0.9.22's
+  four visible compact cards and Pending SDE review above goal navigation. The
+  status tooltip shows version 0.9.22 and explains the yellow unknown state.
+- **Open gate:** This project has zero goals, so the actual goal card/report
+  and review interaction were not exercised. Health and queues remain unknown
+  because the configured Hermes probe does not match this project's snapshot.
+
+### Goal card cleanup
+
+- **Changed fact:** Extension 0.9.24 removes leading status labels and
+  scheduled-operation boilerplate/UUIDs from goal titles, keeps disposition as
+  a compact state badge, and shows next action separately. Goal dates remain
+  absent. The project summary cards and Pending SDE placement are unchanged.
+- **Verification:** The focused Node suite passes 24/24. Packaged and installed
+  VSIX 0.9.24. Installed and source `extension.js` SHA-256 both equal
+  `10ed29594c033905760d1c2f6c6535e8854f7375deb6960982ac68114a4cfb99`.
+  `node --check` and `git diff --check` pass.
+- **Open gate:** The configured V2 workspace contains no goals, so the actual
+  cleaned goal-card rendering still needs a workspace with goal records.
+
+### Hermes active-runtime comparison
+
+- **Verification:** The active `curatorv2hermes` profile's `HOOK.yaml` and
+  `handler.py` are byte-identical to the Hermes development integration files;
+  its config grants the hook access to `curator_v2` and binds project
+  `hermes-core-v2-alpha`. The active runtime emits Codex lifecycle events but
+  its outbox/runtime lacks the work-summary field and producer.
+- **Open gate:** No active runtime file was modified or restarted. End-to-end
+  summary delivery and ledger readback remain open.
+
+## 2026-10-30 — Bind the V2 editor workspace to its own local profile
+
+- **Intent:** Make the V2-owned editor plugin read the V2 checkout's project
+  rather than the previously selected Vhost profile.
+- **Changed fact:** Added the owner-only Hermes profile
+  `curatormd-v2-dev-alpha`, installed the existing Curator hook, and changed
+  VS Code User settings to use the V2 checkout launcher, alpha database, and
+  matching profile. The existing local UID 1000 grants cover this project's
+  read, write, and review actions. Enabled its six-hour maintenance timer with
+  the approved 100-item limit and exact project paths.
+- **Verification:** The read-only Hermes probe returns project
+  `curatormd-v2-dev-alpha`; five dependencies are healthy, `event_router` is
+  unknown pending an outbox event, and `purge_scheduler` remains degraded
+  until the timer itself fires. A manual one-shot completed with exit 0,
+  `backup_status=verified`, and zero due purge/expiry work. The next timer run
+  is 18:00 +07. The rendered V2 status bar shows red degraded, matching the
+  live probe. `git diff --check` passes.
+- **Open gate:** A real Hermes task and work-summary receipt are still needed
+  to create and verify the outbox route; the scheduled timer must fire before
+  the scheduler probe becomes ready. No active Hermes runtime files were
+  changed or restarted.
+- **Outcome:** Continue the V2 alpha with current gates visible; no checklist
+  marker changed.
+
+## 2026-10-30 — Organize project metrics into dashboard tables
+
+- **Intent:** Make health, activity, queues, and storage faster to scan in the
+  V2-owned editor dashboard.
+- **Changed fact:** VS Code extension 0.9.26 presents health, activity,
+  operational queues, and storage as four compact collapsible panels. Each
+  contains a metric/value/state table with bold column headers and live
+  state colors: green healthy, purple review, yellow warning/unknown, red
+  degraded, and gray neutral. Pending SDE review stays above goal navigation.
+- **Verification:** Focused extension tests pass 24/24; `node --check` and
+  `git diff --check` pass. The 0.9.26 VSIX package and installed extension
+  both have the same `extension.js` SHA-256 as the workspace source.
+- **Open gate:** Open the V2 VS Code window and inspect rendered table states
+  and panels. The dashboard and local-alpha acceptance checklist items remain
+  open.
+- **Outcome:** Record the UI implementation without changing plan checkboxes.
+
+## 2026-10-30 — Reject stale evidence in SDE assessment
+
+- **Intent:** Prevent a verified result from an earlier goal evidence epoch
+  from supporting a new SDE candidate.
+- **Changed fact:** SDE assessment now applies the same reopen/criteria-change
+  cutoff used by goal completion and status. A selected verification fact must
+  be created after the latest evidence-epoch boundary and still pass its current
+  source attestation.
+- **Verification:** All seven tests in `test_goal_evidence_epochs` pass,
+  including stale proof after reopen, stale proof after criteria amendment, and
+  acceptance of fresh post-amendment proof.
+- **Open gate:** Real local candidate review and independent receipt check still
+  require the attended `eaglesvn` review path. No checklist marker changed.
+- **Outcome:** Record the local SDE guard without treating synthetic evidence as
+  a human decision.
+
+### Dashboard table readability adjustment
+
+- **Changed fact:** VS Code extension 0.9.27 uses the editor theme's blue link
+  color for neutral states, 1rem table text, a wider state column, and a
+  single-column layout when the panel is narrow.
+- **Verification:** Focused extension tests pass 24/24; `node --check` and
+  `git diff --check` pass. VSIX 0.9.27 is installed, and packaged, installed,
+  and workspace `extension.js` hashes match.
+- **Open gate:** A rendered check in the V2 VS Code window remains open.
+
+### Put high-priority activity totals first
+
+- **Changed fact:** The activity table now starts with SDE candidate counts and
+  goal-state totals, ahead of receipt and fact counts.
+- **Verification:** Focused extension tests assert both rows occupy the first
+  two positions and pass 24/24; VSIX 0.9.28 is installed, and packaged,
+  installed, and workspace `extension.js` hashes match.
+- **Open gate:** The refreshed table still needs a visible check in VS Code.
+
+### Keep health detail visible on read failure
+
+- **Changed fact:** Loading and failed reads now retain the three health rows:
+  Project health, Open gates, and Operational alerts. The table shows the
+  fixed unavailable reason instead of a lone generic snapshot row.
+- **Verification:** Focused extension tests pass 24/24, including the denied
+  read case and its three rendered rows. VSIX 0.9.29 is packaged.
+- **Open gate:** The installed dashboard still needs a visible check in VS Code.
+
+### Explain unavailable health in the V2 dashboard
+
+- **Changed fact:** Extension 0.9.30 shows a plain-language retry instruction
+  in the health table when the Hermes health probe fails, instead of the
+  internal `health_read_unavailable` code. The status-bar tooltip receives the
+  same sanitized cause.
+- **Verification:** The focused Node suite passes 24/24. `node --check` and
+  `git diff --check` pass. The 0.9.30 VSIX is installed; its `extension.js`
+  hash matches both source and installed files.
+- **Open gate:** Reload the V2 VS Code window and inspect the rendered status.
+  The current profile probe reports two real readiness gates, so the expected
+  status after reload is degraded/red; the health display remains unaccepted.
+
+### Explain health gates in the V2 dashboard
+
+- **Changed fact:** Extension 0.9.31 converts known dependency and queue gate
+  codes to plain-language descriptions in the dashboard and status tooltip.
+  Colon-separated dependency gates are now included.
+- **Verification:** The focused Node suite passes 24/24. `node --check` and
+  `git diff --check` pass.
+- **Open gate:** Package and install the update, reload the V2 VS Code window,
+  and confirm the rendered status and current readiness explanations.
+
+## 2026-10-30 — Pass owner evidence configuration through the V2 editor
+
+- **Intent:** Let the V2 editor use the approved local evidence sources through
+  Curator's existing owner-only host configuration.
+- **Changed fact:** Extension 0.9.32 adds application-scope User setting
+  `curatormdV2.evidenceConfig` and passes its optional path to the status,
+  dashboard, and Start Task MCP launchers. Workspace-level overrides are
+  rejected. Backend validation remains responsible for file ownership,
+  permissions, project binding, and keeping the file outside the repository.
+- **Verification:** The focused extension suite passes 25/25; `node --check`
+  and `git diff --check` pass. VSIX 0.9.32 is installed; source, installed, and
+  packaged `extension.js` hashes all match
+  `4848209ed08edd8dbbed2e63f7398f9f56d9bb6f48c6ef86d1baccf0ce5a0908`. No
+  host evidence file was configured and no evidence was captured by this
+  setting.
+- **Open gate:** The active VS Code extension host predates this install and
+  needs a reload before the new setting is available. Real local source capture,
+  dashboard rendering, work-summary delivery, SDE review, cleanup, and
+  local-alpha acceptance remain unverified. No checklist marker changed.
+- **Outcome:** Enable the local evidence-config route without treating a
+  configured path or passing UI test as verified source evidence.
+
+## 2026-10-30 — Recheck caller-text and evidence-epoch guards
+
+- **Intent:** Verify the current dirty V2 changes that prevent caller-controlled
+  field names from appearing in errors and prevent stale proof from supporting
+  a new SDE candidate.
+- **Changed fact:** Event validation and goal-fact validation return fixed
+  messages for unknown fields and criterion IDs. Hermes work-summary mapping
+  requires an exact integer schema version, and SDE assessment now applies the
+  post-reopen/criteria-change evidence cutoff.
+- **Verification:** From `tests/`, the Curator virtual environment runs the
+  focused event-contract, lifecycle, evidence-epoch, and Hermes-event suites:
+  55 tests pass. This verification covers those source paths only.
+- **Open gate:** Full privacy review across logs, backups, WAL, traces, and host
+  sinks remains open. Real Hermes work-summary delivery and attended SDE review
+  remain open. No checklist marker changed.
+- **Outcome:** Preserve verified local regression evidence without closing the
+  broader privacy or live-review criteria.
+
+## 2026-10-30 — Render unknown health in blue in the V2 editor
+
+- **Intent:** Correct the dashboard color for unknown health to match the
+  requested blue neutral state.
+- **Changed fact:** Extension 0.9.33 maps unknown to the editor's blue
+  text-link color in the status item, dashboard cards, and metric tables.
+  Yellow now denotes warning only; health values and gate text are unchanged.
+- **Verification:** Source syntax and packaged/installed hashes are checked
+  during installation. The active window still needs a reload and visual check.
+- **Open gate:** Confirm the health row displays blue after reload; dashboard
+  visual acceptance remains open. No checklist marker changed.
+- **Outcome:** Make unknown-state color match the agreed legend without
+  implying that the unavailable health read is healthy.
+
+## 2026-10-30 — Recheck evidence when approving an SDE
+
+- **Intent:** Prevent an SDE from being approved after its selected proof has
+  expired or been revoked since assessment.
+- **Changed fact:** Approval now rechecks current post-reopen verification
+  evidence before creating a receipt. A stale candidate cannot be approved;
+  rejection remains possible. Extension 0.9.34 passes the configured host
+  evidence path to the attended review CLI, which loads it outside the project.
+- **Verification:** The focused API and attended-review suites pass 13/13;
+  the focused VS Code suite passes 25/25. JavaScript syntax and
+  `git diff --check` pass.
+- **Open gate:** A real `eaglesvn` decision and independent receipt review
+  remain open. The active VS Code window still needs the 0.9.34 reload.
+- **Outcome:** Enforce current proof at the final human approval boundary
+  without making stale proposals impossible to reject.
+
+## 2026-10-30 — Restore yellow for unknown V2 health
+
+- **Intent:** Match the requested legend: yellow means unknown; blue means no
+  health read has been attempted.
+- **Changed fact:** Extension 0.9.35 uses yellow for unknown status-bar health,
+  dashboard cards, and table states. Blue remains the neutral pre-read state.
+- **Verification:** The focused VS Code suite passes 25/25; `node --check` and
+  `git diff --check` pass. Extension 0.9.35 is installed, and source, package,
+  and installed JavaScript hashes match at
+  `c554a5d1478a5f6e7d2a2e2dd171b9a43f6fcaf152c834218d0febe555f57846`.
+- **Open gate:** Confirm the unknown health row is yellow after reload. The
+  dashboard acceptance item remains open; no checklist marker changed.
+- **Outcome:** Restore the requested distinction without changing health data
+  or gate descriptions.
+
+## 2026-10-30 — Use explicit yellow for dashboard unknown states
+
+- **Intent:** Make dashboard `unknown` visibly match the status-bar yellow.
+- **Changed fact:** Extension 0.9.36 separates dashboard unknown styling from
+  theme-dependent warning styling. Unknown card borders and metric states use
+  `#fce94f`; warning states continue using the editor warning color.
+- **Verification:** Focused extension suite passes 25/25; JavaScript syntax and
+  `git diff --check` pass. VSIX 0.9.36 packaged and installed; VS Code reports
+  `curatormd.curatormd-v2-status@0.9.36`. Source SHA-256:
+  `ad41502024310a8b571b1a155acdd88570c8142e8654f657d0e0a88b5cca3099`.
+- **Open gate:** Reload the updated extension and visually confirm the unknown
+  status in the dashboard.
+- **Outcome:** Render unknown health as yellow regardless of the active theme's
+  warning color.
+
+## 2026-10-30 — Test the CLI core-dump guard
+
+- **Intent:** Reduce one local crash-dump sink before V2 commands handle
+  project or artifact data.
+- **Changed fact:** Added focused tests that verify all core-dump limits are
+  disabled, failure to apply them is reported as failure, and non-POSIX
+  platforms are rejected.
+- **Verification:** `.venv/bin/python -m unittest discover -s tests -p
+  'test_process_privacy.py' -v` passes 3/3.
+- **Open gate:** The wider privacy flow across logs, journals, SQLite WAL,
+  approved backups, and producer paths remains unverified.
+- **Outcome:** Keep this protection covered while preserving the privacy item
+  as open until its full source-to-sink audit is complete.
+
+## 2026-10-30 — Exclude advice and proposals from SDE candidates
+
+- **Intent:** Keep suggestions from being retained as verified knowledge.
+- **Changed fact:** SDE assessment accepts research, change, and verification
+  facts only. Advice and proposal bullets cannot enter a candidate just because
+  another selected fact has current verification evidence. Approval also
+  rejects older queued candidates containing these kinds; rejection stays
+  available. Assessment and approval require every selected verification fact
+  to remain current, so one fresh proof cannot hide a stale one.
+- **Verification:** The focused review API, SDE capacity, and evidence-epoch
+  suites pass 25/25, including new and pre-existing candidate rejection with
+  no approval receipt and mixed stale/fresh proof rejection. Strict Pyright and
+  `git diff --check` pass.
+- **Open gate:** The actual local reviewer decision and independent receipt
+  reconciliation remain unverified.
+- **Outcome:** Reject non-factual candidate inputs without changing human
+  approval or cleanup authority.
+
+## 2026-10-30 — Omit sensitive-looking work-summary paths
+
+- **Intent:** Avoid retaining filenames that identify credential or private
+  key material in canonical work-summary facts.
+- **Changed fact:** The Curator Hermes-event adapter now omits path components
+  labeled as passwords, passphrases, tokens, API keys, client secrets, and
+  private keys. It retains safe path and check summaries.
+- **Verification:** The focused Hermes-event suite passes 10/10, strict Pyright
+  reports no diagnostics, and `git diff --check` passes.
+- **Open gate:** This protects the canonical fact boundary only; producer
+  outbox, logs, journals, backups, and other privacy sinks remain open.
+- **Outcome:** Keep credential-like paths out of durable facts without
+  claiming complete source-to-sink privacy.
+
+## 2026-10-30 — Filter sensitive filenames in the Hermes profile hook
+
+- **Intent:** Keep credential-like filenames out of the durable Hermes
+  producer payload as well as Curator's canonical work-summary fact.
+- **Changed fact:** Hermes and Curator now reject matching path components for
+  password, passphrase, token, API-key, client-secret, and private-key names.
+  The rest of the lifecycle event still proceeds without its optional summary.
+- **Verification:** Curator's Hermes-event suite passes 10/10; Hermes's focused
+  profile-hook test passes 1/1 and `scripts/check` passes all 12 checks.
+  Curator strict Pyright passes.
+- **Open gate:** Other producer sources and log, journal, backup, retry-payload,
+  and remaining data sinks are not covered by this filename filter.
+- **Outcome:** Apply the same bounded path filter at both sides of the Hermes
+  work-summary boundary while keeping the broad privacy review open.
+
+## 2026-10-30 — Disable core dumps across Curator commands
+
+- **Intent:** Prevent local command crashes from writing raw ledger or staged
+  artifact memory into core-dump files.
+- **Changed fact:** A shared process privacy helper disables core dumps before
+  argument parsing in all eight installed Curator commands. MCP retains its
+  restrictive creation mask; non-MCP command behavior is otherwise unchanged.
+- **Verification:** The eight command-focused suites pass 44 tests. Pyright
+  reports zero diagnostics and errors-only Pylint passes. The MCP child-process
+  check verifies core limit zero and umask 077.
+- **Open gate:** This addresses core dumps only. Logs, host journals, WAL,
+  backups, and producer-side privacy remain open. No checklist marker changed.
+- **Outcome:** Reduce one local content sink without claiming the broad privacy
+  review is complete.
+
+## 2026-10-30 — Reject passphrase paths in work summaries
+
+- **Intent:** Keep credential-bearing filenames out of retained Hermes work
+  summaries.
+- **Changed fact:** The Hermes Codex summary collector, durable outbox, profile
+  hook, and Curator receiver reject path components labeled `passphrase` before
+  persistence or canonical projection.
+- **Verification:** Hermes producer/outbox/profile-hook tests pass 15/15;
+  Curator Hermes-event tests pass 10/10; Hermes Ruff and both repository
+  `git diff --check` commands pass.
+- **Open gate:** The complete privacy source-to-sink audit remains open. Hermes
+  `scripts/check` previously failed its blob-size check after `git cat-file`
+  exceeded the configured 300-second timeout. The active Hermes install still
+  lacks the work-summary producer; no live task or ledger readback was run.
+- **Outcome:** Close one filename-filter gap without claiming overall privacy
+  or Hermes runtime acceptance.
+
+## 2026-10-30 — Keep artifacts on failed review projection
+
+- **Intent:** Prove an approved cleanup cannot delete its exact artifact when
+  the Markdown projection or its cleanup receipt cannot be durably recorded.
+- **Changed fact:** Added an API regression that records the candidate,
+  complete inventory, review, and cleanup authorization. It injects a first
+  projection write failure, then a cleanup-receipt write failure after the
+  Markdown decision is visible; both leave the artifact present and purge
+  attempts at zero. A successful retry persists both receipts and removes the
+  file.
+- **Verification:** `test_api_review_workflow` passes 7/7, including the new
+  regression; strict Pyright reports zero diagnostics.
+- **Open gate:** Other interruption points, per-target live recovery, and the
+  real owner-reviewed one-action workflow remain open.
+- **Outcome:** Cover two pre-delete persistence failures without claiming
+  complete cleanup acceptance.
+
+## 2026-10-30 — Recognize additional credential labels
+
+- **Intent:** Reject common credentials before event facts or staged source
+  payloads reach durable storage.
+- **Changed fact:** The shared content filter now recognizes passphrase,
+  client-secret, auth-token, and private-key labels in both assignment and
+  prose forms, including spaced and underscored names.
+- **Verification:** Focused content-safety, event-scrub, event, and producer-
+  staging suites pass 55/55, including a check that rejected import bytes leave
+  no published artifact or `.partial` file. Strict Pyright reports zero
+  diagnostics; `git diff --check` is clean.
+- **Open gate:** This adds named patterns only. Universal sensitive-data
+  detection and the remaining log, journal, WAL, backup, and producer sinks
+  remain open.
+- **Outcome:** Close specific labeled-value gaps without calling the broader
+  privacy review complete.
+
+## 2026-10-30 — Direct Curator goal read requires Hermes context
+
+- **Intent:** Check whether this work session can record its current goal events
+  in the Curator V2 ledger.
+- **Changed fact:** The direct `goal_list_page` call returned `unauthenticated`
+  with the message that trusted Hermes profile context is required.
+- **Verification:** The exact read-only tool response was captured. An
+  unauthenticated result does not establish that the ledger is empty; no
+  mutation was attempted.
+- **Open gate:** Bind and record these work facts through a trusted Hermes
+  profile session.
+- **Outcome:** Preserve the ledger status as unknown until trusted context is
+  available.
+
+## 2026-10-30 — Recheck local review and privacy regressions
+
+- **Intent:** Revalidate the attended one-action review path and local privacy
+  guards after the latest Curator V2 edits.
+- **Changed fact:** The review CLI binds one decision to the displayed complete
+  inventory and dependency-map digest, records cleanup authorization with the
+  SDE disposition, persists the canonical projection, and only then runs purge.
+  The command-line privacy checks remain in place across all eight entry
+  points.
+- **Verification:** `test_api_review_workflow` and `test_review_cli` pass 16/16;
+  `test_cli_argument_privacy`, `test_process_privacy`, `test_content_safety`,
+  and `test_hermes_events` pass 18/18. These were local regression tests.
+- **Open gate:** The real attended reviewer action and its receipts still need
+  local acceptance; code tests do not establish that operation.
+- **Outcome:** Record focused implementation evidence without changing plan
+  checklist markers.
+
+## 2026-10-30 — Reject common access, secret, bearer, and cookie labels
+
+- **Intent:** Close a specific gap where AWS access/secret key names, generic
+  access and secret keys, bearer authorization, cookie, and session-key values
+  could pass the prior narrow pattern set.
+- **Changed fact:** Curator's content filter rejects these recognized labels.
+  Hermes's Codex summary collector, durable outbox, and profile hook reject the
+  corresponding sensitive path components before forwarding or persistence;
+  Curator independently filters them before forming canonical work-summary
+  facts. The first regression run exposed a missed `aws_secret_access_key`
+  spelling, which is now covered at each boundary.
+- **Verification:** Curator `test_content_safety` and `test_hermes_events` pass
+  14/14, and the API ingress canary regression passes 1/1. That regression
+  checks SQLite main/WAL/SHM, canonical Markdown, Prometheus output, and a fresh
+  SQLite backup for rejected values. Hermes's required isolated runner passes
+  the three focused source, outbox, and profile-hook files, 15/15. Strict
+  Pyright reports no diagnostics, errors-only Pylint passes, and targeted Hermes
+  Ruff passes.
+- **Open gate:** Pattern coverage does not establish that every secret or raw
+  source is absent from all logs, journals, traces, backups, or host sinks.
+- **Outcome:** Record a cross-boundary filename and label improvement without
+  claiming the broad privacy criterion complete.
+
+## 2026-10-30 — Catch credential labels inside environment names
+
+- **Intent:** Prevent environment-variable prefixes from bypassing credential
+  label filters.
+- **Changed fact:** Curator and all three Hermes summary boundaries now match
+  sensitive components inside names such as `MY_AWS_SECRET_ACCESS_KEY`,
+  `OAUTH_CLIENT_SECRET`, and `MY_BEARER_TOKEN`. The API ingress regression
+  covers the prefixed secret through the reject-before-write boundary.
+- **Verification:** Curator filter/adapter/API tests pass 15/15; Hermes producer,
+  outbox, and hook tests pass 15/15. Pyright reports zero diagnostics,
+  errors-only Pylint passes, and Hermes Ruff passes.
+- **Open gate:** These explicit patterns still do not prove universal detection
+  or the absence of raw content from every host and logging sink.
+- **Outcome:** Close the environment-label boundary gap while keeping the
+  broader privacy review open.
+
+## 2026-10-30 — Recover an interrupted single-action review after restart
+
+- **Intent:** Verify the review and cleanup authorization remain atomic if the
+  process fails after writing the review receipt but before cleanup approval.
+- **Changed fact:** An injected failure after the cleanup authorization write
+  but before the enclosing project transaction commits rolls back both the
+  review receipt and authorization, leaving the staged artifact untouched. A
+  second injected failure after the transaction commits but before the reviewer
+  receives the response leaves the decision durable with the artifact still
+  present. After reopening SQLite, replay returns the same receipt ID without
+  creating a second decision or starting purge. Existing projection-failure
+  checks confirm purge waits until both persistence receipts are saved.
+- **Verification:** `test_api_review_workflow` passes 7/7, including the new
+  post-authorization-write failure and reopen retry path. Strict Pyright reports zero diagnostics,
+  errors-only Pylint passes for the changed test, and `git diff --check` is
+  clean.
+- **Open gate:** Other interruption points, per-target live recovery, and the
+  real attended reviewer action remain open.
+- **Outcome:** Add restart recovery evidence without claiming full cleanup
+  acceptance.
+
+## 2026-10-30 — Retry safely after a committed purge loses its response
+
+- **Intent:** Check that replay after SQLite reopen does not repeat a completed
+  deletion when the caller loses the response after purge status is committed.
+- **Changed fact:** The review workflow regression now injects an error after
+  both canonical persistence receipts are committed and the exact staged file
+  is removed. It then reopens SQLite and retries the same projection request;
+  the durable receipt stays complete, the file stays absent, and the target
+  attempt count remains one.
+- **Verification:** The focused review regression and all seven tests in
+  `test_api_review_workflow` pass. Strict Pyright reports zero diagnostics,
+  errors-only Pylint passes for the test module, and `git diff --check` is
+  clean.
+- **Open gate:** Other interruption points, per-target live recovery, and the
+  real attended reviewer action remain open.
+- **Outcome:** Add one idempotent post-purge restart/retry boundary without
+  claiming complete cleanup acceptance.
+
+## 2026-10-30 — Deduplicate an equivalent Hermes summary event
+
+- **Intent:** Ensure a retry delivered as a new event ID does not create a
+  duplicate work-summary fact.
+- **Changed fact:** The end-to-end Hermes test sends an identical bounded
+  summary under a different attempt, turn, sequence, and event ID. Curator
+  processes and receipts the second event but retains only the first fact and
+  its original source-event reference. A separate regression keeps distinct
+  verification evidence references as separate facts.
+- **Verification:** All 10 `test_hermes_events` tests pass. Strict Pyright
+  reports zero diagnostics, errors-only Pylint passes for the changed test,
+  and `git diff --check` is clean.
+- **Open gate:** A real bound Hermes turn and Curator ledger readback are still
+  required; local integration tests do not prove live delivery.
+- **Outcome:** Verify semantic fact deduplication without merging distinct
+  evidence or claiming live Hermes acceptance.
+
+## 2026-10-30 — Verify review evidence outside the write transaction
+
+- **Intent:** Keep approval-time evidence verification outside SQLite's project
+  write fence while preserving an atomic review and cleanup-authorization
+  commit.
+- **Changed fact:** Review now rechecks current proof before the write
+  transaction. At commit, Curator rechecks the selected-fact digest under the
+  project fence, then writes the review and exact cleanup authorization in the
+  same transaction. This fixes the verifier failure found by the authenticated
+  API review test.
+- **Verification:** The API ingress, review workflow, and review CLI suites pass
+  28/28. Strict Pyright reports zero diagnostics, errors-only Pylint passes for
+  the changed implementation and tests, and `git diff --check` is clean.
+- **Open gate:** The attended human review and independent receipt
+  reconciliation remain unverified.
+- **Outcome:** Restore the approval path without weakening proof checks or
+  separating the decision from its cleanup authorization.
+
+## 2026-10-30 — Reject compound manual DNS challenge descriptions
+
+- **Intent:** Keep manually supplied DNS challenge values out of Curator facts
+  even when they are described as a challenge value rather than a direct code.
+- **Changed fact:** The reject-only content filter now detects compound
+  descriptions such as `manual DNS challenge value is …`. API ingress
+  regressions verify the challenge value and a `pwd=` value are rejected before
+  the event receipt or goal is written, while a harmless ACME TXT instruction
+  remains accepted.
+- **Verification:** `test_content_safety` and `test_api_evidence_ingress` pass
+  16/16. Strict Pyright, errors-only Pylint, and `git diff --check` pass.
+- **Open gate:** Pattern tests cover these named examples only. Universal
+  secret detection and the remaining log, journal, trace, backup, and producer
+  sinks remain unverified.
+- **Outcome:** Close a concrete manual-DNS wording gap without claiming broad
+  privacy coverage.
+
+## 2026-10-30 — Keep credentials out of local evidence process inputs
+
+- **Intent:** Prevent recognized credentials in owner-configured local probe
+  and test commands from appearing in child process argument listings.
+- **Changed fact:** Local evidence configuration now rejects sensitive options
+  and credential-shaped command arguments before creating service-probe or
+  repository-test resolvers. Loopback browser proof also rejects recognized
+  credentials in its URL before passing it as a browser process argument.
+  Errors do not echo rejected values.
+- **Verification:** The full focused `test_local_evidence_config` suite passes
+  11 tests, including password/token options, a credential assignment in an
+  argument, and a credential-shaped browser URL. `git diff --check` passes.
+- **Open gate:** This catches recognized patterns only. Other process, shell
+  history, journal, log, WAL, backup, and producer paths remain in the broad
+  privacy review.
+- **Outcome:** Close one local subprocess-argument path without claiming full
+  source-to-sink privacy coverage.
+
+## 2026-10-31 — Recheck local alpha runtime and backup inventory
+
+- **Intent:** Refresh current read-only evidence for the local operating and
+  recovery checklist without running purge, restore, installation, or restart.
+- **Changed fact:** The six-hour `curatormd-v2-dev-alpha` user timer is enabled
+  and active. Its latest service result at 00:00 +07 exited 0; its next run is
+  scheduled for 06:00. The configured backup inventory reports four recognized
+  daily snapshots (2026-10-28 through 2026-10-31), 34 unclassified entries,
+  38 observed entries, and 6,496,256 allocated bytes, below the warning-only
+  250 MiB threshold. The installed Hermes executable reports
+  `0.22.2+1558.gad06e63.dirty`; its installed source has no
+  `work_summary_json` or `codex_work_summary` implementation.
+- **Verification:** Read `systemctl --user show` timer/service properties,
+  called `measure_backup_directory` on the database's configured sibling
+  `backups` directory, and checked the installed Hermes version/source.
+  No database or service state was changed.
+- **Open gate:** Seven-copy rotation, restore, due 72-hour expiry, complete
+  backup-entry classification, and live Hermes work-summary delivery/readback
+  remain unverified.
+- **Outcome:** Record current local evidence and leave the operational gates
+  open for owner verification.
+
+## 2026-10-31 — Recover an interrupted multi-file cleanup
+
+- **Intent:** Verify retry behavior when a reviewed manifest is only partly
+  deleted before process loss.
+- **Changed fact:** A new disposable regression creates two approved files and
+  an unlisted canary. It interrupts after the second unlink, verifies the first
+  target already has one durable deletion result, reopens SQLite, then retries.
+  The retry marks the second target already absent, completes the same receipt,
+  does not repeat the first target, and leaves the canary untouched.
+- **Verification:** `PYTHONPATH=src:tests .venv/bin/python -m unittest
+  test_purge_lifecycle.PurgeLifecycleTests.test_partial_manifest_recovers_crash_after_second_delete`
+  passes (1 test).
+- **Open gate:** Live attended review, real cleanup authorization, and other
+  interruption and authority-change cases remain open.
+- **Outcome:** Add partial-manifest restart coverage without claiming full
+  one-action cleanup acceptance.
+
+## 2026-10-31 — Disable Linux pipe-handler core dumps
+
+- **Intent:** Make Curator's local crash-data guard effective with the host's
+  piped core-dump configuration.
+- **Changed fact:** The host's `core_pattern` pipes dumps to Apport, so setting
+  `RLIMIT_CORE` to zero alone is insufficient. Curator now also sets Linux
+  `PR_SET_DUMPABLE` to zero before processing arguments or local state; failure
+  returns a generic startup failure. Non-Linux POSIX systems retain the
+  resource-limit behavior.
+- **Verification:** `PYTHONPATH=src:tests .venv/bin/python -m unittest
+  test_process_privacy test_cli_argument_privacy` passes (6 tests). A separate
+  Python process confirms the actual host limits can be applied. The focused
+  tests mock `prctl` and verify its arguments and failure result.
+- **Open gate:** This prevents the local core-dump sink only. Logs, journal,
+  SQLite WAL, backups, and producer paths remain in the broad privacy review.
+- **Outcome:** Close the host-specific pipe-handler gap without claiming full
+  privacy coverage.
+
+Quality follow-up (2026-10-31): strict Pyright found a test importing the
+private dumpability helper. The regression now calls the public
+`disable_core_dumps` entry point and verifies the Linux `prctl` call through
+that contract. The six privacy/CLI tests, whole-repo Pyright, errors-only
+Pylint, Bandit, and `git diff --check` pass.
+
+## 2026-10-31 — Separate database queue counts from host readiness
+
+- **Intent:** Keep valid project queue counts visible when Hermes readiness is
+  missing or reports an unknown host dependency.
+- **Changed fact:** Added the read-only, project-authorized
+  `project_queue_snapshot` MCP tool. It returns observation timestamps,
+  database completeness, and event, review, purge, and expiry counts without
+  consulting host readiness. SQLite failures return unknown counts. The V2
+  extension now reads this tool separately from Hermes readiness.
+- **Verification:** The focused extension suite passes 31/31 tests. The API and
+  MCP suites pass 26/26, including project authorization, complete and failed
+  database reads, and MCP serialization. JavaScript syntax validation and
+  `git diff --check` pass. Extension 0.9.41 is packaged and installed locally;
+  its installed JavaScript SHA-256 matches source
+  (`553b30eae2d4a683f9ef3ffc695dea956789a2bd69998e890d698019f5ad0b96`), and
+  the package contains the new MCP tool call.
+- **Live read:** At 2026-10-31 00:59 +07, the configured workspace MCP launcher
+  returned a fresh, complete snapshot for `curatormd-v2-dev-alpha`; all event,
+  review, purge, and expiry counts were zero. The call was read-only and
+  content-free.
+- **Live dashboard path:** At 01:00 +07, the actual extension `showDashboard`
+  source was invoked with real Curator MCP and Hermes processes and the
+  configured project. Both feeds reported healthy and project-matched; the
+  queue counts, goals, and facts were zero. Only VS Code APIs were stubbed.
+- **Open gate:** The active VS Code window has not reloaded 0.9.41; rendered
+  acceptance against the new MCP tool remains open.
+- **Outcome:** Separate the two sources so a Hermes readiness failure cannot
+  suppress complete Curator queue counts.
+
+## 2026-10-31 — Bind Hermes readiness profiles to Curator projects
+
+- **Intent:** Stop the dashboard and status bar from comparing health from the
+  wrong Hermes project when multiple VS Code workspaces are open.
+- **Changed fact:** Added the application-scoped
+  `curatormdV2.hermesProfileBindings` User setting. It maps the exact project
+  ID returned by Curator to its Hermes profile, independently of Curator's
+  routing label. Local bindings now map `curatormd-v2-dev-alpha` to its matching
+  profile and `vhost-manager-alpha` to `renew-ssl-coding`. Missing mappings
+  leave health unknown while valid queue counts remain visible. No consumer
+  repository files were changed.
+- **Verification:** Read-only end-to-end source-path checks against the Curator
+  MCP launcher and Hermes CLI returned healthy, project-matched health and
+  complete queue snapshots for both project/profile pairs. `node --check`,
+  settings/package JSON parsing, and `git diff --check` passed. Extension
+  0.9.42 was packaged and installed locally. The focused regression for exact
+  project binding and missing-binding behavior passed (1 test).
+- **Open gate:** The active VS Code windows need to reload the installed
+  extension before the dashboard and status bar can display the corrected
+  project-specific results.
+- **Outcome:** Keep health checks tied to the matching local Hermes profile
+  without weakening project ID validation or changing consumer files.
+
+## 2026-10-31 — Verify cleanup dependency map in the reviewer packet
+
+- **Intent:** Ensure a human review binds exact staged-file occurrences to the
+  evidence they support and to an explicit retention or reacquisition choice.
+- **Changed fact:** Strengthened the attended-review regression to compare the
+  first displayed inventory/map with the second confirmation packet. The test
+  verifies occurrence identity, the initially unrecorded action, the selected
+  reacquisition action, and the final dependency-map digest. Product code
+  already persists and revalidates these bindings before review and cleanup.
+- **Verification:** The occurrence-binding schema regression and exact-review
+  CLI regression pass (2 tests).
+- **Open gate:** The owner still needs to complete and independently reconcile
+  a real local SDE decision and cleanup receipt; simulated review is not human
+  acceptance.
+- **Outcome:** Strengthen the machine-checkable packet contract without
+  claiming local owner review.
+
+## 2026-10-31 — Filter sensitive Codex summary paths
+
+- **Intent:** Keep credential-bearing filenames out of the durable Hermes
+  work-summary outbox and Curator facts.
+- **Changed fact:** The Hermes summary collector and profile hook now reject
+  path components that identify passphrases, cloud access keys, session keys,
+  cookies, OAuth client secrets, bearer tokens, and related credential names.
+  The profile hook drops invalid optional summaries but still forwards the
+  bounded turn lifecycle event.
+- **Verification:** Hermes collector, outbox, and profile-hook suites pass
+  15/15. `python3 scripts/check` passes all 12 checks.
+- **Open gate:** The installed Hermes runtime does not yet contain the producer;
+  live profile delivery and review of the remaining data sources and sinks are
+  still open.
+- **Outcome:** Reduce disclosure risk in this producer path without claiming
+  complete privacy coverage.
+
+<!-- curatormd-v2:goal:5ece0a846014501e891f2e3beed0bc913e80857842c58a3d9eafc2dca8f9c6c5:start -->
+### Goal `vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0`
+- Project: `curatormd\-v2\-dev\-alpha`
+- Problem: Complete remaining open requirements in Curator V2 at docs/curator\-v2\-plan\.md and docs/Repair V2 dashboard health and queue feeds PLAN\.md\.
+- Status: `active`
+- Lifecycle revision: `1`
+- Success criteria:
+  - `criterion\-01`: `open` — All remaining plan requirements are addressed with accurate evidence and open gates\.
+- Facts:
+  \- Intent: Complete the remaining Curator V2 checklist and dashboard\-feed plan items; keep V2 records and code separate from V1 and consumer repositories\. \(source event: vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0\-event\-intent\)
+  \- Change: Added project\-ID\-to\-Hermes\-profile routing in the V2 VS Code extension, installed extension 0\.9\.42, and strengthened the SDE cleanup confirmation packet regression\. \(source event: vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0\-event\-change\)
+  \- Change: The selected Hermes profile now returns the expected Curator project ID; VS Code extension 0\.9\.44 is installed locally with source\-matched code\. \(source event: vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0\-event\-health\-binding\-extension\-20261031\)
+  \- Open gate: Rendered confirmation remains open until the affected VS Code window reloads and refreshes; the current health result is degraded by event\_failures, not project mismatch\. \(source event: vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0\-event\-dashboard\-reload\-check\-20261031\)
+  \- Change: Under owner approval, terminally disposed the two exact evidence\-gated failed events, re\-enrolled curatormd\-v2\-dev\-alpha at source epoch 2, and restored local UID 1000 read/write/review grants\. Fresh queue read shows zero failed or pending events; Hermes readiness is healthy for the matching project\. \(source event: vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0\-event\-failed\-event\-recovery\-20261031\)
+<!-- curatormd-v2:block-sha256:d70af11b4b1af9a679b8601db6147e7a96d6f73af838d8ea8fab7cc67326faf3 -->
+<!-- curatormd-v2:goal:5ece0a846014501e891f2e3beed0bc913e80857842c58a3d9eafc2dca8f9c6c5:end -->

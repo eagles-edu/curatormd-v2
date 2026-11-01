@@ -19,7 +19,14 @@ import sys
 from typing import TextIO
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
-from .cli_interaction import confirm_exact_phrase
+from .cli_interaction import (
+    SafeArgumentParser,
+    confirm_exact_phrase,
+    parse_safe_arguments,
+)
+from .evidence import EvidenceVerifier
+from .hosted_mcp import validate_host_evidence_config_path
+from .local_evidence_config import load_local_evidence_verifier
 from .models import (
     ArtifactRef,
     ReacquisitionAction,
@@ -33,8 +40,10 @@ from .project_access import (
 )
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
+from .process_privacy import protect_process_data
 from .rate_limiter import SQLiteTokenBucket
 from .reviews import ReviewAuthorizationError
+from .service_types import EvidenceGateError
 from .store import CuratorStore
 
 
@@ -154,7 +163,7 @@ def _local_subject() -> str:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-review",
         description=(
             "Review one Curator V2 SDE interactively as the current local OS account."
@@ -165,6 +174,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--target",
         help="configured canonical Markdown target; required when multiple targets exist",
+    )
+    parser.add_argument(
+        "--evidence-config",
+        type=Path,
+        help="owner-only host evidence config path; never stored in the project",
     )
     commands = parser.add_subparsers(dest="operation", required=True)
     commands.add_parser("queue", help="show pending SDE candidates")
@@ -184,10 +198,16 @@ def _build_api(
     config: ProjectConfig,
     store: CuratorStore,
     review_authorizer: LocalUIDReviewAuthorizer,
+    evidence_verifier: EvidenceVerifier | None = None,
 ) -> AuthenticatedCuratorAPI:
     """Build a project-fingerprint-bound API with a local UID review host."""
 
-    plugin = ProjectPlugin.bind(config, store, review_authorizer=review_authorizer)
+    plugin = ProjectPlugin.bind(
+        config,
+        store,
+        evidence_verifier=evidence_verifier,
+        review_authorizer=review_authorizer,
+    )
     authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
         store,
         ProjectAuthorizationBinding.from_project_config(
@@ -501,8 +521,16 @@ def main(
 ) -> int:
     """Run the attended local review workflow without accepting identity input."""
 
-    arguments = _parser().parse_args(argv)
     streams = _CliStreams(stdin or sys.stdin, stdout or sys.stdout, stderr or sys.stderr)
+    if not protect_process_data():
+        streams.errors.write("Curator review failed (privacy limits unavailable).\n")
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, streams.errors,
+        "Curator review failed (invalid command arguments).\n",
+    )
+    if arguments is None:
+        return 2
     try:
         subject = _local_subject()
         if arguments.operation in {"review", "expire"} and not streams.input.isatty():
@@ -520,14 +548,29 @@ def main(
         review_authorizer = LocalUIDReviewAuthorizer()
         subject = review_authorizer.authorize_database(database, subject)
         config = ProjectConfig.load(arguments.project_root)
+        evidence_verifier = None
+        if arguments.evidence_config is not None:
+            evidence_path = validate_host_evidence_config_path(
+                arguments.evidence_config, config.project_root
+            )
+            evidence_verifier = load_local_evidence_verifier(
+                evidence_path, project_id=config.project_id
+            )
         store = CuratorStore(database)
     except Exception:  # pylint: disable=broad-exception-caught
         streams.errors.write("Curator review failed (identity or configuration error).\n")
         return 2
     try:
         caller = AuthenticatedCaller(subject)
-        api = _build_api(config, store, review_authorizer)
+        api = _build_api(
+            config, store, review_authorizer, evidence_verifier=evidence_verifier
+        )
         return _dispatch_operation(arguments, api, caller, config, streams)
+    except EvidenceGateError:
+        streams.errors.write(
+            "Curator did not record approval because current verification evidence is missing or stale.\n"
+        )
+        return 2
     except Exception:  # pylint: disable=broad-exception-caught
         streams.errors.write(
             "Curator review failed (authorization, inventory, or persistence error).\n"

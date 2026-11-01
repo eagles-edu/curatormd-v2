@@ -9,8 +9,10 @@ import sys
 from typing import TextIO
 
 from .cli_args import positive_integer_limit
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
+from .process_privacy import protect_process_data
 from .router import DurableEventRouter, MAX_ROUTER_BATCH, MAX_ROUTER_PROJECTS
 from .store import CuratorStore
 
@@ -22,7 +24,7 @@ def _positive_limit(value: str) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-router",
         description=(
             "Process one bounded batch of durable events for explicitly bound projects."
@@ -67,9 +69,17 @@ def main(
 ) -> int:
     """Run one explicitly authorized local router pass and emit safe counters."""
 
-    arguments = _parser().parse_args(argv)
-    output = stdout or sys.stdout
     errors = stderr or sys.stderr
+    if not protect_process_data():
+        print("Curator V2 router failed (privacy limits unavailable).", file=errors)
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, errors,
+        "Curator V2 router failed (invalid command arguments).\n",
+    )
+    if arguments is None:
+        return 2
+    output = stdout or sys.stdout
     if not arguments.route_events:
         print("Refusing event processing without --route-events.", file=errors)
         return 2

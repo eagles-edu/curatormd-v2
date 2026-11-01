@@ -26,6 +26,7 @@ from curatormd_v2 import (
     ProjectRegistrationRequest,
     SuccessCriterion,
 )
+from curatormd_v2.content_safety import SensitiveContentError
 from curatormd_v2.project_config import CONFIG_FILENAME, ProjectConfig
 from curatormd_v2.project_plugin import ProjectPlugin
 from curatormd_v2.store import ConflictError
@@ -72,6 +73,27 @@ class ProjectPluginStagingTests(ProjectPluginTestSupport):
             {item.sha256 for item in inventory.artifacts},
             {hashlib.sha256(b"same temporary bytes").hexdigest()},
         )
+
+    def test_stage_rejects_newly_recognized_credential_labels_before_publish(self) -> None:
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store)
+        goal_id = "private-stage-content"
+        self._goal(plugin, goal_id)
+        target = self.stage / goal_id / "import" / "passphrase-import.bin"
+
+        with self.assertRaisesRegex(
+            SensitiveContentError, "staged artifact content: credential_assignment"
+        ):
+            plugin.stage_artifact(
+                goal_id,
+                "import",
+                "passphrase-import",
+                io.BytesIO(b"passphrase=synthetic-private-value"),
+            )
+
+        self.assertFalse(target.exists())
+        self.assertFalse(any(path.name.endswith(".partial") for path in self.root.rglob("*")))
+        inventory = plugin.discover_staging_artifacts(goal_id)
+        self.assertEqual(inventory.artifacts, ())
 
     def test_large_import_staging_uses_bounded_python_memory(self) -> None:
         """A large producer stream is copied in bounded chunks, not buffered whole."""

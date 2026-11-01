@@ -1,0 +1,23 @@
+# Curator V2's own checkout is the active repository for local alpha proofing.
+schema_version = 1
+backend_api_version = 1
+project_id = "curatormd-v2-dev-alpha"
+
+[scope]
+read_paths = ["src", "tests", "docs", "integrations", "tools", "persistence"]
+
+[checklists]
+implementation = "docs/curator-v2-plan.md"
+
+[evidence]
+adapters = []
+
+[actions]
+adapters = []
+
+[staging]
+root = ".curatormd-v2/side-buffer"
+max_project_bytes = 262144000
+
+[persistence]
+targets = ["persistence/HISTORY.md", "persistence/LESSONS-LEARNED.md"]

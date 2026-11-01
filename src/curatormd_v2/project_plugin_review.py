@@ -87,8 +87,8 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
     def sde_assess(
         self,
         request: SDEAssessmentRequest,
-    ) -> SDECandidate | None:
-        """Create a review proposal only from verified facts in this project."""
+    ) -> SDECandidate:
+        """Create a pending owner-review proposal from verified project facts."""
 
         expected_revision = self._capture_active_project_revision()
 
@@ -210,10 +210,13 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
                 )
                 validated_dependency_map_sha256 = request.dependency_map_sha256
             validated_request = replace(request, artifacts=artifacts)
+            prepared_confirmation = self.service.prepare_sde_confirmation(
+                validated_request,
+                authenticated_subject=authenticated_subject,
+            )
             with self._project_revision_fence(expected_revision):
-                receipt = self.service.sde_confirm(
-                    validated_request,
-                    authenticated_subject=authenticated_subject,
+                receipt = self.service.commit_sde_confirmation(
+                    prepared_confirmation
                 )
                 if validated_request.artifact_inventory_complete:
                     if validated_dependency_map_sha256 is None:

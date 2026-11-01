@@ -53,6 +53,43 @@ class LocalEvidenceConfigTests(unittest.TestCase):
 
         self.assertEqual(type(verifier).__name__, "ServiceProbeEvidenceAdapter")
 
+    def test_rejects_credentials_in_child_process_arguments(self) -> None:
+        marker = "alpha-process-secret-731"
+        probe = cast(dict[str, object], self.value["probe"])
+        for command in (
+            [sys.executable, "--password", marker],
+            [sys.executable, f"--api-key={marker}"],
+            [sys.executable, "-c", f"api_key={marker}"],
+        ):
+            with self.subTest(command_shape=command[1]):
+                probe["command"] = command
+                self._write()
+                with self.assertRaisesRegex(
+                    ValueError, "private option|sensitive content"
+                ) as error:
+                    load_local_service_probe_verifier(
+                        self.path, project_id="vhost-manager-alpha"
+                    )
+                self.assertNotIn(marker, str(error.exception))
+
+        self.value = {
+            "schema_version": 1,
+            "project_id": "vhost-manager-alpha",
+            "repository_test": {
+                "adapter_id": "local-repository-test",
+                "runner_id": "curator-unit-tests",
+                "source_subject": "local-git:eaglesvn",
+                "repository_root": str(self.root),
+                "command": [sys.executable, "--token", marker],
+            },
+        }
+        self._write()
+        with self.assertRaisesRegex(ValueError, "private option") as error:
+            load_local_evidence_verifier(
+                self.path, project_id="vhost-manager-alpha"
+            )
+        self.assertNotIn(marker, str(error.exception))
+
     def test_loads_browser_proof_and_combined_local_sources(self) -> None:
         self.value["browser_proof"] = {
             "adapter_id": "local-browser-home",
@@ -142,6 +179,22 @@ class LocalEvidenceConfigTests(unittest.TestCase):
             load_local_browser_proof_verifier(
                 self.path, project_id="vhost-manager-alpha"
             )
+
+    def test_browser_proof_rejects_sensitive_url_content(self) -> None:
+        marker = "browser-private-value-731"
+        self.value["browser_proof"] = {
+            "adapter_id": "local-browser-home",
+            "proof_id": "vhost-home",
+            "url": f"http://127.0.0.1/password={marker}",
+            "executable": sys.executable,
+        }
+        self._write()
+
+        with self.assertRaisesRegex(ValueError, "sensitive content") as error:
+            load_local_browser_proof_verifier(
+                self.path, project_id="vhost-manager-alpha"
+            )
+        self.assertNotIn(marker, str(error.exception))
 
     def test_rejects_group_or_world_access(self) -> None:
         self._write(mode=0o640)

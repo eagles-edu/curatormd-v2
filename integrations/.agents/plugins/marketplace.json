@@ -1,0 +1,20 @@
+{
+  "name": "curator-v2-local",
+  "interface": {
+    "displayName": "Curator V2 local"
+  },
+  "plugins": [
+    {
+      "name": "curator-v2",
+      "source": {
+        "source": "local",
+        "path": "./codex-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer tools"
+    }
+  ]
+}

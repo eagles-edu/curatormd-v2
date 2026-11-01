@@ -21,6 +21,7 @@ import sys
 from mcp.server import MCPServer
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .evidence import EvidenceVerifier
 from .local_evidence_config import load_local_evidence_verifier
 from .mcp_server import HermesContextOptions, RequestHostReadiness, build_mcp_server
@@ -30,6 +31,7 @@ from .project_access import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAuthorizationBinding,
 )
+from .process_privacy import protect_process_data
 from .rate_limiter import SQLiteTokenBucket
 from .store import CuratorStore
 
@@ -55,17 +57,8 @@ def _local_account_subject() -> str:
 def set_process_privacy_limits() -> None:
     """Restrict files and core dumps created by this local MCP process."""
 
-    if os.name != "posix":
+    if not protect_process_data():
         raise RuntimeError("local MCP privacy limits are unavailable")
-    try:
-        import resource
-    except ImportError:
-        raise RuntimeError("local MCP privacy limits are unavailable") from None
-    try:
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        os.umask(0o077)
-    except (OSError, ValueError):
-        raise RuntimeError("local MCP privacy limits could not be applied") from None
 
 
 def validate_host_evidence_config_path(
@@ -202,7 +195,7 @@ def build_local_profile_mcp(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-mcp",
         description="Run one local, profile-bound Curator V2 stdio server.",
     )
@@ -240,9 +233,21 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run the pinned local MCP server; diagnostics go to stderr only."""
 
-    args = _parser().parse_args(argv)
     try:
         set_process_privacy_limits()
+    except Exception:  # pylint: disable=broad-exception-caught
+        print(
+            "Curator V2 MCP startup failed (privacy limits unavailable).",
+            file=sys.stderr,
+        )
+        return 2
+    args = parse_safe_arguments(
+        _parser(), argv, sys.stderr,
+        "Curator V2 MCP startup failed (invalid command arguments).\n",
+    )
+    if args is None:
+        return 2
+    try:
         runtime = build_local_profile_mcp(
             project_root=args.project_root,
             database=args.database,

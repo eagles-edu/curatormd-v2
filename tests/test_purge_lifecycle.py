@@ -727,6 +727,84 @@ class PurgeLifecycleTests(PurgeTestSupport):
         )
 
 
+    def test_partial_manifest_recovers_crash_after_second_delete(self) -> None:
+        """Restart keeps the first receipt and reconciles a later absent file."""
+
+        candidate_id = self.candidate("multi-file interrupted cleanup")
+        first_path, first = self.artifact("a-first.json")
+        second_path, second = self.artifact("b-second.json")
+        unrelated_path = self.stage / "unrelated.json"
+        unrelated_path.write_bytes(b"outside the approved inventory")
+
+        class CrashOnSecondDelete(ArtifactPurger):
+            """Interrupt after the second approved unlink, before its receipt."""
+
+            calls = 0
+
+            def purge(self, artifact: ArtifactRef) -> bool:
+                self.calls += 1
+                deleted = super().purge(artifact)
+                if self.calls == 2:
+                    raise RuntimeError("simulated process loss after second delete")
+                return deleted
+
+        crashing_service = CuratorService(
+            self.store,
+            CrashOnSecondDelete(self.stage),
+            TestVerifier(),
+            TestReviewAuthorizer(),
+        )
+        receipt = crashing_service.sde_confirm(
+            SDEConfirmationRequest(
+                candidate_id=candidate_id,
+                decision=ReviewDecision.APPROVED,
+                artifacts=(first, second),
+                artifact_inventory_complete=True,
+            )
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "process loss after second delete"
+        ):
+            self.persist_canonical(receipt, crashing_service)
+
+        self.assertFalse(first_path.exists())
+        self.assertFalse(second_path.exists())
+        self.assertTrue(unrelated_path.exists())
+        interrupted = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )
+        self.assertEqual(interrupted[0].status, ArtifactStatus.PURGED)
+        self.assertEqual(interrupted[0].outcome, PurgeOutcome.DELETED)
+        self.assertEqual(interrupted[0].attempts, 1)
+        self.assertEqual(interrupted[1].status, ArtifactStatus.PENDING)
+        self.assertEqual(interrupted[1].attempts, 1)
+        self.assertIsNone(interrupted[1].outcome)
+
+        database_path = self.store.database
+        self.store.close()
+        self.store = CuratorStore(database_path)
+        self.addCleanup(self.store.close)
+        recovered_service = CuratorService(
+            self.store,
+            ArtifactPurger(self.stage),
+            TestVerifier(),
+            TestReviewAuthorizer(),
+        )
+        recovered = recovered_service.retry_pending_purges()
+        self.assertEqual(len(recovered), 1)
+        self.assertEqual(recovered[0].purge_status, PurgeStatus.COMPLETE)
+        reconciled = self.store.get_purge_target_records(
+            receipt.receipt_id, "default"
+        )
+        self.assertEqual(reconciled[0].status, ArtifactStatus.PURGED)
+        self.assertEqual(reconciled[0].outcome, PurgeOutcome.DELETED)
+        self.assertEqual(reconciled[0].attempts, 1)
+        self.assertEqual(reconciled[1].status, ArtifactStatus.PURGED)
+        self.assertEqual(reconciled[1].outcome, PurgeOutcome.ALREADY_ABSENT)
+        self.assertEqual(reconciled[1].attempts, 2)
+        self.assertTrue(unrelated_path.exists())
+
+
     def test_sde_assessment_does_not_purge_before_human_decision(self) -> None:
         path, _artifact = self.artifact()
         candidate_id = self.candidate()

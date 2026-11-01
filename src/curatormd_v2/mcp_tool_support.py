@@ -62,6 +62,16 @@ class ArtifactInput(TypedDict):
     occurrence_id: NotRequired[str | None]
     reacquisition_action: NotRequired[str]
 
+
+class EvidenceInput(TypedDict):
+    """MCP evidence reference with an explicit digest and observed result."""
+
+    evidence_kind: str
+    locator: str
+    sha256: str
+    outcome: str
+    occurrence_id: NotRequired[str]
+
 def parse_criteria(values: list[dict[str, str]]) -> tuple[SuccessCriterion, ...]:
     """Parse the exact compact criterion objects accepted by MCP tools."""
 
@@ -72,7 +82,7 @@ def parse_criteria(values: list[dict[str, str]]) -> tuple[SuccessCriterion, ...]
         criteria.append(SuccessCriterion(value["criterion_id"], value["description"]))
     return tuple(criteria)
 
-def parse_evidence(values: list[dict[str, str]]) -> tuple[EvidenceRef, ...]:
+def parse_evidence(values: list[EvidenceInput]) -> tuple[EvidenceRef, ...]:
     """Parse evidence references while rejecting extra fields."""
 
     evidence: list[EvidenceRef] = []

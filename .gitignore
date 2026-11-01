@@ -11,6 +11,7 @@ dist/
 .coverage
 coverage.xml
 .curatormd/
+.curatormd-v2/
 .env
 .env.*
 !.env.example

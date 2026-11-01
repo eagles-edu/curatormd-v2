@@ -11,9 +11,11 @@ from curatormd_v2 import (
     CriterionStatus,
     FactKind,
     GoalStatus,
+    Materiality,
     SuccessCriterion,
 )
 from curatormd_v2.events import GoalCriteriaAmended
+from curatormd_v2.service import EvidenceGateError, SDEAssessmentRequest
 
 
 class GoalEvidenceEpochTests(LifecycleTestSupport):
@@ -104,6 +106,75 @@ class GoalEvidenceEpochTests(LifecycleTestSupport):
             old_proof_ids.intersection(current_proof_ids),
             "completion after reopen must use fresh criterion evidence",
         )
+
+    def test_sde_assessment_rejects_proof_from_before_reopen_and_criteria_change(self) -> None:
+        old_verification = self.verify("unit", "Original unit suite passed")
+        self.verify("probe", "Original readiness probe passed")
+        completed = self.service.goal_finish(
+            self.goal.goal_id, "Original criteria passed with verified evidence"
+        )
+        reopened = self.service.goal_reopen(
+            self.goal.goal_id,
+            "A regression requires another evidence pass",
+            "Rerun the unit and readiness checks",
+            expected_lifecycle_revision=completed.lifecycle_revision,
+        )
+
+        request = SDEAssessmentRequest(
+            self.goal.goal_id,
+            Materiality.IMPLEMENTATION,
+            "The old unit result supports a durable implementation decision",
+            (old_verification.fact_id,),
+            impact="The earlier check passed before the goal was reopened",
+            retrieval_value="Reviewers can find the earlier check result",
+        )
+        with self.assertRaisesRegex(EvidenceGateError, "current passing evidence"):
+            self.service.sde_assess(request)
+
+        self.service.goal_amend_criteria(
+            GoalCriteriaAmended(
+                goal_id=self.goal.goal_id,
+                expected_revision=1,
+                success_criteria=(
+                    SuccessCriterion("unit", "Updated unit suite passes"),
+                ),
+                reason="The owner clarified the verification requirement",
+                next_action="Run the updated unit suite",
+                expected_lifecycle_revision=reopened.lifecycle_revision,
+            )
+        )
+        with self.assertRaisesRegex(EvidenceGateError, "current passing evidence"):
+            self.service.sde_assess(request)
+
+        current_verification = self.service.goal_fact(
+            self.goal.goal_id,
+            FactKind.VERIFICATION,
+            "Updated unit suite passed",
+            criterion_id="unit",
+            evidence=(self.proof("unit-after-amendment"),),
+        )[0]
+        with self.assertRaisesRegex(EvidenceGateError, "current passing evidence"):
+            self.service.sde_assess(
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "A fresh proof cannot make a stale selected proof current",
+                    (old_verification.fact_id, current_verification.fact_id),
+                    impact="The selected evidence set includes proof from before amendment",
+                    retrieval_value="Reviewers must see only current supporting proof",
+                )
+            )
+        accepted = self.service.sde_assess(
+            SDEAssessmentRequest(
+                self.goal.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The updated unit result supports the implementation decision",
+                (current_verification.fact_id,),
+                impact="The current unit check passed after the criteria changed",
+                retrieval_value="Reviewers can find current proof for the decision",
+            )
+        )
+        self.assertIsNotNone(accepted)
 
     def test_reopen_requires_completed_dependents_and_parent_to_reopen_first(self) -> None:
         prerequisite = self.service.goal_start(

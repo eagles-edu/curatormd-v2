@@ -95,7 +95,7 @@ class LocalBrowserProofTests(unittest.TestCase):
             "http://localhost/private?token=secret",
         ):
             with self.subTest(url=url):
-                with self.assertRaisesRegex(ValueError, "loopback|credentials"):
+                with self.assertRaisesRegex(ValueError, "loopback|credentials|sensitive content"):
                     LocalBrowserProofSpec(
                         project_id="vhost-manager-alpha",
                         proof_id="vhost-home",

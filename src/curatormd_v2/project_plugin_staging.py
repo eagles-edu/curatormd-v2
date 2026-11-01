@@ -261,6 +261,16 @@ class ProjectStagingMixin(ABC):
             staging_project_file_limit=self.config.staging_max_project_files,
         ), scrub_count, database_observed_at
 
+    def operational_queue_inputs(
+        self: ProjectStagingMixin,
+    ) -> tuple[EventQueueStatus, ProjectOperationalCounts, str]:
+        """Read database-backed queue counts without scanning host dependencies."""
+
+        queue, counts, _usage, _scrub_count, database_observed_at = (
+            self.service.store.project_health_inputs(self.config.project_id)
+        )
+        return queue, counts, database_observed_at
+
     def discover_staging_artifacts(
         self: ProjectStagingMixin, goal_id: str
     ) -> StagingArtifactInventory:

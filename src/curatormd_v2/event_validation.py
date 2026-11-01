@@ -62,7 +62,9 @@ def require_event_fields(
     missing = required - value.keys()
     extra = value.keys() - required - optional
     if missing or extra:
-        raise ValueError(f"invalid fields; missing={sorted(missing)}, extra={sorted(extra)}")
+        # Unknown keys are caller-controlled and can contain credential or
+        # transcript text. Keep the public error independent of their names.
+        raise ValueError("invalid event fields")
 
 
 def event_string(value: object, name: str, *, optional: bool = False) -> str | None:

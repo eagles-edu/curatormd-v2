@@ -18,7 +18,11 @@ import sys
 from typing import TextIO
 
 from .api import AuthenticatedCaller, ProjectAction
-from .cli_interaction import confirm_exact_phrase
+from .cli_interaction import (
+    SafeArgumentParser,
+    confirm_exact_phrase,
+    parse_safe_arguments,
+)
 from .project_access import (
     ConsumerDrainAuthorizationRequest,
     ProjectAccessManager,
@@ -27,6 +31,7 @@ from .project_access import (
 )
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
+from .process_privacy import protect_process_data
 from .store import (
     ConsumerBindingTransitionRequest,
     CuratorStore,
@@ -50,6 +55,13 @@ _OPERATION_ACTIONS = {
     "revoke": ProjectAdministrationAction.REVOKE,
     "view": ProjectAdministrationAction.VIEW,
 }
+_RATIONALE_OPERATIONS = frozenset(
+    {
+        "register", "update", "suspend", "reactivate", "deregister",
+        "deregister_finalize", "reenroll", "grant", "revoke", "drain",
+        "dispose_event", "retire",
+    }
+)
 _TRANSITION_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 
 
@@ -114,7 +126,7 @@ class _SingleOperationPolicy:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-access",
         description=(
             "Attend one local project-access operation. This command is not "
@@ -126,12 +138,6 @@ def _parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--project-root", required=True, type=Path)
         command.add_argument("--database", required=True, type=Path)
-        if name in {
-            "register", "update", "suspend", "reactivate", "deregister",
-            "deregister_finalize", "reenroll", "grant", "revoke",
-            "drain", "dispose_event", "retire",
-        }:
-            command.add_argument("--rationale", required=True)
         if name in {
             "update", "suspend", "reactivate", "deregister",
             "deregister_finalize", "reenroll",
@@ -276,6 +282,32 @@ def _confirmed_caller(
     ):
         return None
     return AuthenticatedCaller(actor_id)
+
+
+def _read_rationale(
+    operation: str,
+    input_stream: TextIO,
+    errors: TextIO,
+) -> str | None:
+    """Read a bounded operator rationale from attended stdin, not argv."""
+
+    if operation not in _RATIONALE_OPERATIONS:
+        return ""
+    errors.write(
+        "Rationale (one line; do not include passwords, keys, or raw task text): "
+    )
+    errors.flush()
+    line = input_stream.readline(1002)
+    rationale = line.rstrip("\r\n")
+    if (
+        not rationale.strip()
+        or len(rationale) > 1000
+        or "\n" in rationale
+        or "\r" in rationale
+    ):
+        errors.write("Invalid rationale; operation cancelled.\n")
+        return None
+    return rationale
 
 
 @dataclass(frozen=True, slots=True)
@@ -576,13 +608,10 @@ def _perform(
     config: ProjectConfig,
     manager: ProjectAccessManager,
     caller: AuthenticatedCaller,
+    rationale: str,
     plugin: ProjectPlugin | None = None,
 ) -> dict[str, object]:
     """Dispatch one attended operation to its narrow implementation."""
-
-    rationale = getattr(arguments, "rationale", "")
-    if not isinstance(rationale, str):
-        raise ValueError("rationale must be text")
     context = _OperationContext(arguments, config, manager, caller, rationale, plugin)
     handlers = {
         "register": _registration_result,
@@ -614,10 +643,18 @@ def main(
 ) -> int:
     """Perform one attended, audited local project-access operation."""
 
-    arguments = _parser().parse_args(argv)
     input_stream = stdin or sys.stdin
     output = stdout or sys.stdout
     errors = stderr or sys.stderr
+    if not protect_process_data():
+        errors.write("Curator access operation failed (privacy limits unavailable).\n")
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, errors,
+        "Curator access operation failed (invalid command arguments).\n",
+    )
+    if arguments is None:
+        return 2
     database = arguments.database.expanduser()
     if not database.is_absolute():
         errors.write("Curator access operation failed (invalid configuration).\n")
@@ -627,6 +664,9 @@ def main(
         config = ProjectConfig.load(arguments.project_root)
         caller = _confirmed_caller(arguments, config, input_stream, errors)
         if caller is None:
+            return 2
+        rationale = _read_rationale(arguments.operation, input_stream, errors)
+        if rationale is None:
             return 2
         with closing(CuratorStore(database)) as store:
             manager = ProjectAccessManager(
@@ -642,7 +682,9 @@ def main(
                 if arguments.operation in {"view", "reactivate"}
                 else None
             )
-            result = _perform(arguments, config, manager, caller, plugin)
+            result = _perform(
+                arguments, config, manager, caller, rationale, plugin
+            )
             output.write(
                 json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n"
             )

@@ -100,7 +100,7 @@ PROJECT_USAGE_COLUMNS = {
             "checklist_version", "checklist_source_text", "parent_goal_id",
             "depends_on_json", "status", "next_action", "superseded_by_goal_id",
             "criteria_revision", "lifecycle_revision", "created_at", "updated_at",
-            "initial_status", "source_event_id",
+            "initial_status", "source_event_id", "source_event_payload_sha256",
         }
     ),
     "purge_targets": frozenset(

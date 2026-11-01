@@ -1,5 +1,7 @@
 # Curator V2: goal-ledger intelligence, not transcript curation
 
+## /home/eaglesvn/.nvm/versions/node/v24.21.0/bin/codex
+
 ## Summary
 
 Curator V2 is a standalone rewrite. It does not import V1 runtime code, state,
@@ -138,7 +140,12 @@ flowchart TB
   any cancelled or superseded dependency. Preserve the old links and terminal
   history. Criteria changes, cancellation, and supersession require separate
   explicit lifecycle events.
-- A significance gate derives an SDE only when evidence supports a durable implementation, decision, recovery, or lesson. Routine progress remains a goal update.
+- Ordinary progress remains a goal update. At every completed child or one-off
+  task, supported task facts receive a pending owner-review assessment, even if
+  routine or not yet verified. Missing or stale proof must be labeled; it is
+  never presented as verified. Task completion still requires its success
+  checks, and approval for memorialization still requires current passing
+  evidence. Only the owner decides importance and disposition.
 - Every durable record is short bullets, separating observed facts from planned or unverified claims.
 - One explicit SDE approve/reject action also authorizes purge of the complete
   exact artifact inventory displayed with the decision. Store a distinct
@@ -234,9 +241,9 @@ Progress counts include top-level delivery rows in numbered sections 0–10 and
 templates are excluded. The authoritative recount is
 `python3 tools/count_curator_v2_delivery.py`; the raw all-file checkbox total
 also includes section 11 and is not the delivery-progress count. Current
-recount (2026-10-30): **171 of 178 delivery rows are complete; 7 are open**.
-The full raw checkbox count is **186 of 194 complete; 8 are open**. Section 11
-contributes 15 complete rows and one open row; do not compare these two scopes
+recount (2026-11-01): **171 of 178 delivery rows are complete; 7 are open**.
+The full raw checkbox count is **187 of 194 complete; 7 are open**. Section 11
+contributes 16 complete rows and no open rows; do not compare these two scopes
 as if their totals were the same. Historical narrative counts below are not
 current.
 
@@ -1161,9 +1168,12 @@ plugin or Hermes integration is installed and working end to end.
 
 - [x] Distinguish routine progress from implementation, decision, recovery,
       or verified-lesson materiality.
-- [x] Refuse a routine SDE candidate and require selected supporting facts.
-- [x] Require a selected passing verification fact before creating an SDE
-      candidate; keep candidate facts within the assessed goal.
+- [x] Keep routine SDE assessments pending for owner review instead of
+      discarding them; require selected supporting facts and explicit owner
+      disposition before anything is memorialized.
+- [x] Require any selected verification fact to be current and passing; allow
+      a pending SDE proposal without a verification fact, but require current
+      passing evidence before approval; keep candidate facts within the goal.
 - [x] Deduplicate repeated assessments over the same supporting facts.
 - [x] Keep SDE candidates pending explicit human approval or rejection.
 - [x] Require a fail-closed host review-authorizer before decisions; store the
@@ -4471,6 +4481,161 @@ unknown. The dashboard and live event-delivery gates remain open.
       Prometheus output. This covers one metrics boundary only; logs/traces in
       every producer path, backups outside the approved retry exception, host
       crash sinks, and broad source coverage remain open.
+      Producer-boundary privacy progress (2026-10-30): Hermes's dedicated V2
+      profile hook now accepts only the exact bounded work-summary fields,
+      approved check labels, safe relative paths, and valid counts/codes. It
+      drops malformed or sensitive optional summaries while still delivering
+      the lifecycle event, so a rejected summary cannot stall event delivery.
+      Focused hook tests pass 4/4 and Hermes `scripts/check` passes all 12
+      checks. This protects the profile-to-Curator boundary; a real profile
+      delivery and the remaining log, trace, backup, host, and renderer sinks
+      still need local review.
+      Core-dump guard progress (2026-10-30): every Curator V2 CLI entry point
+      now disables POSIX core dumps before parsing arguments or opening local
+      state; inability to apply the limit fails closed with a generic message.
+      Access-reason progress (2026-10-30): the attended access CLI no longer
+      accepts an audit rationale as a command-line argument. It reads one
+      bounded line from stdin only after the exact confirmation phrase, rejects
+      empty, multiline, or overlong input, and does not echo invalid argv values
+      in parser errors. The focused access CLI suite passes five tests,
+      including a credential-shaped canary supplied through the removed option;
+      the attended reviewer and API review suites pass 15 tests with their
+      local access setup updated to use the prompt. Operator instructions no
+      longer put rationales in shell commands. Strict Pyright reports zero
+      diagnostics. This covers local rationale input and its review setup only;
+      shell/terminal recording configuration and the broader log, WAL, trace,
+      backup, host, and producer data flows remain unverified, so this privacy
+      item stays open.
+      CLI parser progress (2026-10-30): all eight V2 command entry points now
+      use a shared parser that discards malformed caller text and returns only
+      a fixed command-specific error. A credential-canary regression invokes
+      every CLI and verifies the marker is absent from stderr. The hosted MCP
+      launcher now applies core-dump and file-mode limits before parsing. The
+      focused command suites pass 55 tests; strict Pyright reports zero
+      diagnostics, and errors-only Pylint passes. This prevents argument-parser
+      echoing only; it does not inspect shell history, terminal recording, or
+      runtime logs and cannot close the cross-flow privacy criterion.
+      A focused regression covers successful application, failure, and a
+      non-POSIX platform (3/3). This removes one local crash-dump sink only;
+      system journal, logs, SQLite WAL, approved retry backups, and producer
+      paths remain in the broader privacy review, so the item stays open.
+      Linux pipe-handler follow-up (2026-10-31): this host routes crashes to
+      Apport through `/proc/sys/kernel/core_pattern`, where `RLIMIT_CORE=0`
+      alone is ignored. The Curator guard now also sets Linux `PR_SET_DUMPABLE`
+      to zero and fails closed if that call fails. Six focused privacy/CLI tests
+      pass, and a live child process confirms both limits apply. This closes the
+      host's piped core-dump path for Curator processes only; logs, journal,
+      SQLite WAL, backups, and producer paths remain open.
+      Quality follow-up (2026-10-31): strict Pyright found the core-dump test
+      calling a private helper directly. The regression now exercises the
+      public `disable_core_dumps` entry point, including Linux `prctl` success
+      and failure. The six focused privacy/CLI tests pass; whole-repo Pyright,
+      errors-only Pylint, Bandit, and `git diff --check` pass. The broader
+      source-to-sink privacy item remains open.
+      File-creation guard progress (2026-11-01): centralized the core-dump and
+      owner-only `umask(0077)` protections and applied them before argument
+      parsing in all nine local command entrypoints: hosted MCP, Codex MCP,
+      stage, maintenance, access, review, router, storage, and evidence. All
+      eight focused process-privacy tests and all eight affected CLI/MCP suites
+      pass (53 tests total); the touched modules compile and focused strict
+      Pyright reports zero diagnostics. This protects new
+      files created by Curator command processes. A fresh child-process probe
+      confirmed a newly created file is mode `0600` and its core limit is
+      `(0, 0)`. It does not prove actual journal, shell-history, trace, WAL,
+      backup-retention, or provider sinks safe, so the broader criterion stays
+      open. Compact change/open-gate facts `privacy-cli-guard-change-20261101`
+      and `privacy-cli-guard-open-20261101` were processed and read back in the
+      active plan goal; no Markdown projection was attempted.
+      Prompt-hook privacy progress (2026-11-01): the Codex UserPromptSubmit
+      process now disables core dumps, applies Linux `PR_SET_DUMPABLE=0`, and
+      sets `umask(0077)` before reading its stdin event; it returns without
+      reading prompt bytes if those controls fail. The focused hook suite passes
+      5/5, strict Pyright reports zero diagnostics, and the installed hook is
+      byte-identical to source. Change/open-gate facts
+      `privacy-prompt-hook-change-20261101` and
+      `privacy-prompt-hook-open-20261101` were processed and found on bounded
+      goal-report pages 0 and 16. This verifies the local hook boundary only;
+      Codex/provider retention and other unapproved sinks remain open.
+      Task-state privacy regression (2026-11-01): lifecycle hook state now
+      records only the project ID and opaque goal IDs for accepted active,
+      checkpoint, finish-status, and pending-SDE transitions. The focused test
+      supplies canaries in goal problem/criteria, MCP response, fact bullet, and
+      SDE rationale fields, then confirms none occur in the private state file.
+      All 21 Codex plugin hook tests pass. This verifies the V2 plugin-state
+      sink only; provider retention, shell/editor logs, database/WAL, backups,
+      journals, and other producer paths remain open.
+      Transition-cue state follow-up (2026-11-01 16:27 +07): the Stop-hook
+      handoff stores only one allowlisted lifecycle category, not the prompt.
+      The five-cue integration regression confirms submitted prompt canaries
+      are absent from the owner-only turn-state file. This verifies the new
+      prompt-to-hook-state sink only; provider retention and the other listed
+      sinks remain open.
+      Summary-path privacy progress (2026-10-30): the Curator event boundary
+      now omits changed paths whose components identify password, passphrase,
+      token, API-key, client-secret, or private-key files, including names such
+      as `passwords.txt` and `api_token.json`. Ten focused event tests pass;
+      strict Pyright reports no diagnostics. This only protects canonical
+      work-summary facts; producer outbox and other data sinks remain open.
+      Cross-boundary filename filter (2026-10-30): Hermes's profile hook now
+      rejects the same sensitive filename components before durable outbox
+      forwarding, while Curator independently omits them from canonical facts.
+      The focused Hermes hook test passes and `scripts/check` passes all 12
+      checks. This closes neither the broader source coverage nor logs, journal,
+      backup, and retry-payload review; the privacy item remains open.
+      Passphrase-path follow-up (2026-10-30 18:35 +07:00): the Codex work-summary
+      collector, Hermes outbox and profile hook, and Curator receiver now reject
+      `passphrase`-named path components before durable storage or projection.
+      Hermes boundary tests pass 15/15, Curator Hermes-event tests pass 10/10,
+      and Hermes Ruff passes. This closes only that filename class; the full
+      cross-source and cross-sink review remains open.
+      Credential-label follow-up (2026-10-30 18:42 +07:00): Curator's shared
+      content filter now rejects `passphrase`, `client_secret`, `auth_token`,
+      and `private_key` labels in assignments and prose before facts or staged
+      source payloads are persisted. The focused content-safety, event-scrub,
+      event, and producer-staging suites pass 55/55, including a regression
+      proving rejected import bytes create no artifact or partial file. Strict
+      Pyright reports zero diagnostics. This closes those recognized labels
+      only; universal detection and the remaining log, journal, WAL, backup,
+      and producer sinks stay open.
+      Credential-component follow-up (2026-10-30): the shared Curator filter
+      now rejects `access_key`, `secret_key`, AWS access/secret key labels,
+      authorization/bearer values, cookies, and session keys. Hermes applies
+      matching path-component rejection in the Codex summary collector,
+      durable outbox, and profile hook; Curator independently rejects those
+      paths before creating work-summary facts. Regression tests caught the
+      `aws_secret_access_key` form missing from the initial pattern, then pass
+      across 14 Curator filter/adapter tests, an API ingress regression, and 15
+      Hermes tests after the correction. The API regression checks the rejected
+      canaries are absent from SQLite main/WAL/SHM, canonical Markdown,
+      Prometheus output, and a SQLite backup. Strict Pyright, errors-only
+      Pylint, and Hermes Ruff pass. This closes only these recognized labels and
+      filename components; broad source-to-sink privacy evidence remains open.
+      Environment-name follow-up (2026-10-30): the shared labels now also match
+      when embedded in names such as `MY_AWS_SECRET_ACCESS_KEY`,
+      `OAUTH_CLIENT_SECRET`, and `MY_BEARER_TOKEN`. Hermes path filters use the
+      same embedded-component rule at collection, outbox, and hook boundaries.
+      Curator's API ingress regression verifies these values are absent from
+      SQLite main/WAL/SHM, canonical Markdown, metrics, and backup. Fifteen
+      focused Curator tests and fifteen Hermes tests pass; strict Pyright,
+      errors-only Pylint, and Hermes Ruff pass. Universal source-to-sink review
+      remains open.
+      Manual DNS phrasing follow-up (2026-10-30): the reject-only content
+      filter now catches compound descriptions such as “manual DNS challenge
+      value is …” as well as direct TXT/code labels. An API ingress regression
+      confirms that DNS challenge text and `pwd=` values fail before any event
+      or goal row is written; harmless instructions to create an ACME TXT record
+      remain accepted. The content-safety and API ingress suites pass 16/16.
+      Recognized phrase coverage does not establish universal secret detection
+      or close the broad source-to-sink privacy item.
+      Codex summary path follow-up (2026-10-31): Hermes now rejects additional
+      credential-bearing path components, including passphrase, AWS access key,
+      session key, cookie, OAuth client secret, and bearer-token names, before
+      producing a durable summary. The Curator profile hook independently drops
+      invalid or sensitive optional summaries while allowing the bounded turn
+      lifecycle event to proceed. The collector, outbox, and profile-hook suites
+      pass 15/15; Hermes `python3 scripts/check` passes all 12 checks. The active
+      Hermes install still lacks this producer, and other sources and sinks
+      remain unreviewed; this privacy item remains open.
       Additional progress (2026-10-20): malformed event JSON and invalid UTF-8
       no longer retain request source through chained decoder exceptions, and
       duplicate-key errors no longer echo attacker-controlled field names.
@@ -4912,6 +5077,47 @@ unknown. The dashboard and live event-delivery gates remain open.
       covers the allowed contact text. The focused storage/privacy run passes
       31 tests and 36 subcases; the bounded-memory staging run passes 20 tests,
       Pyright reports zero diagnostics, and targeted Pylint passes.
+      Hermes work-summary privacy follow-up (2026-10-30 13:17 +07:00): the
+      Codex summary collector now drops paths containing manual DNS challenge
+      values before serialization, and the durable retry queue independently
+      rejects those paths before saving the event. Regressions cover plain-text,
+      hyphenated, and underscored DNS path forms at both boundaries. The two
+      focused Hermes files pass 9 tests; Curator's event adapter file passes 9
+      tests; `python3 scripts/check` passes all 12 checks in Hermes, and
+      `git diff --check` passes in both repositories. This closes those three
+      path patterns only; broad source-to-sink privacy review remains open.
+      Curator exception-output follow-up (2026-10-30 14:57 +07:00): unknown
+      event fields and unknown success-criterion IDs now return fixed errors
+      without echoing caller-controlled names. Canary tests inspect the error
+      text and exception cause/context; the focused event-contract and goal
+      lifecycle suites pass 38 tests. The full privacy review remains open.
+      Focused rerun (2026-10-30): the current event, lifecycle, evidence-epoch,
+      and Hermes event changes pass 55 tests under the repository's Python 3.14
+      environment. This also covers boolean schema-version rejection in
+      work-summary facts and stale evidence after reopen or criteria amendment.
+      No new sink classes were reviewed; cross-sink privacy remains open.
+      Core-dump protection (2026-10-30): a shared process guard now disables
+      core dumps before argument parsing in every installed Curator command,
+      including MCP, staging, maintenance, access, review, routing, storage,
+      and evidence capture. MCP startup keeps its restrictive file-creation
+      mask. The eight command-focused suites pass 44 tests; Pyright reports
+      zero diagnostics and errors-only Pylint passes. This reduces local crash
+      dumps as a content sink; logs, journals, WAL, backups, and producer-side
+      privacy still require separate review. No checklist marker changed.
+      Local evidence process privacy (2026-10-30 19:34 +07:00): owner-configured
+      service probes and test runners reject credential-shaped arguments and
+      sensitive options before process launch. Loopback browser proof rejects
+      recognized credentials in its URL before passing that URL to the browser.
+      The focused local evidence configuration suite passes 11 tests and
+      `git diff --check` passes. Unrecognized secret forms and the other log,
+      journal, WAL, backup, and producer sinks remain open; this does not close
+      the broad privacy criterion.
+      CLI/MCP error-path review (2026-11-01): a targeted source scan confirmed
+      fixed public CLI errors and MCP logger output limited to safe error codes
+      and exception types. This does not inspect runtime logs, host journals,
+      backups, crash data, or command history; the broad privacy criterion stays
+      open. The content-free research fact was processed and read back under
+      the active V2 plan goal.
 - [x] Define and enforce the local-alpha retention and cleanup rules by artifact
       class: temporary source artifacts become eligible promptly after facts
       are recorded and SDEs are decided, with a 72-hour maximum; explicit holds
@@ -7301,8 +7507,9 @@ verified work.
       verification; SDE approval/rejection and purge success are not goal
       criteria unless explicitly declared as such at intake.
 - **Assess significance from supported facts.** Deduplicate facts first;
-      keep routine updates on the goal. For a candidate SDE, select only
-      material, durable facts and passing evidence, with concise impact and
+      keep ordinary progress on the goal and present supported routine
+      assessments as pending owner-review candidates rather than suppressing
+      them. Select durable facts and passing evidence, with concise impact and
       retrieval value. Label planned, inferred, and measured impact distinctly.
 - **Present review and cleanup consequences together.** Show the proposed
       bullet record, selected fact/evidence references, project scope, decision
@@ -7411,10 +7618,78 @@ Final report: completed facts, open items, recovery path, next action
       and outcome as distinct fact kinds; plans and recommendations cannot be
       mistaken for verification facts. A bounded `goal_report` renderer is
       implemented; an interactive live-work interface remains open.
-- [ ] During work, append deduplicated factual bullets with source/evidence
+- [x] During work, append deduplicated factual bullets with source/evidence
       references. Record changed files/components, commands or probes run, exact
       pass/fail result, and any side effects without copying full chats or large
       outputs into canonical records.
+      Codex intake update (2026-11-01): the local MCP instructions now direct
+      Codex to record typed intent, changed files/components, exact check
+      results, open gates, and outcomes at task-start, edit, verification, and
+      report checkpoints. The bundled plugin asks Codex to offer SDE capture
+      when a reusable lesson emerges and spells out begin/pause/resume/finish
+      behavior. The configured editable virtualenv imports this source, and
+      the prompt context is at most 1,152 characters for the maximum valid
+      128-character project ID, under the 1,200-character limit. The focused
+      hook/MCP-guidance regression passes 3/3, including prompt-body non-echo
+      and consistency of the two instruction paths. This verifies instruction
+      delivery and privacy only.
+      Local prompt-to-fact acceptance (2026-11-01): ordinary `codex exec`
+      started goal `codex-ordinary-curator-flow-verification-20261101` in
+      `curatormd-v2-dev-alpha` before inspecting the hook/store path. It saved
+      typed research, open-gate, and outcome facts; direct SQLite inspection
+      confirmed each fact has its own source event ID, and a project-authorized
+      bounded `goal_report` read returned all three facts. The companion
+      implementation task `codex-goal-start-replay-safety-20261101` records the
+      changed file list, exact check commands/results, schema and User-settings
+      side effects, remaining gates, and outcome in six compact facts. Its
+      report readback and one-goal-per-source-event count were verified. These
+      task records contain bounded problem/criteria summaries and factual
+      bullets, not the submitted prompts or transcripts. This closes the local
+      fact-capture workflow item; broad source-to-sink privacy and the separate
+      real Hermes acceptance item remain open.
+      SDE cue follow-up (2026-11-01): the hook, intake skill, MCP instructions,
+      and README teach the exact `Begin`, `Pause`, `Resume`, and `End SDE
+      capture` phrases. The hook prompts at task start, explains Resume/End
+      when work pauses, and prompts End (or Pause to continue later) at task
+      wrap-up when capture is active. It does not start/end capture for the user
+      or repeat an invitation after decline/silence. Plugin 0.1.7 is installed;
+      source and cache copies of the manifest, hook, and skill match. The focused
+      hook/MCP-guidance suite passes 6/6, and worst-case hook context is 1,185
+      characters against its 1,200-character limit. This proves the local
+      instruction path only; reloaded/trusted hook behavior and a
+      prompt-driven persisted capture remain open.
+      V2 fact/queue follow-up (2026-11-01): the SDE cue change fact is visible
+      in the Codex-intake goal report. Separate observed backup/restore research
+      and an event-cleanup open-gate fact were processed and read back in the
+      active plan goal; no Markdown projection was written. One attempted
+      `verification` fact used only observed evidence and Curator correctly
+      returned `EvidenceGateError`; no verification fact was saved. Recovery:
+      both that exact failed receipt and one older failed receipt were reviewed
+      by ID and digest, terminally disposed while the local project source was
+      fenced, and their payloads scrubbed. The same repository was re-enrolled
+      at current fingerprints and the existing `local-uid:1000` read, write,
+      and review grants were restored. The binding is active at revision 7,
+      source epoch 3. A fresh MCP read reports zero received, failed, and
+      quarantined events and a complete project queue snapshot. The open-gate
+      fact is superseded by this outcome; no Hermes readiness claim is implied.
+      A compact change-fact submission for the active goal returned success;
+      its first follow-up `goal_report` request with `fact_limit=32` returned
+      `invalid_request` and was not retried. After publishing the page-size
+      bound, a fresh default-sized `goal_report` returned that fact on the first
+      page. SQLite readback is now verified; the Markdown projection remains
+      subject to the existing conflict-review gate and was not rewritten.
+      SDE trigger alignment correction (2026-11-01): the prior MCP server text
+      still permitted automatic capture when a lesson looked reusable. Updated
+      `CODEX_INSTRUCTIONS` to teach the exact Begin/Pause/Resume/End phrases,
+      require explicit user start, and lead transition replies with
+      Beginning/Pausing/Resuming/Ending. Task completion alone no longer ends
+      capture. Updated the existing prompt-consistency assertions and refreshed
+      the enabled plugin to 0.1.5. The maximum-project hook context is 1,080
+      characters under its 1,200-character cap and contains every full trigger
+      and reply cue. Strict Pyright reports 0 diagnostics, errors-only Pylint
+      passes, Bandit exits 0 with existing `nosec` comment warnings, and
+      `git diff --check` passes. No suite or real prompt-driven task was run;
+      task readback and human SDE review remain open.
       Progress (2026-10-20): SQLite v15 links event-created fact bullets to
       their first durable source event while preserving unknown provenance on
       legacy/local facts. Bounded goal reports and canonical Markdown render the
@@ -7501,6 +7776,16 @@ Final report: completed facts, open items, recovery path, next action
       producer filter, but it does not prove privacy for every log, trace,
       backup, journal, or crash-dump sink; the broad source-to-sink item stays
       open.
+      Semantic summary deduplication check (2026-10-30): the Curator end-to-end
+      Hermes test now submits the same bounded work summary under a second,
+      distinct event ID. The second event is processed and retains its receipt,
+      while the fact list remains unchanged and the original fact keeps its
+      first source-event reference. The separate distinct-evidence regression
+      still confirms genuinely different proof references are not merged. All
+      10 `test_hermes_events` tests pass; strict Pyright reports zero
+      diagnostics, errors-only Pylint passes, and `git diff --check` is clean.
+      This establishes local semantic deduplication only; real profile delivery
+      and ledger readback remain open.
       Profile-hook connection (2026-10-30 12:29 +07:00): Hermes Core now has a
       profile hook installed for the dedicated `curatorv2hermes` profile. It
       forwards the durable event's allowed fields to the existing
@@ -7512,6 +7797,52 @@ Final report: completed facts, open items, recovery path, next action
       fork. The local profile allowlist is configured. No gateway restart or
       live task was run; this does not prove a real task created a goal or that
       its work-summary fact was read back. Keep this item open for that check.
+      Strict-summary follow-up (2026-10-30): the profile hook now validates the
+      exact work-summary schema, size, paths, counts, and allowlisted check
+      results before forwarding. An invalid optional summary is omitted while
+      the valid lifecycle event continues, preventing a bad summary from
+      blocking event acknowledgement. The focused profile-hook suite passes
+      4/4 and Hermes `scripts/check` passes 12/12. This closes the hook's
+      summary-validation code gap; real profile delivery and Curator readback
+      still require your local task check.
+      Receiver type-check follow-up (2026-10-30): the Hermes durable outbox
+      and Curator event translator now reject Boolean `schema_version` values
+      instead of treating JSON `true` as version 1. The outbox also drops a
+      summary with a list where a path change or check name should be, without
+      raising or losing the lifecycle event. The focused Hermes outbox tests
+      pass 5/5, Curator Hermes event tests pass 10/10, and Hermes Ruff passes.
+      Curator Ruff could not run because Ruff is not installed in that
+      checkout. This closes malformed-summary handling at these two receiver
+      boundaries; real profile delivery and broad sink review remain open.
+      Active-runtime check (2026-10-30): the shell's `hermes` command reports
+      version `0.22.2+1558.gad06e63.dirty` from
+      `/usr/local/lib/hermes-agent`. That installed tree does not contain the
+      new `codex_work_summary` producer or `work_summary_json` field. The
+      `curatorv2hermes` profile hook points to the development checkout, but
+      that link does not update the running Hermes producer. Therefore source
+      tests and hook presence do not prove real-task summaries; the local
+      Hermes runtime must be updated and restarted before that acceptance run.
+      Current source recheck (2026-10-30 15:05 +07:00): Hermes's focused work-
+      summary, durable-outbox, and profile-hook suite passes 14/14; Ruff and
+      `git diff --check` pass on the touched Hermes files. Curator's event and
+      hook suites pass 15 tests with nine subtests. The installed Hermes
+      executable still reports `0.22.2+1558.gad06e63.dirty`, and the installed
+      tree has no work-summary producer. No live task or ledger readback was
+      attempted; the criterion remains open.
+      Latest bounded source checks (2026-10-30): the producer, outbox, and
+      profile-hook suites pass 15/15 after adding the passphrase filename
+      filter; Curator Hermes-event tests pass 10/10. Hermes Ruff passes. The
+      earlier `scripts/check` run completed its 12-check sequence but failed
+      `blob-size`: its `git cat-file --batch-check` subprocess exceeded the
+      checker's 300-second timeout. The active install still lacks the producer,
+      and no live task or ledger readback was performed; keep this item open.
+      Duplicate-check follow-up (2026-10-31): the Hermes work-summary producer
+      now stores each distinct allowlisted check/result pair once, so repeated
+      identical command results do not consume the eight-entry limit or inflate
+      omitted counts. Different exit codes remain separate results. The focused
+      regression passes through `scripts/run_tests.sh` (1 test). The installed
+      Hermes runtime and real profile delivery were not changed or verified;
+      keep this item open for that run.
 - [x] Calculate per-criterion `verified`/`open` state from the configured
       verifier and include linked proof-fact IDs in each in-process goal snapshot;
       expose the goal's `open`/`blocked`/`deferred` outcome separately. Never infer
@@ -7545,13 +7876,12 @@ Final report: completed facts, open items, recovery path, next action
       confirms prior proof remains visible as history while no longer counting as
       current verification, and the concrete reopen action remains visible.
 - [x] Assess significance from verified durable facts. Ordinary maintenance
-      stays a compact goal update; an SDE candidate contains only selected facts,
-      evidence, impact, and retrieval value for human review. Routine progress
-      creates no candidate; new significant proposals require a selected
-      currently verified passing fact and compact impact/retrieval fields,
-      persist them immutably, and remain pending human review. The v17-to-v18
-      migration preserves existing candidates with null context. Focused
-      API/MCP/lifecycle/migration tests cover these boundaries.
+      stays a compact goal update; endpoint assessments contain only selected
+      facts, evidence, impact, and retrieval value for human review. Routine
+      assessments with current passing evidence also remain pending instead of
+      being discarded. All candidates persist immutably until owner disposition.
+      The v17-to-v18 migration preserves existing candidates with null context.
+      Focused API/MCP/lifecycle/migration tests cover these boundaries.
 - [x] Before a review decision, show the candidate bullets, provenance,
       evidence, and exact temporary-artifact inventory to the authorized reviewer.
       The attended V2 review CLI emits the bounded candidate packet, proof
@@ -8888,6 +9218,8 @@ substitute for evidence at a later integration boundary.
       remains historical. The accepted content-free local evidence packet is
       [`local-alpha-evidence-2026-10-28.md`](local-alpha-evidence-2026-10-28.md),
       SHA-256 `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`.
+      The older packet's Vhost target-comparison note is explicitly historical;
+      see [`local-alpha-evidence-scope-2026-10-31.md`](local-alpha-evidence-scope-2026-10-31.md).
       Finish only the in-scope backend, Hermes integration, editor dashboard,
       privacy, and local storage/recovery criteria below. Progress
       (2026-10-28 11:32 +07:00):
@@ -8939,6 +9271,46 @@ substitute for evidence at a later integration boundary.
       fact/evidence pages, revision-change behavior, an attended SDE decision,
       backup rotation/restore, live expiry, or explicit alpha acceptance, so
       Slice I and its checklist item remain open.
+      Dashboard organization implementation (2026-10-30): VS Code extension
+      0.9.26 organizes health, activity, queues, and storage into four compact
+      panels with color-coded metric tables and bold column headers. Each table
+      has clear state labels. Pending SDE review remains above goal navigation.
+      Focused extension tests pass 24/24. The installed build still needs a
+      rendered check; the broader dashboard acceptance remains open. No
+      checklist marker changed.
+      Readability adjustment (2026-10-30): extension 0.9.27 changes neutral
+      state text to the editor theme's blue link color, increases table text to
+      1rem, gives the state column a wider minimum, and switches narrow panels
+      to one column. The focused extension suite passes 24/24; rendered
+      acceptance remains open.
+      Activity priority (2026-10-30): extension 0.9.28 puts SDE candidate
+      counts and goal-state totals in the first two activity-table rows, ahead
+      of receipt and fact counts. Focused tests pass 24/24, and packaged and
+      installed extension code hashes match. The refreshed table still needs
+      a visible check; the dashboard acceptance item remains open.
+      Health failure display (2026-10-30): extension 0.9.29 preserves the
+      Project health, Open gates, and Operational alerts rows while loading or
+      after an authorized read fails, displaying the fixed unknown reason
+      instead of collapsing to one generic row. Focused tests pass 24/24;
+      rendered acceptance remains open.
+      Health failure explanation (2026-10-30 17:09 +07:00): extension 0.9.30
+      replaces the internal `health_read_unavailable` table value with the
+      fixed retry instruction for the configured Hermes probe failure. The
+      status-bar tooltip receives the same sanitized reason; health remains
+      unknown until a valid project-bound snapshot arrives. Focused extension
+      tests pass 24/24, and packaged, installed, and source JavaScript hashes
+      match. A fresh V2 profile probe currently returns `degraded` with
+      `dependency_unknown:event_router` (no work-summary outbox receipt yet)
+      and `dependency_unavailable:purge_scheduler` (no recent successful
+      six-hour timer run). The V2 window still needs a reload and rendered
+      check. No checklist marker changed.
+      Health gate explanations (2026-10-30 17:12 +07:00): extension 0.9.31
+      now shows plain-language descriptions for local dependency and queue
+      gates, including gate codes with a colon that were previously omitted
+      from the status tooltip. The current probe's event-router and timer states
+      are visible as separate explanations in both the dashboard and tooltip.
+      Focused extension tests pass 24/24; `node --check` and
+      `git diff --check` pass. Rendered confirmation remains open.
       Profile readiness recheck (2026-10-30 12:31 +07:00): the configured
       `curatorv2hermes` profile connects to `hermes-core-v2-alpha`, and all
       seven dependency probes are healthy. Project health is degraded by one
@@ -8947,6 +9319,78 @@ substitute for evidence at a later integration boundary.
       Hermes Codex outbox and is unrelated to the new profile hook. No retry,
       deletion, or terminal decision was made. The real-task and owner-review
       checks remain open.
+      Producer-manifest recheck (2026-10-30): the current profile hook directory
+      is linked to the Hermes Core V2 integration, its `HOOK.yaml` is present,
+      and the same bounded inventory check used by the health probe returns
+      ready. This confirms the producer manifest itself; it does not clear the
+      older failed verification event or replace the real task and owner-review
+      checks.
+      Active-runtime comparison (2026-10-30): the `curatorv2hermes` profile has
+      the hook installed byte-for-byte from the Hermes integration checkout,
+      with the `curator_v2` MCP allowlist and `hermes-core-v2-alpha` project
+      binding. The active Hermes runtime emits Codex lifecycle events, but its
+      outbox does not accept `work_summary_json` and its runtime lacks the
+      summary producer. The development checkout contains that producer and
+      validator. No active runtime files were changed or restarted; a real
+      work-summary fact remains unverified.
+      Local V2 workspace binding (2026-10-30 15:29 +07): VS Code User settings
+      now route the V2 checkout to its own `curatormd-v2-dev-alpha` project,
+      with the V2 checkout launcher and shared alpha database. The matching
+      Hermes profile and V2 hook are installed; the profile's read/write/review
+      grants are bound to `local-uid:1000`. The read-only Hermes health probe
+      now returns the correct project ID. Its dependencies are five healthy,
+      `event_router` unknown because no outbox exists yet, and
+      `purge_scheduler` degraded pending a timer-triggered pass. The approved
+      six-hour timer is enabled for this project. A manual maintenance pass
+      exited 0 with a verified backup and no due work; it does not count as a
+      timer trigger. The next scheduled run is 18:00 +07. The V2 editor shows
+      red degraded status consistently with these gates; no runtime restart or
+      checklist closure was performed.
+      Local evidence launcher setting (2026-10-30 17:18 +07): V2 editor
+      extension 0.9.32 adds the application-scope `evidenceConfig` User
+      setting and passes its path to status, dashboard, and task launcher
+      processes. Workspace overrides are rejected; the backend continues to
+      enforce owner-only host-file validation and project binding. The focused
+      extension suite passes 25 tests. This makes the approved local evidence
+      adapters configurable from the V2 editor; no host evidence file was
+      configured and no source was captured or verified. Real work-summary
+      delivery, rendered UI, SDE review, cleanup, and local-alpha acceptance
+      remain open. VSIX 0.9.32 is installed; its JavaScript hash matches source
+      and package at `4848209ed08edd8dbbed2e63f7398f9f56d9bb6f48c6ef86d1baccf0ce5a0908`.
+      The active editor host predates the install and still needs a reload for
+      visible confirmation. No checklist marker changed.
+      Dashboard feed and rendered-health follow-up (2026-10-31 00:30 +07):
+      Hermes's purge-scheduler probe now parses the user's actual
+      `LastTriggerUSecMonotonic=1w 1h 43min 7.882991s` value; the live probe
+      returns ready. The V2 extension independently reads Hermes readiness and
+      Curator queue counts, coalesces duplicate feed reads, pauses after three
+      identical automatic failures, and lets only explicit refresh or settings
+      change reset that pause. Extension 0.9.40 is installed; its package JS
+      hash matches source. The focused extension suite passes 31/31 and the
+      Hermes health suite passes 12/12. In the matching V2 workspace, the
+      rendered dashboard at 00:30 +07 showed healthy health with no open gates;
+      the separate queue table showed zero pending reviews, purge receipts or
+      artifacts, and expiry receipts or artifacts. The V2 status item was
+      green. This closes the dashboard feed repair plan, not the wider Local
+      alpha row: the project currently has no activity, so real-task/fact
+      rendering, owner review/cleanup, and operations evidence remain open.
+      Queue-feed independence update (2026-10-31 00:50 +07): the V2 MCP now
+      exposes a dedicated, authorized `project_queue_snapshot` read model for
+      complete database queue counts and observation timestamps. The extension
+      uses this tool independently from Hermes readiness. Focused extension
+      checks pass 31/31; API and MCP checks pass 26/26. Extension 0.9.41 is
+      packaged and installed locally with a source-matching JavaScript hash.
+      An authorized read through the configured MCP launcher returned a fresh,
+      complete queue snapshot for `curatormd-v2-dev-alpha` at 00:59 +07; all
+      event, review, purge, and expiry counts were zero.
+      At 01:00 +07, the extension's `showDashboard` handler was invoked with
+      the actual User settings, Curator MCP process, and Hermes probe. The
+      first-page result was healthy for both feeds and showed zero goals and
+      facts; only the VS Code API host was stubbed. This is live source-path
+      verification, not a desktop rendering check.
+      The running VS Code window has not been reloaded since installation, so
+      rendered acceptance of the new tool remains open; the wider Local alpha
+      row is unchanged.
 - [x] For each slice, record entry conditions, named owner, exact commands or
       probes, expected observable result, actual result, linked evidence, open
       failures, recovery path, and approval required before destructive actions.
@@ -8960,6 +9404,32 @@ substitute for evidence at a later integration boundary.
       convert an untested proposal into a checked item.
 
 ### Definition of done
+
+#### Final checks for the local developer
+
+Curator and the profile hook code are ready. The active Hermes install still
+lacks the work-summary producer; update and restart that local runtime before
+checking real summaries in steps 1 and 3.
+
+1. Start one ordinary development task through Hermes. Confirm the goal keeps
+   the problem and every success criterion, then read it back in Curator. Repeat
+   the same task once and confirm it does not create a duplicate.
+2. Reload VS Code. Check the Curator V2 button's version and color, open its
+   project panel, and inspect fact pages and evidence. Confirm the panel marks
+   changed or expired evidence as stale and does not mix pages after a change.
+3. Confirm the saved work summary contains only changed file names and the
+   approved check names/results; it must not contain prompt text, command
+   output, or sensitive file names.
+4. When a fact with current passing evidence is available, review its proposed
+   SDE, record your decision and reason, and confirm the same action shows the
+   exact files it would clean up. Check the saved receipts and each file's
+   result before considering cleanup complete.
+5. Check the six-hour maintenance run, the seven daily backups, a restore to a
+   separate file, 72-hour expiry, and package rollback. Keep any missing or
+   failed result open; do not infer success from a healthy-looking button.
+6. Record a short accept/reject decision for the local alpha snapshot. Save
+   only result codes, IDs, hashes, and times—no prompt, credentials, or raw
+   command output.
 
 - [ ] A real local Codex/Hermes task creates a correctly scoped goal with
       its original problem and success criteria intact. Proposed acceptance:
@@ -8982,6 +9452,196 @@ substitute for evidence at a later integration boundary.
       Keep this item open until a real Hermes Core/Codex task and owner-reviewed
       evidence packet exist; synthetic API/MCP fixtures do not close it. Vhost
       Manager application and utility workflows are explicitly out of scope.
+      Codex plugin launch check (2026-11-01): the installed 0.1.7 launcher was
+      started with its working directory at the plugin cache and inherited the
+      configured Curator V2 workspace through `PWD`. MCP initialization,
+      discovery of `goal_start`, `fact_record`, and `goal_report`, and the
+      project-authorized read-only `goal_list({})` all succeeded for
+      `curatormd-v2-dev-alpha`. This verifies launch/workspace binding and the
+      read path; a normal prompt creating a goal with unchanged criteria and
+      durable fact readback remains unverified.
+      Development bootstrap progress (2026-11-02 +07): local Codex plugin
+      0.1.59 exposes `codex-intake`, and a fresh CLI session read the 14 goals
+      of `curatormd-v2-dev-alpha`. The prompt-hook context limit now covers its
+      complete guidance, active-goal bootstrap is covered by focused tests,
+      and evidence configuration is selected for the active project. The
+      598-test Curator suite passed after migration and review-test repairs.
+      An isolated CLI run with the V2 hooks created the project-scoped goal
+      `codex-evidence-config-selection-20261102`, saved its intent and findings,
+      and returned pending SDE `322835477613461c99643839ca12c188`. The goal
+      remains active because its success check lacks accepted verification.
+      The 0.1.60 development install exposes the valid initial goal states and
+      SDE categories in the MCP schema and directs Codex to start immediate work
+      as active. The current API session still lacks the plugin's direct tools.
+      The native user hook remains disabled during live acceptance; the complete
+      task endpoint and owner-reviewed evidence packet remain open.
+       Continuity-summary gate progress (2026-11-01): the Codex plugin now
+       blocks `goal_finish` until it has summarized all report pages and linked
+       plan-child history in a compact `Task summary:` change fact and read that
+       fact back. New task facts invalidate the prior summary; resumed goals can
+       reuse a saved summary only after a matching report readback. A focused
+       25-test plugin lifecycle suite passes. This closes the missing code gate
+       before terminal goals become read-only; the real local Codex/Hermes task
+       acceptance remains open. The local plugin was refreshed to 0.1.56;
+       Codex reports it enabled and the installed cache matches source. A fresh
+       thread and changed-hook trust review are still required before the real
+       task acceptance can be observed.
+      Separated-task matching follow-up (2026-11-01): Codex intake now requires
+      paging through the full goal list and comparing saved problem plus
+      success checks before reuse; it reuses one clear match, asks when matches
+      are ambiguous, and creates only when none match. Resume wording names the
+      saved problem/task and open checks. The plugin explicitly appends facts
+      under the same `goal_id` across separated work and summarizes all pages
+      at success. It keeps the compact summary and receipts; deletion remains
+      limited to the exact transient inventory approved by the owner. Version
+      0.1.57 is installed and its cache matches source. V2 has no trusted-hook
+      entry in the current Codex config, so attended runtime use still requires
+      reviewing/trusting the hooks in Codex and opening a fresh thread. No
+      checklist marker is closed by these local instructions.
+      Intake directive update (2026-11-01): the enabled local plugin is now
+      version 0.1.10. Its activation prompt explicitly requires problem and
+      success checks, exact goal reuse or `goal_start` before edits, and compact
+      evidence facts after changes and checks. The focused prompt regression
+      passes 9/9 and the cached manifest matches source. This strengthens
+      delivered instructions but does not prove a normal prompt created a
+      correctly scoped goal with durable fact readback; that acceptance remains
+      open.
+      Normal-prompt runtime check (2026-11-01): local plugin 0.1.13 now passes
+      an explicit project root to its MCP launcher and applies Codex approval
+      only to `goal_list`, `goal_report`, `goal_start`, and `fact_record` for
+      this local tracker. A normal Codex CLI request stated its problem/checks,
+      found the broader active goal, created focused goal
+      `codex-intake-ordering-evidence-review-20261101`, and saved three compact
+      typed facts. A separate read-only SQLite query confirmed the exact goal,
+      project ID `curatormd-v2-dev-alpha`, criteria, and all three facts.
+      This verifies one local prompt-to-goal-and-fact flow. It does not verify
+      interactive-editor or Hermes task delivery, real prompt replay across an
+      MCP restart, source binding/fingerprint checks, or the full no-raw-content
+      acceptance; keep this item open.
+      Same-turn replay implementation (2026-11-01 13:04 +07:00): inspection
+      found that the prompt hook supplied a stable `goal_start.event_id`, but
+      the backend did not deduplicate goal creation by that ID. Schema v40 adds
+      project-scoped uniqueness; an identical retry returns the existing goal
+      without resetting its current status, while reuse of the ID for changed
+      request fields is rejected. The regression closes and reopens SQLite,
+      confirms one goal remains blocked with its original ID after replay, and
+      confirms a changed problem is rejected. Focused lifecycle, migration,
+      Codex-hook, event-router, and MCP tests passed 68/68; focused Pyright
+      reported zero diagnostics. A read-only check found the shared local
+      ledger already at schema 40.
+      Migration correction and local replay (2026-11-01 13:12 +07:00): the
+      first normal-prompt `goal_start` retry failed because schema v40 was
+      already applied locally before the replay-fingerprint column was added
+      to that migration. Kept v40 unchanged and added v41 for the request
+      fingerprint; the v40-to-v41 regression passes and the configured local
+      ledger now reports schema 41 with both the index and column. The missing
+      `goal_list_page` approval was added only for this local plugin's
+      project-scoped read. Replayed the exact failed `goal.started` event
+      through the configured stdio MCP server: receipt status is `processed`,
+      attempt count is 2, exactly one goal exists for its project/source ID,
+      and a bounded `goal_report` returns the matching project, source ID, and
+      all six typed facts. The facts include changed file names, exact focused
+      commands/results, open gates, and outcome; each has a source event ID.
+      The focused suites pass 68/68 plus the separate migration test 1/1;
+      focused Pyright reports zero diagnostics and `git diff --check` passes.
+      This verifies one recovered local task through MCP and readback. The full
+      cross-output privacy review, other-project before/after comparison, fresh
+      Codex/Hermes replay after reload, and owner-reviewed acceptance packet
+      remain open, so this checklist item stays open.
+      SDE prompt delivery correction (2026-11-01): the active Codex hook and
+      bundled intake skill now agree: invite once per tracked task, do not
+      repeat on follow-up prompts, and invite later only when a new reusable
+      lesson emerges. Pause and wrap-up prompts use the exact SDE transition
+      phrases. A maximum-length project/turn context regression caught the
+      hook exceeding its 1,200-character delivery limit; the shortened context
+      now preserves the lifecycle cues within the limit. The focused Codex
+      plugin suite passes 12/12 and `git diff --check` passes. This verifies
+      instruction delivery bounds and consistency, not actual SDE transitions
+      in a live Codex conversation or the real Hermes acceptance item. Installed
+      local plugin 0.1.15 through the configured local marketplace; the enabled
+      install reported that version, and its cached manifest and intake skill
+      hashes matched source. The plugin MCP config then exposed a larger intake
+      gap: it pinned `--project-root` to the Curator checkout, preventing the
+      installed plugin from selecting another active repository. Removed that
+      pin so the server uses the workspace Codex supplies while retaining the
+      shared local ledger and per-project grant/config binding. Installed
+      0.1.17; the cached manifest, MCP config, and intake skill hashes match
+      source. With the launcher working from the plugin cache and `PWD` set to
+      this workspace, an actual read-only MCP queue snapshot returned the
+      matching project ID and complete database observation. The PWD discovery
+      regression and all 12 focused Codex plugin tests pass. A fresh Codex
+      thread is needed to load the updated cached plugin instructions. A fresh
+      `codex exec` attempt did not expose the Curator tools and created no V2
+      goal; its startup also reported an expired external Supabase MCP login.
+      The relation between that external startup failure and the missing Curator
+      tool is unresolved. This proves the installed launcher can read the
+      current workspace; another consumer's grant, an ordinary prompt through
+      the updated plugin, live SDE transition behavior, and the Hermes
+      acceptance packet remain open.
+      Typed work record: change fact `codex-plugin-workspace-binding-change-20261101`,
+      research fact `codex-plugin-workspace-binding-evidence-20261101`, and
+      open-gate fact `codex-plugin-normal-prompt-gate-20261101` were processed
+      under this active goal and read back together on bounded report page 16.
+      This records the code change, live local read, and failed normal-prompt
+      attempt without storing its request text; no Markdown projection was
+      written.
+      Lifecycle cue routing (2026-11-01): the active prompt hook now classifies
+      begin, hold, resume, next-item, and end wording in memory and injects the
+      matching goal-transition action for that turn; explicitly negated cues
+      do not trigger transitions. The hook does not save or repeat the prompt.
+      The user-facing cue text and endpoint rule assess
+      every supported, currently verified fact for a pending SDE proposal,
+      including routine facts; only the user chooses memorialization,
+      importance, and disposition. All 16 focused Codex plugin tests pass, and
+      each cue context stays below the 1,200-character delivery limit. This
+      verifies hook classification and instruction delivery, not live Codex
+      follow-through or an owner-reviewed SDE decision; keep the real task and
+      review acceptance open.
+      Plugin packaging correction (2026-11-01): the enabled 0.1.37 cache had
+      only the Stop hook, while prompt intake was separately installed and no
+      tool guard was bundled. Version 0.1.38 now packages the prompt cue, a
+      pre-tool check requiring an accepted active goal before local shell/edit
+      work, a post-tool tracker for accepted goal IDs, and the stop continuation
+      for begin/hold/resume/next/end wording. The separate duplicate prompt
+      hook was removed from the user config. The updated local plugin is
+      installed and its cache matches the source; focused checks pass 20/20.
+      Codex must still reload and trust the V2 hooks before they run. No real
+      task creation, lifecycle endpoint, or pending SDE has yet been verified;
+      keep those acceptance items open.
+      Lifecycle enforcement follow-up (2026-11-01): plugin 0.1.40 now bundles
+      prompt intake and lifecycle hooks. Local shell/edit work requires a
+      server-accepted active goal plus an accepted intent/progress fact;
+      finish and defer calls require an accepted checkpoint fact. A successful
+      finish request must be read back as `complete` before the hook tracks an
+      SDE requirement, and the stop hook continues until Curator returns a
+      matching `pending_review` candidate. Hook state contains only project and
+      goal IDs; it does not retain prompt, fact, rationale, or tool-output text.
+      The focused hook suite passes 21/21, `git diff --check` passes, and the
+      enabled 0.1.40 cache matches source. Codex still needs reload and hook
+      trust before this flow can be verified in a fresh editor task; no plan
+      marker changes here.
+      Lifecycle vernacular and hold follow-up (2026-11-01): the skill now says
+      normal wording controls every plan item and one-off task, with no task
+      command or capture opt-in; the user alone decides SDE importance and
+      disposition. Plugin 0.1.41 distinguishes a paused checkpoint from a
+      completed endpoint, confirms finish/hold status, then continues through
+      a pending SDE proposal after confirmed completion. The focused hook suite
+      passes 22/22 and installed hook hashes match source. This editor's Codex
+      config still has no trusted entries for Curator V2 hooks, so normal-prompt
+      capture and real SDE follow-through remain unverified until reload and
+      hook trust; no checklist marker changes here.
+      Turn-end cue handoff (2026-11-01 16:27 +07): the prompt hook now saves
+      only the normalized lifecycle category for this turn, and the Stop hook
+      enforces that user cue even when Codex's final message omits it. A focused
+      regression covers begin, hold, resume, next-item, and finish with neutral
+      assistant wording and confirms the prompt text is absent from private
+      state. The focused Codex plugin suite passes 24/24; Pyright reports zero
+      diagnostics, errors-only Pylint and Bandit pass, and `git diff --check`
+      is clean. This closes the user-cue handoff implementation gap only; hook
+      Plugin 0.1.42 is installed and enabled, with all four installed hook files
+      byte-identical to source. The Codex config still lacks trusted V2 hook
+      entries, so trust/reload and real editor task/SDE follow-through remain
+      open.
       Focused recheck (2026-10-27): the disposable Vhost apply-route
       persistence/retry contract passed again (1 test, 72.444 seconds) using
       the alpha virtualenv. It exercised a temporary project/database and
@@ -9124,12 +9784,143 @@ substitute for evidence at a later integration boundary.
       The fresh Hermes probe reports five dependencies healthy; the remaining
       gates are the intentionally visible failed fact event and unknown
       artifact-producer manifest. Health remains degraded; no criterion was
-      marked verified.
+      marked verified. Codex plugin launcher recheck (2026-11-01): the configured
+      stdio launcher starts from this V2 project and global database; its tool
+      list includes `goal_list`, `fact_record`, and `sde_assess`, and a bound
+      `goal_list` read succeeds. No prompt-driven goal creation was attempted,
+      so source-task capture, preserved criteria, Hermes routing, replay receipt,
+      and persistence-target acceptance remain open. Pagination correction
+      (2026-11-01): `goal_report` and `goal_fact_evidence` now publish a
+      1-16 `fact_limit` bound in the MCP input schema, and Codex instructions
+      direct later pages through `fact_offset`. The focused stdio schema
+      regression passed 1/1. The over-limit request was not retried; after the
+      bound was published, a fresh default-sized report read returned the fact.
+      Original prompt capture, criteria preservation, Hermes routing, replay
+      receipt, and persistence-target acceptance remain open.
+      Intake/SDE trigger repair and local prompt run (2026-11-01 13:56 +07):
+      found the installed skill and prompt hook still required goal creation
+      only before edits, while MCP instructions already required it before
+      analysis. Aligned the skill, hook, and plugin starter prompt so every
+      non-trivial request is tracked before analysis/commands/edits, while
+      simple factual and formatting questions remain untracked. Added natural
+      SDE begin phrases, including “we should be collecting SDE data now,” and
+      installed plugin 0.1.20. Focused plugin checks pass 14/14. A default
+      non-interactive Codex CLI attempt read goals but its `goal_start` was
+      rejected because that invocation's approval policy was `never`; it wrote
+      no goal. A fresh local CLI run with `--approve-for-me` then accepted the
+      natural SDE begin request, created goal
+      `codex-local-mcp-write-approval-20261101` in
+      `curatormd-v2-dev-alpha`, saved three typed facts, and completed a bounded
+      `goal_report`. Independent read-only SQLite inspection confirmed the
+      three requested criteria remain intact/open, the goal is active, and no
+      criterion has evidence. The accepted run verifies local prompt-to-goal,
+      fact, and report behavior under that approval path; interactive editor
+      approval, a human-reviewed acceptance packet, cross-project isolation,
+      and the full privacy audit remain open. The SDE capture has not been
+      ended or assessed, so no review candidate was created.
+      SDE endpoint follow-through (2026-11-01 15:38 +07): reduced the Codex
+      hook's lifecycle message below its 1,200-character delivery limit and
+      made `sde_assess` an explicit required action at every completed plan
+      item and one-off task. Plugin 0.1.36 is enabled locally; the focused
+      plugin suite passes 17/17. A normal prompt through the freshly reloaded
+      plugin remains unverified, so this item stays open.
+      Vernacular cue follow-up (2026-11-01 15:46 +07): expanded begin, hold,
+      resume, next-item, and end recognition for ordinary wording, including
+      “let's fix this,” “leave this for later,” “carry on,” and “closed out.”
+      Added regression cases, and the focused plugin suite passes 17/17.
+      Plugin 0.1.37 is installed and enabled; the installed prompt hook matches
+      source. The Codex MCP server is enabled. The plugin Stop hook has no
+      trusted-hook record in the current Codex config, so its end-of-turn
+      continuation guard is not yet active. Hook code supplies cues and
+      requires Codex to use MCP; hooks do not themselves write task facts or
+      SDE proposals. Fresh-thread, trusted Stop hook, real task endpoint, and
+      owner SDE disposition remain open. No checklist marker changes here.
+      Natural-language endpoint follow-up (2026-11-01 17:11 +07): the prompt
+      hook now treats phrase matches as hints and follows the full request,
+      distinguishes finishing a one-off/current item from explicitly advancing
+      to the next plan child, and covers additional begin/hold/resume/finish
+      wording without retaining the user's wording. A status question such as
+      “Is this task complete?” does not finish the task. The focused hook suite
+      passes 24/24; hook contexts fit the 1,200-character limit. Plugin 0.1.47
+      is installed and enabled, with manifest, hook, and skill hashes matching
+      source. Actual hook execution still requires Codex to review and trust the
+      changed plugin hooks, then load them in a fresh thread; the current
+      session has no Curator MCP tools, so no task or SDE was written here.
+      Current user config check: the `codex-intake` server is enabled, and its
+      task/read/evidence tools are explicitly set to `approval_mode=approve`;
+      no trusted-hook hashes exist for this V2 plugin. The MCP tool policy is
+      ready; Codex hook review/trust and a fresh thread remain the runtime gate.
+      Keep real prompt-to-goal and endpoint acceptance open.
+      Work-request versus endpoint correction (2026-11-01): the prompt hook
+      previously interpreted requests such as “finish the plugin” as proof
+      that the tracked task had ended, and could treat discussion of hold or
+      check-off wording as an actual transition. It now treats requests to
+      finish implementation as beginning/ongoing work, reserves completion
+      transitions for clear status or check-off wording, and ignores workflow
+      design examples. The MCP guidance, bundled skill, and README state the
+      same distinction. The focused Codex plugin suite passes 24/24 and
+      `git diff --check` passes. Plugin 0.1.49 is installed and enabled; its
+      manifest, prompt hook, and skill hashes match source. Codex config still
+      has no trusted-hook record for this V2 plugin, and this session has no
+      Curator MCP tools. Therefore this verifies local behavior and packaging,
+      not a fresh normal prompt, lifecycle completion, or human SDE decision.
+      No checklist marker changed.
+      Normal Codex task-intake check (2026-11-01 17:23 +07): a standard
+      non-interactive Codex prompt used the enabled local V2 plugin without a
+      hook-trust bypass or workspace file writes. It created
+      `codex-hook-finish-implementation-wording-20261101` in
+      `curatormd-v2-dev-alpha` with all three task-specific criteria intact.
+      The intent event returned `processed/applied`; a read-only ledger check
+      then confirmed the exact intent fact is attached and the goal remains
+      active. This demonstrates normal plugin-driven task creation and an
+      accepted intent write without a task-level opt-in. A bounded
+      `goal_report` from the configured, project-authorized MCP server then
+      returned the same active goal, all three open criteria, and its four
+      attached facts. The first Codex continuation did not perform that
+      readback automatically; it required a direct bounded MCP read. The
+      completion/hold/resume lifecycle through a normal prompt, endpoint SDE
+      creation, and owner disposition remain unverified; no checklist marker
+      changes here.
+      Accepted-write readback guard (2026-11-01 17:32 +07): the normal prompt
+      check exposed that a successful fact receipt could be followed by turn
+      completion without confirming the saved record. The plugin now marks
+      accepted goal, fact, lifecycle, and SDE writes in private per-turn state;
+      the Stop hook requires a matching `goal_status` or `goal_report`
+      before allowing the turn to end. A report for another goal does not clear
+      the requirement, and report text is not retained. Focused plugin tests
+      pass 25/25 and `git diff --check` passes. Plugin 0.1.50 is installed and
+      enabled; the post-tool, Stop, and state hooks match source hashes.
+      Hooks remain untrusted in the current Codex config, so this is tested
+      source/package behavior, not proof the guard ran in the normal prompt.
+      The task's three criteria remain open because no matching configured
+      repository-test receipt exists for this Python plugin suite. No checklist
+      marker changed.
+      Hook discovery correction (2026-11-01 20:00 +07): Codex reported zero
+      installed hook handlers although the V2 plugin was enabled. The V2
+      manifest now explicitly points `extensions.com.openai.hooks` to
+      `./hooks/hooks.json`; the focused manifest regression passes, and local
+      plugin 0.1.58 is installed and enabled. The extension-bundled CLI reported
+      that it lacked a complete local package, so the official npm-packaged CLI
+      0.166.0 was installed. Its plugin list confirms V2 0.1.58 is enabled; the
+      user has not yet reopened `/hooks` in that CLI or trusted the definitions.
+      The new trust record and normal prompt-to-goal lifecycle remain open. No
+      checklist marker changed.
+      Automatic readback instruction (2026-11-01 17:35 +07): the plugin's
+      default prompt now tells Codex to read the same goal after accepted
+      writes; the bundle still stays within its three-prompt and per-prompt
+      length limits. Plugin 0.1.51 is installed and enabled, and the manifest,
+      Stop hook, and private state hook match source hashes. The focused plugin
+      suite passes 25/25; `git diff --check` passes. Codex has no trusted-hook
+      entry for this plugin, so the Stop guard still needs hook review and a
+      fresh thread before runtime acceptance. The uncommitted Python test has
+      no matching configured evidence runner. No checklist marker changed.
 - [ ] The user can see compact, deduplicated bullet facts; each verification
       fact points to independently checkable evidence, and unsupported completion
       claims remain open. Acceptance is for the approved local alpha only:
-      `eaglesvn` (kernel UID 1000), one active repository, and the pinned
-      `vhost-manager-alpha` project. Render the goal card and paged fact report
+      `eaglesvn` (kernel UID 1000), one active repository, and the exact project
+      named by that repository's Curator V2 config. Do not require a Vhost Manager
+      application or utility workflow; those are outside this goal. Render the
+      goal card and paged fact report
       in the actual V2 VS Code dashboard, not only through API/MCP output.
       Show recorded facts, currently evidence-verified facts, unverified claims,
       and current open gates as distinct states; show page/total information so
@@ -9140,7 +9931,7 @@ substitute for evidence at a later integration boundary.
       or changes, mark the report stale and require a bounded refresh from the
       first page. This local single-user alpha does not require client-held
       cursors, bearer tokens, multi-user subject binding, or remote trust-root
-      rotation. Bind each read to the kernel-derived local UID, the pinned
+      rotation. Bind each read to the kernel-derived local UID, the configured
       project, and its active read grant; reauthorize every page request. Test
       revocation or project suspension between pages and prove no subsequent
       page or cached response is served under stale access; clear the rendered
@@ -9479,29 +10270,315 @@ substitute for evidence at a later integration boundary.
       the installed `extension.js` matches the repository source at SHA-256
       `e60ab6d66abd979526b477e4a9d3d29ae98be2f0b1437d5951cabc87511fcfdf`.
       Real Hermes delivery and the rendered task page still need the local
-      acceptance run.
-- [ ] SDE assessment produces reviewable candidates only for supported,
-      material facts; a human's decision and rationale are auditable. Proposed
-      acceptance, using a candidate from the approved real-consumer pilot:
-      demonstrate that a routine update, unsupported assertion, stale proof, or
-      fact from another goal produces no review candidate, while a selected
-      currently verified material fact produces one candidate bound to its
-      goal and evidence. Present the bounded packet and exact current inventory
-      through the attended local reviewer experience. For the approved
+      acceptance run. Installed-package recheck (2026-10-30 13:14 +07:00):
+      `code --list-extensions --show-versions` reports
+      `curatormd.curatormd-v2-status@0.9.16`. The checked-out VSIX has the
+      recorded SHA-256 above; its packaged `extension.js` and the installed
+      extension file both match the repository source hash above. This confirms
+      which code is installed, not that the open VS Code window has rendered or
+      accepted its current behavior. Evidence-display correction
+      (2026-10-30 13:19 +07:00): the editor now labels a verification as
+      `stale/unknown` when its saved proof has expired, has future or
+      inconsistent observation times, or the current backend read no longer
+      verifies the previously attested fact. A fresh proof remains labeled
+      verified; ordinary change facts remain recorded facts. The focused VS
+      Code suite passes 21 tests. This covers the display rule under fixtures;
+      the real dashboard and changed-source behavior still need owner review.
+      Package/install update (2026-10-30 13:20 +07:00): extension 0.9.17 includes
+      this correction and is installed. The VSIX SHA-256 is
+      `f673deec0066a0080f78f0f2962a9eff097f351bc7724bae62838fb81403fd7c`;
+      packaged, installed, and repository `extension.js` files share SHA-256
+      `3bff15a53a950671f8984ef95522378feba597d004c24074e7415f757d48760d`.
+      All 21 focused extension tests pass. Reload the VS Code window and inspect
+      the rendered dashboard to finish the owner-side check; this install alone
+      does not close the dashboard acceptance row.
+      Local launcher diagnosis (2026-10-30 14:06 +07:00): the active VS Code
+      window was `renew_ssl`, while User settings still paired that workspace
+      with the `hermes-core-v2-alpha` database and `curatorv2hermes` profile.
+      Launching Curator with that mismatched project/database/profile exited 2
+      before the MCP handshake. User settings now point to the matching
+      `renew-ssl-coding` profile venv, `curatormd-v2-alpha` database, and local
+      review CLI. The installed 0.9.18 extension's real MCP client now reads
+      project `vhost-manager-alpha` (35 goals) and its empty review queue. The
+      Hermes probe reports six healthy dependencies and one degraded
+      `artifact_producer_inventory` gate. Start Task now includes the existing
+      project write grant; its focused VS Code suite passes 21 tests. No new
+      task was created during diagnosis; real task persistence and rendered
+      acceptance remain open.
+      Intake workflow correction (2026-10-31): removed the VS Code
+      `CuratorMD V2: Start Task` palette entry and its dialog-driven task
+      creation code. Curator MCP instructions now make a normal Codex request
+      the intake path: Codex states the saved problem and observable success
+      checks, records a direct work request as an active one-off task, or
+      records an explicit plan as a planned parent goal with child tasks. The
+      instructions preserve scope guardrails, prohibit duplicate matching
+      tasks, and require truthful reporting if saving or session binding fails.
+      Focused MCP-instruction and extension-manifest regressions pass. The
+      checklist item remains open until a real Codex/Hermes task is saved and
+      read back. Extension 0.9.45 was packaged and installed; its VSIX SHA-256
+      is `bdc137a4d82b127cda2f8a08ba7f73cb27291193b30d65776de530a280ce2a71`,
+      and installed/repository `extension.js` hashes both equal
+      `8e81215cd7f757f06af4de360f952711ff764f2802e6ed646fc220b7d321b27b`.
+      Reload and rendered-editor confirmation remain.
+      Current task-record readback (2026-10-30): the configured local alpha
+      database contains goal
+      `vscode-task-2ce540c7c81a8f0b866b4fc72a3035062af039b0cb1a8723c8966cc1722c2b7e`
+      in `active` state, but it has zero facts, an unassigned owner, no recorded
+      next action, and one unverified criterion. Its problem text says the
+      task-save flow succeeded against a disposable database copy. This is not
+      sufficient evidence for a real user-task acceptance, so no criteria or
+      facts were changed and the item remains open. The V2 database read used
+      the configured local project launcher; the returned report snapshot was
+      `01c330cf417a61e205d629ee3cb0c193c0c0b0e9ec5883835caa7c83f7f8377f`.
+      Current source checks (2026-10-30): the documented strict Pyright,
+      errors-only Pylint, and Bandit commands pass; focused VS Code dashboard
+      tests pass 21/21 and Curator Hermes event tests pass 10/10. Bandit emits
+      existing `nosec` annotation warnings. `git diff --check` passes. The
+      installed VS Code extension reports version 0.9.18. These source and
+      installed-version checks do not replace the real user-task and rendered
+      dashboard acceptance above.
+      Reopen-route implementation (2026-10-30): the V2 dashboard now offers a
+      reopen action only for a completed goal. It requires a reason, a concrete
+      next action, and explicit confirmation; sends the displayed lifecycle
+      revision so a concurrent change is rejected; and requests write scope
+      only for that operation. On success it refreshes the project page and
+      report. The focused VS Code suite passes 22/22. Package 0.9.19 was built
+      and installed; its VSIX SHA-256 is
+      `f172f0ae92f3315595a5fba9e52e826573744492c6addc76de4d73cb8cc3109a`,
+      and installed/repository `extension.js` hashes both equal
+      `88a273f6307fad46b24a6af8dbb95e9a597565610d89a77141808670869bf1bc`.
+      `git diff --check` passes. This closes the missing reopen-action code and
+      local install; rendered-window confirmation and a human-run reopen on a
+      disposable completed goal remain open.
+      Compact panel update (2026-10-30 15:05 +07:00): extension 0.9.21 moves
+      Pending SDE review above goal navigation, groups health/activity/queues/
+      storage in collapsible cards, and shows goal status plus next action
+      without operation UUIDs or dates. The package was installed; VSIX SHA-256
+      is `9e3c46b41acebc7c3c10ee9ed7673a7d08cf059079aacbaa14d67d4c89169e1f`,
+      and installed/repository `extension.js` hashes both equal
+      `de0b4dec61e65c88e9be5660021e8d38f2f3e31ecebce190b5dfe44c5dc5501b`.
+      The focused Node suite passes 24/24 and `git diff --check` passes. The
+      available VS Code window still shows the previous layout; reload and
+      actual review/report interaction remain unverified. Keep this item open.
+      Visibility follow-up (2026-10-30 15:08 +07:00): the dashboard and all
+      four compact metric cards now open expanded so the requested counts are
+      visible immediately; the dashboard and each card remain collapsible.
+      Extension 0.9.22 is installed. The focused Node suite passes 24/24, and
+      packaged and installed `extension.js` hashes both equal
+      `1bea10aca6c26d628eeeab8fd805878a20c73e244164ceef0be1fa68e84daafb`.
+      A reload command was issued, but the subsequent desktop capture did not
+      show the V2 dashboard. Rendered layout and review interaction remain
+      unverified.
+      Actual-window check (2026-10-30 15:14 +07:00): reloaded the V2 workspace,
+      opened the installed 0.9.22 dashboard, and observed the project summary
+      grid, all four visible compact cards, Pending SDE review, and its position
+      above Refresh/Previous/Next goals. The goal page is `0 of 0`, so this
+      window has no goal card or fact report to accept. Health and queues report
+      unknown because the configured Hermes probe does not match this project's
+      health snapshot; the status-bar tooltip shows version 0.9.22 and explains
+      yellow. This verifies the requested layout only; goal/report, review
+      interaction, and current health acceptance remain open.
+      Goal-card cleanup (2026-10-30): extension 0.9.24 strips duplicate leading
+      status labels, scheduled ACME operation wording, and operation UUIDs from
+      card titles. Disposition remains visible as a compact state badge, next
+      action is separate, and dates are omitted. The configured workspace has
+      no goals, so actual card rendering remains unverified.
+      Unknown-state color fix (2026-10-30 +07): extension 0.9.33 uses the
+      editor's blue text-link color for unknown health in the status item,
+      dashboard cards, and metric tables; yellow remains for actual warnings.
+      The project health snapshot and its open-gate text are unchanged. The
+      dashboard acceptance item remains open pending reload and visual check.
+      User color correction (2026-10-30): extension 0.9.35 restores yellow for
+      unknown health and review counts, while blue remains the not-yet-checked
+      neutral state. Reload and rendered confirmation remain open.
+      Dashboard color correction (2026-10-30 +07): extension 0.9.36 gives
+      unknown card borders and metric states the same explicit yellow as the
+      status bar; actual warnings retain the theme warning color. The dashboard
+      extension 0.9.36 is packaged and installed, with 25 focused tests passing.
+      The dashboard acceptance item remains open until the updated extension
+      is reloaded and visually checked.
+      Full-row unknown emphasis (2026-10-30 +07): extension 0.9.37 applies the
+      yellow state to every cell in an unknown metric row, including the value
+      and explanation. The package is installed locally; all 25 focused
+      extension tests pass, including the row-state regression. A VS Code
+      reload and rendered visual check remain outstanding.
+      Goal-card date/disposition progress (2026-10-30 19:27 +07): extension
+      0.9.38 labels each card's current status as its disposition and renders
+      the API-provided `updated_at` in +07, with an explicit unavailable label
+      for missing or invalid timestamps. Generated operation IDs remain
+      omitted. The focused extension suite passes 25/25; version 0.9.38 is
+      packaged and installed locally. Reload and rendered review of an actual
+      goal card remain open; this does not close the dashboard acceptance item.
+      Feed and health render (2026-10-31 00:30 +07): installed extension 0.9.40
+      in the matching `curatormd-v2-dev-alpha` workspace. The fresh dashboard
+      showed healthy health with no open gates, and its separate Curator queue
+      panel showed zero pending reviews, purge receipts/artifacts, and expiry
+      receipts/artifacts; the V2 status item was green. The project has no
+      goals or facts, so an actual goal card, fact page, and evidence action
+      could not be checked. The focused extension suite passes 31/31. This
+      confirms the rendered health/queue split, not the real-task and
+      fact/evidence acceptance; keep this item open.
+      Cross-project Hermes profile fix (2026-10-31 01:06 +07): two open VS Code
+      windows use Curator projects `curatormd-v2-dev-alpha` and
+      `vhost-manager-alpha`, but the former single global profile had been used
+      for both Hermes checks. Extension 0.9.42 now selects a User-configured
+      Hermes profile by the exact project ID returned by Curator. The local
+      mapping is `curatormd-v2-dev-alpha` → `curatormd-v2-dev-alpha` and
+      `vhost-manager-alpha` → `renew-ssl-coding`. The focused regression passes;
+      read-only Curator/Hermes source-path checks return healthy matching
+      health and complete queue snapshots for both projects. The package is
+      installed, but the active editor windows still need to reload it before
+      rendered status-bar/dashboard acceptance. No checklist marker changed.
+      Current reproduction (2026-10-31 01:21 +07): the extension's installed
+      source path, actual Curator MCP launcher, and configured Hermes command
+      returned matching project IDs and complete queue snapshots for both
+      projects. `curatormd-v2-dev-alpha` readiness is degraded, while
+      `vhost-manager-alpha` is healthy; neither read returned a project-mismatch
+      error. The installed extension still needs a VS Code window reload before
+      the visible error can be confirmed cleared. No checklist marker changed.
+      Error-message follow-up (2026-10-31): the VS Code client had labeled every
+      MCP tool rejection as a denied read, including failed task/fact writes.
+      It now reports a generic rejected request without exposing backend error
+      text. Extension 0.9.43 passes all 33 focused tests, is installed, and its
+      JavaScript hash matches source. Rendered confirmation still needs the
+      active VS Code window to reload.
+      Bound-profile recheck (2026-10-31 01:34 +07): invoked the configured
+      Hermes command with the exact `curatormd-v2-dev-alpha` profile. The fresh
+      response's outer and health project IDs both match
+      `curatormd-v2-dev-alpha`; database observation and all seven dependency
+      observations are complete and fresh. Health is degraded by
+      `event_failures`, not unknown from a project mismatch. Extension 0.9.44
+      passes all 33 focused tests and is installed with JavaScript hash
+      `fd8158f604c768d78fe3bada7a3ed06196c43ff3a8c7ed877c06ab12e9cb14df`,
+      matching source. The already-open VS Code dashboard still needs reload
+      and refresh for rendered confirmation; no checklist marker changed.
+      Stale failed-event recovery (2026-10-31 01:41 +07): under the owner's
+      prior approval to clear completion-blocking artifacts, fenced the local
+      binding, terminally disposed exactly two failed verification events
+      (`EvidenceGateError`), and verified both retained payloads were scrubbed.
+      Re-enrolled the same project at source epoch 2 and restored the existing
+      `local-uid:1000` read/write/review grants. The access audit contains the
+      transitions and both exact dispositions. The Curator queue now reports
+      seven processed receipts, zero received/failed/quarantined events, and no
+      active or expired claims. The configured extension's actual independent
+      feed reader returns healthy Hermes health and a fresh, complete queue
+      snapshot, both bound to `curatormd-v2-dev-alpha`. This resolves the live
+      profile mismatch/unknown display at the data-source level; the open VS
+      Code window still needs reload and refresh for rendered confirmation.
+      No checklist marker changed.
+      Canonical goal projection (2026-10-31 01:42 +07): the active V2 task
+      was missing from configured `persistence/HISTORY.md`. The owner-authorized
+      `goal_persist` wrote its compact projection; a follow-up `goal_reconcile`
+      returned `synced`, with full target SHA-256
+      `793a0c00fc7a941f4537edf9e244de0d4ed687742cec98647934c4065b106ccb`.
+      The active task's SQLite ledger and Markdown projection now agree. The
+      task itself remains active and its broad criterion remains open; no plan
+      checkbox changed.
+      Projection drift follow-up: recording the successful projection receipt
+      added another SQLite fact afterward. A read-only reconciliation now
+      reports `divergent` (SQLite expected
+      `0e65c3920dda34391d08fa49d61fb494d697c20f1d76508f93f440f6e956f88c`;
+      Markdown remains `793a0c00fc7a941f4537edf9e244de0d4ed687742cec98647934c4065b106ccb`).
+      Both are preserved. Under the owner's saved conflict-recovery rule, I
+      asked before regenerating the goal block; no repair was made.
+      Project-scoped editor routing (2026-11-01): a fresh workspace check
+      found that the Curator V2 project's declared ID was routed to the
+      Vhost-only database and its host evidence file. The V2 status extension
+      now reads the bounded root `project_id` from `.curatormd-v2.toml`, uses
+      exact application-scoped database and evidence-config maps, and rejects
+      cross-project responses before reading queue data. Local User settings
+      map `curatormd-v2-dev-alpha` to the ledger that contains that project and
+      explicitly exclude the unrelated host evidence file; the existing
+      Vhost fallback is unchanged. Extension 0.9.47 is installed, source and
+      installed JavaScript hashes match, and the focused suite passes 37/37.
+      A fresh source-path dashboard read using the real MCP and Hermes commands
+      returned healthy matching health and a complete matching queue snapshot.
+      The running editor window has not yet been visually checked after reload;
+      rendered dashboard acceptance remains open. No checklist marker changed.
+      Evidence-binding correction (2026-11-01): an owner-only evidence file
+      for `curatormd-v2-dev-alpha` was already configured but the project map
+      was empty, leaving the extension to fall back to the Vhost evidence file.
+      The User settings map now selects the exact V2 file and preserves the
+      Vhost fallback. The loader accepted the file for the exact V2 project and
+      the extension resolver selected it. Change/open-gate facts
+      `v2-alpha-evidence-binding-change-20261101` and
+      `v2-alpha-evidence-binding-open-20261101` were processed and read back.
+      This enables the local evidence source; it does not verify a captured
+      criterion or rendered reviewer action. No checklist marker changed.
+      Review-launcher correction (2026-11-01): the User settings review command
+      pointed to an older profile environment whose installed package lacked
+      the current `process_privacy` module. It now points to the workspace
+      `.venv/bin/curatormd-v2-review`; `--help` succeeds and the imported
+      `review_cli` path is this source tree. Change/open-gate facts
+      `review-launcher-source-correction-20261101` and
+      `review-rendered-acceptance-open-20261101` were processed and read back.
+      This fixes the configured code path only; rendered review, human SDE
+      decision, and exact-inventory cleanup remain open.
+      Work-fact capture (2026-11-01): recorded and read back
+      `dashboard-project-routing-20261101` as a change fact and
+      `dashboard-rendered-reload-gate-20261101` as an open gate under the active
+      plan goal. Both MCP `fact_record` calls returned `processed`. The facts
+      include the affected extension files, live source-path result, and the
+      exact outstanding reload check. The separate Markdown projection was
+      not rewritten while its saved SQLite/Markdown conflict rule remains
+      unresolved. A further change fact, `dashboard-project-routing-checks-20261101`,
+      was processed and read back; it records the exact Node/JSON/diff commands,
+      their results, live MCP/Hermes read outcome, installed package version,
+      settings side effects, and source files.
+      Dashboard authorization recheck (2026-11-01): the focused regression for
+      revoking project read access between report and evidence reads passes
+      1/1; the V2 extension suite passes 37/37 and the installed extension
+      matches source version 0.9.47. Existing renderer coverage confirms denied
+      refreshes clear previously displayed data. The actual desktop dashboard
+      still needs a post-reload review, so no checklist marker changed.
+      Current failed-event recovery (2026-11-01 15:50 +07): the two exact
+      disclosed `EvidenceGateError` receipts were terminally disposed through
+      the attended access CLI under the owner's standing cleanup instruction.
+      Their payloads are scrubbed and both immutable disposition receipts are
+      present. The same project was re-enrolled at source epoch 4 and the
+      `local-uid:1000` read/write/review grants were restored. A read-only
+      ledger check confirms 78 processed events and no received, failed, or
+      quarantined events. The actual dashboard feed reader now reports zero
+      failed events and no feed error; Hermes health remains degraded only
+      because one SDE candidate awaits the owner's review. The editor has not
+      yet been reloaded for rendered acceptance. No checklist marker changed.
+      Rendered dashboard inspection (2026-11-01 16:42 +07): the actual V2
+      workspace dashboard displayed project health `degraded` with an open gate
+      for the pending SDE review; the status bar color and tooltip matched that
+      state. The health table exposed a narrow-layout defect: its column widths
+      were not shared between header and rows, and state words could split.
+      Extension 0.9.48 now applies widths consistently and wraps explanatory
+      values without splitting state labels. The focused extension suite passes
+      37/37; 0.9.48 is installed and its JavaScript hash matches source. The
+      active window still has 0.9.47 loaded, so post-reload layout and the other
+      dashboard panels remain unverified. No checklist marker changed.
+- [ ] SDE assessment produces a reviewable pending candidate from supported
+      facts at every completed task endpoint, even when no verification fact is
+      available; a human's decision and rationale are auditable. Proposed
+      acceptance, using a candidate from an in-scope local-alpha task:
+      demonstrate that an unsupported assertion or fact from another goal
+      produces no review candidate, a supported change/research fact produces a
+      candidate even before verification, stale selected proof is rejected, and
+      current passing evidence is required for approval. A
+      possible lesson still goes to the owner when Codex judges its proposed
+      importance low; Codex must not suppress it as routine. The owner alone
+      decides whether to memorialize it, its importance, and disposition. Present
+      the bounded packet and exact current inventory through the attended local
+      Curator reviewer experience. For the approved
       single-user alpha, identify the reviewer from the kernel-derived
       `local-uid:1000` subject, verify the OS account is `eaglesvn`, require the
       current process to run as that UID, and enforce the exact project `review`
       grant against its owner-owned ledger. Hermes profile/session metadata is
-      routing context only. Missing, expired, revoked, or wrong-project
-      authority must leave the candidate pending and record no decision. For an
-      authorized approve or reject, persist the reviewer subject, bounded
-      single-line rationale, disposition, decision time, candidate/evidence
-      binding, and immutable receipt; repeat the exact request idempotently and
-      reject a conflicting retry without rewriting the receipt. Confirm that a
+      routing context only. Missing, expired, revoked, or wrong-project authority
+      must leave the candidate pending and record no decision. For an authorized
+      approve or reject, persist the reviewer subject, bounded single-line
+      rationale, disposition, decision time, candidate/evidence binding, and
+      immutable receipt; repeat the exact request idempotently and reject a
+      conflicting retry without rewriting the receipt. Confirm that a
       disposition does not itself claim goal completion, and that any cleanup
       remains bound only to the exact inventory shown in that review action as
       specified by the next criterion. Keep this item open until `eaglesvn`
-      completes the review path in the real local consumer and the receipt is
+      completes the review path in the local alpha and the receipt is
       independently checked; synthetic tests do not establish the local human
       decision.
       Candidate-readiness check (2026-10-29 20:24–20:30 +07): the local ledger
@@ -9516,6 +10593,58 @@ substitute for evidence at a later integration boundary.
       verified fact with evidence. The trusted profile status probe separately
       reports zero pending review work. No candidate was created from these
       reads.
+      Evidence-epoch guard (2026-10-30): SDE assessment now rejects a selected
+      verification fact created before the latest goal reopen or criteria
+      amendment, even if its source attestation still passes. A focused
+      regression exercises both boundaries and confirms fresh post-amendment
+      evidence remains eligible; all seven tests in `test_goal_evidence_epochs`
+      pass. This closes the local stale-proof code gap only. Real candidate
+      review, reviewer receipt reconciliation, and human decision remain open.
+      Approval-time evidence recheck (2026-10-30): SDE approval now revalidates
+      selected verification evidence immediately before recording the decision;
+      if it is stale or revoked, approval writes no receipt, while rejection
+      remains available. The attended reviewer receives the same optional
+      owner-only evidence config as the dashboard. Focused API/reviewer tests
+      and the VS Code suite pass. Real local reviewer use and receipt review
+      remain open; this checklist item is unchanged.
+      Candidate fact-kind guard (2026-10-30): assessment now rejects advice
+      and proposal bullets even if a separate selected verification fact is
+      current, keeping recommendations out of retained-knowledge candidates.
+      Approval also refuses a previously stored candidate containing those
+      kinds, while rejection remains available. The focused review API suite
+      passes 6/6. Assessment and approval also require every selected
+      verification fact to remain current, so fresh proof cannot mask stale
+      proof; the SDE capacity, evidence-epoch, and review API suites pass 25/25.
+      Strict Pyright reports no diagnostics. Synthetic evidence does not prove
+      the owner has a supported material fact to review, so local SDE approval
+      and receipt reconciliation remain open.
+      Approval verifier lock fix (2026-10-30): the full API ingress suite
+      exposed that approval-time source verification ran inside the plugin's
+      SQLite write fence. Review now prepares and rechecks evidence before
+      opening the write transaction, then verifies the supporting-fact digest
+      again inside the fence before committing. The decision and exact cleanup
+      authorization remain atomic. The previously failing authenticated-review
+      case and the interrupted-authorization recovery case pass; the focused
+      API ingress, review workflow, and review CLI suites pass 28/28. Strict
+      Pyright reports zero diagnostics and errors-only Pylint passes. Human
+      review and receipt reconciliation remain open.
+      Local SDE endpoint check (2026-11-01 15:38 +07): the configured
+      `curator-maintenance-timer` probe returned fresh passing evidence for
+      `codex-evidence-receipt-sde-endpoint-20261101`; fact
+      `service-probe-receipt-endpoint-20261101-r2` was recorded and read back.
+      `sde_assess` created pending candidate
+      `ac3275ba71c44d1d86a939291d4d4c56` from that supported verification, and
+      a bounded `goal_status` confirmed it remains pending. This proves local
+      proposal creation for a routine supported fact; attended human review,
+      decision receipt, and full acceptance remain open.
+      Unverified-proposal regression (2026-11-01): aligned the remaining stale
+      test and API/plugin/reviewer documentation with the owner's rule that
+      routine or unverified task facts must still be proposed for review. The
+      focused service test now confirms a supported change fact without a
+      verification fact creates a pending candidate; it passed 1/1. Current
+      verification remains required for approval, and this does not prove the
+      normal Codex endpoint or attended human decision path. No checklist
+      marker changed.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are
@@ -9675,6 +10804,53 @@ substitute for evidence at a later integration boundary.
       the backend eligibility join. The attended packet's complete dependency
       map, one-action reviewer flow, canonical durability, purge recovery, and
       real owner decision remain open.
+      Projection and receipt failure regressions (2026-10-30): after an exact
+      candidate, inventory, and cleanup authorization are recorded, an injected
+      first Markdown projection failure leaves the transient file present, both
+      canonical-persistence receipts unset, and purge attempts at zero. A second
+      injected failure after Markdown is written but before the cleanup receipt
+      is saved leaves that receipt unpersisted and still makes zero purge
+      attempts. Retrying records both persistence receipts before deleting the
+      file. `test_api_review_workflow` passes 7/7, including these cases; strict
+      Pyright reports zero diagnostics. These verify two recovery boundaries,
+      not every interruption point or the real owner review.
+      Decision-commit recovery regression (2026-10-30): an injected failure
+      after the cleanup-authorization write but before the enclosing project
+      transaction commits leaves no review receipt, authorization, or purge
+      attempt; the transient artifact remains. A second injected failure after
+      the project transaction commits but before the reviewer receives its
+      response leaves the exact decision durable and the artifact present.
+      After closing and reopening SQLite, replay returns the same receipt ID
+      without a second decision or purge attempt. Existing projection-failure
+      and retry checks then prove purge waits for both persistence receipts.
+      The focused `test_api_review_workflow` suite passes 7/7; strict Pyright
+      and errors-only Pylint pass. Live attended review and other interruption
+      boundaries remain open.
+      Final-purge response-loss recovery regression (2026-10-30): after both
+      canonical receipts commit and the exact staged file is removed, an
+      injected lost response leaves the durable receipt complete. Reopening
+      SQLite and replaying the same persistence request leaves the file absent
+      and the purge attempt count at one. The focused review suite passes 7/7,
+      Pyright reports zero diagnostics, errors-only Pylint passes, and
+      `git diff --check` is clean. This adds one restart/replay boundary; the
+      real attended review and other interruption boundaries remain open.
+      Multi-file interruption regression (2026-10-31): a disposable cleanup
+      now crashes after deleting the second approved file, after the first
+      target's deletion receipt is already durable. Reopening SQLite and
+      retrying preserves the first target's single `deleted` result, records
+      the second as `already_absent`, completes the same approved receipt, and
+      leaves an unlisted canary file untouched. The new focused test passes.
+      This closes that partial-manifest recovery case only; the live attended
+      review and remaining authority-change and interruption cases stay open.
+      Review dependency-map confirmation (2026-10-31): the attended CLI packet
+      exposes each artifact occurrence and its current evidence/criterion links.
+      The reviewer records a per-artifact retention or reacquisition action;
+      the confirmation packet then binds that action in the dependency-map
+      digest, which is rechecked before approval and cleanup. The focused
+      occurrence-binding and exact-review CLI regressions pass (2 tests).
+      This closes the previously noted missing occurrence/action recording
+      mechanism; real owner decision, receipt reconciliation, and other
+      interruption and authority-change cases remain open.
 - [x] Status reports exact active/completed/open/blocked/deferred goals,
       candidate/review counts, event errors, artifact-inventory state, and purge
       failures without false-green health. Keep database activity, staging
@@ -9901,8 +11077,45 @@ substitute for evidence at a later integration boundary.
       coverage, freshness enforcement, and a token budget are excluded from
       this approved alpha scope. Do not require a multi-user identity service, public
       endpoint, hosted CI, production deployment, or separate deployment,
-      policy, and release owners for this local alpha. Current runtime progress
-      (2026-10-28 12:30 +07): the active per-user timer is scheduled every six
+      policy, and release owners for this local alpha.
+      Current dirty-worktree quality recheck (2026-11-01 16:22 +07):
+      `uv run --locked --group quality pyright` reported zero diagnostics;
+      repository-wide errors-only Pylint and Bandit returned success; and
+      `git diff --check` was clean. Bandit emitted only existing `nosec` and
+      comment-annotation warnings. This is observed local source evidence,
+      not a commit-pinned release receipt; keep the complete alpha evidence row
+      open until its remaining runtime and recovery checks are recorded.
+      Current worktree quality recheck (2026-11-01 17:45 +07): focused Codex
+      lifecycle/SDE checks pass (26 tests), evidence-epoch and API review checks
+      pass (14 tests), Pyright reports zero diagnostics, repository-wide
+      errors-only Pylint and Bandit exit successfully, and `git diff --check` is
+      clean. Bandit reports existing `nosec` and comment-annotation warnings.
+      This is local dirty-worktree evidence, not a commit-pinned release receipt;
+      editor reload/trust, owner disposition, and live recovery checks remain
+      open. No checklist marker changed.
+      Backup and restore check (2026-11-01): the `curatormd-v2-dev-alpha`
+      six-hour maintenance run exited successfully at 00:00 +07 and reported
+      `backup_status=verified`, with no purge or expiry work pending. The
+      owner-only backup tree contains five integrity-verified daily snapshots
+      dated 2026-10-28 through 2026-11-01. The newest snapshot restored to a
+      separate temporary file and passed SQLite `quick_check`. This verifies
+      current backup and restore behavior; the seven-copy inventory/rotation,
+      live 72-hour expiry, and package rollback checks remain open.
+      Storage inventory detail (2026-11-01): the private backup-tree meter
+      reports five recognized daily snapshots and 36 unclassified entries,
+      with inventory status `incomplete` and usage below the 250 MiB warning.
+      The unclassified archives and SQLite sidecars were preserved; they were
+      not treated as disposable or counted as valid daily copies.
+      Noon maintenance recheck (2026-11-01 12:00 +07): the enabled
+      `curatormd-v2-dev-alpha` six-hour timer ran successfully. Its content-free
+      output reports `backup_status=verified`, zero processed/pending purge
+      work, and zero processed/pending expiry work. All five recognized daily
+      snapshots (`2026-10-28` through `2026-11-01`) pass read-only SQLite
+      `quick_check` and have zero foreign-key violations. This confirms the
+      current run and existing copies only; seven-copy rotation, due 72-hour
+      expiry, and a live expiry execution remain open.
+      Current runtime progress (2026-10-28 12:30 +07): the active per-user
+      timer is scheduled every six
       hours. Its 12:00 run exited successfully, reported a verified daily backup,
       and reported zero due purge/expiry items and zero pending failures. The
       run's service result and bounded journal output were checked. Readiness
@@ -10154,6 +11367,108 @@ substitute for evidence at a later integration boundary.
       (`2026-10-30.sqlite3`) passes read-only `quick_check`, schema version 39,
       and has zero foreign-key violations. Only one daily copy exists, so seven-copy
       live rotation remains open. No maintenance or cleanup was triggered.
+      V2 project work areas (2026-10-30 14:52 +07:00): extension 0.9.20 now
+      initializes `.curatormd-v2/inbox`, `sde-proposals`, and `side-buffer`.
+      The side-buffer is the configured staging root. Each authorized refresh
+      writes an owner-only, atomic inbox-count view and a pending-proposal
+      summary from the project-scoped SQLite read; the views contain no raw
+      event payload, fact body, or approval receipt. Decisions remain in the
+      dashboard and attended reviewer. The checkout is registered as
+      `curatormd-v2-dev-alpha` at config digest
+      `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`,
+      with local UID 1000 read/write/review grants. A trusted-profile MCP read
+      returned the bound project, zero goals, zero pending inbox events, and
+      zero pending SDE proposals. The focused extension suite passes 24 tests;
+      the installed 0.9.20 JavaScript hash matches source at
+      `dc7657e1bf91710ea13ea32a654c67e01586e664fe7d7a850dc1fcbf0b38c46f`.
+      The editor still needs a reload and visible dashboard check. Existing
+      workspace review and local-alpha evidence gates remain open.
+      Hermes profile outbox initialization (2026-10-30 19:23 +07:00): the
+      configured `curatormd-v2-dev-alpha` profile had its Curator hook files
+      but no Codex outbox database, so readiness reported only
+      `dependency_unknown:event_router`. Initialized the empty database with
+      Hermes Core's `CodexLifecycleOutbox` implementation. The same configured
+      profile probe then returned `healthy`, all seven dependencies healthy,
+      and no gates. This proves the current profile readiness snapshot only;
+      it does not prove a real Codex event was delivered or acknowledged, and
+      does not close the alpha acceptance item. Runtime and storage recheck
+      (2026-10-31 00:41 +07:00): the enabled six-hour user timer is active;
+      its 00:00 run exited successfully, and the next run is scheduled for
+      06:00. The configured backup directory contains four recognized daily
+      SQLite snapshots (2026-10-28 through 2026-10-31) and 34 unclassified
+      entries. The bounded Curator inventory observed 38 entries, 6,496,256
+      allocated bytes, and a warning state below the warning-only 250 MiB cap.
+      This read-only inventory does not verify seven-copy rotation, classify
+      legacy entries, restore a backup, or prove due 72-hour expiry behavior.
+      The active Hermes executable still reports
+      `0.22.2+1558.gad06e63.dirty`; its installed source tree has no
+      `work_summary_json` or `codex_work_summary` implementation, so live
+      work-summary delivery remains unavailable until that runtime is updated.
+      No purge, restore, install, or restart was run.
+      CLI privacy regression progress (2026-11-02): every local V2 CLI and the
+      Codex MCP launcher now applies the process privacy guard before parsing
+      arguments or opening state; it disables core dumps and sets an owner-only
+      file creation mask, failing closed if either control cannot be applied.
+      Malformed-argument canaries are checked across the eight general V2 CLI
+      entry points and do not appear in their errors. The focused privacy and
+      Codex lifecycle suites pass 36 tests, and the full repository suite passes
+      598 tests. This is local code/test evidence only; command-history, host
+      journal, full log/trace/upstream, backup retry-payload, and rendered
+      surfaces still require the planned sink audit and live evidence.
+      Codex SDE controls (2026-11-01): the V2 plugin now teaches the user the
+      exact `Begin SDE capture`, `Pause SDE capture`, `Resume SDE capture`, and
+      `End SDE capture` phrases once at task intake. Codex must wait for an
+      explicit start, echo a matching transition phrase, stop SDE fact capture
+      on pause, and assess only saved facts after an explicit end; completing
+      the task alone does not end or approve an SDE. Installed and enabled
+      plugin 0.1.3 from this checkout. Its cached hook, skill, manifest, and
+      README match source; a direct hook invocation emitted all four controls
+      and all four response cues. This verifies installation and emitted
+      instructions, not behavior in a fresh Codex task or reviewer disposition.
+      The real-task and human-review acceptance items remain open.
+      SDE prompt strengthening (2026-11-01): the enabled Codex plugin is now
+      0.1.9. The hook, intake skill, and connected MCP instructions explicitly
+      invite `Begin SDE capture` at task intake, cue `Pause SDE capture` when
+      active capture reaches a task pause, and prompt `End SDE capture` or
+      `Pause SDE capture` at wrap-up. They stop after decline and do not
+      initiate or end capture without explicit user intent. The installed
+      skill matches source; the configured virtualenv imports the updated MCP
+      guidance; the hook emits the revised text. The focused suite passes 8/8,
+      worst-case hook context is 1,122 characters, and `git diff --check`
+      passes. This verifies installed instruction delivery only. A real
+      prompt-driven task with persisted facts and attended SDE disposition
+      remains unverified; no checklist item is closed by this prompt change.
+      Superseding correction (2026-11-01): earlier instructions that asked the
+      user to begin SDE capture are obsolete. Codex plugin 0.1.24 now tracks facts for every non-trivial
+      task by default, follows ordinary start/next/check-off/hold/resume/finish
+      wording for each plan item and one-off task, and prepares any supported
+      SDE candidate at the evidence-backed endpoint. It presents supporting
+      facts and proposed importance for the user; only the user decides
+      memorialization, importance, and disposition. Candidates remain pending;
+      task completion never approves them. Focused plugin tests pass 14/14,
+      the installed plugin is enabled and its cached files match this checkout.
+      Owner policy clarification (2026-11-01): supported, currently verified
+      task facts must be assessed for owner review even when Codex judges the
+      proposed importance low. Routine/low-value judgment cannot suppress the
+      review candidate. The backend and plugin now retain routine assessments
+      as pending proposals for the owner's disposition.
+      This verifies installed instructions, not a fresh attended Codex task or
+      actual human SDE disposition. Earlier invitations to begin task capture
+      no longer apply. No checklist marker changes here.
+      Local task/readback follow-up (2026-11-01): a real normal Codex CLI
+      request created `codex-installed-plugin-version-20261101` in
+      `curatormd-v2-dev-alpha`; the initial prompt criteria were preserved.
+      One manifest research fact persisted. A later enabled-state research fact
+      was initially rejected because the MCP schema allowed a partial evidence
+      dictionary while the server required a digest. `fact_record` now exposes
+      a typed evidence object requiring `evidence_kind`, `locator`, `sha256`,
+      and `outcome`; optional `occurrence_id` is explicit. The tool schema
+      regression and plugin suite pass 15 tests total. After this correction,
+      the enabled-state observation persisted and `goal_report` read it back;
+      both criteria correctly remain open because those observations have no
+      accepted verification attestation. The task is real local Codex evidence,
+      not attended editor or Hermes event-outbox acceptance. No plan marker is
+      closed by this partial workflow proof.
 - [x] `eaglesvn` reviewed and accepted the content-free local-alpha evidence
       packet for digest `ce73d878b9ca3e5a98860cabc6a00d6f495fd20eaf96cf3a0d0147b247d59f28`
       on 2026-10-30. The accepted packet records its exact package/project/config
@@ -10161,3 +11476,126 @@ substitute for evidence at a later integration boundary.
       only to that single-user development snapshot; it does not approve a new
       retention rule, cleanup inventory, or changed target. The packet is kept
       unchanged so the accepted digest remains valid.
+
+      Lifecycle instruction repair (2026-11-01): Codex plugin 0.1.25 now maps
+      normal beginning/work, next/check-off, hold/pause, resume/continue, and
+      done/finish language to concrete goal actions for both plan children and
+      one-off tasks. It records checkpoints, reads the current lifecycle
+      revision before finish/defer/activate, and keeps finish evidence-gated.
+      At each completed endpoint it reviews supported facts for a possible SDE
+      and presents even low-importance proposals for the owner's decision.
+      No separate capture command or palette action exists; the owner alone decides
+      memorialization, importance, and disposition. The enabled local plugin
+      is 0.1.25 and its cached files match this checkout. Focused plugin/MCP
+      checks pass 15 tests; Pyright reports zero diagnostics and `git diff
+      --check` passes. This verifies instructions, tool guidance, and install;
+      it does not yet prove a fresh normal task completed all lifecycle writes
+      or received attended SDE disposition. No checklist marker changes here.
+
+      Owner-controlled routine review follow-up (2026-11-01): routine SDE
+      assessments no longer disappear when Codex judges them low-value. Curator
+      stores a routine proposal only when it has selected supported facts and
+      current passing verification; it remains pending for the owner's decision
+      on memorialization, importance, and disposition. The Codex skill and hook
+      apply beginning, next/check-off, hold, resume, and ending cues to plan
+      children and one-off tasks. Six focused tests pass, including routine
+      candidate persistence and the 1,200-character hook limit; strict Pyright
+      reports zero diagnostics for touched source modules. Codex plugin 0.1.26
+      is enabled and its installed files match this checkout. Local Codex
+      approval settings allow task reads, lifecycle records, and pending
+      candidate creation without per-call prompts; SDE decisions remain yours.
+      A fresh Codex thread still needs to prove real end-to-end task completion
+      and attended SDE disposition. No commit or push.
+
+      Bundled intake-server repair (2026-11-01): plugin 0.1.28 now packages
+      the `codex-intake` MCP connection, matching the plugin-scoped approval
+      rules. Previously those rules named a server that was not bundled, while
+      task instructions called the separately registered `curator_v2_codex`;
+      a normal CLI run could not write when its approval policy was `never`.
+      The duplicate global server entry is removed. A fresh ordinary Codex run
+      created this active V2 task before edits; later `goal_status` read it and
+      `fact_record` saved a change fact with `processed/applied` and no approval
+      override. The plugin now requires short visible SDE cues at begin, hold,
+      resume, and evidence-backed end; it says capture is automatic and the
+      owner alone decides memorialization, importance, and disposition. The
+      enabled 0.1.28 cache matches source, the focused hook suite passes 15/15,
+      and `git diff --check` passes. The live plan-item hold/resume/finish and
+      SDE endpoint still need an attended walkthrough with accepted evidence;
+      a test-log hash was not accepted as Curator verification evidence. No
+      checklist marker changes here.
+
+      Owner-evidence wiring repair (2026-11-01): a fresh normal Codex CLI task
+      started correctly and the focused hook test passed 16/16, but its
+      verification fact was rejected with `EvidenceGateError`. The V2 Codex
+      server had been launched without the owner-only evidence configuration,
+      so it had no registered verifier. The V2 launcher now loads the configured
+      host evidence file outside the repository, and plugin 0.1.31 supplies the
+      local alpha evidence path. The loaded verifier exposes repository diff,
+      repository test, local service probe, and attended human observation
+      sources. The hook and skill now require host-accepted receipts instead of
+      raw command output or invented hashes. Focused plugin tests pass 17/17,
+      source compilation and `git diff --check` pass, and plugin 0.1.31 is
+      enabled. The failed verification event was not retried; no SDE assessment
+      was made. A fresh accepted evidence write, completed task endpoint, and
+      owner disposition remain unverified. No checklist marker changes here.
+
+      Current source quality recheck (2026-11-01): ran the documented locked
+      quality commands. Pyright reports zero diagnostics after fixing private
+      test-helper imports and an unnecessary optional-result check; errors-only
+      Pylint exits 0; Bandit exits 0 with warnings for existing `nosec`
+      annotations/comments. Focused Codex plugin tests pass 23/23 and local
+      review CLI tests pass 9/9. `git diff --check` passes. This does not close
+      the full plan: editor hook trust/rendering, human SDE decision, exact
+      cleanup review, privacy sink audit, and live expiry/backup/recovery
+      evidence remain open. No checklist marker changes here.
+      Lifecycle path regression (2026-11-01): one focused test now runs an
+      ordinary prompt through accepted task/fact writes, the local-work guard,
+      hold and deferred-status confirmation, next-turn resume, finish/status
+      confirmation, and a pending SDE response. It confirms the hook does not
+      approve the proposal and stores no fact text in its state file. The
+      focused plugin suite passes 23/23, Pyright reports zero diagnostics,
+      errors-only Pylint passes on the touched tests, and `git diff --check`
+      passes. This is local hook-state evidence only; the current Codex hooks
+      still need trust and a normal editor task.
+      Vernacular and owner-decision alignment (2026-11-01): plugin source 0.1.43
+      recognizes additional everyday begin, hold, resume, next-item, and finish
+      wording while persisting only a normalized lifecycle category. The
+      injected instructions and skill explicitly apply the same always-on
+      lifecycle to plan items and one-off tasks, prepare a pending SDE proposal
+      for each evidence-backed endpoint, and leave importance, memorialization,
+      and disposition to the owner. At that check, plugin 0.1.43 was installed
+      and enabled with source-matching prompt hook and skill. A fresh editor
+      reload/trust and real task endpoint remained unverified, and no live SDE
+      decision was claimed.
+      Evidence-source correction (2026-11-01): a real Codex CLI task created
+      the project-scoped goal and accepted its intent and open-gate facts, but
+      a verification fact was rejected because command output was offered as
+      evidence. The MCP instructions, prompt hook, and bundled skill now state
+      that verification references must come unchanged from configured
+      `evidence_capture`; when unavailable, record an evidence-free open gate or
+      research fact and leave the check open. The focused Codex plugin suite
+      passes 24/24 and `git diff --check` passes. Plugin 0.1.44 is installed;
+      its manifest, prompt hook, and intake skill match source hashes. The exact
+      failed event was fenced, terminally disposed under the owner's cleanup
+      instruction, and its retry payload is now null; the project was
+      re-enrolled at source epoch 5 and `local-uid:1000` read/write/review grants
+      were restored. This prevents unsupported verification attempts but does
+      not complete real task acceptance or a live SDE decision. No checklist
+      marker changed.
+      Owner-led endpoint proposals (2026-11-01): clarified that every completed
+      plan item and one-off task gets a pending SDE proposal from supported
+      task facts, whether routine or not yet verified. Curator labels missing
+      or stale proof; it does not filter proposals by importance. Task
+      completion still requires its success checks, and SDE approval still
+      requires current passing evidence. Focused regression verifies a pending
+      proposal can be staged from a recorded change fact without verification;
+      real owner review remains open. No checklist marker changed.
+      Current local quality recheck (2026-11-02): the full repository suite
+      passes 598 tests; strict Pyright reports zero diagnostics; errors-only
+      Pylint exits successfully; Bandit exits successfully with existing
+      `nosec`/comment warnings; and `git diff --check` is clean. These checks
+      ran against a dirty, uncommitted worktree and are not a commit-pinned
+      evidence receipt. They do not establish editor hook trust, live task or
+      dashboard acceptance, attended SDE/cleanup decisions, backup rotation,
+      expiry, or package rollback. The local-alpha checklist remains open for
+      those runtime and owner-controlled gates.

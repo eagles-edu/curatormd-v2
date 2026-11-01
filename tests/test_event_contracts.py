@@ -227,9 +227,13 @@ class EventContractTests(unittest.TestCase):
             ),
         )
         extra = event.to_dict()
-        extra["unexpected"] = True
-        with self.assertRaisesRegex(ValueError, "invalid fields"):
+        sensitive_field_name = "PRIVATE_EVENT_KEY_CANARY"
+        extra[sensitive_field_name] = True
+        with self.assertRaisesRegex(ValueError, "invalid event fields") as raised:
             EventEnvelope.from_json(json.dumps(extra))
+        self.assertNotIn(sensitive_field_name, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
         duplicate_field = "PRIVATE_EVENT_CANARY"
         with self.assertRaisesRegex(ValueError, "duplicate JSON field") as raised:
             EventEnvelope.from_json(

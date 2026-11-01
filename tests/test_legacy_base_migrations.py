@@ -27,6 +27,34 @@ from curatormd_v2 import (
 class LegacyBaseMigrationTests(LegacySchemaMigrationSupport):
     """Exercise the selected legacy migration contracts."""
 
+    def test_v40_database_adds_goal_source_payload_fingerprint_v41(self) -> None:
+        """Upgrade a database that already has the v40 replay index."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v40.sqlite3"
+            store = CuratorStore(database_path)
+            with store.transaction() as connection:
+                connection.execute(
+                    "ALTER TABLE goals DROP COLUMN source_event_payload_sha256"
+                )
+                connection.execute("PRAGMA user_version = 40")
+            store.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    columns = {
+                        row["name"]
+                        for row in connection.execute("PRAGMA table_info(goals)")
+                    }
+                    self.assertIn("source_event_payload_sha256", columns)
+                    self.assertEqual(
+                        connection.execute("PRAGMA user_version").fetchone()[0],
+                        41,
+                    )
+            finally:
+                migrated.close()
+
     def test_v11_database_migrates_to_current_schema_without_feedback_labels(
         self,
     ) -> None:

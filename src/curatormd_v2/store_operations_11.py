@@ -71,6 +71,7 @@ class StoreOperations4Part1(StoreOperations4Part0):
                  COALESCE(length(CAST(g.superseded_by_goal_id AS BLOB)), 0) +
                  COALESCE(length(CAST(g.initial_status AS BLOB)), 0) +
                  COALESCE(length(CAST(g.source_event_id AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.source_event_payload_sha256 AS BLOB)), 0) +
                  length(CAST(g.created_at AS BLOB)) +
                  length(CAST(g.updated_at AS BLOB)) +
                  COALESCE((SELECT SUM(

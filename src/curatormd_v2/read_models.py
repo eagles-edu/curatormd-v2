@@ -578,6 +578,23 @@ class ProjectOperationalCounts:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectQueueSnapshot:
+    """Project-scoped database queue counts without host readiness gates."""
+
+    project_id: str
+    observed_at: str
+    database_observed_at: str | None
+    database_observation_complete: bool
+    event_received_count: int | None
+    event_failed_count: int | None
+    event_quarantined_count: int | None
+    event_claimed_count: int | None
+    event_expired_claim_count: int | None
+    oldest_pending_event_age_seconds: int | None
+    operational_counts: ProjectOperationalCounts | None
+
+
+@dataclass(frozen=True, slots=True)
 # API/MCP contract keeps activity counters and timestamps as stable top-level fields.
 class ProjectActivitySnapshot:  # pylint: disable=too-many-instance-attributes
     """Content-free capture and curation activity, separate from readiness."""

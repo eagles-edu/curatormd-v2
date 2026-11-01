@@ -11,10 +11,14 @@ from contextlib import (
     AbstractContextManager,
     nullcontext,
 )
+from dataclasses import dataclass
 from .models import (
     AuditReceipt,
+    Fact,
+    FactKind,
+    GoalCard,
     MAX_SDE_SUPPORTING_FACTS,
-    Materiality,
+    ReviewDecision,
     SDEConfirmationRequest,
     SDECandidate,
     SDECorrection,
@@ -29,6 +33,17 @@ from .service_types import (
     SDEAssessmentRequest,
 )
 from .service_goal_read import _GoalReadMixin
+from .store import ConflictError
+
+_SDE_FACT_KINDS = frozenset({FactKind.RESEARCH, FactKind.CHANGE, FactKind.VERIFICATION})
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedSDEConfirmation:
+    """A reviewed decision verified outside the SQLite write transaction."""
+
+    receipt: AuditReceipt
+    expected_effect_revision: int | None
 
 
 class _ReviewMixin(_GoalReadMixin):
@@ -37,8 +52,8 @@ class _ReviewMixin(_GoalReadMixin):
     def sde_assess(
         self,
         request: SDEAssessmentRequest,
-    ) -> SDECandidate | None:
-        """Return routine work directly or stage verified significant facts for review."""
+    ) -> SDECandidate:
+        """Stage supported assessments, including routine ones, for owner review."""
 
         expected_effect_revision = self._capture_effect_revision()
         return self._sde_assess(
@@ -49,7 +64,7 @@ class _ReviewMixin(_GoalReadMixin):
         self,
         request: SDEAssessmentRequest,
         effect_fence: Callable[[], AbstractContextManager[object]],
-    ) -> SDECandidate | None:
+    ) -> SDECandidate:
         """Verify evidence before fencing the durable proposal write."""
 
         expected_effect_revision = self._capture_effect_revision()
@@ -62,11 +77,9 @@ class _ReviewMixin(_GoalReadMixin):
         self,
         request: SDEAssessmentRequest,
         effect_fence: Callable[[], AbstractContextManager[object]] | None,
-    ) -> SDECandidate | None:
+    ) -> SDECandidate:
         """Validate current supporting evidence, then store one candidate."""
 
-        if request.materiality is Materiality.ROUTINE:
-            return None
         if request.impact is None or request.retrieval_value is None:
             raise EvidenceGateError(
                 "SDE assessment requires impact and retrieval value"
@@ -84,15 +97,20 @@ class _ReviewMixin(_GoalReadMixin):
             self.store.get_fact(fact_id, self.project_id)
             for fact_id in request.fact_ids
         )
+        if any(fact.kind not in _SDE_FACT_KINDS for fact in selected):
+            raise EvidenceGateError(
+                "SDE candidates may include only research, change, or verification facts"
+            )
         if any(fact.goal_id != request.goal_id for fact in selected):
             raise EvidenceGateError("SDE facts must belong to the assessed goal")
-        has_direct_passing_evidence = any(
-            self._fact_is_currently_verified(goal, fact)
-            for fact in selected
+        reopen_cutoff = self._evidence_epoch_cutoff(
+            self.store.list_facts(request.goal_id, self.project_id)
         )
-        if not has_direct_passing_evidence:
+        if not self._selected_verifications_are_current(
+            goal, selected, reopen_cutoff
+        ):
             raise EvidenceGateError(
-                "candidate requires a selected verification fact with passing evidence"
+                "selected verification facts must have current passing evidence"
             )
         candidate = SDECandidate(
             goal_id=request.goal_id,
@@ -108,6 +126,25 @@ class _ReviewMixin(_GoalReadMixin):
                 candidate, self.project_id
             )
         return stored_candidate
+
+    def _selected_verifications_are_current(
+        self,
+        goal: GoalCard,
+        facts: tuple[Fact, ...],
+        reopen_cutoff: str | None,
+        *,
+        require_verification: bool = False,
+    ) -> bool:
+        """Validate selected proof; proposal creation may precede verification."""
+
+        verification_facts = tuple(
+            fact for fact in facts if fact.kind is FactKind.VERIFICATION
+        )
+        return (bool(verification_facts) or not require_verification) and all(
+            (reopen_cutoff is None or fact.created_at > reopen_cutoff)
+            and self._fact_is_currently_verified(goal, fact)
+            for fact in verification_facts
+        )
 
     def sde_review_queue(self, limit: int = 100) -> tuple[SDEReviewDetail, ...]:
         """Return pending review packets without exposing other projects."""
@@ -204,6 +241,20 @@ class _ReviewMixin(_GoalReadMixin):
     ) -> AuditReceipt:
         """Record the SDE disposition before the plugin binds this action to cleanup."""
 
+        return self.commit_sde_confirmation(
+            self.prepare_sde_confirmation(
+                request, authenticated_subject=authenticated_subject
+            )
+        )
+
+    def prepare_sde_confirmation(
+        self,
+        request: SDEConfirmationRequest,
+        *,
+        authenticated_subject: str | None = None,
+    ) -> _PreparedSDEConfirmation:
+        """Authorize and recheck proof before any project write fence is opened."""
+
         expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize(
             self.project_id,
@@ -216,6 +267,25 @@ class _ReviewMixin(_GoalReadMixin):
                 "review authorizer returned a different authenticated subject"
             )
         candidate = self.store.get_sde_candidate(request.candidate_id, self.project_id)
+        if request.decision is ReviewDecision.APPROVED:
+            goal = self.store.get_goal(candidate.goal_id, self.project_id)
+            facts = tuple(
+                self.store.get_fact(fact_id, self.project_id)
+                for fact_id in candidate.fact_ids
+            )
+            if any(fact.kind not in _SDE_FACT_KINDS for fact in facts):
+                raise EvidenceGateError(
+                    "approval cannot retain advice, proposals, or lifecycle facts"
+                )
+            evidence_epoch_cutoff = self._evidence_epoch_cutoff(
+                self.store.list_facts(candidate.goal_id, self.project_id)
+            )
+            if not self._selected_verifications_are_current(
+                goal, facts, evidence_epoch_cutoff, require_verification=True
+            ):
+                raise EvidenceGateError(
+                    "approval requires selected verification evidence that is current"
+                )
         receipt = AuditReceipt(
             candidate_id=request.candidate_id,
             decision=request.decision,
@@ -225,7 +295,20 @@ class _ReviewMixin(_GoalReadMixin):
             reviewer_id=reviewer_id,
             review_rationale=request.rationale,
         )
-        # This commit is the deletion gate: no artifact is touched before it.
-        with self._effect_fence(expected_effect_revision):
-            durable_receipt = self.store.create_receipt(receipt, self.project_id)
-        return durable_receipt
+        return _PreparedSDEConfirmation(receipt, expected_effect_revision)
+
+    def commit_sde_confirmation(
+        self, prepared: _PreparedSDEConfirmation
+    ) -> AuditReceipt:
+        """Commit only if the reviewed supporting facts have not changed."""
+
+        receipt = prepared.receipt
+        with self._effect_fence(prepared.expected_effect_revision):
+            if self.store.facts_digest(
+                self.store.get_sde_candidate(
+                    receipt.candidate_id, self.project_id
+                ).fact_ids,
+                self.project_id,
+            ) != receipt.facts_sha256:
+                raise ConflictError("reviewed facts changed before disposition")
+            return self.store.create_receipt(receipt, self.project_id)

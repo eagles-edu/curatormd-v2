@@ -24,6 +24,7 @@ from .events import (
     GoalCriteriaAmended,
     MAX_EVENT_BYTES,
 )
+from .evidence import EvidenceCaptureVerifier, EvidenceVerificationContext
 from .errors import RateLimitExceeded
 from .hermes_context import hermes_source_id
 from .health_evaluation import (
@@ -47,9 +48,11 @@ from .models import (
     GoalSnapshot,
     GoalBulletProjection,
     GoalStatus,
+    EvidenceRef,
     ProjectActivitySnapshot,
     ProjectStorageUsage,
     ProjectHealthSnapshot,
+    ProjectQueueSnapshot,
     OperationalHealth,
     utc_now,
     StagingArtifactInventory,
@@ -475,6 +478,42 @@ class _APIEventMethods(_APIState):
         plugin = self._authorized_plugin(caller, project_id, ProjectAction.READ)
         return self._collect_project_health_snapshot(plugin, project_id)[0]
 
+    def project_queue_snapshot(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> ProjectQueueSnapshot:
+        """Read project database queues independently from host readiness."""
+
+        plugin = self._authorized_plugin(caller, project_id, ProjectAction.READ)
+        try:
+            queue, counts, database_observed_at = plugin.operational_queue_inputs()
+        except sqlite3.Error:
+            return ProjectQueueSnapshot(
+                project_id=project_id,
+                observed_at=utc_now(),
+                database_observed_at=None,
+                database_observation_complete=False,
+                event_received_count=None,
+                event_failed_count=None,
+                event_quarantined_count=None,
+                event_claimed_count=None,
+                event_expired_claim_count=None,
+                oldest_pending_event_age_seconds=None,
+                operational_counts=None,
+            )
+        return ProjectQueueSnapshot(
+            project_id=project_id,
+            observed_at=utc_now(),
+            database_observed_at=database_observed_at,
+            database_observation_complete=True,
+            event_received_count=queue.received_count,
+            event_failed_count=queue.failed_count,
+            event_quarantined_count=queue.quarantined_count,
+            event_claimed_count=queue.claimed_count,
+            event_expired_claim_count=queue.expired_claim_count,
+            oldest_pending_event_age_seconds=queue.oldest_pending_age_seconds,
+            operational_counts=counts,
+        )
+
     def project_prometheus_metrics(
         self, caller: AuthenticatedCaller, project_id: str
     ) -> str:
@@ -631,6 +670,38 @@ class _APIGoalMethods(_APIEventMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
         ).goal_fact_evidence(goal_id, fact_id, page)
+
+    def evidence_capture(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        goal_id: str,
+        criterion_id: str,
+        evidence_kind: str,
+        locator: str,
+    ) -> EvidenceRef | None:
+        """Capture a bounded evidence reference through the host's fixed sources."""
+
+        plugin = self._authorized_plugin(caller, project_id, ProjectAction.READ)
+        goal = plugin.service.store.get_goal(goal_id, project_id)
+        if not any(
+            criterion.criterion_id == criterion_id
+            for criterion in goal.success_criteria
+        ):
+            raise ValueError("criterion is not part of the selected goal")
+        verifier = plugin.service.evidence_verifier
+        capture = getattr(verifier, "capture", None)
+        if not callable(capture):
+            return None
+        context = EvidenceVerificationContext(
+            project_id=project_id,
+            goal_id=goal_id,
+            criterion_id=criterion_id,
+            now=datetime.now(UTC),
+        )
+        return cast(EvidenceCaptureVerifier, verifier).capture(
+            evidence_kind, locator, context
+        )
 
     def fact_compaction_propose(
         self,
@@ -843,7 +914,7 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         caller: AuthenticatedCaller,
         project_id: str,
         request: SDEAssessmentRequest,
-    ) -> SDECandidate | None:
+    ) -> SDECandidate:
         """Assess facts under write scope; proposals still require human review."""
 
         return self._authorized_plugin(

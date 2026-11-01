@@ -140,8 +140,8 @@ class StoreOperations2(StoreOperations2Part0):
 
     def add_goal(
         self, goal: GoalCard, *, source_event_id: str | None = None
-    ) -> None:
-        """Persist a goal and its initial immutable criteria version."""
+    ) -> GoalCard:
+        """Persist a goal or replay the identical project-scoped source event."""
 
         if source_event_id is not None and (
             not source_event_id.strip() or len(source_event_id) > 128
@@ -154,15 +154,59 @@ class StoreOperations2(StoreOperations2Part0):
             {"criterion_id": item.criterion_id, "description": item.description}
             for item in goal.success_criteria
         ]
+        source_payload_sha256: str | None = None
+        if source_event_id is not None:
+            source_payload = {
+                "problem": goal.problem,
+                "criteria": criteria,
+                "owner": goal.owner,
+                "checklist_id": goal.checklist_id,
+                "checklist_version": goal.checklist_version,
+                "checklist_source_text": goal.checklist_source_text,
+                "parent_goal_id": goal.parent_goal_id,
+                "depends_on_goal_ids": list(goal.depends_on_goal_ids),
+                "next_action": goal.next_action,
+                "initial_status": goal.status.value,
+            }
+            source_payload_sha256 = hashlib.sha256(
+                _json_dump(source_payload).encode("utf-8")
+            ).hexdigest()
         with self._transaction() as connection:
+            if source_event_id is not None:
+                existing = connection.execute(
+                    """SELECT goal_id, source_event_payload_sha256
+                       FROM goals
+                       WHERE project_id = ? AND source_event_id = ?""",
+                    (goal.project_id, source_event_id),
+                ).fetchone()
+                if existing is not None:
+                    persisted_payload_sha256 = existing[
+                        "source_event_payload_sha256"
+                    ]
+                    if persisted_payload_sha256 is None:
+                        raise ConflictError(
+                            "source event has no replay fingerprint"
+                        )
+                    if persisted_payload_sha256 != source_payload_sha256:
+                        raise ConflictError(
+                            "source event was already used for a different goal request"
+                        )
+                    return self.get_goal(existing["goal_id"], goal.project_id)
+            existing_goal = connection.execute(
+                "SELECT 1 FROM goals WHERE goal_id = ? LIMIT 1",
+                (goal.goal_id,),
+            ).fetchone()
+            if existing_goal is not None:
+                raise ConflictError("goal ID is already in use")
             connection.execute(
                 """INSERT INTO goals
                    (goal_id, project_id, problem, criteria_json, owner, checklist_id,
                     checklist_version, checklist_source_text, parent_goal_id,
                     depends_on_json, criteria_revision, lifecycle_revision,
                     superseded_by_goal_id, initial_status, source_event_id,
-                    status, next_action, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    source_event_payload_sha256, status, next_action, created_at,
+                    updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     goal.goal_id,
                     goal.project_id,
@@ -179,6 +223,7 @@ class StoreOperations2(StoreOperations2Part0):
                     goal.superseded_by_goal_id,
                     goal.status.value,
                     source_event_id,
+                    source_payload_sha256,
                     goal.status.value,
                     goal.next_action,
                     goal.created_at,
@@ -196,6 +241,18 @@ class StoreOperations2(StoreOperations2Part0):
                     goal.created_at,
                 ),
             )
+        return goal
+
+    def has_goal_source_event(self, project_id: str, source_event_id: str) -> bool:
+        """Check whether a project already has a goal for this source event."""
+
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT 1 FROM goals
+                   WHERE project_id = ? AND source_event_id = ? LIMIT 1""",
+                (project_id, source_event_id),
+            ).fetchone()
+        return row is not None
 
     def list_goals(
         self,

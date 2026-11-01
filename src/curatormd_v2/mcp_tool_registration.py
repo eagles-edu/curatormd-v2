@@ -7,7 +7,9 @@ from __future__ import annotations
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 from dataclasses import asdict
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.context import Context as MCPContext
@@ -38,10 +40,11 @@ from .models import (
     SDEQualityFeedbackRequest,
     SDEQualityFeedbackLabel,
 )
-from .reporting import GoalReportPage
+from .reporting import MAX_GOAL_REPORT_FACTS, GoalReportPage
 from .service import SDEAssessmentRequest
 from .mcp_tool_support import (
     ArtifactInput,
+    EvidenceInput,
     json_result,
     parse_artifacts,
     parse_criteria,
@@ -202,6 +205,12 @@ def _register_status_tools(registrar: _McpToolRegistrar) -> None:
         return json_result(api.project_health(caller, project_id))
 
     @_read_tool()
+    def project_queue_snapshot() -> str:
+        """Read complete project database queue counts, separate from host readiness."""
+
+        return json_result(api.project_queue_snapshot(caller, project_id))
+
+    @_read_tool()
     def project_metrics() -> str:
         """Render content-free Prometheus metrics for the bound project."""
 
@@ -238,7 +247,9 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         checklist_source_text: str | None = None,
         parent_goal_id: str | None = None,
         depends_on_goal_ids: list[str] | None = None,
-        initial_status: str = "planned",
+        initial_status: Annotated[
+            str, Field(description="Use active for immediate work, or planned for later work.")
+        ] = "planned",
         next_action: str | None = None,
         source_sequence: int | None = None,
     ) -> str:
@@ -270,7 +281,7 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         expected_lifecycle_revision: int,
         source_sequence: int | None = None,
     ) -> str:
-        """Explicitly accept planned work for execution at its current revision."""
+        """Activate planned work or resume deferred/blocked work at its revision."""
 
         return _process_active(
             _event(
@@ -378,7 +389,7 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         kind: str,
         bullet: str,
         criterion_id: str | None = None,
-        evidence: list[dict[str, str]] | None = None,
+        evidence: list[EvidenceInput] | None = None,
         source_sequence: int | None = None,
     ) -> str:
         """Append a compact typed fact; verification requires evidence."""
@@ -563,6 +574,35 @@ def _register_goal_reads_tools(registrar: _McpToolRegistrar) -> None:
         )
 
     @_read_tool()
+    def evidence_capture(
+        goal_id: str,
+        criterion_id: str,
+        evidence_kind: str,
+        locator: str,
+    ) -> str:
+        """Capture a reference through one host-configured source for this goal."""
+
+        reference = api.evidence_capture(
+            caller,
+            project_id,
+            goal_id,
+            criterion_id,
+            evidence_kind,
+            locator,
+        )
+        if reference is None:
+            return json_result(None)
+        result: dict[str, object] = {
+            "evidence_kind": reference.evidence_kind,
+            "locator": reference.locator,
+            "sha256": reference.sha256,
+            "outcome": reference.outcome.value,
+        }
+        if reference.occurrence_id is not None:
+            result["occurrence_id"] = reference.occurrence_id
+        return json_result(result)
+
+    @_read_tool()
     def goal_bullet_projection(goal_id: str) -> str:
         """Read compact bullets separating verified facts, claims, and open gates."""
 
@@ -574,12 +614,14 @@ def _register_goal_reads_tools(registrar: _McpToolRegistrar) -> None:
     def goal_report(
         goal_id: str,
         fact_offset: int = 0,
-        fact_limit: int = 16,
+        fact_limit: Annotated[
+            int, Field(ge=1, le=MAX_GOAL_REPORT_FACTS)
+        ] = MAX_GOAL_REPORT_FACTS,
         child_offset: int = 0,
         sde_offset: int = 0,
         receipt_offset: int = 0,
     ) -> str:
-        """Read a concise problem/criteria/facts/TODO/review/purge Markdown report."""
+        """Read a concise report; fact_limit is 1-16, default 16. Page with fact_offset."""
 
         return api.goal_report(
             caller,
@@ -599,12 +641,14 @@ def _register_goal_reads_tools(registrar: _McpToolRegistrar) -> None:
         goal_id: str,
         fact_id: str,
         fact_offset: int = 0,
-        fact_limit: int = 16,
+        fact_limit: Annotated[
+            int, Field(ge=1, le=MAX_GOAL_REPORT_FACTS)
+        ] = MAX_GOAL_REPORT_FACTS,
         child_offset: int = 0,
         sde_offset: int = 0,
         receipt_offset: int = 0,
     ) -> str:
-        """Read exact evidence references for one fact on the current report page."""
+        """Read one fact's evidence; fact_limit is 1-16, default 16."""
 
         return json_result(
             api.goal_fact_evidence(
@@ -820,13 +864,16 @@ def _register_review_discovery_tools(registrar: _McpToolRegistrar) -> None:
     @_safe_tool()
     def sde_assess(
         goal_id: str,
-        materiality: str,
+        materiality: Annotated[
+            str,
+            Field(description="Use implementation, decision, recovery, verified_lesson, or routine."),
+        ],
         rationale: str,
         fact_ids: list[str],
         impact: str | None = None,
         retrieval_value: str | None = None,
     ) -> str:
-        """Assess selected facts; a candidate remains pending human review."""
+        """Create a pending proposal from selected facts for the owner to review."""
 
         candidate = api.sde_assess(
             caller,

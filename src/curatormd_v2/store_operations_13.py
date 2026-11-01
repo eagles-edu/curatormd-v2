@@ -697,8 +697,14 @@ class StoreOperations5Part0(StoreOperations4):
                 project_id is not None and row["project_id"] != project_id
             ):
                 raise NotFoundError(f"goal not found: {goal_id}")
-            if row["status"] != GoalStatus.PLANNED.value:
-                raise ConflictError("only planned goals can be activated")
+            if row["status"] not in {
+                GoalStatus.PLANNED.value,
+                GoalStatus.DEFERRED.value,
+                GoalStatus.BLOCKED.value,
+            }:
+                raise ConflictError(
+                    "only planned, deferred, or blocked goals can be activated"
+                )
             if row["lifecycle_revision"] != expected_lifecycle_revision:
                 raise ConflictError(
                     "goal lifecycle revision changed; reload before activation"

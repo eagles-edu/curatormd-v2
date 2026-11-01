@@ -206,11 +206,12 @@ creates a service scoped to the configured project and staging root. The review
 authorizer must be constructed by the trusted host from its authenticated
 request context; the default rejects review decisions. The plugin exposes a
 bounded review queue and candidate detail containing only the goal and selected
-facts. Its `sde_assess` method accepts up to 32 unique selected facts from the
-same goal; routine progress returns no candidate, while other materiality
-requires independently verified passing evidence and creates only a pending
-proposal. The authenticated API requires project `write` scope for assessment;
-review approval remains a separate action. The plugin also provides
+facts. Its `sde_assess` method accepts up to 32 unique selected task facts from
+the same goal. Routine materiality and missing verification do not suppress a
+proposal; any selected verification facts must be current and passing. The
+candidate stays pending so the owner decides whether it is worth retaining.
+Approval remains a separate action and requires current passing evidence. The
+authenticated API requires project `write` scope for assessment. The plugin also provides
 project-scoped event processing, goal status/list/children,
 checklist ID lookup, configured read-path resolution, goal start from an exact
 bound checklist item, explicit user-request intake, accepted child-subtask

@@ -113,14 +113,16 @@ confirmation for each operation:
 ```sh
 curatormd-v2-access register \
   --project-root /absolute/path/to/consumer-repository \
-  --database /absolute/path/to/global-curator-v2.sqlite3 \
-  --rationale "Owner-approved local project registration"
+  --database /absolute/path/to/global-curator-v2.sqlite3
 curatormd-v2-access grant \
   --project-root /absolute/path/to/consumer-repository \
   --database /absolute/path/to/global-curator-v2.sqlite3 \
-  --subject-id consumer-coding --action read \
-  --rationale "Approve read-only project access"
+  --subject-id consumer-coding --action read
 ```
+
+After you type the exact confirmation phrase, the command prompts for a
+one-line rationale. Enter it at the prompt, not in the shell command; do not
+include passwords, keys, or raw task text.
 
 Grant `write` separately only after review. The command records its actor as
 the effective local Unix UID. That is an account-level audit label, not a
@@ -235,7 +237,7 @@ it does not replace Curator's profile, project, or action authorization.
 | `goal_persist` | Requires project `review` authorization; project the goal to a configured canonical Markdown target and may release a previously reviewed purge gate. |
 | `goal_reconcile` | Requires project `read` authorization; compare one configured Markdown projection with its structured goal and return `synced`, `missing`, `divergent`, or `malformed` plus hashes. It never edits either store. |
 | `project_reconcile` | Requires project `read` authorization; scan one configured target once, return a page of per-goal comparisons and identify valid orphaned/malformed marker hashes plus unrecognized marker counts. The goal page is limited to 100 records and the marker inventory is bounded; incomplete scans are explicit. It never edits either store. |
-| `sde_assess` | Requires project `write` scope. Assess up to 32 unique, selected same-goal facts; routine materiality returns `null`, otherwise at least one independently verified passing verification fact plus compact `impact` and `retrieval_value` fields are required. These proposal fields do not verify impact; observed and expected outcomes must remain distinct. Only a pending review proposal is created. It never approves or persists an SDE. |
+| `sde_assess` | Requires project `write` scope. Assess up to 32 unique selected facts from the same goal, with compact `impact` and `retrieval_value` descriptions. Routine materiality and missing verification do not suppress a proposal; any selected verification facts must be current and passing. Those descriptions do not verify impact. Only a pending review proposal is created; the owner decides its importance and disposition. Approval still requires current passing evidence. |
 | `sde_review_queue` | List pending review packets. |
 | `sde_review_detail` | Inspect one candidate's selected facts and evidence. |
 | `sde_review_packet` | Under project `review` scope, return one bounded packet containing candidate facts/provenance and a freshly hashed staging inventory scoped to the candidate goal. The inventory is point-in-time and must still match at decision time; incomplete scans cannot authorize cleanup. |

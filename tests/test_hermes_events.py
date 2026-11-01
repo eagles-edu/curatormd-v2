@@ -194,6 +194,40 @@ class HermesCodexEventTests(unittest.TestCase):
         self.assertEqual(failed.payload.kind, FactKind.OPEN_GATE)
         self.assertIn("pytest exited 2", failed.payload.bullet)
 
+    def test_work_summary_rejects_boolean_schema_version(self) -> None:
+        fingerprint = "a" * 64
+        binding = CodexGoalBinding(
+            profile_id="gptmd-coding",
+            project_id="gptmd",
+            session_id="session-1",
+            goal_id="goal-1",
+            source_id="hermes.gptmd-coding",
+            repository_fingerprint=fingerprint,
+        )
+        summary = json.dumps({
+            "schema_version": True,
+            "repository_fingerprint": fingerprint,
+            "changed_files": [{"path": "src/private.py", "change": "update"}],
+            "omitted_files": 0,
+            "checks": [{"name": "scripts/check", "exit_code": 0}],
+            "omitted_checks": 0,
+        })
+        event = codex_hook_to_event(
+            "codex:turn:end",
+            {
+                "attempt_id": "attempt-bool-version",
+                "session_id": "session-1",
+                "turn_id": "turn-bool-version",
+                "outcome": "completed",
+                "work_summary_json": summary,
+            },
+            binding,
+            source_sequence=2,
+            occurred_at="2026-10-19T00:01:00+00:00",
+        )
+        assert isinstance(event.payload, GoalActivityObserved)
+        self.assertNotIn("src/private.py", event.payload.bullet)
+
     def test_work_summary_rejects_credential_paths_at_curator_boundary(self) -> None:
         fingerprint = "a" * 64
         binding = CodexGoalBinding(
@@ -209,6 +243,19 @@ class HermesCodexEventTests(unittest.TestCase):
             ".ssh/id_ed25519",
             "certs/private.pem",
             "docs/password is Hunter2ABC.txt",
+            "docs/passwords.txt",
+            "docs/passphrase.txt",
+            "config/api_token.json",
+            "config/aws_secret_access_key",
+            "config/access_key_id",
+            "config/session_key.txt",
+            "browser/cookies.json",
+            "config/MY_AWS_SECRET_ACCESS_KEY",
+            "config/OAUTH_CLIENT_SECRET",
+            "browser/MY_BEARER_TOKEN",
+            "local/refresh-token.cache",
+            "deploy/client_secret.yml",
+            "notes/private_key.backup",
             "notes/manual DNS code is Q7mN4pL8xW2cR6vB.txt",
             "notes/dns-challenge-Q7mN4pL8xW2cR6vB.txt",
             "docs/key sk-proj-1234567890abcdefghijklmn.txt",
@@ -419,6 +466,30 @@ class HermesCodexEventTests(unittest.TestCase):
                 self.assertNotIn("work_summary_json", report)
                 self.assertNotIn(fingerprint, report)
                 self.assertNotEqual(snapshot.goal.status, GoalStatus.COMPLETE)
+
+                replayed_summary = codex_hook_to_event(
+                    "codex:turn:end",
+                    {
+                        "attempt_id": "attempt-summary-retry",
+                        "session_id": "session-1",
+                        "turn_id": "turn-summary-retry",
+                        "outcome": "completed",
+                        "work_summary_json": summary_json,
+                    },
+                    binding,
+                    source_sequence=4,
+                    occurred_at="2026-10-19T00:03:00+00:00",
+                )
+                self.assertNotEqual(replayed_summary.event_id, summary_event.event_id)
+                self.assertTrue(store.ingest_event(replayed_summary)[1])
+                self.assertEqual(router.route_once().processed_count, 1)
+                deduplicated = service.goal_status("goal-1").facts
+                self.assertEqual(len(deduplicated), 3)
+                self.assertEqual(deduplicated[-1].source_event_id, summary_event.event_id)
+                replay_receipt = store.event_receipt(
+                    "gptmd", replayed_summary.event_id
+                )
+                self.assertEqual(replay_receipt.status.value, "processed")
 
                 duplicate, inserted = store.ingest_event(start)
                 self.assertFalse(inserted)

@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/user_prompt_submit.py",
+            "statusMessage": "Checking Curator V2 task intake",
+            "timeout": 3,
+            "additionalContextLimit": 4096
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_finish|goal_defer))$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/lifecycle_pre_tool.py",
+            "statusMessage": "Checking for an active Curator V2 task",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/lifecycle_post_tool.py",
+            "statusMessage": "Updating Curator V2 task state",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/lifecycle_stop.py",
+            "statusMessage": "Finishing Curator V2 task tracking",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

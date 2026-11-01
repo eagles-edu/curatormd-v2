@@ -14,33 +14,85 @@ const STATUS_COLORS = Object.freeze({
   degraded: '#ef2929',
   unknown: '#fce94f',
   review: '#ad7fa8',
-  neutral: '#888888',
+  neutral: new vscode.ThemeColor('textLink.foreground'),
 });
 const STATUS_COLOR_MEANINGS = Object.freeze({
   healthy: 'Green means health is healthy with no SDE reviews pending.',
   review: 'Purple means an SDE review is pending and no other health gate is degraded.',
-  unknown: 'Yellow means health or the SDE review count is unknown.',
+  unknown: 'Yellow means the health or SDE review count is unknown.',
   degraded: 'Red means health is degraded beyond the review-only state.',
-  neutral: 'Gray means no health read has been attempted.',
+  neutral: 'Blue means no health read has been attempted.',
 });
 const STATUS_READ_FAILURES = Object.freeze({
   'launcher-start': 'Curator did not start; check the Curator launcher in VS Code User settings.',
   'launcher-exit': 'Curator stopped before replying; check the local Curator installation.',
   'read-denied': 'Curator denied the project read; check its local project access grant.',
+  'mcp-tool-error': 'Curator rejected the request; check the project grant and request details.',
   'mcp-request': 'Curator could not complete the project read; refresh to try again.',
   'invalid-response': 'Curator returned an unreadable response; check the local installation.',
   timeout: 'Curator did not reply within 15 seconds; refresh to try again.',
   'hermes-probe-start': 'Hermes readiness check did not start; check the Hermes command in User settings.',
-  'hermes-probe-exit': 'Hermes readiness check stopped early; use a Hermes version with the Curator status probe.',
+  'hermes-probe-exit': 'Hermes did not return a health snapshot; check the selected Hermes profile and retry.',
+  'hermes-probe-profile-binding': 'No Hermes profile is mapped for this Curator project in VS Code User settings; set curatormdV2.hermesProfileBindings.',
   'hermes-probe-timeout': 'Hermes readiness check timed out; refresh to try again.',
-  'hermes-probe-invalid': 'Hermes readiness data was incomplete or for another project; check the profile settings.',
+  'hermes-probe-invalid': 'Hermes readiness data is incomplete; check the selected profile.',
+  'hermes-probe-project-mismatch': 'Hermes returned health for a different project; check the selected profile binding.',
+  'hermes-probe-stale': 'Hermes returned an old health result; refresh to try again.',
+  'hermes-probe-unreconciled': 'Hermes health fields disagree; check the selected profile and refresh.',
   'hermes-probe-profile': 'The Hermes profile setting is invalid; check the User settings value.',
+  'curator-queue-read': 'Curator could not read project queue counts; check the local project grant and database.',
+  'curator-queue-invalid': 'Curator returned incomplete or unreadable queue data; refresh to try again.',
+  'curator-queue-project-mismatch': 'Curator returned queue data for a different project; check the project grant.',
+  'curator-queue-stale': 'Curator returned an old queue snapshot; refresh to try again.',
+  'feed-auto-paused': 'Automatic checks paused after three identical failures. Click CuratorMD V2 to retry.',
   'status-project-invalid': 'Curator did not identify the configured project; check its project file and grant.',
+  'status-project-mismatch': 'Curator returned a different project than this workspace config; check the project database binding.',
+  'status-database-binding-invalid': 'No absolute database is mapped for this project; check curatormdV2.databaseBindings or databasePath in User settings.',
+  'status-evidence-binding-invalid': 'The host evidence file for this project is invalid; check curatormdV2.evidenceConfigBindings in User settings.',
+});
+const MCP_ERROR_MESSAGES = Object.freeze({
+  invalid_request: 'The request details were invalid; review the entered values.',
+  forbidden: 'Curator denied this request; check the project access grant.',
+  not_found: 'Curator could not find the requested project record; refresh the dashboard.',
+  conflict: 'The project changed during the request; refresh and try again.',
+  capacity_exceeded: 'The project reached a configured limit; review storage and queue status.',
+  rate_limited: 'Curator is receiving requests too quickly; wait before retrying.',
+  internal_error: 'Curator could not complete the request; check the local installation.',
+});
+const MCP_ERROR_CODES = new Set(Object.keys(MCP_ERROR_MESSAGES));
+const HEALTH_GATE_LABELS = Object.freeze({
+  event_backlog: 'Events are waiting to be processed.',
+  event_failures: 'One or more events failed; check the inbox.',
+  event_quarantine: 'One or more events need retry or review.',
+  expired_event_claims: 'An event claim expired before processing finished.',
+  sqlite_payload_scrub_pending: 'Temporary event data is waiting for SQLite cleanup.',
+  review_backlog: 'An SDE proposal is waiting for your decision.',
+  purge_pending: 'Approved cleanup is waiting to finish.',
+  purge_artifacts_pending: 'One or more approved files still need cleanup.',
+  expiry_purge_pending: 'Expired items are waiting for approved cleanup.',
+  expiry_purge_artifacts_pending: 'Expired files are waiting for approved cleanup.',
+  event_capacity_exhausted: 'The event inbox has reached its configured limit.',
+  fact_capacity_exhausted: 'The project fact limit has been reached.',
+  staging_observation_time_unavailable: 'The staging scan time is unavailable.',
+  staging_budget_warning: 'Staging is near its warning limit; writes remain allowed.',
+  staging_budget_reached: 'Staging is at its warning limit; writes remain allowed.',
+  staging_inventory_incomplete: 'The staging scan is incomplete.',
+  staging_adapter_unavailable: 'Curator could not scan the staging folder.',
+  staging_inventory_unavailable: 'The staging inventory could not be read.',
+  staged_artifacts_present: 'Temporary files remain in staging.',
+  dependency_probe_failed: 'A required local readiness check failed.',
+});
+const HEALTH_DEPENDENCY_LABELS = Object.freeze({
+  event_router: 'work-event routing',
+  purge_scheduler: 'six-hour cleanup timer',
+  database_storage_adapter: 'database health check',
+  host_identity: 'Hermes host identity',
+  human_review: 'local reviewer access',
+  alert_delivery: 'maintenance journal',
+  artifact_producer_inventory: 'Curator hook setup',
 });
 const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
-const MAX_GOAL_CRITERIA = 12;
-const MAX_PROJECT_CONFIG_BYTES = 16 * 1024;
 const REVIEW_QUEUE_SIZE = 100;
 const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
@@ -48,15 +100,58 @@ const HERMES_HEALTH_MAX_BYTES = 32768;
 const MAX_HEALTH_PROBE_AGE_SECONDS = 60;
 const MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS = 5;
 const STATUS_REFRESH_INTERVAL_MS = 60000;
+const MAX_IDENTICAL_FEED_FAILURES = 3;
+const MAX_PROJECT_CONFIG_BYTES = 16 * 1024;
+const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SQLITE_WARNING_BYTES = 250 * 1024 * 1024;
 const REQUIRED_HEALTH_PROBES = Object.freeze([
   'event_router', 'purge_scheduler', 'database_storage_adapter', 'host_identity',
   'human_review', 'alert_delivery', 'artifact_producer_inventory',
 ]);
 const REPORT_FACT_ID_PATTERN = /^- `([^`]{1,256})` — /;
+
+function healthProbeFailureMessage(code) {
+  return typeof code === 'string'
+    && Object.prototype.hasOwnProperty.call(STATUS_READ_FAILURES, code)
+    ? STATUS_READ_FAILURES[code]
+    : 'Health could not be checked. Check the selected Hermes profile and retry.';
+}
+
+function queueProbeFailureMessage(code) {
+  return typeof code === 'string'
+    && Object.prototype.hasOwnProperty.call(STATUS_READ_FAILURES, code)
+    ? STATUS_READ_FAILURES[code]
+    : 'Curator queue data could not be checked; open the dashboard and refresh.';
+}
+
+function feedFailureMessage(code, lastFailureCode, autoPaused, messageForCode) {
+  const reasonCode = typeof lastFailureCode === 'string' && lastFailureCode
+    ? lastFailureCode : code;
+  const reason = messageForCode(reasonCode);
+  return autoPaused && reasonCode !== 'feed-auto-paused'
+    ? `${reason} Automatic checks paused after three identical failures; click CuratorMD V2 to retry.`
+    : reason;
+}
+
+function healthGateLabel(code) {
+  if (Object.prototype.hasOwnProperty.call(HEALTH_GATE_LABELS, code)) {
+    return HEALTH_GATE_LABELS[code];
+  }
+  const dependency = /^dependency_(unknown|unavailable|degraded):([a-z][a-z0-9_]{0,63})$/.exec(code);
+  if (dependency) {
+    const label = HEALTH_DEPENDENCY_LABELS[dependency[2]];
+    if (label) {
+      if (dependency[1] === 'unknown') return `No fresh result is available for ${label}.`;
+      return `The ${label} check is currently unavailable.`;
+    }
+  }
+  return `Additional health gate: ${code.replace(/[_:.-]+/g, ' ')}.`;
+}
 let dashboardStatusItem;
 let statusRefreshTimer;
 let statusRefreshGeneration = 0;
+const feedRequestsInFlight = new Map();
+const feedFailureStates = new Map();
 
 function statusTooltip(message) {
   return `${STATUS_LABEL} ${EXTENSION_VERSION}. ${message}`;
@@ -64,6 +159,22 @@ function statusTooltip(message) {
 
 function statusColorMeaning(status) {
   return STATUS_COLOR_MEANINGS[status] || STATUS_COLOR_MEANINGS.unknown;
+}
+
+function hostEvidenceConfigArguments(evidenceConfig) {
+  return typeof evidenceConfig === 'string' && evidenceConfig.trim()
+    ? ['--evidence-config', evidenceConfig.trim()]
+    : [];
+}
+
+function resolveHermesProfileId(projectId, bindings) {
+  if (typeof projectId !== 'string' || !projectId
+    || !bindings || typeof bindings !== 'object' || Array.isArray(bindings)
+    || !Object.prototype.hasOwnProperty.call(bindings, projectId)) return null;
+  const profileId = bindings[projectId];
+  return typeof profileId === 'string'
+    && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(profileId)
+    ? profileId : null;
 }
 
 function statusReadFailure(error) {
@@ -74,25 +185,119 @@ function statusReadFailure(error) {
     : fallback;
 }
 
-function goalStartFailure(error) {
-  const messages = {
-    'launcher-start': 'Curator could not start. Check the local launcher in VS Code User settings.',
-    'launcher-exit': 'Curator stopped before saving the task. Check the local installation.',
-    'read-denied': 'Curator denied access to this project. Check its local project grant.',
-    'mcp-request': 'Curator could not save the task. Refresh and try again.',
-    'invalid-response': 'Curator returned an unreadable result. Check the local installation.',
-    timeout: 'Curator did not respond in time. Refresh and try again.',
-    'goal-start-rejected': 'Curator did not confirm that the task was saved.',
-    'goal-readback-mismatch': 'The saved task differs from what you entered. Review it in the dashboard.',
-    'goal-report-unavailable': 'The task was saved, but Curator could not return its report.',
-    'project-config-invalid': 'The Curator project file could not be read. Check the project setup.',
-    'project-config-changed': 'The project changed while you were entering the task. Run Start Task again.',
-  };
-  const fallback = 'Curator could not confirm task creation. Open the dashboard for details.';
-  const code = error && error.code;
-  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(messages, code)
-    ? messages[code]
-    : fallback;
+function ensureWorkspaceArea(projectRoot, areaName) {
+  const stateRoot = path.join(projectRoot, '.curatormd-v2');
+  const areaPath = path.join(stateRoot, areaName);
+  for (const directory of [stateRoot, areaPath]) {
+    try {
+      const metadata = fs.lstatSync(directory);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new Error('Curator workspace area is not a regular directory.');
+      }
+    } catch (error) {
+      if (error && error.code !== 'ENOENT') throw error;
+      fs.mkdirSync(directory, { mode: 0o700 });
+    }
+  }
+  return areaPath;
+}
+
+function initializeWorkspaceAreas(projectRoot) {
+  const stateRoot = path.join(projectRoot, '.curatormd-v2');
+  for (const area of ['inbox', 'sde-proposals', 'side-buffer']) {
+    ensureWorkspaceArea(projectRoot, area);
+  }
+  const guide = path.join(stateRoot, 'README.md');
+  if (!fs.existsSync(guide)) {
+    const guideText = [
+      '# Curator V2 project work areas',
+      '',
+      '- `inbox/status.json` is a generated count-only view. Any payload retained for retry stays in SQLite under its retry and retention rules.',
+      '- `sde-proposals/pending.json` is a generated queue view. Inspect the full proposal and approve or reject it in the CuratorMD V2 dashboard.',
+      '- `side-buffer/` is the configured temporary file area. Curator inventories it and only removes exact files after an approved cleanup receipt.',
+      '- The SQLite ledger is authoritative. JSON files here are refreshable views, never approval receipts or canonical facts.',
+      '',
+    ].join('\n');
+    const descriptor = fs.openSync(guide, 'wx', 0o600);
+    try { fs.writeFileSync(descriptor, guideText, 'utf8'); } finally { fs.closeSync(descriptor); }
+  }
+}
+
+function writeWorkspaceProjection(projectRoot, filename, value) {
+  const directory = ensureWorkspaceArea(projectRoot, path.dirname(filename));
+  const destination = path.join(directory, path.basename(filename));
+  const stableValue = { ...value };
+  delete stableValue.generated_at;
+  try {
+    const existingStat = fs.lstatSync(destination);
+    if (existingStat.isFile() && !existingStat.isSymbolicLink()
+      && existingStat.size <= 1024 * 1024) {
+      const existing = JSON.parse(fs.readFileSync(destination, 'utf8'));
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        const stableExisting = { ...existing };
+        delete stableExisting.generated_at;
+        if (JSON.stringify(stableExisting) === JSON.stringify(stableValue)) return false;
+      }
+    }
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') {
+      // An unreadable projection is replaced atomically from the authorized snapshot.
+    }
+  }
+  const temporary = path.join(directory, `.${path.basename(filename)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
+  const contents = `${JSON.stringify(value, null, 2)}\n`;
+  try {
+    fs.writeFileSync(temporary, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, destination);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch (_cleanupError) { /* Best-effort temporary cleanup. */ }
+    throw error;
+  }
+  return true;
+}
+
+function writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire) {
+  const inboxFields = [
+    'received_count', 'failed_count', 'quarantined_count',
+    'claimed_count', 'expired_claim_count',
+  ];
+  const normalizedReviews = validateReviewQueue(reviewWire, projectId);
+  if (!inbox || !inboxFields.every((field) => Number.isSafeInteger(inbox[field]) && inbox[field] >= 0)
+      || (inbox.oldest_pending_age_seconds !== null
+        && (!Number.isSafeInteger(inbox.oldest_pending_age_seconds)
+          || inbox.oldest_pending_age_seconds < 0))
+      || normalizedReviews === null) return false;
+  writeWorkspaceProjection(projectRoot, 'inbox/status.json', {
+    project_id: projectId,
+    generated_at: new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().replace('Z', '+07:00'),
+    source: 'Curator V2 SQLite inbox summary',
+    canonical: false,
+    received_count: inbox.received_count,
+    failed_count: inbox.failed_count,
+    quarantined_count: inbox.quarantined_count,
+    oldest_pending_received_at: typeof inbox.oldest_pending_received_at === 'string'
+      ? inbox.oldest_pending_received_at.slice(0, 64) : null,
+    oldest_pending_age_seconds: inbox.oldest_pending_age_seconds,
+    claimed_count: inbox.claimed_count,
+    expired_claim_count: inbox.expired_claim_count,
+  });
+  writeWorkspaceProjection(projectRoot, 'sde-proposals/pending.json', {
+    project_id: projectId,
+    generated_at: new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().replace('Z', '+07:00'),
+    source: 'Curator V2 SQLite review queue',
+    canonical: false,
+    review_action: 'Open the CuratorMD V2 dashboard to inspect and decide each proposal.',
+    candidates: normalizedReviews,
+  });
+  return true;
+}
+
+function tryWriteWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire) {
+  try {
+    return writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire);
+  } catch (_error) {
+    return false;
+  }
 }
 
 function healthGateSummary(health, projectId) {
@@ -100,12 +305,12 @@ function healthGateSummary(health, projectId) {
     return '';
   }
   const codes = health.gate_codes
-    .filter((code) => typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code))
+    .filter((code) => typeof code === 'string' && /^[a-z][a-z0-9_:.-]{0,127}$/.test(code))
     .slice(0, 12);
   const omitted = health.gate_codes.length - codes.length;
   if (codes.length === 0) return '';
   const suffix = omitted > 0 ? `; ${omitted} additional or invalid gate(s)` : '';
-  return ` Health gates: ${codes.join(', ')}${suffix}.`;
+  return ` Health gates: ${codes.map(healthGateLabel).join(' ')}${suffix}.`;
 }
 
 function sqliteSizeWarning(storage, projectId) {
@@ -165,10 +370,106 @@ function isBoundedFactEvidence(value, projectId, goalId, factId, reportRevision)
   });
 }
 
+function factEvidenceDisplayStatus(value, now = Date.now()) {
+  if (!value || value.fact_kind !== 'verification') {
+    return value?.verification_status || 'stale/unknown';
+  }
+  const attestations = Array.isArray(value.evidence)
+    ? value.evidence.map((reference) => reference?.attestation).filter(Boolean) : [];
+  const evidenceIsCurrent = value.evidence.length > 0
+    && value.evidence.every((reference) => {
+      if (reference?.outcome !== 'passed' || !reference.attestation) return false;
+      const observedAt = Date.parse(reference.attestation.observed_at);
+      const validUntil = Date.parse(reference.attestation.valid_until);
+      const revocationCheckedAt = Date.parse(reference.attestation.revocation_checked_at);
+      return Number.isFinite(observedAt) && observedAt <= now
+        && Number.isFinite(validUntil) && validUntil > now
+        && Number.isFinite(revocationCheckedAt)
+        && revocationCheckedAt >= observedAt && revocationCheckedAt <= now;
+    });
+  if (value.verification_status === 'verified_fact' && !evidenceIsCurrent) {
+    return 'stale/unknown';
+  }
+  if (attestations.length > 0 && value.verification_status !== 'verified_fact') {
+    // The backend rechecks the source when it reads this page. A formerly
+    // attested fact that no longer verifies is historical, not current proof.
+    return 'stale/unknown';
+  }
+  return value.verification_status;
+}
+
 function curatorError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function readConfiguredProjectId(projectRoot) {
+  let descriptor;
+  try {
+    const configPath = path.join(projectRoot, '.curatormd-v2.toml');
+    const noFollow = fs.constants.O_NOFOLLOW || 0;
+    descriptor = fs.openSync(configPath, fs.constants.O_RDONLY | noFollow);
+    const metadata = fs.fstatSync(descriptor);
+    if (!metadata.isFile() || metadata.size > MAX_PROJECT_CONFIG_BYTES) {
+      throw new Error('invalid project config file');
+    }
+    const sourceBuffer = Buffer.alloc(MAX_PROJECT_CONFIG_BYTES + 1);
+    const bytesRead = fs.readSync(
+      descriptor, sourceBuffer, 0, sourceBuffer.length, 0,
+    );
+    if (bytesRead > MAX_PROJECT_CONFIG_BYTES) {
+      throw new Error('project config exceeds size limit');
+    }
+    const source = sourceBuffer.subarray(0, bytesRead).toString('utf8');
+    let rootTable = true;
+    let projectId = null;
+    for (const line of source.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      if (trimmed.startsWith('[')) {
+        rootTable = false;
+        continue;
+      }
+      if (!rootTable || !/^project_id\s*=/.test(trimmed)) continue;
+      if (projectId !== null) throw new Error('duplicate project id');
+      const match = trimmed.match(/^project_id\s*=\s*(["'])([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\1\s*(?:#.*)?$/);
+      if (!match) throw new Error('invalid project id');
+      projectId = match[2];
+    }
+    if (!projectId) throw new Error('missing project id');
+    return projectId;
+  } catch (_error) {
+    throw curatorError(
+      'status-project-invalid',
+      'The Curator project file is missing, unreadable, or has an invalid project ID.',
+    );
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
+function resolveDatabasePath(projectId, databaseBindings, fallbackPath) {
+  if (typeof projectId !== 'string' || !PROJECT_ID_PATTERN.test(projectId)) return null;
+  let selected = fallbackPath;
+  if (databaseBindings && typeof databaseBindings === 'object'
+    && Object.prototype.hasOwnProperty.call(databaseBindings, projectId)) {
+    selected = databaseBindings[projectId];
+  }
+  return typeof selected === 'string' && selected.trim() === selected
+    && selected.length > 0 && path.isAbsolute(selected) ? selected : null;
+}
+
+function resolveEvidenceConfig(projectId, evidenceConfigBindings, fallbackPath) {
+  let selected = fallbackPath;
+  if (typeof projectId === 'string' && PROJECT_ID_PATTERN.test(projectId)
+    && evidenceConfigBindings && typeof evidenceConfigBindings === 'object'
+    && Object.prototype.hasOwnProperty.call(evidenceConfigBindings, projectId)) {
+    selected = evidenceConfigBindings[projectId];
+  }
+  if (selected === '') return '';
+  return typeof selected === 'string' && selected.trim() === selected
+    && path.isAbsolute(selected) ? selected : null;
 }
 
 function validGoalText(value, limit) {
@@ -176,182 +477,6 @@ function validGoalText(value, limit) {
     && value.trim().length > 0
     && value.length <= limit
     && !/[\r\n]/.test(value);
-}
-
-async function promptForGoalDefinition() {
-  const problem = await vscode.window.showInputBox({
-    title: 'Start a Curator V2 task',
-    prompt: 'Write a short problem statement. Do not paste a transcript, password, or key.',
-    placeHolder: 'What needs to change?',
-    ignoreFocusOut: true,
-    validateInput: (value) => validGoalText(value, 2000)
-      ? undefined
-      : 'Enter one line with at most 2,000 characters.',
-  });
-  if (!problem) return null;
-
-  const criteria = [];
-  while (criteria.length < MAX_GOAL_CRITERIA) {
-    const description = await vscode.window.showInputBox({
-      title: `Success check ${criteria.length + 1}`,
-      prompt: 'Enter one observable result. Each check stays separate in the saved task.',
-      placeHolder: 'What result can be checked?',
-      ignoreFocusOut: true,
-      validateInput: (value) => validGoalText(value, 500)
-        ? undefined
-        : 'Enter one line with at most 500 characters.',
-    });
-    if (!description) return null;
-    criteria.push({
-      criterion_id: `criterion-${String(criteria.length + 1).padStart(2, '0')}`,
-      description: description.trim(),
-    });
-    if (criteria.length >= MAX_GOAL_CRITERIA) break;
-    const choice = await vscode.window.showQuickPick(
-      ['Add another success check', 'Create this active task'],
-      {
-        title: 'Task success checks',
-        placeHolder: `${criteria.length} check(s) entered. Add another or continue.`,
-        ignoreFocusOut: true,
-      },
-    );
-    if (!choice) return null;
-    if (choice === 'Create this active task') break;
-  }
-
-  const summary = `${problem.trim()}\n\nSuccess checks:\n${criteria
-    .map((criterion, index) => `${index + 1}. ${criterion.description}`)
-    .join('\n')}`;
-  const confirmation = await vscode.window.showInformationMessage(
-    summary,
-    {
-      modal: true,
-      detail: 'Only this summary and the separate checks will be saved. Retrying the same entry reuses the same task.',
-    },
-    'Start task',
-    'Cancel',
-  );
-  if (confirmation !== 'Start task') return null;
-  return { problem: problem.trim(), criteria };
-}
-
-function projectConfigDigest(projectRoot) {
-  const bytes = fs.readFileSync(path.join(projectRoot, '.curatormd-v2.toml'));
-  if (bytes.length > MAX_PROJECT_CONFIG_BYTES) {
-    throw curatorError('project-config-invalid', 'Curator project file is too large.');
-  }
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
-function stableGoalEventIds(projectRoot, profileId, projectId, configDigest, definition) {
-  const identity = JSON.stringify({
-    project_root: path.resolve(projectRoot),
-    profile_id: profileId,
-    project_id: projectId,
-    config_sha256: configDigest,
-    problem: definition.problem,
-    success_criteria: definition.criteria,
-  });
-  const digest = createHash('sha256').update(identity).digest('hex');
-  return {
-    eventId: `vscode-task-event-${digest}`,
-    goalId: `vscode-task-${digest}`,
-  };
-}
-
-async function startGoalFromWorkspace(spawnProcess = spawn) {
-  const workspace = vscode.workspace
-    && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
-  if (!workspace) {
-    vscode.window.showWarningMessage('Open a configured Curator V2 project first.');
-    return null;
-  }
-  const projectRoot = workspace.uri.fsPath;
-  if (!fs.existsSync(projectRoot) || !fs.existsSync(path.join(projectRoot, '.curatormd-v2.toml'))) {
-    vscode.window.showErrorMessage('This folder is not configured for Curator V2.');
-    return null;
-  }
-  const configuration = vscode.workspace.getConfiguration('curatormdV2');
-  if (hasWorkspaceSettingOverride(configuration,
-    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand'])) {
-    vscode.window.showErrorMessage('Curator V2 uses User settings for its local connection.');
-    return null;
-  }
-  const databasePath = configuration.get('databasePath', '');
-  const profileId = configuration.get('profileId', '');
-  const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
-  if (!databasePath || !profileId || !serverCommand) {
-    vscode.window.showErrorMessage('Set the Curator V2 database, profile, and launcher in User settings.');
-    return null;
-  }
-
-  const definition = await promptForGoalDefinition();
-  if (!definition) return null;
-  let configDigest;
-  try {
-    configDigest = projectConfigDigest(projectRoot);
-  } catch (error) {
-    vscode.window.showErrorMessage(goalStartFailure(error));
-    return null;
-  }
-  const client = new McpStdioClient(serverCommand, [
-    '--project-root', projectRoot,
-    '--database', databasePath,
-    '--profile-id', profileId,
-  ], projectRoot, profileId, spawnProcess);
-  try {
-    await client.initialize();
-    const projectPage = JSON.parse(await client.callTool('goal_list_page', { offset: 0, limit: 1 }));
-    if (!projectPage || typeof projectPage.project_id !== 'string' || !projectPage.project_id) {
-      throw curatorError('status-project-invalid', 'Curator did not return the configured project.');
-    }
-    if (projectConfigDigest(projectRoot) !== configDigest) {
-      throw curatorError('project-config-changed', 'Curator project changed before task creation.');
-    }
-    const { eventId, goalId } = stableGoalEventIds(
-      projectRoot, profileId, projectPage.project_id, configDigest, definition,
-    );
-    const receipt = JSON.parse(await client.callTool('goal_start', {
-      event_id: eventId,
-      goal_id: goalId,
-      problem: definition.problem,
-      success_criteria: definition.criteria,
-      initial_status: 'active',
-    }));
-    if (!receipt || receipt.project_id !== projectPage.project_id
-      || receipt.event_id !== eventId || !['processed', 'duplicate'].includes(receipt.status)) {
-      throw curatorError('goal-start-rejected', 'Curator did not confirm that the task was saved.');
-    }
-    const saved = JSON.parse(await client.callTool('goal_status', { goal_id: goalId }));
-    const savedGoal = saved && saved.goal;
-    const savedCriteria = savedGoal && savedGoal.success_criteria;
-    const exactCriteria = Array.isArray(savedCriteria)
-      && savedCriteria.length === definition.criteria.length
-      && savedCriteria.every((criterion, index) => (
-        criterion.criterion_id === definition.criteria[index].criterion_id
-        && criterion.description === definition.criteria[index].description
-      ));
-    if (!savedGoal || savedGoal.goal_id !== goalId
-      || savedGoal.project_id !== projectPage.project_id
-      || savedGoal.problem !== definition.problem || !exactCriteria) {
-      throw curatorError('goal-readback-mismatch', 'The saved task did not match the entered summary.');
-    }
-    const report = await client.callTool('goal_report', { goal_id: goalId, fact_limit: 1 });
-    if (!report.includes(`# Goal \`${goalId}\``)
-      || !report.includes('## Success criteria')) {
-      throw curatorError('goal-report-unavailable', 'Curator did not return the saved task report.');
-    }
-    const replayed = receipt.status === 'duplicate';
-    vscode.window.showInformationMessage(
-      replayed ? `Curator V2 reused the saved task: ${goalId}` : `Curator V2 task started: ${goalId}`,
-    );
-    return { projectId: projectPage.project_id, goalId, eventId, replayed };
-  } catch (error) {
-    vscode.window.showErrorMessage(goalStartFailure(error));
-    return null;
-  } finally {
-    client.close();
-  }
 }
 
 function parseHermesHealthProbe(stdout, expectedProjectId) {
@@ -365,6 +490,12 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
     throw curatorError('hermes-probe-invalid', 'Hermes health response was not valid JSON.');
   }
   const health = response && response.health;
+  if (response && health
+    && typeof response.project_id === 'string'
+    && typeof health.project_id === 'string'
+    && (response.project_id !== expectedProjectId || health.project_id !== expectedProjectId)) {
+    throw curatorError('hermes-probe-project-mismatch', 'Hermes health belongs to another project.');
+  }
   const validCode = (code) => typeof code === 'string'
     && /^[a-z][a-z0-9_:.-]{0,127}$/.test(code);
   const dependencies = health && health.dependencies;
@@ -382,6 +513,7 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
       const observedAt = Date.parse(dependency.observed_at);
       const age = (Date.now() - observedAt) / 1000;
       return Number.isFinite(observedAt)
+        && Number.isSafeInteger(dependency.age_seconds)
         && dependency.age_seconds <= MAX_HEALTH_PROBE_AGE_SECONDS
         && age <= MAX_HEALTH_PROBE_AGE_SECONDS + MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS
         && age >= -MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS;
@@ -402,16 +534,75 @@ function parseHermesHealthProbe(stdout, expectedProjectId) {
     || health.database_observation_complete !== true
     || !Array.isArray(health.gate_codes) || health.gate_codes.length > 128
     || !health.gate_codes.every(validCode) || !dependenciesValid) {
-    throw curatorError('hermes-probe-invalid', 'Hermes health response was incomplete or project-mismatched.');
+    throw curatorError('hermes-probe-invalid', 'Hermes health response was incomplete.');
+  }
+  if (!healthObservationFresh || !dependencyObservationsFresh) {
+    throw curatorError('hermes-probe-stale', 'Hermes health observations are outside the freshness limit.');
   }
   if (health.status === 'healthy'
     && (health.gate_codes.length > 0
-      || dependencies.some((dependency) => dependency.status !== 'healthy')
-      || !healthObservationFresh
-      || !dependencyObservationsFresh)) {
-    throw curatorError('hermes-probe-invalid', 'Hermes health response did not reconcile.');
+      || dependencies.some((dependency) => dependency.status !== 'healthy'))) {
+    throw curatorError('hermes-probe-unreconciled', 'Hermes healthy status contradicts its gates or dependencies.');
   }
   return health;
+}
+
+function parseCuratorQueueSnapshot(stdout, expectedProjectId) {
+  if (typeof stdout !== 'string' || Buffer.byteLength(stdout, 'utf8') > HERMES_HEALTH_MAX_BYTES) {
+    throw curatorError('curator-queue-invalid', 'Curator queue response exceeded its size limit.');
+  }
+  let snapshot;
+  try {
+    snapshot = JSON.parse(stdout);
+  } catch {
+    throw curatorError('curator-queue-invalid', 'Curator queue response was not valid JSON.');
+  }
+  if (snapshot && typeof snapshot.project_id === 'string'
+    && snapshot.project_id !== expectedProjectId) {
+    throw curatorError('curator-queue-project-mismatch', 'Curator queue data belongs to another project.');
+  }
+  const observedAt = snapshot && typeof snapshot.observed_at === 'string'
+    ? Date.parse(snapshot.observed_at) : Number.NaN;
+  const databaseObservedAt = snapshot && typeof snapshot.database_observed_at === 'string'
+    ? Date.parse(snapshot.database_observed_at) : Number.NaN;
+  const hasTimezone = (value) => typeof value === 'string'
+    && /(?:Z|[+-][0-9]{2}:[0-9]{2})$/i.test(value);
+  if (!hasTimezone(snapshot && snapshot.observed_at)
+    || !hasTimezone(snapshot && snapshot.database_observed_at)) {
+    throw curatorError('curator-queue-invalid', 'Curator queue timestamps must include a timezone.');
+  }
+  const isFresh = (timestamp) => {
+    const age = (Date.now() - timestamp) / 1000;
+    return Number.isFinite(timestamp)
+      && age <= MAX_HEALTH_PROBE_AGE_SECONDS + MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS
+      && age >= -MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS;
+  };
+  if ((Number.isFinite(observedAt) && !isFresh(observedAt))
+    || (Number.isFinite(databaseObservedAt) && !isFresh(databaseObservedAt))) {
+    throw curatorError('curator-queue-stale', 'Curator queue observation is outside the freshness limit.');
+  }
+  const count = (value) => Number.isSafeInteger(value) && value >= 0;
+  const nullableCount = (value) => value === null || count(value);
+  const operational = snapshot && snapshot.operational_counts;
+  const operationalFields = [
+    'pending_review_count', 'pending_purge_receipt_count',
+    'pending_purge_artifact_count', 'pending_expiry_purge_receipt_count',
+    'pending_expiry_purge_artifact_count',
+  ];
+  const eventFields = [
+    'event_received_count', 'event_failed_count', 'event_quarantined_count',
+    'event_claimed_count', 'event_expired_claim_count',
+    'oldest_pending_event_age_seconds',
+  ];
+  if (!snapshot || snapshot.project_id !== expectedProjectId
+    || !hasTimezone(snapshot.observed_at) || !Number.isFinite(observedAt)
+    || !hasTimezone(snapshot.database_observed_at) || !Number.isFinite(databaseObservedAt)
+    || snapshot.database_observation_complete !== true
+    || !operational || !operationalFields.every((field) => count(operational[field]))
+    || !eventFields.every((field) => nullableCount(snapshot[field]))) {
+    throw curatorError('curator-queue-invalid', 'Curator queue snapshot is incomplete.');
+  }
+  return snapshot;
 }
 
 function readHermesHealthProbe(command, profileId, projectId, cwd, spawnProcess = spawn) {
@@ -473,8 +664,121 @@ function readHermesHealthProbe(command, profileId, projectId, cwd, spawnProcess 
   });
 }
 
+function projectFeedKey(projectRoot, databasePath, profileId, hermesProfileId, serverCommand,
+  hermesCommand, evidenceConfig, projectId) {
+  return createHash('sha256').update(JSON.stringify([
+    projectRoot, databasePath, profileId, hermesProfileId, serverCommand, hermesCommand,
+    evidenceConfig, projectId,
+  ])).digest('hex');
+}
+
+function clearFeedFailureStates() {
+  feedFailureStates.clear();
+}
+
+function feedFailureState(key, feed) {
+  return feedFailureStates.get(`${key}:${feed}`) || null;
+}
+
+function recordFeedResult(key, feed, errorCode, checkedAt) {
+  const stateKey = `${key}:${feed}`;
+  if (!errorCode) {
+    feedFailureStates.delete(stateKey);
+    return null;
+  }
+  const previous = feedFailureStates.get(stateKey);
+  const count = previous && previous.code === errorCode ? previous.count + 1 : 1;
+  const state = { code: errorCode, count, checkedAt, paused: count >= MAX_IDENTICAL_FEED_FAILURES };
+  feedFailureStates.set(stateKey, state);
+  return state;
+}
+
+function readProjectFeeds({
+  client, projectRoot, databasePath, profileId, serverCommand,
+  hermesProfileId = profileId, hermesCommand, evidenceConfig, projectId, spawnProcess = spawn,
+  trigger = 'automatic',
+}) {
+  const key = projectFeedKey(
+    projectRoot, databasePath, profileId, hermesProfileId, serverCommand,
+    hermesCommand, evidenceConfig, projectId,
+  );
+  if (trigger === 'manual') {
+    feedFailureStates.delete(`${key}:health`);
+    feedFailureStates.delete(`${key}:queue`);
+  }
+  const existing = feedRequestsInFlight.get(key);
+  if (existing) return existing;
+
+  const pending = (async () => {
+    const priorHealthFailure = feedFailureState(key, 'health');
+    const priorQueueFailure = feedFailureState(key, 'queue');
+    const healthPaused = trigger !== 'manual' && priorHealthFailure?.paused;
+    const queuePaused = trigger !== 'manual' && priorQueueFailure?.paused;
+    const healthAttemptAt = new Date().toISOString();
+    const queueAttemptAt = new Date().toISOString();
+    const healthRequest = healthPaused
+      ? Promise.resolve({ value: null, errorCode: 'feed-auto-paused', checkedAt: priorHealthFailure.checkedAt })
+      : !hermesProfileId
+        ? Promise.resolve({
+          value: null,
+          errorCode: 'hermes-probe-profile-binding',
+          checkedAt: healthAttemptAt,
+        })
+        : readHermesHealthProbe(hermesCommand, hermesProfileId, projectId, projectRoot, spawnProcess)
+        .then((value) => ({ value, errorCode: null, checkedAt: value.observed_at }))
+        .catch((error) => ({
+          value: null,
+          errorCode: error && typeof error.code === 'string' ? error.code : 'hermes-probe-invalid',
+          checkedAt: healthAttemptAt,
+        }));
+    const queueRequest = queuePaused
+      ? Promise.resolve({ value: null, errorCode: 'feed-auto-paused', checkedAt: priorQueueFailure.checkedAt })
+      : client.callTool('project_queue_snapshot', {})
+        .then((wire) => parseCuratorQueueSnapshot(wire, projectId))
+        .then((value) => ({ value, errorCode: null, checkedAt: value.observed_at }))
+        .catch((error) => ({
+          value: null,
+          errorCode: error && typeof error.code === 'string'
+            ? error.code : 'curator-queue-read',
+          checkedAt: queueAttemptAt,
+        }));
+    const [health, queue] = await Promise.all([healthRequest, queueRequest]);
+    const healthState = healthPaused
+      ? priorHealthFailure
+      : recordFeedResult(key, 'health', health.errorCode, health.checkedAt);
+    const queueState = queuePaused
+      ? priorQueueFailure
+      : recordFeedResult(key, 'queue', queue.errorCode, queue.checkedAt);
+    return {
+      health: health.value,
+      healthProbeError: health.errorCode,
+      healthLastFailureCode: healthPaused
+        ? priorHealthFailure.code : health.errorCode,
+      healthCheckedAt: health.checkedAt,
+      healthAutoPaused: Boolean(healthState?.paused),
+      queueSnapshot: queue.value,
+      queueProbeError: queue.errorCode,
+      queueLastFailureCode: queuePaused
+        ? priorQueueFailure.code : queue.errorCode,
+      queueCheckedAt: queue.checkedAt,
+      queueAutoPaused: Boolean(queueState?.paused),
+    };
+  })();
+  feedRequestsInFlight.set(key, pending);
+  pending.finally(() => {
+    if (feedRequestsInFlight.get(key) === pending) feedRequestsInFlight.delete(key);
+  }).catch(() => {});
+  return pending;
+}
+
 function dashboardErrorMessage(error) {
   switch (error && error.code) {
+    case 'status-project-invalid':
+      return 'This workspace has an invalid .curatormd-v2.toml project ID. Correct the project file before opening Curator.';
+    case 'status-project-mismatch':
+      return 'Curator opened a different project database than this workspace declares. Check curatormdV2.databaseBindings.';
+    case 'status-database-binding-invalid':
+      return 'No absolute Curator database is configured for this project. Set curatormdV2.databaseBindings in User settings.';
     case 'launcher-start':
       return 'Could not start Curator V2. Check the User setting serverCommand and the installed launcher.';
     case 'launcher-exit':
@@ -483,6 +787,9 @@ function dashboardErrorMessage(error) {
       return 'Curator V2 did not respond within 15 seconds. Check the local backend and try again.';
     case 'read-denied':
       return 'Curator V2 denied this read. Check the configured project and its active local read grant.';
+    case 'mcp-tool-error':
+      return MCP_ERROR_MESSAGES[error.reasonCode]
+        || 'Curator V2 rejected the request. Check the project grant and request details.';
     case 'mcp-request':
       return 'The Curator V2 MCP request failed. Check that the installed launcher and backend are compatible.';
     case 'invalid-response':
@@ -519,14 +826,14 @@ function summarizeGoalStates(activity, projectId) {
   return `Goal states: ${GOAL_STATES.map((state) => `${state} ${counts.get(state)}`).join(', ')}.`;
 }
 
-function summarizeOperationalQueues(health, projectId) {
-  if (!health || health.project_id !== projectId) {
-    return 'Operational queues: unknown. Health snapshot unavailable or mismatched.';
+function summarizeOperationalQueues(snapshot, projectId) {
+  if (!snapshot || snapshot.project_id !== projectId) {
+    return 'Operational queues: unknown. Curator queue snapshot unavailable or mismatched.';
   }
-  if (health.database_observation_complete !== true) {
+  if (snapshot.database_observation_complete !== true) {
     return 'Operational queues: unknown. Database observation is incomplete.';
   }
-  const counts = health.operational_counts;
+  const counts = snapshot.operational_counts;
   const queueFields = [
     'pending_review_count', 'pending_purge_receipt_count',
     'pending_purge_artifact_count', 'pending_expiry_purge_receipt_count',
@@ -539,12 +846,64 @@ function summarizeOperationalQueues(health, projectId) {
   ];
   const exactCount = (value) => Number.isSafeInteger(value) && value >= 0;
   if (!counts || !queueFields.every((field) => exactCount(counts[field]))
-    || !eventFields.every((field) => health[field] === null || exactCount(health[field]))) {
-    return 'Operational queues: unknown. Health snapshot is incomplete.';
+    || !eventFields.every((field) => snapshot[field] === null || exactCount(snapshot[field]))) {
+    return 'Operational queues: unknown. Curator queue snapshot is incomplete.';
   }
-  const age = health.oldest_pending_event_age_seconds === null
-    ? 'none' : `${health.oldest_pending_event_age_seconds}s`;
-  return `Events received ${health.event_received_count ?? 'unavailable'}, failed ${health.event_failed_count ?? 'unavailable'}, quarantined ${health.event_quarantined_count ?? 'unavailable'}, active claims ${health.event_claimed_count ?? 'unavailable'}, expired claims ${health.event_expired_claim_count ?? 'unavailable'}; oldest pending age ${age}. Reviews pending ${counts.pending_review_count}; purge pending ${counts.pending_purge_receipt_count} receipts / ${counts.pending_purge_artifact_count} artifacts; expiry pending ${counts.pending_expiry_purge_receipt_count} receipts / ${counts.pending_expiry_purge_artifact_count} artifacts.`;
+  const age = snapshot.oldest_pending_event_age_seconds === null
+    ? 'none' : `${snapshot.oldest_pending_event_age_seconds}s`;
+  return `Events received ${snapshot.event_received_count ?? 'unavailable'}, failed ${snapshot.event_failed_count ?? 'unavailable'}, quarantined ${snapshot.event_quarantined_count ?? 'unavailable'}, active claims ${snapshot.event_claimed_count ?? 'unavailable'}, expired claims ${snapshot.event_expired_claim_count ?? 'unavailable'}; oldest pending age ${age}. Reviews pending ${counts.pending_review_count}; purge pending ${counts.pending_purge_receipt_count} receipts / ${counts.pending_purge_artifact_count} artifacts; expiry pending ${counts.pending_expiry_purge_receipt_count} receipts / ${counts.pending_expiry_purge_artifact_count} artifacts.`;
+}
+
+function queueMetricRows(snapshot, projectId) {
+  const unavailable = [{
+    label: 'Queue snapshot',
+    value: summarizeOperationalQueues(snapshot, projectId).replace(/^Operational queues: unknown\. /, ''),
+    state: 'unknown',
+  }];
+  if (!snapshot || snapshot.project_id !== projectId
+    || snapshot.database_observation_complete !== true) return unavailable;
+  const counts = snapshot.operational_counts;
+  const exactCount = (value) => Number.isSafeInteger(value) && value >= 0;
+  const nullableText = (value) => exactCount(value) ? String(value) : 'unknown';
+  if (!counts || ![
+    'pending_review_count', 'pending_purge_receipt_count', 'pending_purge_artifact_count',
+    'pending_expiry_purge_receipt_count', 'pending_expiry_purge_artifact_count',
+  ].every((field) => exactCount(counts[field]))) return unavailable;
+  const nullableState = (value, positiveState = 'warning') => (
+    !exactCount(value) ? 'unknown' : value > 0 ? positiveState : 'healthy'
+  );
+  const age = snapshot.oldest_pending_event_age_seconds;
+  const ageText = age === null
+    ? snapshot.event_received_count === 0 && snapshot.event_failed_count === 0
+      ? 'none' : 'unknown'
+    : exactCount(age) ? `${age}s` : 'unknown';
+  return [
+    { label: 'Events received', value: nullableText(snapshot.event_received_count), state: nullableState(snapshot.event_received_count, 'review') },
+    { label: 'Events failed', value: nullableText(snapshot.event_failed_count), state: nullableState(snapshot.event_failed_count, 'degraded') },
+    { label: 'Events quarantined', value: nullableText(snapshot.event_quarantined_count), state: nullableState(snapshot.event_quarantined_count, 'degraded') },
+    { label: 'Active claims', value: nullableText(snapshot.event_claimed_count), state: snapshot.event_claimed_count === null ? 'unknown' : 'neutral' },
+    { label: 'Expired claims', value: nullableText(snapshot.event_expired_claim_count), state: nullableState(snapshot.event_expired_claim_count) },
+    { label: 'Oldest pending age', value: ageText, state: ageText === 'unknown'
+      || !exactCount(snapshot.event_received_count) || !exactCount(snapshot.event_failed_count)
+      ? 'unknown' : snapshot.event_received_count || snapshot.event_failed_count ? 'review' : 'healthy' },
+    { label: 'SDE reviews pending', value: String(counts.pending_review_count), state: counts.pending_review_count ? 'review' : 'healthy' },
+    { label: 'Purge pending', value: `${counts.pending_purge_receipt_count} receipts · ${counts.pending_purge_artifact_count} artifacts`, state: counts.pending_purge_receipt_count || counts.pending_purge_artifact_count ? 'warning' : 'healthy' },
+    { label: 'Expiry pending', value: `${counts.pending_expiry_purge_receipt_count} receipts · ${counts.pending_expiry_purge_artifact_count} artifacts`, state: counts.pending_expiry_purge_receipt_count || counts.pending_expiry_purge_artifact_count ? 'warning' : 'healthy' },
+  ];
+}
+
+function queuePanelState(snapshot, projectId) {
+  const rows = queueMetricRows(snapshot, projectId);
+  if (rows.length === 1 && rows[0].state === 'unknown') return 'unknown';
+  if (rows.some((row) => row.state === 'unknown')) return 'unknown';
+  if (snapshot.event_failed_count > 0 || snapshot.event_quarantined_count > 0) return 'degraded';
+  if (snapshot.event_expired_claim_count > 0
+    || snapshot.operational_counts.pending_purge_receipt_count > 0
+    || snapshot.operational_counts.pending_purge_artifact_count > 0
+    || snapshot.operational_counts.pending_expiry_purge_receipt_count > 0
+    || snapshot.operational_counts.pending_expiry_purge_artifact_count > 0) return 'warning';
+  if (snapshot.event_received_count > 0 || snapshot.operational_counts.pending_review_count > 0) return 'review';
+  return 'healthy';
 }
 
 function summarizeEventFailureCategories(metrics, projectId, expectedCount) {
@@ -574,7 +933,7 @@ function summarizeEventFailureCategories(metrics, projectId, expectedCount) {
   };
 }
 
-function summarizeOperationalAlerts(health, storage, metrics, projectId) {
+function summarizeOperationalAlerts(health, storage, metrics, projectId, queueSnapshot = health) {
   const alerts = [];
   const healthMatches = health && health.project_id === projectId;
   const healthComplete = healthMatches && health.database_observation_complete === true;
@@ -584,14 +943,18 @@ function summarizeOperationalAlerts(health, storage, metrics, projectId) {
     && health.gate_codes.every((gate) => typeof gate === 'string'
       && /^[a-z][a-z0-9_:.-]{0,127}$/.test(gate));
   if (!healthStatusValid) {
-    alerts.push('Readiness and queues unknown (health snapshot unavailable, incomplete, or mismatched).');
+    alerts.push('Readiness unknown (Hermes health snapshot unavailable, incomplete, or mismatched).');
   } else if (health.status !== 'healthy' || health.gate_codes.length > 0) {
     const gates = health.gate_codes.slice(0, 20);
     alerts.push(`Readiness ${health.status}${gates.length ? `: ${gates.join(', ')}` : '.'}`);
   }
 
-  if (healthComplete) {
-    const counts = health.operational_counts;
+  const queueComplete = queueSnapshot && queueSnapshot.project_id === projectId
+    && queueSnapshot.database_observation_complete === true;
+  if (!queueComplete) {
+    alerts.push('Operational queues unknown (Curator queue snapshot unavailable, incomplete, or mismatched).');
+  } else {
+    const counts = queueSnapshot.operational_counts;
     const eventFields = [
       'event_received_count', 'event_failed_count', 'event_quarantined_count',
       'event_expired_claim_count',
@@ -603,18 +966,18 @@ function summarizeOperationalAlerts(health, storage, metrics, projectId) {
     ];
     const countValid = (value) => Number.isSafeInteger(value) && value >= 0;
     if (!counts || !queueFields.every((field) => countValid(counts[field]))
-      || !eventFields.every((field) => health[field] === null || countValid(health[field]))) {
-      alerts.push('Queue details unknown (health snapshot is incomplete).');
+      || !eventFields.every((field) => queueSnapshot[field] === null || countValid(queueSnapshot[field]))) {
+      alerts.push('Operational queues unknown (Curator queue snapshot is incomplete).');
     } else {
-      if (health.event_received_count === null) {
+      if (queueSnapshot.event_received_count === null) {
         alerts.push('Event intake status unknown.');
-      } else if (health.event_received_count > 0) {
-        alerts.push(`${health.event_received_count} event receipt(s) waiting to process.`);
+      } else if (queueSnapshot.event_received_count > 0) {
+        alerts.push(`${queueSnapshot.event_received_count} event receipt(s) waiting to process.`);
       }
-      const failuresUnknown = health.event_failed_count === null
-        || health.event_quarantined_count === null;
-      const failed = health.event_failed_count;
-      const quarantined = health.event_quarantined_count;
+      const failuresUnknown = queueSnapshot.event_failed_count === null
+        || queueSnapshot.event_quarantined_count === null;
+      const failed = queueSnapshot.event_failed_count;
+      const quarantined = queueSnapshot.event_quarantined_count;
       if (failuresUnknown) {
         alerts.push('Event failure categories unknown.');
       } else if (failed > 0 || quarantined > 0) {
@@ -627,10 +990,10 @@ function summarizeOperationalAlerts(health, storage, metrics, projectId) {
           alerts.push(`Event failures by category: evidence rejected ${categories.evidence_rejected}, adapter errors ${categories.evidence_adapter_error}, other ${categories.other}.`);
         }
       }
-      if (health.event_expired_claim_count === null) {
+      if (queueSnapshot.event_expired_claim_count === null) {
         alerts.push('Expired event-claim status unknown.');
-      } else if (health.event_expired_claim_count > 0) {
-        alerts.push(`${health.event_expired_claim_count} expired event claim(s) need retry/reconciliation.`);
+      } else if (queueSnapshot.event_expired_claim_count > 0) {
+        alerts.push(`${queueSnapshot.event_expired_claim_count} expired event claim(s) need retry/reconciliation.`);
       }
       if (counts.pending_review_count) alerts.push(`${counts.pending_review_count} SDE review(s) need a human decision.`);
       if (counts.pending_purge_receipt_count || counts.pending_purge_artifact_count) {
@@ -711,7 +1074,21 @@ class McpStdioClient {
       },
     });
     if (response.isError) {
-      throw curatorError('read-denied', 'Curator rejected the read.');
+      const errorText = (response.content || [])
+        .find((item) => item && item.type === 'text' && typeof item.text === 'string')?.text;
+      let reasonCode = 'internal_error';
+      if (typeof errorText === 'string' && Buffer.byteLength(errorText, 'utf8') <= 1024) {
+        try {
+          const payload = JSON.parse(errorText);
+          if (payload && payload.schema_version === 1
+            && typeof payload.code === 'string' && MCP_ERROR_CODES.has(payload.code)) {
+            reasonCode = payload.code;
+          }
+        } catch {}
+      }
+      const error = curatorError('mcp-tool-error', 'Curator rejected the requested operation.');
+      error.reasonCode = reasonCode;
+      throw error;
     }
     const text = (response.content || [])
       .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
@@ -795,11 +1172,7 @@ function activate(context) {
     'curatormdV2.openDashboard',
     () => showDashboard(),
   );
-  const startGoal = vscode.commands.registerCommand(
-    'curatormdV2.startGoal',
-    () => startGoalFromWorkspace(),
-  );
-  context.subscriptions.push(statusItem, openDashboard, startGoal);
+  context.subscriptions.push(statusItem, openDashboard);
   void refreshStatusBarHealthFromWorkspace();
   statusRefreshTimer = setInterval(() => {
     void refreshStatusBarHealthFromWorkspace();
@@ -808,16 +1181,18 @@ function activate(context) {
   context.subscriptions.push({ dispose: () => clearInterval(statusRefreshTimer) });
   if (vscode.workspace && typeof vscode.workspace.onDidChangeWorkspaceFolders === 'function') {
     context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      clearFeedFailureStates();
       resetStatusBarHealth();
-      void refreshStatusBarHealthFromWorkspace();
+      void refreshStatusBarHealthFromWorkspace(spawn, 'manual');
     }));
   }
   if (vscode.workspace && typeof vscode.workspace.onDidChangeConfiguration === 'function') {
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event || typeof event.affectsConfiguration !== 'function'
         || !event.affectsConfiguration('curatormdV2')) return;
+      clearFeedFailureStates();
       resetStatusBarHealth();
-      void refreshStatusBarHealthFromWorkspace();
+      void refreshStatusBarHealthFromWorkspace(spawn, 'manual');
     }));
   }
   if (vscode.window && typeof vscode.window.onDidChangeWindowState === 'function') {
@@ -882,7 +1257,7 @@ function resetStatusBarHealth() {
   );
 }
 
-async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
+async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn, trigger = 'automatic') {
   const generation = ++statusRefreshGeneration;
   const workspace = vscode.workspace
     && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
@@ -895,18 +1270,50 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
     resetStatusBarHealth();
     return 'neutral';
   }
+  if (fs.existsSync(projectRoot)) initializeWorkspaceAreas(projectRoot);
 
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   if (hasWorkspaceSettingOverride(configuration,
-    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand'])) {
+    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+      'databaseBindings', 'hermesProfileBindings', 'evidenceConfig',
+      'evidenceConfigBindings'])) {
     resetStatusBarHealth();
     return 'neutral';
   }
-  const databasePath = configuration.get('databasePath', '');
+  let configuredProjectId;
+  try {
+    configuredProjectId = readConfiguredProjectId(projectRoot);
+  } catch (error) {
+    updateStatusBarHealth(null, null, null, null, error);
+    return 'unknown';
+  }
+  const databasePath = resolveDatabasePath(
+    configuredProjectId,
+    configuration.get('databaseBindings', {}),
+    configuration.get('databasePath', ''),
+  );
   const profileId = configuration.get('profileId', '');
+  const hermesProfileBindings = configuration.get('hermesProfileBindings', {});
   const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
   const hermesCommand = configuration.get('hermesCommand', 'hermes');
-  if (!databasePath || !profileId || !serverCommand || !hermesCommand) {
+  const evidenceConfig = resolveEvidenceConfig(
+    configuredProjectId,
+    configuration.get('evidenceConfigBindings', {}),
+    configuration.get('evidenceConfig', ''),
+  );
+  if (!databasePath) {
+    updateStatusBarHealth(null, null, null, null, curatorError(
+      'status-database-binding-invalid', 'No valid absolute database path is configured.',
+    ));
+    return 'unknown';
+  }
+  if (evidenceConfig === null) {
+    updateStatusBarHealth(null, null, null, null, curatorError(
+      'status-evidence-binding-invalid', 'No valid host evidence config is mapped.',
+    ));
+    return 'unknown';
+  }
+  if (!profileId || !serverCommand || !hermesCommand) {
     resetStatusBarHealth();
     return 'neutral';
   }
@@ -915,6 +1322,7 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
     '--project-root', projectRoot,
     '--database', databasePath,
     '--profile-id', profileId,
+    ...hostEvidenceConfigArguments(evidenceConfig),
   ], projectRoot, profileId, spawnProcess);
   try {
     await client.initialize();
@@ -922,22 +1330,36 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn) {
     if (!page || typeof page.project_id !== 'string' || !page.project_id) {
       throw curatorError('status-project-invalid', 'Curator returned no project binding.');
     }
-    const [reviewWire, health, storage] = await Promise.all([
+    if (page.project_id !== configuredProjectId) {
+      throw curatorError('status-project-mismatch', 'Curator returned another project.');
+    }
+    const [reviewWire, feeds, storage, inboxWire] = await Promise.all([
       client.callTool('sde_review_queue_cards', { limit: REVIEW_QUEUE_SIZE })
         .then((wire) => JSON.parse(wire)),
-      readHermesHealthProbe(hermesCommand, profileId, page.project_id, projectRoot, spawnProcess),
+      readProjectFeeds({
+        client, projectRoot, databasePath, profileId, serverCommand,
+        hermesCommand, evidenceConfig, projectId: page.project_id,
+        hermesProfileId: resolveHermesProfileId(page.project_id, hermesProfileBindings),
+        spawnProcess, trigger,
+      }),
       client.callTool('project_storage_usage', {})
         .then((wire) => JSON.parse(wire))
         .catch(() => null),
+      client.callTool('event_queue_status', {})
+        .then((wire) => JSON.parse(wire))
+        .catch(() => null),
     ]);
+    tryWriteWorkspaceQueueViews(projectRoot, page.project_id, inboxWire, reviewWire);
     const reviews = validateReviewQueue(reviewWire, page.project_id);
     if (generation !== statusRefreshGeneration
       || vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath !== projectRoot) {
       return 'unknown';
     }
-    updateStatusBarHealth(health, page.project_id, reviews, storage);
+    updateStatusBarHealth(feeds.health, page.project_id, reviews, storage,
+      feeds.healthProbeError ? { code: feeds.healthProbeError } : null);
     if (reviews === null) return 'unknown';
-    if (health.status !== 'healthy') return health.status;
+    if (!feeds.health) return 'unknown';
+    if (feeds.health.status !== 'healthy') return feeds.health.status;
     return reviews.length > 0 ? 'review' : 'healthy';
   } catch (error) {
     if (generation === statusRefreshGeneration
@@ -965,29 +1387,64 @@ async function showDashboard(spawnProcess = spawn) {
     );
     return;
   }
+  if (fs.existsSync(workspace.uri.fsPath) && fs.existsSync(projectConfigPath)) {
+    initializeWorkspaceAreas(workspace.uri.fsPath);
+  }
+  let configuredProjectId = null;
+  if (fs.existsSync(projectConfigPath)) {
+    try {
+      configuredProjectId = readConfiguredProjectId(workspace.uri.fsPath);
+    } catch (error) {
+      resetStatusBarHealth();
+      vscode.window.showErrorMessage(statusReadFailure(error));
+      return;
+    }
+  }
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   const workspaceOverride = hasWorkspaceSettingOverride(
     configuration,
-    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand'],
+    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+      'databaseBindings', 'hermesProfileBindings', 'evidenceConfig',
+      'evidenceConfigBindings'],
   );
-  const databasePath = configuration.get('databasePath', '');
-  const profileId = configuration.get('profileId', '');
-  const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
-  const hermesCommand = configuration.get('hermesCommand', 'hermes');
-  const configuredReviewCommand = configuration.get('reviewCommand', '');
-  const reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
+  let databasePath = resolveDatabasePath(
+    configuredProjectId,
+    configuration.get('databaseBindings', {}),
+    configuration.get('databasePath', ''),
+  );
+  if (!configuredProjectId && !databasePath) {
+    const fallbackPath = configuration.get('databasePath', '');
+    databasePath = typeof fallbackPath === 'string' && path.isAbsolute(fallbackPath)
+      ? fallbackPath : null;
+  }
+  let profileId = configuration.get('profileId', '');
+  let serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
+  let evidenceConfig = resolveEvidenceConfig(
+    configuredProjectId,
+    configuration.get('evidenceConfigBindings', {}),
+    configuration.get('evidenceConfig', ''),
+  );
+  let hermesCommand = configuration.get('hermesCommand', 'hermes');
+  let hermesProfileBindings = configuration.get('hermesProfileBindings', {});
+  let configuredReviewCommand = configuration.get('reviewCommand', '');
+  let reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
   if (workspaceOverride) {
     resetStatusBarHealth();
     vscode.window.showErrorMessage(
-      'Curator launcher, database, profile, and review CLI settings must be set in User settings, not the project.',
+      'Curator launcher, database, profile, review CLI, and evidence config settings must be set in User settings, not the project.',
     );
     return;
   }
   if (!databasePath || !profileId || !serverCommand || !hermesCommand) {
     resetStatusBarHealth();
     vscode.window.showErrorMessage(
-      'Set CuratorMD V2 databasePath and profileId in VS Code settings before opening the dashboard.',
+      'Set an absolute CuratorMD V2 database path and profileId in VS Code User settings; use databaseBindings for separate project databases.',
     );
+    return;
+  }
+  if (evidenceConfig === null) {
+    resetStatusBarHealth();
+    vscode.window.showErrorMessage(STATUS_READ_FAILURES['status-evidence-binding-invalid']);
     return;
   }
 
@@ -1004,9 +1461,71 @@ async function showDashboard(spawnProcess = spawn) {
   const reportRevisions = new Map();
   const reportFacts = new Map();
   const reportPages = new Map();
+  const goalCards = new Map();
   let requestInProgress = false;
+  let goalLoadInFlight = null;
+  const schedulePanelReload = () => {
+    const reload = () => panel.webview.postMessage({ type: 'reloadGoals' });
+    if (goalLoadInFlight) void goalLoadInFlight.then(reload, reload);
+    else reload();
+  };
+  const settingsChangeListener = vscode.workspace
+    && typeof vscode.workspace.onDidChangeConfiguration === 'function'
+    ? vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event || typeof event.affectsConfiguration !== 'function'
+        || !event.affectsConfiguration('curatormdV2')) return;
+      clearFeedFailureStates();
+      const current = vscode.workspace.getConfiguration('curatormdV2');
+      if (hasWorkspaceSettingOverride(current, [
+        'databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+        'databaseBindings', 'hermesProfileBindings', 'evidenceConfig',
+        'evidenceConfigBindings',
+      ])) {
+        panel.webview.postMessage({
+          type: 'error',
+          message: 'Curator connection settings must be set in User settings, not the project.',
+        });
+        return;
+      }
+      databasePath = resolveDatabasePath(
+        configuredProjectId,
+        current.get('databaseBindings', {}),
+        current.get('databasePath', ''),
+      );
+      if (!configuredProjectId && !databasePath) {
+        const fallbackPath = current.get('databasePath', '');
+        databasePath = typeof fallbackPath === 'string' && path.isAbsolute(fallbackPath)
+          ? fallbackPath : null;
+      }
+      profileId = current.get('profileId', '');
+      serverCommand = current.get('serverCommand', 'curatormd-v2-mcp');
+      evidenceConfig = resolveEvidenceConfig(
+        configuredProjectId,
+        current.get('evidenceConfigBindings', {}),
+        current.get('evidenceConfig', ''),
+      );
+      hermesCommand = current.get('hermesCommand', 'hermes');
+      hermesProfileBindings = current.get('hermesProfileBindings', {});
+      configuredReviewCommand = current.get('reviewCommand', '');
+      reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
+      if (!databasePath || !profileId || !serverCommand || !hermesCommand) {
+        panel.webview.postMessage({
+          type: 'error',
+          message: 'Set an absolute CuratorMD V2 database path and profileId in User settings; use databaseBindings for separate project databases.',
+        });
+        return;
+      }
+      if (evidenceConfig === null) {
+        panel.webview.postMessage({
+          type: 'error',
+          message: STATUS_READ_FAILURES['status-evidence-binding-invalid'],
+        });
+        return;
+      }
+      schedulePanelReload();
+    }) : null;
 
-  const withClient = async (operation) => {
+  const withClient = async (operation, { allowWrite = false } = {}) => {
     if (requestInProgress) throw new Error('A Curator read is already in progress.');
     requestInProgress = true;
     updateStatusBarHealth(null, null);
@@ -1014,7 +1533,9 @@ async function showDashboard(spawnProcess = spawn) {
       '--project-root', workspace.uri.fsPath,
       '--database', databasePath,
       '--profile-id', profileId,
+      ...hostEvidenceConfigArguments(evidenceConfig),
     ];
+    if (allowWrite) args.push('--allow-write');
     const client = new McpStdioClient(
       serverCommand,
       args,
@@ -1035,15 +1556,28 @@ async function showDashboard(spawnProcess = spawn) {
     try {
       if (!message || typeof message.type !== 'string') return;
       if (message.type === 'loadGoals') {
+        if (goalLoadInFlight) return;
+        const loadGoals = (async () => {
         candidateIds.clear();
         reportRevisions.clear();
         reportFacts.clear();
         reportPages.clear();
+        goalCards.clear();
         goalIds.clear();
         projectId = null;
         const offset = Number.isSafeInteger(message.offset) && message.offset >= 0
           ? message.offset : 0;
         const result = await withClient(async (client) => {
+          const page = await client.callTool('goal_list_page', {
+            offset,
+            limit: GOAL_PAGE_SIZE,
+          }).then((wire) => JSON.parse(wire));
+          if (!page || typeof page.project_id !== 'string' || !page.project_id) {
+            throw curatorError('status-project-invalid', 'Curator returned no project binding.');
+          }
+          if (configuredProjectId && page.project_id !== configuredProjectId) {
+            throw curatorError('status-project-mismatch', 'Curator returned another project.');
+          }
           const activityRequest = client.callTool('project_activity_status', {})
             .then((wire) => JSON.parse(wire))
             .catch(() => null);
@@ -1052,54 +1586,119 @@ async function showDashboard(spawnProcess = spawn) {
             .catch(() => null);
           const metricsRequest = client.callTool('project_metrics', {})
             .catch(() => null);
-          const pageRequest = client.callTool('goal_list_page', {
-            offset,
-            limit: GOAL_PAGE_SIZE,
-          }).then((wire) => JSON.parse(wire));
           const reviewRequest = client.callTool('sde_review_queue_cards', {
             limit: REVIEW_QUEUE_SIZE,
           }).then((wire) => JSON.parse(wire)).catch(() => null);
-          const [activity, storage, metrics, page, reviews] = await Promise.all([
+          const inboxRequest = client.callTool('event_queue_status', {})
+            .then((wire) => JSON.parse(wire)).catch(() => null);
+          const [activity, storage, metrics, reviews, inbox] = await Promise.all([
             activityRequest,
             storageRequest,
             metricsRequest,
-            pageRequest,
             reviewRequest,
+            inboxRequest,
           ]);
-          let health = null;
-          let healthProbeError = null;
-          if (typeof page.project_id === 'string' && page.project_id) {
-            try {
-              health = await readHermesHealthProbe(
-                hermesCommand,
-                profileId,
-                page.project_id,
-                workspace.uri.fsPath,
-                spawnProcess,
-              );
-            } catch (error) {
-              healthProbeError = error && typeof error.code === 'string'
-                ? error.code : 'hermes-probe-failed';
-            }
-          }
-          return { health, healthProbeError, activity, storage, metrics, page, reviews };
+          const workspaceViewsUpdated = tryWriteWorkspaceQueueViews(
+            workspace.uri.fsPath, page.project_id, inbox, reviews,
+          );
+          const feeds = typeof page.project_id === 'string' && page.project_id
+            ? await readProjectFeeds({
+              client,
+              projectRoot: workspace.uri.fsPath,
+              databasePath,
+              profileId,
+              serverCommand,
+              hermesCommand,
+              evidenceConfig,
+              projectId: page.project_id,
+              hermesProfileId: resolveHermesProfileId(page.project_id, hermesProfileBindings),
+              spawnProcess,
+              trigger: message.manualRefresh === true ? 'manual' : 'automatic',
+            })
+            : {
+              health: null, healthProbeError: 'hermes-probe-invalid',
+              healthCheckedAt: new Date().toISOString(), healthAutoPaused: false,
+              queueSnapshot: null, queueProbeError: 'curator-queue-invalid',
+              queueCheckedAt: new Date().toISOString(), queueAutoPaused: false,
+            };
+          return {
+            ...feeds, activity, storage, metrics, page, reviews, inbox,
+            workspaceViewsUpdated,
+          };
         });
-        const { page, health, healthProbeError, activity, storage, metrics, reviews } = result;
+        const {
+          page, health, healthProbeError, healthLastFailureCode,
+          healthCheckedAt, healthAutoPaused, queueSnapshot, queueProbeError,
+          queueLastFailureCode, queueCheckedAt, queueAutoPaused,
+          activity, storage, metrics, reviews, workspaceViewsUpdated,
+        } = result;
         if (page.project_id !== undefined && page.project_id !== '') {
           projectId = page.project_id;
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
+          for (const goal of page.goals || []) goalCards.set(goal.goal_id, goal);
         }
         const reviewItems = validateReviewQueue(reviews, page.project_id);
-        updateStatusBarHealth(health, page.project_id, reviewItems, storage);
+        updateStatusBarHealth(
+          health,
+          page.project_id,
+          reviewItems,
+          storage,
+          healthProbeError
+            ? { code: healthLastFailureCode || healthProbeError } : null,
+        );
+        const healthFailureCode = healthLastFailureCode || healthProbeError;
+        const queueFailureCode = queueLastFailureCode || queueProbeError;
+        const healthGateDescriptions = !health
+          ? [healthFailureCode
+            ? healthProbeFailureMessage(healthFailureCode)
+            : 'Health snapshot unavailable; refresh to retry.']
+          : health.project_id !== page.project_id
+            ? ['Health snapshot belongs to a different project.']
+            : health.status === 'unknown' && health.gate_codes.length === 0
+              ? ['Hermes could not confirm local health.']
+              : health.gate_codes.map(healthGateLabel);
         candidateIds = new Set((reviewItems || []).map((item) => item.candidate.candidate_id));
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage, reviews: reviewItems,
           healthProbeError,
+          healthProbeFailure: healthProbeError
+            ? feedFailureMessage(
+              healthProbeError,
+              healthLastFailureCode,
+              healthAutoPaused,
+              healthProbeFailureMessage,
+            ) : null,
+          healthCheckedAt,
+          healthAutoPaused,
+          queueSnapshot,
+          queueProbeError,
+          queueProbeFailure: queueProbeError
+            ? feedFailureMessage(
+              queueProbeError,
+              queueLastFailureCode,
+              queueAutoPaused,
+              queueProbeFailureMessage,
+            ) : null,
+          queueCheckedAt,
+          queueAutoPaused,
+          healthGateDescriptions,
           goalStatesSummary: summarizeGoalStates(activity, page.project_id),
-          queueSummary: summarizeOperationalQueues(health, page.project_id),
-          alertSummary: summarizeOperationalAlerts(health, storage, metrics, page.project_id),
+          queueSummary: summarizeOperationalQueues(queueSnapshot, page.project_id),
+          queueRows: queueMetricRows(queueSnapshot, page.project_id),
+          queueState: queuePanelState(queueSnapshot, page.project_id),
+          alertSummary: summarizeOperationalAlerts(
+            health, storage, metrics, page.project_id, queueSnapshot,
+          ),
+          workspaceViewsUpdated,
           reviewAvailable: Boolean(reviewCommand),
         });
+        })();
+        goalLoadInFlight = loadGoals;
+        try {
+          await loadGoals;
+        } finally {
+          if (goalLoadInFlight === loadGoals) goalLoadInFlight = null;
+        }
       } else if (message.type === 'loadReport' && goalIds.has(message.goalId)) {
         const factOffset = Number.isSafeInteger(message.factOffset) && message.factOffset >= 0
           ? message.factOffset : 0;
@@ -1161,7 +1760,54 @@ async function showDashboard(spawnProcess = spawn) {
         )) {
           throw curatorError('invalid-response', 'Curator returned an invalid MCP response.');
         }
-        panel.webview.postMessage({ type: 'evidence', evidence, factOffset: message.factOffset });
+        panel.webview.postMessage({
+          type: 'evidence',
+          evidence,
+          factOffset: message.factOffset,
+          displayStatus: factEvidenceDisplayStatus(evidence),
+        });
+      } else if (message.type === 'reopenGoal' && goalIds.has(message.goalId)) {
+        const goal = goalCards.get(message.goalId);
+        if (goal?.status !== 'complete' || !Number.isSafeInteger(goal.lifecycle_revision)) {
+          throw curatorError('goal-not-reopenable', 'Refresh the goal list; this goal is no longer eligible to reopen.');
+        }
+        const reason = await vscode.window.showInputBox({
+          title: 'Reopen completed Curator V2 task',
+          prompt: 'Why does this completed task need a new evidence pass?',
+          ignoreFocusOut: true,
+          validateInput: (value) => validGoalText(value, 1000)
+            ? undefined : 'Enter one line with at most 1,000 characters.',
+        });
+        if (!reason) return;
+        const nextAction = await vscode.window.showInputBox({
+          title: 'Next action for the reopened task',
+          prompt: 'What is the next concrete step?',
+          ignoreFocusOut: true,
+          validateInput: (value) => validGoalText(value, 1000)
+            ? undefined : 'Enter one line with at most 1,000 characters.',
+        });
+        if (!nextAction) return;
+        const confirmation = await vscode.window.showWarningMessage(
+          `Reopen “${goal.problem}”? Previous facts and evidence remain in history; current criteria return to open.`,
+          { modal: true },
+          'Reopen task',
+          'Cancel',
+        );
+        if (confirmation !== 'Reopen task') return;
+        const reopened = JSON.parse(await withClient(
+          (client) => client.callTool('goal_reopen', {
+            event_id: randomBytes(16).toString('hex'),
+            goal_id: goal.goal_id,
+            reason: reason.trim(),
+            next_action: nextAction.trim(),
+            expected_lifecycle_revision: goal.lifecycle_revision,
+          }),
+          { allowWrite: true },
+        ));
+        if (reopened.project_id !== projectId || reopened.status !== 'processed') {
+          throw curatorError('goal-reopen-unconfirmed', 'Curator did not confirm the reopen action. Refresh to check the current goal state.');
+        }
+        panel.webview.postMessage({ type: 'goalReopened', goalId: goal.goal_id });
       } else if (message.type === 'openReview'
         && typeof message.candidateId === 'string'
         && typeof reviewCommand === 'string' && reviewCommand.trim().length > 0
@@ -1174,6 +1820,7 @@ async function showDashboard(spawnProcess = spawn) {
           reviewCommand,
           '--project-root', workspace.uri.fsPath,
           '--database', databasePath,
+          ...hostEvidenceConfigArguments(evidenceConfig),
           'review', message.candidateId,
         ].map(quotePosixShellArgument).join(' ');
         terminal.show();
@@ -1195,6 +1842,9 @@ async function showDashboard(spawnProcess = spawn) {
   });
 
   panel.onDidDispose(() => {
+    if (settingsChangeListener && typeof settingsChangeListener.dispose === 'function') {
+      settingsChangeListener.dispose();
+    }
     goalIds.clear();
     candidateIds.clear();
   });
@@ -1214,7 +1864,67 @@ function dashboardHtml(webview) {
     body { color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); padding: 1rem 1.4rem; }
     button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: .4rem .7rem; margin: .2rem; cursor: pointer; }
     button:disabled { opacity: .5; cursor: default; }
+    .dashboard { margin: .8rem 0; border: 1px solid var(--vscode-panel-border); border-radius: 6px; }
+    .dashboard > summary { cursor: pointer; padding: .55rem .7rem; font-weight: 600; }
+    .dashboard-content { padding: 0 .55rem .55rem; }
+    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: .7rem; }
+    .dashboard-card { min-width: 0; padding: .45rem .6rem; border: 1px solid var(--vscode-panel-border); border-radius: 5px; container: dashboard-card / inline-size; }
+    .dashboard-card[data-state="healthy"] { border-top: 3px solid var(--vscode-testing-iconPassed, #73c991); }
+    .dashboard-card[data-state="review"] { border-top: 3px solid var(--vscode-charts-purple, #b180d7); }
+    .dashboard-card[data-state="degraded"] { border-top: 3px solid var(--vscode-errorForeground, #f48771); }
+    .dashboard-card[data-state="warning"] { border-top: 3px solid var(--vscode-editorWarning-foreground, #cca700); }
+    .dashboard-card[data-state="unknown"] { border-top: 3px solid #fce94f; }
+    .dashboard-card[data-state="neutral"] { border-top: 3px solid var(--vscode-textLink-foreground, #4daafc); }
+    .dashboard-card h2 { margin: .1rem 0 .35rem; font-size: 1em; }
+    .dashboard-card p { margin: .3rem 0; font-size: .88em; line-height: 1.35; overflow-wrap: anywhere; }
+    .metric-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 1rem; line-height: 1.35; }
+    .metric-table th, .metric-table td { padding: .38rem .42rem; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; }
+    .metric-table th:first-child, .metric-table td:first-child { width: 28%; }
+    .metric-table th:nth-child(2), .metric-table td:nth-child(2) { width: 42%; }
+    .metric-table td:nth-child(2) { overflow-wrap: anywhere; }
+    .metric-table th:last-child, .metric-table td:last-child { width: 30%; min-width: 8rem; }
+    .metric-table td:last-child { white-space: nowrap; }
+    .metric-table thead th { font-weight: 700; color: var(--vscode-foreground); }
+    .metric-table tbody th { font-weight: 600; color: var(--vscode-descriptionForeground); }
+    .metric-table tbody td[data-state] { font-weight: 600; }
+    .metric-table [data-state="healthy"] { color: var(--vscode-testing-iconPassed, #73c991); }
+    .metric-table [data-state="review"] { color: var(--vscode-charts-purple, #b180d7); }
+    .metric-table [data-state="degraded"] { color: var(--vscode-errorForeground, #f48771); }
+    .metric-table [data-state="warning"] { color: var(--vscode-editorWarning-foreground, #cca700); }
+    .metric-table [data-state="unknown"] { color: #fce94f; }
+    .metric-table tr[data-state="unknown"] td { color: #fce94f; }
+    .metric-table [data-state="neutral"] { color: var(--vscode-textLink-foreground, #4daafc); }
+    @media (max-width: 620px) {
+      body { padding: .5rem; }
+      .dashboard-content { padding: 0 .3rem .4rem; }
+      .dashboard-card { padding: .35rem; }
+      .metric-table th, .metric-table td { padding: .32rem .25rem; }
+      .metric-table th:first-child, .metric-table td:first-child { width: 27%; }
+      .metric-table th:nth-child(2), .metric-table td:nth-child(2) { width: 43%; }
+      .metric-table th:last-child, .metric-table td:last-child { width: 30%; min-width: 5.25rem; }
+    }
+    @container dashboard-card (max-width: 32rem) {
+      .metric-table, .metric-table thead, .metric-table tbody, .metric-table tr, .metric-table th, .metric-table td { display: block; }
+      .metric-table thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+      .metric-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) max-content; column-gap: .5rem; row-gap: .2rem; padding: .42rem 0; border-bottom: 1px solid var(--vscode-panel-border); }
+      .metric-table tbody th, .metric-table tbody td { width: auto !important; min-width: 0 !important; padding: 0; border: 0; }
+      .metric-table tbody th { grid-column: 1; grid-row: 1; }
+      .metric-table tbody td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+      .metric-table tbody td:last-child { grid-column: 2; grid-row: 1; justify-self: end; }
+      .metric-table tbody td:nth-child(2)::before { content: 'Value: '; font-weight: 700; color: var(--vscode-descriptionForeground); }
+      .metric-table tbody td:last-child::before { content: 'State: '; font-weight: 700; color: var(--vscode-descriptionForeground); }
+    }
+    #reviewsSection { margin: .9rem 0; padding: .55rem .7rem; border: 1px solid var(--vscode-panel-border); border-radius: 6px; }
+    #reviewsSection h2 { margin: .1rem 0 .45rem; }
+    #goalControls { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem; }
+    #goalPage { color: var(--vscode-descriptionForeground); margin: .35rem 0; }
     #goals { display: flex; flex-wrap: wrap; gap: .3rem; margin: .8rem 0; }
+    .goal-card { display: grid; text-align: left; max-width: 100%; min-width: min(100%, 260px); }
+    .goal-title { overflow-wrap: anywhere; }
+    .goal-disposition { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; opacity: .9; font-size: 1rem; line-height: 1.35; }
+    .goal-state { border: 1px solid var(--vscode-panel-border); border-radius: 999px; padding: .05rem .4rem; }
+    .goal-updated { font-variant-numeric: tabular-nums; }
+    .goal-next-action { color: var(--vscode-descriptionForeground); }
     #report { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family); line-height: 1.5; }
     #notice { color: var(--vscode-descriptionForeground); margin: .6rem 0; }
     #error { color: var(--vscode-errorForeground); }
@@ -1223,32 +1933,43 @@ function dashboardHtml(webview) {
 <body>
   <h1>CuratorMD V2</h1>
   <p id="notice">Reads are project-scoped and reauthorized by Curator on each request. Refresh replaces the current page; pages are never joined across reads.</p>
-  <section aria-labelledby="healthHeading">
-    <h2 id="healthHeading">Project health</h2>
-    <p id="health" role="status">Loading an authorized health snapshot…</p>
-    <p id="alerts" role="status" aria-live="polite">Loading operational alerts…</p>
-  </section>
-  <section aria-labelledby="activityHeading">
-    <h2 id="activityHeading">Retained activity</h2>
-    <p id="activity" role="status">Loading authorized activity totals…</p>
-    <p id="goalStates" role="status">Loading goal states…</p>
-  </section>
-  <section aria-labelledby="queuesHeading">
-    <h2 id="queuesHeading">Operational queues</h2>
-    <p id="queues" role="status">Loading authorized queue counts…</p>
-  </section>
-  <section aria-labelledby="storageHeading">
-    <h2 id="storageHeading">Storage usage</h2>
-    <p id="storage" role="status">Loading authorized storage totals…</p>
-  </section>
-  <div><button id="refresh">Refresh goals</button> <button id="previousGoals">Previous goals</button> <button id="nextGoals">Next goals</button></div>
-  <p id="goalPage"></p><div id="goals"></div>
-  <section aria-labelledby="reviewsHeading">
+  <details class="dashboard" open>
+    <summary>Project dashboard · health, activity, queues, storage</summary>
+    <div class="dashboard-content">
+      <div class="dashboard-grid">
+      <section id="healthPanel" class="dashboard-card" data-state="unknown" aria-labelledby="healthHeading">
+        <h2 id="healthHeading">Project health</h2>
+        <p id="health" role="status">Loading authorized health status…</p>
+        <table class="metric-table"><thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">State</th></tr></thead><tbody id="healthRows"></tbody></table>
+      </section>
+      <section id="activityPanel" class="dashboard-card" data-state="neutral" aria-labelledby="activityHeading">
+        <h2 id="activityHeading">Retained activity</h2>
+        <p id="activity" role="status">Loading authorized activity totals…</p>
+        <table class="metric-table"><thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">State</th></tr></thead><tbody id="activityRows"></tbody></table>
+      </section>
+      <section id="queuesPanel" class="dashboard-card" data-state="unknown" aria-labelledby="queuesHeading">
+        <h2 id="queuesHeading">Operational queues</h2>
+        <p id="queues" role="status">Loading authorized queue counts…</p>
+        <table class="metric-table"><thead><tr><th scope="col">Queue</th><th scope="col">Count</th><th scope="col">State</th></tr></thead><tbody id="queueRows"></tbody></table>
+      </section>
+      <section id="storagePanel" class="dashboard-card" data-state="unknown" aria-labelledby="storageHeading">
+        <h2 id="storageHeading">Storage usage</h2>
+        <p id="storage" role="status">Loading authorized storage totals…</p>
+        <table class="metric-table"><thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">State</th></tr></thead><tbody id="storageRows"></tbody></table>
+      </section>
+      </div>
+    </div>
+  </details>
+  <section id="reviewsSection" aria-labelledby="reviewsHeading">
     <h2 id="reviewsHeading">Pending SDE review</h2>
     <p id="reviewNote" role="status">Loading authorized review queue…</p>
     <div id="reviews"></div>
   </section>
+  <div id="goalControls"><button id="refresh">Refresh goals</button> <button id="previousGoals">Previous goals</button> <button id="nextGoals">Next goals</button><span id="goalPage"></span></div>
+  <div id="goals"></div>
   <h2 id="selected"></h2>
+  <button id="reopenGoal" hidden>Reopen completed task</button>
+  <p id="actionStatus" role="status" aria-live="polite"></p>
   <div><button id="previousFacts">Previous facts</button> <button id="nextFacts">Next facts</button></div>
   <p id="factPage"></p><p id="error" role="alert"></p><pre id="report"></pre>
   <section aria-labelledby="evidenceHeading">
@@ -1264,6 +1985,7 @@ function dashboardHtml(webview) {
     let factOffset = 0;
     let factTotal = 0;
     let reportRevision = null;
+    let reopenGoalAfterRefresh = null;
     const goals = document.getElementById('goals');
     const report = document.getElementById('report');
     const evidenceStatus = document.getElementById('evidenceStatus');
@@ -1271,18 +1993,70 @@ function dashboardHtml(webview) {
     const evidenceRefs = document.getElementById('evidenceRefs');
     const error = document.getElementById('error');
     const health = document.getElementById('health');
-    const alertSummary = document.getElementById('alerts');
     const activitySummary = document.getElementById('activity');
-    const goalStatesSummary = document.getElementById('goalStates');
     const queueSummary = document.getElementById('queues');
     const storageSummary = document.getElementById('storage');
     const reviewSummary = document.getElementById('reviewNote');
     const reviews = document.getElementById('reviews');
+    function renderMetricRows(id, rows) {
+      const body = document.getElementById(id);
+      body.replaceChildren();
+      for (const item of rows) {
+        const row = document.createElement('tr');
+        row.setAttribute('data-state', item.state);
+        const label = document.createElement('th');
+        label.setAttribute('scope', 'row');
+        label.textContent = item.label;
+        const value = document.createElement('td');
+        value.textContent = item.value;
+        const state = document.createElement('td');
+        state.textContent = item.stateLabel || item.state;
+        state.setAttribute('data-state', item.state);
+        row.appendChild(label);
+        row.appendChild(value);
+        row.appendChild(state);
+        body.appendChild(row);
+      }
+    }
+    function setPanelState(id, state) {
+      document.getElementById(id + 'Panel').setAttribute('data-state', state);
+    }
     function formatBytes(value) {
       if (value === null) return 'unavailable';
       if (value < 1024) return value + ' B';
       if (value < 1048576) return (value / 1024).toFixed(1) + ' KiB';
       return (value / 1048576).toFixed(1) + ' MiB';
+    }
+    function countLabel(value, singular) {
+      return value + ' ' + singular + (value === 1 ? '' : 's');
+    }
+    function formatGoalUpdate(value) {
+      if (typeof value !== 'string' || value.length === 0 || value.length > 64) {
+        return 'Updated time unavailable';
+      }
+      const timestamp = Date.parse(value);
+      if (!Number.isFinite(timestamp)) return 'Updated time unavailable';
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(new Date(timestamp));
+      const fields = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return 'Updated ' + fields.year + '-' + fields.month + '-' + fields.day
+        + ' ' + fields.hour + ':' + fields.minute + ' +07';
+    }
+    function formatSnapshotCheck(value) {
+      if (typeof value !== 'string' || value.length > 64) return 'Check time unavailable';
+      const timestamp = Date.parse(value);
+      if (!Number.isFinite(timestamp)) return 'Check time unavailable';
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(new Date(timestamp));
+      const fields = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return 'Checked ' + fields.year + '-' + fields.month + '-' + fields.day
+        + ' ' + fields.hour + ':' + fields.minute + ' +07';
     }
     function clearDashboard() {
       selectedGoal = null;
@@ -1296,13 +2070,22 @@ function dashboardHtml(webview) {
       evidenceButtons.replaceChildren();
       evidenceRefs.replaceChildren();
       evidenceStatus.textContent = 'Select a fact to inspect its bounded evidence references.';
-      health.textContent = 'Project health: unknown. Refresh to retry the health read.';
-      alertSummary.textContent = 'Operational alerts: unknown. Refresh to retry project snapshots.';
+      health.textContent = 'Project health: unknown. Health snapshot unavailable; refresh to retry.';
       activitySummary.textContent = 'Retained activity: unknown. Refresh to retry the activity read.';
-      goalStatesSummary.textContent = 'Goal states: unknown. Refresh to retry the activity read.';
-      queueSummary.textContent = 'Operational queues: unknown. Refresh to retry the health read.';
+      queueSummary.textContent = 'Operational queues: unknown. Curator queue snapshot unavailable; refresh to retry.';
       storageSummary.textContent = 'Storage usage: unknown. Refresh to retry the storage read.';
+      renderMetricRows('healthRows', [
+        { label: 'Project health', value: 'unknown', state: 'unknown' },
+        { label: 'Open gates', value: 'Health snapshot unavailable; refresh to retry.', state: 'unknown' },
+        { label: 'Operational alerts', value: 'Health snapshot unavailable; refresh to retry.', state: 'unknown' },
+      ]);
+      renderMetricRows('activityRows', [{ label: 'Snapshot', value: 'Refresh required', state: 'unknown' }]);
+      renderMetricRows('queueRows', [{ label: 'Snapshot', value: 'Refresh required', state: 'unknown' }]);
+      renderMetricRows('storageRows', [{ label: 'Snapshot', value: 'Refresh required', state: 'unknown' }]);
+      for (const panel of ['health', 'activity', 'queues', 'storage']) setPanelState(panel, 'unknown');
       document.getElementById('selected').textContent = '';
+      document.getElementById('reopenGoal').hidden = true;
+      document.getElementById('actionStatus').textContent = '';
       document.getElementById('goalPage').textContent = '';
       document.getElementById('factPage').textContent = '';
       document.getElementById('previousGoals').disabled = true;
@@ -1310,7 +2093,8 @@ function dashboardHtml(webview) {
       document.getElementById('previousFacts').disabled = true;
       document.getElementById('nextFacts').disabled = true;
     }
-    function requestGoals(offset) {
+    function requestGoals(offset, manualRefresh = false) {
+      document.getElementById('refresh').disabled = true;
       goalOffset = offset;
       selectedGoal = null;
       reportRevision = null;
@@ -1322,13 +2106,22 @@ function dashboardHtml(webview) {
       reviews.replaceChildren();
       reviewSummary.textContent = 'Loading the authorized review queue…';
       document.getElementById('selected').textContent = '';
+      document.getElementById('reopenGoal').hidden = true;
       document.getElementById('factPage').textContent = '';
       document.getElementById('goalPage').textContent = 'Loading a fresh authorized goal page…';
       health.textContent = 'Loading an authorized health snapshot…';
-      alertSummary.textContent = 'Loading operational alerts…';
       activitySummary.textContent = 'Loading authorized activity totals…';
+      queueSummary.textContent = 'Loading the project-scoped Curator queue snapshot…';
       storageSummary.textContent = 'Loading authorized storage totals…';
-      api.postMessage({ type: 'loadGoals', offset });
+      renderMetricRows('healthRows', [
+        { label: 'Project health', value: 'Loading', state: 'neutral' },
+        { label: 'Open gates', value: 'Awaiting health snapshot', state: 'neutral' },
+        { label: 'Operational alerts', value: 'Health read in progress', state: 'neutral' },
+      ]);
+      for (const table of ['activityRows', 'queueRows', 'storageRows']) {
+        renderMetricRows(table, [{ label: 'Snapshot', value: 'Loading', state: 'neutral' }]);
+      }
+      api.postMessage({ type: 'loadGoals', offset, manualRefresh });
       error.textContent = '';
     }
     function requestReport(offset) {
@@ -1342,6 +2135,9 @@ function dashboardHtml(webview) {
       api.postMessage({ type: 'loadReport', goalId: selectedGoal, factOffset: offset });
       error.textContent = '';
     }
+    document.getElementById('reopenGoal').addEventListener('click', () => {
+      if (selectedGoal) api.postMessage({ type: 'reopenGoal', goalId: selectedGoal });
+    });
     function formatLocalTimestamp(value) {
       if (typeof value !== 'string' || value.length > 64) return 'unknown';
       const parsed = new Date(value);
@@ -1386,16 +2182,10 @@ function dashboardHtml(webview) {
         evidenceButtons.appendChild(button);
       }
     }
-    function renderEvidence(value) {
+    function renderEvidence(value, displayStatus) {
       evidenceRefs.replaceChildren();
-      const evidenceIsCurrent = value.evidence.length > 0 && value.evidence.every((reference) => {
-        if (reference.outcome !== 'passed' || !reference.attestation) return false;
-        const validUntil = Date.parse(reference.attestation.valid_until);
-        return Number.isFinite(validUntil) && validUntil > Date.now();
-      });
-      const verificationStatus = value.verification_status === 'verified_fact'
-        && (!evidenceIsCurrent || value.fact_kind !== 'verification')
-        ? 'stale/unknown' : value.verification_status;
+      const verificationStatus = typeof displayStatus === 'string'
+        ? displayStatus : 'stale/unknown';
       evidenceStatus.textContent = value.fact_kind + ' ' + verificationStatus
         + '; criterion ' + (value.criterion_id || 'not applicable')
         + '; report ' + value.report_revision.slice(0, 12) + '.';
@@ -1425,14 +2215,19 @@ function dashboardHtml(webview) {
         evidenceRefs.appendChild(paragraph);
       }
     }
-    document.getElementById('refresh').addEventListener('click', () => requestGoals(0));
+    document.getElementById('refresh').addEventListener('click', () => requestGoals(0, true));
     document.getElementById('previousGoals').addEventListener('click', () => requestGoals(Math.max(0, goalOffset - ${GOAL_PAGE_SIZE})));
     document.getElementById('nextGoals').addEventListener('click', () => requestGoals(goalOffset + ${GOAL_PAGE_SIZE}));
     document.getElementById('previousFacts').addEventListener('click', () => requestReport(Math.max(0, factOffset - ${REPORT_PAGE_SIZE})));
     document.getElementById('nextFacts').addEventListener('click', () => requestReport(factOffset + ${REPORT_PAGE_SIZE}));
     window.addEventListener('message', (event) => {
       const message = event.data;
+      if (message.type === 'reloadGoals') {
+        requestGoals(0);
+        return;
+      }
       if (message.type === 'error') {
+        document.getElementById('refresh').disabled = false;
         clearDashboard();
         error.textContent = message.message;
         return;
@@ -1448,6 +2243,7 @@ function dashboardHtml(webview) {
         return;
       }
       if (message.type === 'goals') {
+        document.getElementById('refresh').disabled = false;
         const page = message.page;
         const healthSnapshot = message.health;
         const activitySnapshot = message.activity;
@@ -1464,22 +2260,49 @@ function dashboardHtml(webview) {
             : !validHealthStatus || !Array.isArray(healthSnapshot.gate_codes)
               ? ['health_observation_invalid']
               : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string');
-        const probeFailure = {
-          'hermes-probe-start': 'Hermes could not start. Check the User setting hermesCommand.',
-          'hermes-probe-exit': 'Hermes did not complete its trusted health read. Check that its Curator status probe is supported.',
-          'hermes-probe-timeout': 'Hermes health read timed out. Try Refresh after checking the profile.',
-          'hermes-probe-invalid': 'Hermes returned an invalid or project-mismatched health snapshot.',
-          'hermes-probe-failed': 'Hermes health read failed. Check the profile and try again.',
-        }[message.healthProbeError];
-        health.textContent = 'Project health: ' + healthStatus + '. Open gates: '
-          + (healthGates.length ? healthGates.join(', ') : 'none reported') + '.'
-          + (probeFailure ? ' ' + probeFailure : '');
-        alertSummary.textContent = typeof message.alertSummary === 'string'
+        const probeFailure = typeof message.healthProbeFailure === 'string'
+          ? message.healthProbeFailure : null;
+        const healthGateDescriptions = Array.isArray(message.healthGateDescriptions)
+          ? message.healthGateDescriptions : healthGates;
+        health.textContent = 'Project health: ' + healthStatus + ' · '
+          + (healthGates.length ? countLabel(healthGates.length, 'open gate') : 'no open gates')
+          + (probeFailure ? '. ' + probeFailure : '.')
+          + ' ' + formatSnapshotCheck(message.healthCheckedAt);
+        let alertText = typeof message.alertSummary === 'string'
           ? message.alertSummary : 'Operational alerts: unknown. Alert summary unavailable.';
-        queueSummary.textContent = typeof message.queueSummary === 'string'
-          ? message.queueSummary : 'Operational queues: unknown. Snapshot unavailable.';
-        goalStatesSummary.textContent = typeof message.goalStatesSummary === 'string'
-          ? message.goalStatesSummary : 'Goal states: unknown. Snapshot unavailable.';
+        if (message.workspaceViewsUpdated === false) {
+          alertText += ' Local inbox/proposal files could not be refreshed; database reads remain available.';
+        }
+        setPanelState('health', healthStatus);
+        renderMetricRows('healthRows', [
+          { label: 'Project health', value: healthStatus, state: healthStatus, stateLabel: healthStatus },
+          {
+            label: 'Open gates',
+            value: !healthSnapshot && probeFailure
+              ? 'Health check unavailable. ' + probeFailure
+              : !healthSnapshot
+                ? 'Health snapshot unavailable; refresh to retry.'
+              : healthGateDescriptions.length ? healthGateDescriptions.join(' ') : 'None reported',
+            state: healthStatus,
+          },
+          {
+            label: 'Operational alerts',
+            value: probeFailure ? probeFailure + ' ' + alertText : alertText,
+            state: healthStatus,
+          },
+        ]);
+        const queueFailure = typeof message.queueProbeFailure === 'string'
+          ? message.queueProbeFailure : null;
+        queueSummary.textContent = (typeof message.queueSummary === 'string'
+          ? message.queueSummary : 'Operational queues: unknown. Curator snapshot unavailable.')
+          + (queueFailure ? ' ' + queueFailure : '')
+          + ' ' + formatSnapshotCheck(message.queueCheckedAt);
+        setPanelState('queues', ['healthy', 'review', 'warning', 'degraded', 'unknown']
+          .includes(message.queueState) ? message.queueState : 'unknown');
+        renderMetricRows('queueRows', Array.isArray(message.queueRows)
+          ? message.queueRows : [{ label: 'Queue snapshot', value: 'Unavailable or invalid', state: 'unknown' }]);
+        const goalStatesText = typeof message.goalStatesSummary === 'string'
+          ? message.goalStatesSummary : 'Goal states unavailable.';
         const activityFields = [
           'event_receipt_count', 'processed_event_count', 'received_event_count',
           'failed_event_count', 'quarantined_event_count', 'goal_count',
@@ -1492,20 +2315,34 @@ function dashboardHtml(webview) {
             && activitySnapshot[field] >= 0);
         if (!activitySnapshot) {
           activitySummary.textContent = 'Retained activity: unknown. Activity read unavailable.';
+          setPanelState('activity', 'unknown');
+          renderMetricRows('activityRows', [{ label: 'Activity snapshot', value: 'Unavailable', state: 'unknown' }]);
         } else if (activitySnapshot.project_id !== page.project_id) {
           activitySummary.textContent = 'Retained activity: unknown. Project mismatch.';
+          setPanelState('activity', 'unknown');
+          renderMetricRows('activityRows', [{ label: 'Activity snapshot', value: 'Project mismatch', state: 'unknown' }]);
         } else if (!activityValid) {
           activitySummary.textContent = 'Retained activity: unknown. Invalid activity snapshot.';
+          setPanelState('activity', 'unknown');
+          renderMetricRows('activityRows', [{ label: 'Activity snapshot', value: 'Invalid snapshot', state: 'unknown' }]);
         } else {
-          activitySummary.textContent = 'Retained receipts: ' + activitySnapshot.event_receipt_count
-            + ' (processed ' + activitySnapshot.processed_event_count
-            + ', received ' + activitySnapshot.received_event_count
-            + ', failed ' + activitySnapshot.failed_event_count
-            + ', quarantined ' + activitySnapshot.quarantined_event_count
-            + '); goals ' + activitySnapshot.goal_count + '; facts ' + activitySnapshot.fact_count
-            + '; SDE candidates pending ' + activitySnapshot.pending_sde_count
-            + ', approved ' + activitySnapshot.approved_sde_count
-            + ', rejected ' + activitySnapshot.rejected_sde_count + '.';
+          activitySummary.textContent = 'Retained activity: ' + activitySnapshot.event_receipt_count
+            + ' ' + (activitySnapshot.event_receipt_count === 1 ? 'receipt' : 'receipts')
+            + ' · ' + countLabel(activitySnapshot.goal_count, 'goal') + ' · '
+            + countLabel(activitySnapshot.fact_count, 'fact') + '.';
+          setPanelState('activity', activitySnapshot.pending_sde_count ? 'review' : 'neutral');
+          const countState = activitySnapshot.pending_sde_count ? 'review' : 'neutral';
+          renderMetricRows('activityRows', [
+            { label: 'SDE candidates', value: 'Pending ' + activitySnapshot.pending_sde_count + ' · Approved ' + activitySnapshot.approved_sde_count + ' · Rejected ' + activitySnapshot.rejected_sde_count, state: countState },
+            { label: 'Goal states', value: goalStatesText.replace(/^Goal states:\s*/, ''), state: 'neutral' },
+            { label: 'Receipts', value: activitySnapshot.event_receipt_count, state: 'neutral' },
+            { label: 'Processed', value: activitySnapshot.processed_event_count, state: 'healthy' },
+            { label: 'Received', value: activitySnapshot.received_event_count, state: activitySnapshot.received_event_count ? 'review' : 'healthy' },
+            { label: 'Failed', value: activitySnapshot.failed_event_count, state: activitySnapshot.failed_event_count ? 'degraded' : 'healthy' },
+            { label: 'Quarantined', value: activitySnapshot.quarantined_event_count, state: activitySnapshot.quarantined_event_count ? 'degraded' : 'healthy' },
+            { label: 'Goals', value: activitySnapshot.goal_count, state: 'neutral' },
+            { label: 'Facts', value: activitySnapshot.fact_count, state: 'neutral' },
+          ]);
         }
         const storageSnapshot = message.storage;
         const storageFields = [
@@ -1541,56 +2378,51 @@ function dashboardHtml(webview) {
           && stagingLimitValid;
         if (!storageSnapshot) {
           storageSummary.textContent = 'Storage usage: unknown. Storage read unavailable.';
+          setPanelState('storage', 'unknown');
+          renderMetricRows('storageRows', [{ label: 'Storage snapshot', value: 'Unavailable', state: 'unknown' }]);
         } else if (storageSnapshot.project_id !== page.project_id) {
           storageSummary.textContent = 'Storage usage: unknown. Project mismatch.';
+          setPanelState('storage', 'unknown');
+          renderMetricRows('storageRows', [{ label: 'Storage snapshot', value: 'Project mismatch', state: 'unknown' }]);
         } else if (!storageValid) {
           storageSummary.textContent = 'Storage usage: unknown. Invalid storage snapshot.';
+          setPanelState('storage', 'unknown');
+          renderMetricRows('storageRows', [{ label: 'Storage snapshot', value: 'Invalid snapshot', state: 'unknown' }]);
         } else {
-          let stagingText;
           const stagingLimit = storageSnapshot.staging_project_byte_limit;
-          if (!stagingSnapshot.inventory_complete) {
-            stagingText = 'Staging scan incomplete; observed at least '
-              + formatBytes(stagingSnapshot.observed_file_bytes)
-              + ' (code ' + stagingSnapshot.error_code + ').';
-          } else if (stagingLimit === null) {
-            stagingText = 'Staging scan complete at '
-              + formatBytes(stagingSnapshot.observed_file_bytes)
-              + '; no byte warning threshold is configured.';
-          } else {
-            const ratio = stagingSnapshot.observed_file_bytes / stagingLimit;
-            const level = ratio >= 1
-              ? 'warning threshold reached'
-              : ratio >= 0.75 ? 'warning level reached' : 'below warning level';
-            stagingText = 'Staging '
-              + formatBytes(stagingSnapshot.observed_file_bytes) + ' / '
-              + formatBytes(stagingLimit) + ' warning-only threshold; '
-              + level + ', and writes remain allowed.';
-          }
-          storageSummary.textContent = 'Project logical records '
-            + formatBytes(storageSnapshot.logical_record_bytes)
-            + '; retained event payload '
-            + formatBytes(storageSnapshot.event_payload_bytes_retained)
-            + '; facts ' + storageSnapshot.fact_count + '/'
-            + storageSnapshot.fact_count_limit + ' ('
-            + formatBytes(storageSnapshot.fact_record_bytes) + '/'
-            + formatBytes(storageSnapshot.fact_record_bytes_limit) + '). Shared SQLite files: database '
-            + formatBytes(storageSnapshot.global_database_bytes) + ', WAL '
-            + formatBytes(storageSnapshot.global_wal_bytes)
-            + ', combined ' + formatBytes(
-              storageSnapshot.global_database_bytes === null
-                || storageSnapshot.global_wal_bytes === null
-                ? null
-                : storageSnapshot.global_database_bytes + storageSnapshot.global_wal_bytes,
-            ) + ' / ' + formatBytes(${SQLITE_WARNING_BYTES})
-            + ' warning-only threshold; '
-            + (storageSnapshot.global_database_bytes === null
-              || storageSnapshot.global_wal_bytes === null
-              ? 'combined size unavailable'
-              : storageSnapshot.global_database_bytes + storageSnapshot.global_wal_bytes > ${SQLITE_WARNING_BYTES}
-                ? 'warning: combined SQLite size is above threshold'
-                : 'below threshold')
-            + '. SQLite manages WAL checkpointing; writes remain allowed. '
-            + stagingText + ' Model/token usage is not reported here.';
+          const sqliteBytes = storageSnapshot.global_database_bytes === null
+            || storageSnapshot.global_wal_bytes === null
+            ? null : storageSnapshot.global_database_bytes + storageSnapshot.global_wal_bytes;
+          const sqliteState = sqliteBytes === null
+            ? 'unknown' : sqliteBytes > ${SQLITE_WARNING_BYTES} ? 'warning' : 'healthy';
+          const stagingState = !stagingSnapshot.inventory_complete
+            ? 'unknown'
+            : stagingLimit === null ? 'neutral'
+              : stagingSnapshot.observed_file_bytes >= stagingLimit * 0.75 ? 'warning' : 'healthy';
+          const storageState = sqliteState === 'warning' || stagingState === 'warning'
+            ? 'warning'
+            : sqliteState === 'unknown' || stagingState === 'unknown' ? 'unknown' : 'healthy';
+          storageSummary.textContent = 'SQLite ' + formatBytes(sqliteBytes)
+            + ' · staging ' + formatBytes(stagingSnapshot.observed_file_bytes)
+            + (stagingSnapshot.inventory_complete ? '' : ' or more; scan incomplete');
+          setPanelState('storage', storageState);
+          renderMetricRows('storageRows', [
+            { label: 'Project logical records', value: formatBytes(storageSnapshot.logical_record_bytes), state: 'neutral' },
+            { label: 'Retained event payload', value: formatBytes(storageSnapshot.event_payload_bytes_retained), state: 'neutral' },
+            { label: 'Facts', value: storageSnapshot.fact_count + ' / ' + storageSnapshot.fact_count_limit, state: 'neutral' },
+            { label: 'Fact record bytes', value: formatBytes(storageSnapshot.fact_record_bytes) + ' / ' + formatBytes(storageSnapshot.fact_record_bytes_limit), state: 'neutral' },
+            { label: 'SQLite database', value: formatBytes(storageSnapshot.global_database_bytes), state: storageSnapshot.global_database_bytes === null ? 'unknown' : 'neutral' },
+            { label: 'SQLite WAL', value: formatBytes(storageSnapshot.global_wal_bytes), state: storageSnapshot.global_wal_bytes === null ? 'unknown' : 'neutral' },
+            { label: 'SQLite combined', value: formatBytes(sqliteBytes) + ' / ' + formatBytes(${SQLITE_WARNING_BYTES}), state: sqliteState, stateLabel: sqliteState === 'warning' ? 'Warning · writes allowed' : sqliteState === 'healthy' ? 'Below threshold' : 'Unknown' },
+            { label: 'Staging files', value: stagingSnapshot.inventory_complete
+              ? formatBytes(stagingSnapshot.observed_file_bytes) + (stagingLimit === null ? '' : ' / ' + formatBytes(stagingLimit))
+              : 'At least ' + formatBytes(stagingSnapshot.observed_file_bytes) + ' · ' + stagingSnapshot.error_code,
+            state: stagingState,
+            stateLabel: stagingState === 'warning' ? 'Warning · writes allowed'
+              : stagingState === 'unknown' ? 'Incomplete scan'
+                : stagingLimit === null ? 'No threshold' : 'Below threshold' },
+            { label: 'Model/token usage', value: 'Not reported', state: 'neutral' },
+          ]);
         }
         goalTotal = page.total || 0;
         goalOffset = page.offset || 0;
@@ -1598,16 +2430,63 @@ function dashboardHtml(webview) {
         goals.replaceChildren();
         for (const goal of page.goals || []) {
           const button = document.createElement('button');
-          button.textContent = goal.status + ': ' + goal.problem;
+          button.className = 'goal-card';
+          const title = document.createElement('span');
+          title.className = 'goal-title';
+          title.textContent = String(goal.problem || '')
+            .replace(/\\b[0-9a-f]{8}-[0-9a-f-]{27,}\\b/gi, '')
+            .replace(/^\\s*(?:planned|active|complete|open|blocked|deferred|cancelled|superseded)\\s*:\\s*/i, '')
+            .replace(/\\bScheduled ACME renewal operation\\b/gi, '')
+            .replace(/\\s+/g, ' ').replace(/\\s+([,.;:])/g, '$1').trim();
+          const disposition = document.createElement('span');
+          disposition.className = 'goal-disposition';
+          const state = document.createElement('span');
+          state.className = 'goal-state';
+          state.textContent = 'Disposition: ' + goal.status;
+          disposition.appendChild(state);
+          const updatedAt = document.createElement('time');
+          updatedAt.className = 'goal-updated';
+          updatedAt.textContent = formatGoalUpdate(goal.updated_at);
+          if (typeof goal.updated_at === 'string' && goal.updated_at.length <= 64) {
+            updatedAt.setAttribute('datetime', goal.updated_at);
+          }
+          disposition.appendChild(updatedAt);
+          if (goal.next_action) {
+            const nextAction = document.createElement('span');
+            nextAction.className = 'goal-next-action';
+            nextAction.textContent = 'Next: ' + goal.next_action;
+            disposition.appendChild(nextAction);
+          }
+          button.appendChild(title);
+          button.appendChild(disposition);
           button.addEventListener('click', () => {
             selectedGoal = goal.goal_id;
             factOffset = 0;
             factTotal = 0;
             reportRevision = null;
             document.getElementById('selected').textContent = goal.problem;
+            document.getElementById('reopenGoal').hidden = goal.status !== 'complete';
             requestReport(0);
           });
           goals.appendChild(button);
+        }
+        if (reopenGoalAfterRefresh) {
+          const reopenedGoal = (page.goals || []).find(
+            (goal) => goal.goal_id === reopenGoalAfterRefresh,
+          );
+          const reopenedId = reopenGoalAfterRefresh;
+          reopenGoalAfterRefresh = null;
+          if (reopenedGoal && reopenedGoal.status === 'active') {
+            selectedGoal = reopenedId;
+            document.getElementById('selected').textContent = reopenedGoal.problem;
+            document.getElementById('reopenGoal').hidden = true;
+            document.getElementById('actionStatus').textContent =
+              'Task reopened. Prior facts remain in history; current criteria need fresh evidence.';
+            requestReport(0);
+          } else {
+            document.getElementById('actionStatus').textContent =
+              'Reopen was submitted, but the refreshed page did not confirm an active task. Review the current task state.';
+          }
         }
         reviews.replaceChildren();
         if (!Array.isArray(message.reviews)) {
@@ -1670,7 +2549,11 @@ function dashboardHtml(webview) {
           requestReport(0);
           return;
         }
-        renderEvidence(message.evidence);
+        renderEvidence(message.evidence, message.displayStatus);
+      } else if (message.type === 'goalReopened' && message.goalId === selectedGoal) {
+        reopenGoalAfterRefresh = message.goalId;
+        document.getElementById('actionStatus').textContent = 'Reopen saved. Refreshing the task and report…';
+        requestGoals(goalOffset);
       }
     });
     requestGoals(0);
@@ -1719,7 +2602,7 @@ function validateReviewQueue(value, projectId) {
       || !/^[A-Za-z0-9_-]{1,128}$/.test(candidate.candidate_id)
       || candidateIds.has(candidate.candidate_id)
       || candidate.status !== 'pending_review'
-      || !['implementation', 'decision', 'recovery', 'verified_lesson'].includes(candidate.materiality)
+      || !['implementation', 'decision', 'recovery', 'verified_lesson', 'routine'].includes(candidate.materiality)
       || typeof candidate.rationale !== 'string' || !candidate.rationale.trim()
       || candidate.rationale.length > 1000
       || typeof candidate.goal_id !== 'string'
@@ -1752,14 +2635,24 @@ module.exports = {
   dashboardHtml,
   defaultReviewCommand,
   parseHermesHealthProbe,
+  parseCuratorQueueSnapshot,
   readHermesHealthProbe,
-  startGoalFromWorkspace,
+  readProjectFeeds,
+  resolveHermesProfileId,
+  readConfiguredProjectId,
+  resolveDatabasePath,
+  resolveEvidenceConfig,
   dashboardErrorMessage,
+  factEvidenceDisplayStatus,
+  initializeWorkspaceAreas,
   summarizeGoalStates,
   summarizeEventFailureCategories,
   summarizeOperationalQueues,
+  queueMetricRows,
+  queuePanelState,
   summarizeOperationalAlerts,
   hasWorkspaceSettingOverride,
+  hostEvidenceConfigArguments,
   quotePosixShellArgument,
   showDashboard,
   statusColorMeaning,
@@ -1767,4 +2660,5 @@ module.exports = {
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
   validateReviewQueue,
+  writeWorkspaceQueueViews,
 };

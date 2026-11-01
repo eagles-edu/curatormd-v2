@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
+from typing import NoReturn
+from unittest.mock import patch
+
 from test_api import (
     AllowProject,
     ArtifactRef,
     AuthenticatedCuratorAPI,
     BytesIO,
     EvidenceGateError,
+    FactKind,
     Materiality,
+    NotFoundError,
+    CuratorStore,
     ProjectAction,
     ProjectConfig,
     ProjectPlugin,
@@ -23,10 +31,490 @@ from test_api import (
     hashlib,
     json,
 )
+from curatormd_v2 import (
+    AuditReceipt,
+    AuthenticatedCaller,
+    EvidenceAttestation,
+    EvidenceRef,
+    EvidenceVerificationContext,
+    SDECandidate,
+)
 
 
 class ApiReviewWorkflowTests(_ApiTestSupport):
     """Exercise apireviewworkflow behavior."""
+
+    def test_projection_and_cleanup_receipt_failures_keep_artifact_until_retry(self) -> None:
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
+        )
+        verified = self._create_verified_goal(
+            plugin,
+            "Keep reviewed data until its decision is persisted",
+            "Implemented the bounded change",
+            "The bounded verification passed",
+        )
+        staged = plugin.stage_artifact(
+            verified.goal_id,
+            "scratch",
+            "projection-failure",
+            BytesIO(b"reviewed transient data"),
+        )
+        review_authorizer = AllowProject(
+            {
+                ("hermes-user-1", "project-a", ProjectAction.READ),
+                ("hermes-user-1", "project-a", ProjectAction.WRITE),
+                ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+            }
+        )
+        api = self._api_with_healthy_dependencies(plugin, review_authorizer)
+        candidate = api.sde_assess(
+            self.caller,
+            "project-a",
+            SDEAssessmentRequest(
+                verified.goal_id,
+                Materiality.IMPLEMENTATION,
+                "Retain the verified bounded change",
+                (verified.change_fact_id, verified.verification_fact_id),
+                "Observed in the local regression scenario",
+                "Useful for future maintenance review",
+            ),
+        )
+        assert candidate is not None
+        packet = api.sde_review_packet(
+            self.caller, "project-a", candidate.candidate_id
+        )
+        selected_artifacts = tuple(
+            replace(item, reacquisition_action=ReacquisitionAction.NOT_REQUIRED)
+            for item in packet.artifact_inventory.artifacts
+        )
+        packet = api.sde_review_packet(
+            self.caller,
+            "project-a",
+            candidate.candidate_id,
+            selected_artifacts,
+        )
+        confirmation = SDEConfirmationRequest(
+            candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED,
+            artifacts=selected_artifacts,
+            artifact_inventory_complete=packet.artifact_inventory.usage.inventory_complete,
+            dependency_map_sha256=packet.dependency_map_sha256,
+            rationale="Approve only after the canonical projection is durable",
+        )
+        saved_receipts: list[AuditReceipt] = []
+        create_receipt = self.store.create_receipt
+        authorize_cleanup = plugin.service.authorize_artifact_cleanup
+
+        def capture_saved_receipt(
+            receipt: AuditReceipt, project_id: str | None = None
+        ) -> AuditReceipt:
+            saved = create_receipt(receipt, project_id)
+            saved_receipts.append(saved)
+            return saved
+
+        def authorize_then_interrupt(
+            receipt_id: str,
+            manifest_sha256: str,
+            dependency_map_sha256: str,
+            *,
+            authenticated_subject: str | None = None,
+        ) -> None:
+            authorize_cleanup(
+                receipt_id,
+                manifest_sha256,
+                dependency_map_sha256,
+                authenticated_subject=authenticated_subject,
+            )
+            raise OSError("interrupted after cleanup authorization write")
+
+        with patch.object(self.store, "create_receipt", side_effect=capture_saved_receipt):
+            with patch.object(
+                plugin.service,
+                "authorize_artifact_cleanup",
+                side_effect=authorize_then_interrupt,
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "interrupted after cleanup authorization write"
+                ):
+                    api.sde_confirm(self.caller, "project-a", confirmation)
+
+        self.assertEqual(len(saved_receipts), 1)
+        first_receipt = saved_receipts[0]
+        self.assertIsNone(
+            self.store.cleanup_authorization(first_receipt.receipt_id, "project-a")
+        )
+        with self.assertRaises(NotFoundError):
+            self.store.get_purge_target_records(
+                first_receipt.receipt_id, project_id="project-a"
+            )
+        self.assertTrue(Path(staged.path).exists())
+
+        database_path = self.store.database
+        self.store.close()
+        self.store = CuratorStore(database_path)
+        self.addCleanup(self.store.close)
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root),
+            self.store,
+            TestVerifier(),
+            ReviewHost(),
+        )
+        api = self._api_with_healthy_dependencies(plugin, review_authorizer)
+        committed_receipts: list[AuditReceipt] = []
+        confirm_review = plugin.sde_confirm
+
+        def commit_then_interrupt(
+            request: SDEConfirmationRequest,
+            *,
+            authenticated_subject: str | None = None,
+        ) -> AuditReceipt:
+            saved = confirm_review(
+                request, authenticated_subject=authenticated_subject
+            )
+            committed_receipts.append(saved)
+            raise OSError("interrupted after review transaction commit")
+
+        with patch.object(plugin, "sde_confirm", side_effect=commit_then_interrupt):
+            with self.assertRaisesRegex(
+                OSError, "interrupted after review transaction commit"
+            ):
+                api.sde_confirm(self.caller, "project-a", confirmation)
+
+        self.assertEqual(len(committed_receipts), 1)
+        committed_receipt = committed_receipts[0]
+        self.assertIsNotNone(
+            self.store.cleanup_authorization(
+                committed_receipt.receipt_id, "project-a"
+            )
+        )
+        self.assertTrue(Path(staged.path).exists())
+        target_record = self.store.get_purge_target_records(
+            committed_receipt.receipt_id, project_id="project-a"
+        )[0]
+        self.assertEqual(target_record.attempts, 0)
+
+        database_path = self.store.database
+        self.store.close()
+        self.store = CuratorStore(database_path)
+        self.addCleanup(self.store.close)
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root),
+            self.store,
+            TestVerifier(),
+            ReviewHost(),
+        )
+        api = self._api_with_healthy_dependencies(plugin, review_authorizer)
+        receipt = api.sde_confirm(self.caller, "project-a", confirmation)
+        self.assertEqual(receipt.receipt_id, committed_receipt.receipt_id)
+        self.assertEqual(len(saved_receipts), 1)
+        self.assertIsNotNone(
+            self.store.cleanup_authorization(receipt.receipt_id, "project-a")
+        )
+        self.assertTrue(Path(staged.path).exists())
+        target_record = self.store.get_purge_target_records(
+            receipt.receipt_id, project_id="project-a"
+        )[0]
+        self.assertEqual(target_record.attempts, 0)
+        target = self.root / "persistence" / "HISTORY.md"
+        authorization = self.store.cleanup_authorization(
+            receipt.receipt_id, "project-a"
+        )
+        assert authorization is not None
+        self.assertFalse(authorization.canonical_persisted)
+        self.assertTrue(Path(staged.path).exists())
+
+        with patch(
+            "curatormd_v2.project_plugin_views.MarkdownPersistenceAdapter.persist_goal",
+            side_effect=OSError("projection write failed"),
+        ):
+            with self.assertRaisesRegex(OSError, "projection write failed"):
+                api.persist_goal(
+                    self.caller, "project-a", verified.goal_id, str(target)
+                )
+
+        pending = self.store.get_receipt(receipt.receipt_id, "project-a")
+        authorization = self.store.cleanup_authorization(
+            receipt.receipt_id, "project-a"
+        )
+        assert authorization is not None
+        self.assertFalse(pending.canonical_persisted)
+        self.assertFalse(authorization.canonical_persisted)
+        self.assertTrue(Path(staged.path).exists())
+        target_record = self.store.get_purge_target_records(
+            receipt.receipt_id, project_id="project-a"
+        )[0]
+        self.assertEqual(target_record.attempts, 0)
+
+        with patch.object(
+            plugin.service,
+            "mark_cleanup_authorization_canonical_persisted",
+            side_effect=OSError("cleanup receipt write failed"),
+        ):
+            with self.assertRaisesRegex(OSError, "cleanup receipt write failed"):
+                api.persist_goal(
+                    self.caller, "project-a", verified.goal_id, str(target)
+                )
+
+        projected_receipt = self.store.get_receipt(receipt.receipt_id, "project-a")
+        authorization = self.store.cleanup_authorization(
+            receipt.receipt_id, "project-a"
+        )
+        assert authorization is not None
+        self.assertTrue(projected_receipt.canonical_persisted)
+        self.assertFalse(authorization.canonical_persisted)
+        self.assertIn(receipt.receipt_id, target.read_text(encoding="utf-8"))
+        self.assertTrue(Path(staged.path).exists())
+        target_record = self.store.get_purge_target_records(
+            receipt.receipt_id, project_id="project-a"
+        )[0]
+        self.assertEqual(target_record.attempts, 0)
+
+        persist_projection = api.persist_goal
+
+        def persist_then_interrupt(
+            caller: AuthenticatedCaller,
+            project_id: str,
+            goal_id: str,
+            projection_target: str,
+        ) -> NoReturn:
+            persist_projection(caller, project_id, goal_id, projection_target)
+            raise OSError("interrupted after final purge status commit")
+
+        with patch.object(api, "persist_goal", side_effect=persist_then_interrupt):
+            with self.assertRaisesRegex(
+                OSError, "interrupted after final purge status commit"
+            ):
+                api.persist_goal(
+                    self.caller, "project-a", verified.goal_id, str(target)
+                )
+
+        completed = self.store.get_receipt(receipt.receipt_id, "project-a")
+        authorization = self.store.cleanup_authorization(
+            receipt.receipt_id, "project-a"
+        )
+        assert authorization is not None
+        self.assertTrue(completed.canonical_persisted)
+        self.assertTrue(authorization.canonical_persisted)
+        self.assertFalse(Path(staged.path).exists())
+        target_record = self.store.get_purge_target_records(
+            receipt.receipt_id, project_id="project-a"
+        )[0]
+        self.assertEqual(target_record.attempts, 1)
+
+        database_path = self.store.database
+        self.store.close()
+        self.store = CuratorStore(database_path)
+        self.addCleanup(self.store.close)
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root),
+            self.store,
+            TestVerifier(),
+            ReviewHost(),
+        )
+        api = self._api_with_healthy_dependencies(plugin, review_authorizer)
+        api.persist_goal(self.caller, "project-a", verified.goal_id, str(target))
+        completed_after_retry = self.store.get_receipt(
+            receipt.receipt_id, "project-a"
+        )
+        self.assertTrue(completed_after_retry.canonical_persisted)
+        self.assertFalse(Path(staged.path).exists())
+        recovered_target = self.store.get_purge_target_records(
+            receipt.receipt_id, project_id="project-a"
+        )[0]
+        self.assertEqual(recovered_target.attempts, 1)
+
+    def test_sde_assessment_rejects_advice_and_proposal_facts(self) -> None:
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier()
+        )
+        verified = self._create_verified_goal(
+            plugin,
+            "Assess supported knowledge only",
+            "Implemented the reviewed behavior",
+            "The required verification passed",
+        )
+        proposal, _ = plugin.service.goal_fact(
+            verified.goal_id, FactKind.PROPOSAL, "Maybe change the behavior later"
+        )
+        advice, _ = plugin.service.goal_fact(
+            verified.goal_id, FactKind.ADVICE, "Consider a different design"
+        )
+        api = AuthenticatedCuratorAPI({"project-a": plugin}, self.authorizer)
+
+        for unsupported_fact in (proposal, advice):
+            with self.subTest(kind=unsupported_fact.kind.value):
+                with self.assertRaisesRegex(EvidenceGateError, "only research, change"):
+                    api.sde_assess(
+                        self.caller,
+                        "project-a",
+                        SDEAssessmentRequest(
+                            verified.goal_id,
+                            Materiality.IMPLEMENTATION,
+                            "Do not retain an advice or proposal as a fact",
+                            (
+                                verified.change_fact_id,
+                                verified.verification_fact_id,
+                                unsupported_fact.fact_id,
+                            ),
+                            "Observed in the bounded test scenario",
+                            "Useful for future maintenance review",
+                        ),
+                    )
+
+        self.assertEqual(plugin.service.sde_review_queue(), ())
+
+    def test_existing_candidate_with_proposal_cannot_be_approved(self) -> None:
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
+        )
+        verified = self._create_verified_goal(
+            plugin,
+            "Recheck queued retained knowledge",
+            "Implemented the reviewed behavior",
+            "The required verification passed",
+        )
+        proposal, _ = plugin.service.goal_fact(
+            verified.goal_id, FactKind.PROPOSAL, "Change the behavior later"
+        )
+        candidate = SDECandidate(
+            goal_id=verified.goal_id,
+            materiality=Materiality.IMPLEMENTATION,
+            rationale="Legacy candidate with a proposal fact",
+            fact_ids=(
+                verified.change_fact_id,
+                verified.verification_fact_id,
+                proposal.fact_id,
+            ),
+            impact="The change affects behavior",
+            retrieval_value="The change may matter for future maintenance",
+        )
+        self.store.add_sde_candidate(candidate, "project-a")
+        api = self._api_with_healthy_dependencies(
+            plugin,
+            AllowProject(
+                {
+                    ("hermes-user-1", "project-a", ProjectAction.READ),
+                    ("hermes-user-1", "project-a", ProjectAction.WRITE),
+                    ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+                }
+            ),
+        )
+        packet = api.sde_review_packet(
+            self.caller, "project-a", candidate.candidate_id
+        )
+        approval = SDEConfirmationRequest(
+            candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED,
+            artifacts=packet.artifact_inventory.artifacts,
+            artifact_inventory_complete=packet.artifact_inventory.usage.inventory_complete,
+            dependency_map_sha256=packet.dependency_map_sha256,
+            rationale="Only facts can be approved for retention",
+        )
+
+        with self.assertRaisesRegex(EvidenceGateError, "cannot retain advice, proposals"):
+            api.sde_confirm(self.caller, "project-a", approval)
+        self.assertIsNone(
+            self.store.receipt_for_candidate(candidate.candidate_id, "project-a")
+        )
+        rejected = api.sde_confirm(
+            self.caller,
+            "project-a",
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=approval.artifacts,
+                artifact_inventory_complete=approval.artifact_inventory_complete,
+                dependency_map_sha256=approval.dependency_map_sha256,
+                rationale="Reject a queued candidate containing a proposal",
+            ),
+        )
+        self.assertEqual(rejected.decision, ReviewDecision.REJECTED)
+
+    def test_approval_rechecks_current_evidence_but_stale_candidate_can_be_rejected(
+        self,
+    ) -> None:
+        class RevocableVerifier:  # pylint: disable=too-few-public-methods
+            """Test evidence that can become unavailable after assessment."""
+
+            def __init__(self) -> None:
+                self.current = True
+                self.delegate = TestVerifier()
+
+            def attest(
+                self,
+                evidence: EvidenceRef,
+                context: EvidenceVerificationContext,
+            ) -> EvidenceAttestation | None:
+                if not self.current:
+                    return None
+                return self.delegate.attest(evidence, context)
+
+        verifier = RevocableVerifier()
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, verifier, ReviewHost()
+        )
+        verified = self._create_verified_goal(
+            plugin,
+            "Review evidence that can expire",
+            "Implemented the scoped change",
+            "The scoped verification passed",
+        )
+        api = self._api_with_healthy_dependencies(
+            plugin,
+            AllowProject(
+                {
+                    ("hermes-user-1", "project-a", ProjectAction.READ),
+                    ("hermes-user-1", "project-a", ProjectAction.WRITE),
+                    ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+                }
+            ),
+        )
+        candidate = api.sde_assess(
+            self.caller,
+            "project-a",
+            SDEAssessmentRequest(
+                verified.goal_id,
+                Materiality.IMPLEMENTATION,
+                "A verified change should be reviewable",
+                (verified.verification_fact_id,),
+                "Observed in the bounded test scenario",
+                "Useful for future maintenance review",
+            ),
+        )
+        assert candidate is not None
+        packet = api.sde_review_packet(
+            self.caller, "project-a", candidate.candidate_id
+        )
+        request = SDEConfirmationRequest(
+            candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED,
+            artifacts=packet.artifact_inventory.artifacts,
+            artifact_inventory_complete=packet.artifact_inventory.usage.inventory_complete,
+            dependency_map_sha256=packet.dependency_map_sha256,
+            rationale="Review the current evidence state",
+        )
+
+        verifier.current = False
+        with self.assertRaisesRegex(EvidenceGateError, "current"):
+            api.sde_confirm(self.caller, "project-a", request)
+        self.assertIsNone(
+            self.store.receipt_for_candidate(candidate.candidate_id, "project-a")
+        )
+
+        rejected = api.sde_confirm(
+            self.caller,
+            "project-a",
+            SDEConfirmationRequest(
+                candidate_id=candidate.candidate_id,
+                decision=ReviewDecision.REJECTED,
+                artifacts=request.artifacts,
+                artifact_inventory_complete=request.artifact_inventory_complete,
+                dependency_map_sha256=request.dependency_map_sha256,
+                rationale="Reject because its supporting proof is stale",
+            ),
+        )
+        self.assertEqual(rejected.decision, ReviewDecision.REJECTED)
 
     def test_sde_assessment_requires_write_scope_and_verified_goal_facts(self) -> None:
         plugin = ProjectPlugin.bind(
@@ -120,21 +608,22 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
                 ),
             )
 
-        self.assertIsNone(
-            api.sde_assess(
-                self.caller,
-                "project-a",
-                SDEAssessmentRequest(
-                    verified.goal_id,
-                    Materiality.ROUTINE,
-                    "Ordinary progress is not an SDE",
-                    (),
-                    "Observed in the bounded test scenario",
-                    "Useful for future maintenance review",
-                ),
-            )
+        routine_candidate = api.sde_assess(
+            self.caller,
+            "project-a",
+            SDEAssessmentRequest(
+                verified.goal_id,
+                Materiality.ROUTINE,
+                "Owner review: decide whether this verified task lesson is worth keeping",
+                (verified.verification_fact_id,),
+                "Observed in the bounded test scenario",
+                "Useful for future maintenance review",
+            ),
         )
-
+        self.assertIsNotNone(routine_candidate)
+        assert routine_candidate is not None
+        self.assertEqual(routine_candidate.materiality, Materiality.ROUTINE)
+        self.assertEqual(routine_candidate.status.value, "pending_review")
 
     def test_project_health_reports_held_purge_receipt_and_artifact_as_required_work(
         self,

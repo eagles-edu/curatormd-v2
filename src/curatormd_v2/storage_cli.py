@@ -8,11 +8,13 @@ import sys
 from typing import TextIO
 
 from .backup import backup_database, restore_database
+from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .cli_output import write_json_line
+from .process_privacy import protect_process_data
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SafeArgumentParser(
         prog="curatormd-v2-storage",
         description=(
             "Create an integrity-checked SQLite backup or restore it to a new path."
@@ -43,9 +45,17 @@ def main(
 ) -> int:
     """Run one verified backup/restore without exposing paths or DB errors."""
 
-    arguments = _parser().parse_args(argv)
-    output = stdout or sys.stdout
     errors = stderr or sys.stderr
+    if not protect_process_data():
+        print("Curator V2 storage failed (privacy limits unavailable).", file=errors)
+        return 2
+    arguments = parse_safe_arguments(
+        _parser(), argv, errors,
+        "Curator V2 storage failed (invalid command arguments).\n",
+    )
+    if arguments is None:
+        return 2
+    output = stdout or sys.stdout
     if arguments.operation == "restore" and not arguments.restore_to_new_path:
         print("Refusing restore without --restore-to-new-path.", file=errors)
         return 2

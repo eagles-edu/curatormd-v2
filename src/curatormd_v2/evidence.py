@@ -193,6 +193,21 @@ class EvidenceVerifier(Protocol):
         ...
 
 
+class EvidenceCaptureVerifier(Protocol):
+    """Capture a reference through sources configured by the local host."""
+
+    # pylint: disable=too-few-public-methods  # Single-operation capture contract.
+
+    def capture(
+        self,
+        evidence_kind: str,
+        locator: str,
+        context: EvidenceVerificationContext,
+    ) -> EvidenceRef | None:
+        """Return a source-bound reference, or ``None`` when unavailable."""
+        ...
+
+
 class EvidenceAdapterError(RuntimeError):
     """A trusted evidence adapter failed operationally, without source detail."""
 
@@ -375,6 +390,52 @@ class ReceiptEvidenceAdapter:
             # but never expose the resolver's exception or message.
             raise EvidenceAdapterError() from None
 
+    def capture(
+        self,
+        evidence_kind: str,
+        locator: str,
+        context: EvidenceVerificationContext,
+    ) -> EvidenceRef | None:
+        """Run this configured source and return its validated digest reference."""
+
+        if (
+            evidence_kind not in self.evidence_kinds
+            or context.project_id not in self.policy.allowed_projects
+        ):
+            return None
+        provisional = EvidenceRef(
+            evidence_kind=evidence_kind,
+            locator=locator,
+            sha256="0" * 64,
+            outcome=EvidenceOutcome.PASSED,
+        )
+        try:
+            receipt = self.resolver.resolve(provisional, context)
+            if not isinstance(receipt, EvidenceSourceReceipt):
+                return None
+            if any(
+                (
+                    receipt.evidence_kind != provisional.evidence_kind,
+                    receipt.locator != provisional.locator,
+                    receipt.project_id != context.project_id,
+                    receipt.goal_id != context.goal_id,
+                    receipt.criterion_id != context.criterion_id,
+                    receipt.scope_id != self.scope_id,
+                    receipt.authenticated_subject
+                    not in self.policy.allowed_subjects,
+                )
+            ) or not self._receipt_times_are_current(receipt, context.now_utc):
+                return None
+            return EvidenceRef(
+                evidence_kind=evidence_kind,
+                locator=locator,
+                sha256=receipt.evidence_sha256,
+                outcome=EvidenceOutcome.PASSED,
+                occurrence_id=receipt.occurrence_id,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            raise EvidenceAdapterError() from None
+
     def _receipt_matches_binding(
         self,
         receipt: EvidenceSourceReceipt,
@@ -499,6 +560,19 @@ class EvidenceAdapterRegistry:
         if adapter is None:
             return None
         return adapter.attest(evidence, context)
+
+    def capture(
+        self,
+        evidence_kind: str,
+        locator: str,
+        context: EvidenceVerificationContext,
+    ) -> EvidenceRef | None:
+        """Capture only through the fixed host adapter for this evidence kind."""
+
+        adapter = self._by_kind.get(evidence_kind)
+        if adapter is None:
+            return None
+        return adapter.capture(evidence_kind, locator, context)
 
     @property
     def evidence_kinds(self) -> frozenset[str]:
