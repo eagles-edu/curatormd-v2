@@ -360,9 +360,6 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       && typeof outline.proposal_rationale === 'string'
       && outline.proposal_rationale.length <= 1000
       ? outline.proposal_rationale : candidate.rationale;
-    const proposedImpact = outlineMatchesCandidate
-      && typeof outline.impact === 'string' && outline.impact.length <= 1000
-      ? outline.impact : '';
     const proposedLesson = outlineMatchesCandidate
       && candidate.materiality === 'verified_lesson'
       && typeof outline.future_utility === 'string' && outline.future_utility.length <= 1000
@@ -375,7 +372,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       '', '**Proposed entry**', '',
       `- Proposed title: ${safe(proposedTitle)}`,
       `- Proposal rationale: ${safe(proposalRationale)}`,
-      `- Suggested significance: ${suggestedSignificance === null ? 'not available; choose 0–5' : `${suggestedSignificance} / 5`} (starting recommendation from candidate type; owner-editable; a score of 5 requires extra confirmation)`,
+      `- Significance: ${suggestedSignificance === null ? 'choose 0–5' : `${suggestedSignificance} / 5 (initial recommendation)`} (owner-editable; guides future compression, summarization, archiving, and culling; a score of 5 requires extra confirmation)`,
       '', '**Problem / plan task**', '', `- ${safe(goal.problem)}`, '',
       '**What was completed successfully**', '');
     if (outlineMatchesCandidate && outline.successful_completion_evidence_current === true
@@ -389,9 +386,6 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
         for (const fact of verificationFacts) lines.push(`- ${safe(fact.bullet)}`);
       }
     }
-    lines.push('', '**Proposed impact on plan completion**', '');
-    if (proposedImpact) lines.push(`- ${safe(proposedImpact)}`);
-    else lines.push('- Not stated in the candidate.');
     lines.push('', '**Difficulties encountered**',
       '- No difficulty is separately recorded in the supporting facts.', '',
       '**Plan changes required**',
@@ -455,7 +449,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     while (draftJson.includes(fence)) fence += '`';
     const draftBlock = previousDrafts.get(candidate.candidate_id) ?? `${fence}json\n${draftJson}\n${fence}`;
     lines.push('', '**Your editable copy**', '',
-      'Edit the entry, set significance from 0 to 5, and put one or more configured document paths in `documents` before accepting.', '',
+      'Edit the entry, set significance from 0 to 5 for future compression, summarization, archiving, and culling, and put one or more configured document paths in `documents` before accepting.', '',
       `<!-- curator-v2-decision:${candidate.candidate_id}:start -->`,
       draftBlock,
       `<!-- curator-v2-decision:${candidate.candidate_id}:end -->`, '');

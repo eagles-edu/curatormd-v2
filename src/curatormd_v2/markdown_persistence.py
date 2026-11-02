@@ -261,6 +261,7 @@ class MarkdownPersistenceAdapter:
             "",
             f"- SDE: {_markdown_code(receipt.candidate_id)}",
             f"- Significance: {draft.significance} / 5",
+            "- Significance use: guides future compression, summarization, archiving, and culling decisions.",
             "- Decision: approved",
             f"- Reviewed: {_markdown_code(_local_timestamp(receipt.created_at))}",
             f"- Reviewer: {_markdown_code(receipt.reviewer_id or 'unknown')}",

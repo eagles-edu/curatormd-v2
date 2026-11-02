@@ -54,10 +54,11 @@ receipts. SQLite remains authoritative. The extension refuses symlinked state
 directories and writes these local views with owner-only permissions.
 Each candidate includes a readable proposed SDE entry and a separate editable
 copy. The copy starts with a materiality-based significance recommendation;
-the owner may set any score from 0 to 5 and select multiple configured
-destinations. A score of 5 requires extra confirmation. The proposal separates
-the plan task, evidence-checked work, impact, difficulties, plan changes,
-lessons, and future utility; unsupported details are marked as not recorded.
+the owner may set any score from 0 to 5 for future compression, summarization,
+archiving, and culling decisions, and select multiple configured destinations.
+A score of 5 requires extra confirmation. The proposal separates the plan task,
+evidence-checked work, difficulties, plan changes, lessons, and future utility;
+unsupported details are marked as not recorded.
 Accept and Reject open the attended reviewer with the saved copy. The reviewer
 displays the draft and exact inventory and requires typed confirmation; the
 edited review and projection path still needs proof.

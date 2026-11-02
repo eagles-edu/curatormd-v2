@@ -10640,6 +10640,15 @@ checking real summaries in steps 1 and 3.
       verification remains required for approval, and this does not prove the
       normal Codex endpoint or attended human decision path. No checklist
       marker changed.
+      Review-entry refinement (2026-11-02): removed the separate plan-impact
+      section per the approved format. The 0–5 significance score now states
+      that it guides future compression, summarization, archiving, and culling;
+      the same meaning is included in the canonical Markdown persistence
+      projection. The proposal still includes task, completion, difficulty,
+      plan-change, and lesson sections plus the editable multiple-destination
+      copy. `node --check`, Python source compilation, errors-only Pylint, and
+      `git diff --check` pass. Tests were not run; rendered editor behavior,
+      attended decisions, and receipt reconciliation remain open.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are
