@@ -150,7 +150,6 @@ function healthGateLabel(code) {
   return `Additional health gate: ${code.replace(/[_:.-]+/g, ' ')}.`;
 }
 let dashboardStatusItem;
-let reviewStatusItem;
 let statusRefreshTimer;
 let statusRefreshGeneration = 0;
 const feedRequestsInFlight = new Map();
@@ -1445,23 +1444,15 @@ function activate(context) {
   statusItem.command = 'curatormdV2.openDashboard';
   statusItem.show();
 
-  const reviewItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, -1);
-  reviewStatusItem = reviewItem;
-  reviewItem.name = 'CuratorMD V2 Reviews';
-  reviewItem.command = 'curatormdV2.openApprovalJson';
-  reviewItem.color = STATUS_COLORS.action;
-  reviewItem.tooltip = statusTooltip(STATUS_COLOR_MEANINGS.action);
-  if (typeof reviewItem.hide === 'function') reviewItem.hide();
-
   const openDashboard = vscode.commands.registerCommand(
     'curatormdV2.openDashboard',
     () => showDashboard(),
   );
-  const openApprovalJson = vscode.commands.registerCommand(
-    'curatormdV2.openApprovalJson',
-    () => openPendingApprovalJson(),
+  const openPendingReview = vscode.commands.registerCommand(
+    'curatormdV2.openPendingReview',
+    () => openPendingReviewDocument(),
   );
-  context.subscriptions.push(statusItem, reviewItem, openDashboard, openApprovalJson);
+  context.subscriptions.push(statusItem, openDashboard, openPendingReview);
   if (vscode.languages && typeof vscode.languages.registerCodeLensProvider === 'function') {
     context.subscriptions.push(vscode.commands.registerCommand(
       'curatormdV2.reviewDocumentCandidate',
@@ -1572,7 +1563,6 @@ function deactivate() {
   if (statusRefreshTimer) clearInterval(statusRefreshTimer);
   statusRefreshTimer = undefined;
   dashboardStatusItem = undefined;
-  reviewStatusItem = undefined;
 }
 
 function updateStatusBarHealth(
@@ -1592,18 +1582,25 @@ function updateStatusBarHealth(
   const pendingReviews = reviewsKnown ? reviewItems.length : null;
   let displayStatus = healthStatus;
   if (healthStatus === 'healthy' && !reviewsKnown) displayStatus = 'unknown';
-  updateReviewStatusItem(pendingReviews);
   const reviewSummary = !reviewsKnown
     ? 'pending SDE review count unavailable'
     : pendingReviews === 0
       ? 'no SDE reviews pending'
       : `${pendingReviews === REVIEW_QUEUE_SIZE ? 'At least ' : ''}${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}`;
   const storageWarning = sqliteSizeWarning(storage, projectId);
-  dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`
-    + (storageWarning ? ' · SQLite size warning' : '');
-  dashboardStatusItem.color = STATUS_COLORS[displayStatus];
+  if (pendingReviews > 0) {
+    const count = `${pendingReviews}${pendingReviews === REVIEW_QUEUE_SIZE ? '+' : ''}`;
+    dashboardStatusItem.text = `$(checklist) CuratorMD V2: ${count} review${pendingReviews === 1 ? '' : 's'}`;
+    dashboardStatusItem.color = STATUS_COLORS.action;
+    dashboardStatusItem.command = 'curatormdV2.openPendingReview';
+  } else {
+    dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`
+      + (storageWarning ? ' · SQLite size warning' : '');
+    dashboardStatusItem.color = STATUS_COLORS[displayStatus];
+    dashboardStatusItem.command = 'curatormdV2.openDashboard';
+  }
   dashboardStatusItem.tooltip = statusTooltip(
-    `${statusColorMeaning(displayStatus)} Project health: ${healthStatus}.`
+    `${pendingReviews > 0 ? STATUS_COLOR_MEANINGS.action : statusColorMeaning(displayStatus)} Project health: ${healthStatus}.`
       + healthGateSummary(health, projectId)
       + (readError ? ` ${statusReadFailure(readError)}` : '')
       + ` ${reviewSummary}. `
@@ -1613,22 +1610,7 @@ function updateStatusBarHealth(
   return displayStatus;
 }
 
-function updateReviewStatusItem(pendingReviews) {
-  if (!reviewStatusItem) return;
-  if (!Number.isSafeInteger(pendingReviews) || pendingReviews < 1) {
-    if (typeof reviewStatusItem.hide === 'function') reviewStatusItem.hide();
-    return;
-  }
-  const count = `${pendingReviews}${pendingReviews === REVIEW_QUEUE_SIZE ? '+' : ''}`;
-  reviewStatusItem.text = `$(checklist) CuratorMD V2: ${count} review${pendingReviews === 1 ? '' : 's'}`;
-  reviewStatusItem.color = STATUS_COLORS.action;
-  reviewStatusItem.tooltip = statusTooltip(
-    `${STATUS_COLOR_MEANINGS.action} ${pendingReviews === REVIEW_QUEUE_SIZE ? 'At least ' : ''}${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}. Click to open the review document.`,
-  );
-  if (typeof reviewStatusItem.show === 'function') reviewStatusItem.show();
-}
-
-async function openPendingApprovalJson() {
+async function openPendingReviewDocument() {
   const workspace = vscode.workspace
     && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
   if (!workspace) {

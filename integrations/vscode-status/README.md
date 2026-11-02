@@ -1,11 +1,11 @@
 # CuratorMD V2 VS Code dashboard
 
 The V2-owned extension places its `CuratorMD V2` status item immediately to
-the right of Git Graph. The health item is blue before a health read, yellow
-when health is unknown, green when project health is healthy, and red when
-project health is degraded. Pending SDE approvals do not degrade project
-health. A separate blue review action appears when approvals are waiting;
-clicking it opens `.curatormd-v2/sde-proposals/pending-review.md`. Each
+the right of Git Graph. It is blue when SDE reviews are waiting; clicking it
+opens `.curatormd-v2/sde-proposals/pending-review.md`. With no pending reviews,
+it shows health in blue before a read, yellow when health is unknown, green
+when project health is healthy, and red when project health is degraded.
+Pending SDE approvals do not degrade project health. Each
 candidate has Accept and Reject actions directly in the document that open
 the attended reviewer in a terminal. The selected action is
 only a hint: the reviewer still sees the full packet and exact inventory,
@@ -236,8 +236,10 @@ Install Extension from Location...**. Reload the window, set the User settings,
 then click `CuratorMD V2` in the bottom status bar.
 
 Reload once after installing or updating the extension so VS Code activates the
-new files. After activation, the status item reads health at startup and refreshes
+new files. After activation, the single status item reads health at startup and
+refreshes
 every 60 seconds, when Curator settings change, when the workspace folder
 changes, and when the VS Code window regains focus. Clicking the item opens the
-dashboard and performs a fresh health read; reopening the repository is not
+pending review document when approvals are waiting; otherwise it opens the
+dashboard and performs a fresh health read. Reopening the repository is not
 needed for later health changes.

@@ -724,7 +724,7 @@ test('status item follows Git Graph and uses project-bound health colors', async
   const subscriptions = [];
   activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } });
 
-  assert.equal(items.length, 2);
+  assert.equal(items.length, 1);
   assert.equal(items[0].alignment, vscodeMock.StatusBarAlignment.Left);
   assert.equal(items[0].priority, 0);
   assert.equal(items[0].text, '$(circle-filled) CuratorMD V2');
@@ -733,7 +733,7 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.match(items[0].tooltip, /Blue means no health read has been attempted/);
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
   assert.equal(commands.length, 2);
-  assert.equal(subscriptions.length, 5);
+  assert.equal(subscriptions.length, 4);
 
   assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
   assert.equal(items[0].color, '#73d216');
@@ -769,28 +769,28 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', [pendingReview],
   ), 'healthy');
-  assert.equal(items[0].color, '#73d216');
-  assert.equal(items[0].text, '$(circle-filled) CuratorMD V2: healthy');
-  assert.equal(items[1].color, '#4daafc');
-  assert.equal(items[1].text, '$(checklist) CuratorMD V2: 1 review');
-  assert.equal(items[1].command, 'curatormdV2.openApprovalJson');
-  assert.match(items[1].tooltip, /Blue means SDE reviews are outstanding/);
+  assert.equal(items[0].color, '#4daafc');
+  assert.equal(items[0].text, '$(checklist) CuratorMD V2: 1 review');
+  assert.equal(items[0].command, 'curatormdV2.openPendingReview');
+  assert.match(items[0].tooltip, /Blue means SDE reviews are outstanding/);
+  assert.match(items[0].tooltip, /Project health: healthy/);
   assert.match(items[0].tooltip, /1 pending SDE review/);
-  assert.match(items[0].tooltip, /Green means project health is healthy/);
   assert.equal(updateStatusBarHealth({
     project_id: 'alpha', status: 'degraded', gate_codes: ['review_backlog'],
   }, 'alpha', [pendingReview]), 'healthy');
-  assert.equal(items[0].color, '#73d216');
+  assert.equal(items[0].color, '#4daafc');
   assert.equal(updateStatusBarHealth({
     project_id: 'alpha', status: 'degraded',
     gate_codes: ['review_backlog', 'event_failures'],
   }, 'alpha', [pendingReview]), 'degraded');
-  assert.equal(items[0].color, '#ef2929');
-  assert.match(items[0].tooltip, /Red means project health is degraded/);
+  assert.equal(items[0].color, '#4daafc');
+  assert.match(items[0].tooltip, /Blue means SDE reviews are outstanding/);
+  assert.match(items[0].tooltip, /Project health: degraded/);
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', null,
   ), 'unknown');
   assert.equal(items[0].color, '#fce94f');
+  assert.equal(items[0].command, 'curatormdV2.openDashboard');
   assert.match(items[0].tooltip, /pending SDE review count unavailable/);
   assert.match(items[0].tooltip, /Yellow means the health or SDE review count is unknown/);
   assert.equal(updateStatusBarHealth({
