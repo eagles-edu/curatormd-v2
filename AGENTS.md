@@ -29,6 +29,15 @@ Steward belongs to the Hermes Core account, not CuratorMD.
 - Do not import V1 runtime state or raw artifacts into this repository.
 - No deployment, external publication, commit, or push without an explicit
   request.
+- For an explicitly requested full push, inventory staged, unstaged, and
+  untracked changes before publishing. Include all authorized pending work,
+  integrate the latest remote tip, resolve overlaps without duplicating
+  behavior, and verify the pushed commit contains the full requested scope.
+  After publishing from another worktree, reconcile the original checkout
+  when its changes are represented in the published tree, then verify the
+  branch is clean and up to date with its remote. Preserve changes that are
+  outside the authorized scope and report any state that cannot be safely
+  reconciled.
 
 ## Markdown documents
 
