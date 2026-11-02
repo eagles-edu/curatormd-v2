@@ -10,6 +10,7 @@ from lifecycle_test_support import LifecycleTestSupport
 from curatormd_v2 import (
     ArtifactPurger,
     ConflictError,
+    CriterionStatus,
     CuratorService,
     EvidenceGateError,
     FactKind,
@@ -30,6 +31,18 @@ from curatormd_v2.service import SDEAssessmentRequest
 
 class GoalFactCapacityAndSDETests(LifecycleTestSupport):
     """Cover goalfactcapacityandsde invariants."""
+
+    def _complete_goal(self) -> None:
+        """Finish the fixture with current evidence before historical curation."""
+
+        snapshot = self.service.goal_status(self.goal.goal_id)
+        for criterion in snapshot.criteria:
+            if criterion.status is not CriterionStatus.VERIFIED:
+                self.verify(criterion.criterion_id, f"{criterion.criterion_id} passed")
+        completed = self.service.goal_finish(
+            self.goal.goal_id, "All success criteria have current passing evidence"
+        )
+        self.assertEqual(completed.status, GoalStatus.COMPLETE)
 
     def test_fact_count_capacity_blocks_without_pruning_and_reports_open_gate(self) -> None:
         for index in range(MAX_FACTS_PER_GOAL):
@@ -198,13 +211,17 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
         self.assertEqual(len(self.store.list_facts(self.goal.goal_id)), 1)
 
     def test_routine_assessment_stays_pending_for_owner_review(self) -> None:
-        self.verify("unit", "unit test suite passed")
+        verification = self.verify("unit", "unit test suite passed")
+        change, _ = self.service.goal_fact(
+            self.goal.goal_id, FactKind.CHANGE, "Recorded the verified task lesson"
+        )
+        self._complete_goal()
         candidate = self.service.sde_assess(
             SDEAssessmentRequest(
                 self.goal.goal_id,
                 Materiality.ROUTINE,
                 "Owner review: decide whether this verified task lesson is worth keeping",
-                tuple(f.fact_id for f in self.store.list_facts(self.goal.goal_id)),
+                (change.fact_id, verification.fact_id),
                 impact="Observed in the bounded test scenario",
                 retrieval_value="Useful for future maintenance review",
             )
@@ -215,30 +232,29 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
         self.assertEqual(candidate.status.value, "pending_review")
         self.assertEqual(self.store.list_sde_candidates(self.goal.goal_id), (candidate,))
 
-    def test_material_change_can_be_proposed_without_verification(self) -> None:
+    def test_active_goal_cannot_be_proposed_without_completion(self) -> None:
         change, _ = self.service.goal_fact(
             self.goal.goal_id, FactKind.CHANGE, "Added health check"
         )
-        candidate = self.service.sde_assess(
-            SDEAssessmentRequest(
-                self.goal.goal_id,
-                Materiality.IMPLEMENTATION,
-                "Durable change; verification remains open for owner review",
-                (change.fact_id,),
-                impact="Expected impact is not yet verified",
-                retrieval_value="The owner can decide whether to retain this change",
+        with self.assertRaisesRegex(EvidenceGateError, "requires a completed goal"):
+            self.service.sde_assess(
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.IMPLEMENTATION,
+                    "Durable change; verification remains open for owner review",
+                    (change.fact_id,),
+                    impact="Expected impact is not yet verified",
+                    retrieval_value="The owner can decide whether to retain this change",
+                )
             )
-        )
-
-        self.assertEqual(candidate.status.value, "pending_review")
-        self.assertEqual(candidate.fact_ids, (change.fact_id,))
-        self.assertEqual(self.store.list_sde_candidates(self.goal.goal_id), (candidate,))
+        self.assertEqual(self.store.list_sde_candidates(self.goal.goal_id), ())
 
     def test_sde_rationale_is_a_compact_line_linked_to_verified_bullets(self) -> None:
         change, _ = self.service.goal_fact(
             self.goal.goal_id, FactKind.CHANGE, "Added a durable health check"
         )
         verification = self.verify("unit", "Unit test passed")
+        self._complete_goal()
         with self.assertRaisesRegex(ValueError, "single compact line"):
             self.service.sde_assess(
                 SDEAssessmentRequest(
@@ -275,6 +291,7 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
             self.goal.goal_id, FactKind.CHANGE, "Added health check"
         )
         verification = self.verify("unit", "unit tests passed")
+        self._complete_goal()
         selected = (change.fact_id, verification.fact_id)
         first = self.service.sde_assess(
             SDEAssessmentRequest(
@@ -302,34 +319,30 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
         self.assertEqual(first.candidate_id, repeated.candidate_id)
         self.assertEqual(len(self.store.list_sde_candidates(self.goal.goal_id)), 1)
 
-    def test_pending_sde_can_be_staged_before_verification_for_owner_review(self) -> None:
+    def test_pending_sde_cannot_be_staged_before_verification_or_completion(self) -> None:
         change, _ = self.service.goal_fact(
             self.goal.goal_id, FactKind.CHANGE, "Implemented the requested task change"
         )
 
-        candidate = self.service.sde_assess(
-            SDEAssessmentRequest(
-                self.goal.goal_id,
-                Materiality.ROUTINE,
-                "Owner review: decide whether this task fact should be retained",
-                (change.fact_id,),
-                impact="The task change is recorded; outcome verification is pending",
-                retrieval_value="The owner can decide whether this routine fact is useful",
+        with self.assertRaisesRegex(EvidenceGateError, "requires a completed goal"):
+            self.service.sde_assess(
+                SDEAssessmentRequest(
+                    self.goal.goal_id,
+                    Materiality.ROUTINE,
+                    "Owner review: decide whether this task fact should be retained",
+                    (change.fact_id,),
+                    impact="The task change is recorded; outcome verification is pending",
+                    retrieval_value="The owner can decide whether this routine fact is useful",
+                )
             )
-        )
-
-        self.assertIsNotNone(candidate)
-        assert candidate is not None
-        self.assertEqual(candidate.status.value, "pending_review")
-        detail = self.service.sde_review_detail(candidate.candidate_id)
-        self.assertEqual([fact.fact_id for fact in detail.facts], [change.fact_id])
-        self.assertFalse(any(fact.kind is FactKind.VERIFICATION for fact in detail.facts))
+        self.assertEqual(self.store.list_sde_candidates(self.goal.goal_id), ())
 
     def test_replayed_sde_assessment_rejects_changed_proposal_context(self) -> None:
         change, _ = self.service.goal_fact(
             self.goal.goal_id, FactKind.CHANGE, "Added a scoped readiness check"
         )
         verification = self.verify("unit", "Readiness regression passed")
+        self._complete_goal()
         selected = (change.fact_id, verification.fact_id)
         self.service.sde_assess(
             SDEAssessmentRequest(
@@ -358,6 +371,7 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
             self.goal.goal_id, FactKind.CHANGE, "Added another readiness check"
         )
         verification = self.verify("unit", "Readiness regression passed")
+        self._complete_goal()
         with self.assertRaisesRegex(ValueError, "SDE impact must contain"):
             self.service.sde_assess(
                 SDEAssessmentRequest(
@@ -377,6 +391,7 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
             self.goal.goal_id, FactKind.CHANGE, "Added an evidence-backed change"
         )
         verification = self.verify("unit", "unit tests passed")
+        self._complete_goal()
         candidate = self.service.sde_assess(
             SDEAssessmentRequest(
                 self.goal.goal_id,
@@ -409,6 +424,7 @@ class GoalFactCapacityAndSDETests(LifecycleTestSupport):
             criterion_id="done",
             evidence=(self.proof("other-project-check"),),
         )
+        other_service.goal_finish(other_goal.goal_id, "Other project check passed")
         other_candidate = other_service.sde_assess(
             SDEAssessmentRequest(
                 other_goal.goal_id,

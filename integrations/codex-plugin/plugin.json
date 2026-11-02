@@ -17,7 +17,7 @@
         "defaultPrompt": [
           "Say `Problem: ... Success: ...`; use a Curator goal for every non-trivial task before edits.",
           "After checks, save compact evidence facts; read the goal back after writes. Leave unsupported checks open.",
-          "At each task endpoint, prepare a pending SDE proposal for the user's decision."
+          "Curate historical SDEs separately on request, using only completed goals; never create proposals during active development."
         ]
       }
     }

@@ -73,37 +73,31 @@ Curator V2 Codex workflow:
    one-off task. Before `goal_finish`, aggregate the saved task history, write
    one `change` fact beginning `Task summary:`, and read it back. A request to
    "finish the plugin" or "complete this task"
-   asks for work and does not report completion. Say "Beginning task tracking", "Pausing task
-   tracking", "Resuming task tracking", or "Item complete; preparing its SDE
-   proposal for your review" at those transitions. Do not close unrelated
+   asks for work and does not report completion. Say "Beginning task tracking",
+   "Pausing task tracking", or "Resuming task tracking" for the matching
+   transition; report completion after its checks pass. Do not close unrelated
    goals. Before `goal_finish`, `goal_defer`, or `goal_activate`, read
    `goal_status` and pass its current lifecycle revision. `goal_report` accepts
    1-16 facts per page; use `fact_offset` to
    continue, never request a larger page.
 3. Curator tracking is the default for every nontrivial task; do not ask the
    user to opt in or start a separate capture mode. Collect compact task facts
-   as work proceeds and prepare an SDE proposal at every completed item or
-   one-off task endpoint.
+   as work proceeds. Development task completion and historical SDE curation
+   are separate workflows. Do not create an SDE proposal automatically when a
+   goal completes.
    Treat plan-item transitions and one-off task transitions alike. Use the
    visible cues "Beginning task tracking", "Pausing task tracking", and
-   "Resuming task tracking"; at completion say "Item complete; preparing its
-   SDE proposal for your review". This
-   bookkeeping is part of every tracked task. At a hold, record facts,
-   reason, and next action; resume from that checkpoint. At each completed plan
-   item and one-off task, call `sde_assess` to create a pending proposal from
-   supported task facts, even when routine or not yet verified. Label missing
-   or stale proof; if an open check prevents goal completion, still propose the
-   supported task facts at the user's endpoint. Approval still requires current
-   passing evidence. Do not ask
-   whether to prepare it. Show the
-   supporting facts and any suggested category or importance as recommendations
-   only. Never suppress a proposal because it seems low-value or superfluous.
-   The user decides what is memorialized, its importance, and the disposition.
-   Use `sde_assess` only to create a pending
-   candidate. A completed task or plan item is never approval. If evidence is
-   not ready, state the missing check; keep the task open only when a task
-   success check is still unmet. Never present an unsupported candidate as
-   verified.
+   "Resuming task tracking". This bookkeeping is part of every tracked task.
+   At a hold, record facts, reason, and next action; resume from that
+   checkpoint. If a required check is open or lacks current passing evidence,
+   keep the goal active and continue development. When `goal_finish` succeeds
+   and `goal_status` confirms complete, end the development workflow without
+   preparing an SDE proposal. Historical SDE curation is requested and handled
+   separately against completed goals. For that separate task, use
+   `sde_assess` only with supported facts and current passing evidence to create
+   a pending candidate for the user's review. The user decides what is
+   memorialized, its importance, and the disposition. A completed task is not
+   SDE approval. Never present unsupported facts as verified.
    Claim saved facts or a candidate only after `fact_record` or
    `sde_assess` succeeds and a matching `goal_status`/`goal_report` confirms
    it is attached to that goal. Never approve/reject or codify on the user's
@@ -117,8 +111,9 @@ Curator V2 Codex workflow:
    a plan, page through `goal_children_page` and each child's `goal_report`,
    then record a parent-level `change` summary
    with the child goal/fact IDs. Begin every compact summary bullet with
-   `Task summary:` and read it back from the goal report before continuing to
-   SDE assessment. `sde_assess` accepts facts from its goal only;
+   `Task summary:` and read it back from the goal report before ending the
+   development workflow. `sde_assess` accepts facts from its goal only and
+   requires that goal to be complete;
    never submit child fact IDs for a parent proposal. Keep the summary and audit
    receipts. After the user's disposition, routine ledger facts can be removed
    from active history only through an exact `fact_compaction_propose` and

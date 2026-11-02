@@ -27,7 +27,7 @@ const STATUS_COLOR_MEANINGS = Object.freeze({
 });
 const STATUS_READ_FAILURES = Object.freeze({
   'launcher-start': 'Curator did not start; check the Curator launcher in VS Code User settings.',
-  'launcher-exit': 'Curator stopped before replying; check the local Curator installation.',
+  'launcher-exit': 'Curator MCP transport closed. Save your work, then reload the VS Code window (Codex host) or start a fresh Codex session. Do not re-enroll the project or recreate its grants.',
   'read-denied': 'Curator denied the project read; check its local project access grant.',
   'mcp-tool-error': 'Curator rejected the request; check the project grant and request details.',
   'mcp-request': 'Curator could not complete the project read; refresh to try again.',
@@ -62,6 +62,7 @@ const MCP_ERROR_MESSAGES = Object.freeze({
   internal_error: 'Curator could not complete the request; check the local installation.',
 });
 const MCP_ERROR_CODES = new Set(Object.keys(MCP_ERROR_MESSAGES));
+const TRANSPORT_CLOSED_MESSAGE = 'Curator MCP transport closed. Save your work, then reload the VS Code window (Codex host) or start a fresh Codex session. Do not re-enroll the project or recreate its grants.';
 const HEALTH_GATE_LABELS = Object.freeze({
   event_backlog: 'Events are waiting to be processed.',
   event_failures: 'One or more events failed; check the inbox.',
@@ -153,6 +154,7 @@ let dashboardStatusItem;
 let statusRefreshTimer;
 let reviewColorDecorations;
 let statusRefreshGeneration = 0;
+let transportClosedAlertShown = false;
 const feedRequestsInFlight = new Map();
 const feedFailureStates = new Map();
 
@@ -186,6 +188,26 @@ function statusReadFailure(error) {
     && Object.prototype.hasOwnProperty.call(STATUS_READ_FAILURES, error.code)
     ? STATUS_READ_FAILURES[error.code]
     : fallback;
+}
+
+async function notifyTransportClosed(error) {
+  if (error?.code !== 'launcher-exit' || transportClosedAlertShown
+    || typeof vscode.window?.showWarningMessage !== 'function') return false;
+  transportClosedAlertShown = true;
+  try {
+    const action = await vscode.window.showWarningMessage(
+      TRANSPORT_CLOSED_MESSAGE,
+      { modal: true },
+      'Reload Window',
+      'Dismiss',
+    );
+    if (action === 'Reload Window' && typeof vscode.commands?.executeCommand === 'function') {
+      await vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
+  } catch (_) {
+    // The status tooltip still carries the recovery guidance if notification fails.
+  }
+  return true;
 }
 
 function ensureWorkspaceArea(projectRoot, areaName) {
@@ -323,7 +345,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     if ([...parts.drafts.keys()].some((id) => !currentIds.has(id))) return false;
     previousDrafts = parts.drafts;
   } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
-  const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~]/g, '\\$&');
+  const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~\-]/g, '\\$&');
   const pushWrapped = (text, firstPrefix = '', continuationPrefix = '') => {
     const words = text.trim().split(/\s+/);
     let line = firstPrefix;
@@ -393,9 +415,54 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       && candidate.materiality === 'verified_lesson'
       && typeof outline.future_utility === 'string' && outline.future_utility.length <= 1000
       ? outline.future_utility : '';
+    const verifiedCompletion = outlineMatchesCandidate
+      && outline.successful_completion_evidence_current === true
+      && verificationFacts.length > 0;
+    const taskSummaries = changeFacts
+      .filter((fact) => /^Task summary:/i.test(fact.bullet))
+      .slice(0, 1);
+    const completed = verifiedCompletion
+      ? verificationFacts.map((fact) => fact.bullet).slice(0, 32)
+      : taskSummaries.map((fact) => fact.bullet).slice(0, 32);
+    const draft = {
+      title: proposedTitle,
+      significance: suggestedSignificance,
+      documents: [],
+      problem: goal.problem,
+      completed,
+      difficulties: [],
+      plan_changes: [],
+      lessons: proposedLesson ? [proposedLesson] : [],
+      future_utility: outline && typeof outline.future_utility === 'string'
+        && outline.future_utility.length <= 1000
+        ? outline.future_utility : '',
+    };
+    const draftJson = JSON.stringify(draft, null, 2);
+    let fence = '```';
+    while (draftJson.includes(fence)) fence += '`';
+    let draftBlock = previousDrafts.get(candidate.candidate_id);
+    if (draftBlock) {
+      const savedJson = /^(`{3,}json\n)([\s\S]*)(\n`{3,})$/.exec(draftBlock);
+      if (savedJson) {
+        try {
+          const savedDecision = JSON.parse(savedJson[2]);
+          if (Array.isArray(savedDecision.completed) && savedDecision.completed.length === 0
+            && completed.length > 0) {
+            savedDecision.completed = completed;
+            draftBlock = `${savedJson[1]}${JSON.stringify(savedDecision, null, 2)}${savedJson[3]}`;
+          }
+        } catch (_) {
+          // Keep an owner's malformed draft intact for attended repair.
+        }
+      }
+    } else {
+      draftBlock = `${fence}json\n${draftJson}\n${fence}`;
+    }
+    const proposedBlock = draftBlock;
     lines.push(`<!-- curator-v2-candidate: ${candidate.candidate_id} -->`,
       `## SDE candidate ${candidateNumber}`, '',
       `### ${candidateNumber}. Proposed entry`, '');
+    lines.push(proposedBlock, '');
     pushField('SDE ID', safe(candidate.candidate_id));
     pushField('Proposed title', safe(proposedTitle));
     pushField('Task started (+07)', outline && typeof outline.task_started_at === 'string'
@@ -419,12 +486,15 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     lines.push('', `### ${candidateNumber}. Task and outcomes`, '');
     pushField('Problem / plan task', safe(goal.problem));
     lines.push('- Completed successfully:');
-    if (outlineMatchesCandidate && outline.successful_completion_evidence_current === true
-      && verificationFacts.length > 0) {
+    if (verifiedCompletion) {
       pushFacts(verificationFacts, 'No successful work is recorded.');
       pushWrapped('The attended reviewer checks the current evidence before acceptance.', '  - ', '    ');
     } else {
       pushFacts([], 'No current passing verification supports a successful-completion claim.');
+      if (taskSummaries.length > 0) {
+        lines.push('- Completed task work, with verification still open:');
+        pushFacts(taskSummaries, 'No task summary is recorded.');
+      }
       for (const fact of verificationFacts) {
         pushWrapped(`Recorded verification, not current proof: ${safe(fact.bullet)}`, '  - ', '    ');
       }
@@ -442,25 +512,6 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       pushFacts(changeFacts.slice(0, 8), 'No change facts are available.');
       if (changeFacts.length > 8) pushWrapped('Additional change facts are available in the attended review.', '  - ', '    ');
     }
-    const draft = {
-      title: proposedTitle,
-      significance: suggestedSignificance,
-      documents: [],
-      problem: goal.problem,
-      completed: outlineMatchesCandidate
-        && outline.successful_completion_evidence_current === true
-        ? verificationFacts.map((fact) => fact.bullet).slice(0, 32) : [],
-      difficulties: [],
-      plan_changes: [],
-      lessons: proposedLesson ? [proposedLesson] : [],
-      future_utility: outline && typeof outline.future_utility === 'string'
-        && outline.future_utility.length <= 1000
-        ? outline.future_utility : '',
-    };
-    const draftJson = JSON.stringify(draft, null, 2);
-    let fence = '```';
-    while (draftJson.includes(fence)) fence += '`';
-    const draftBlock = previousDrafts.get(candidate.candidate_id) ?? `${fence}json\n${draftJson}\n${fence}`;
     lines.push('', `### ${candidateNumber}. Editable decision`, '');
     pushWrapped('Edit this JSON copy, choose a significance rating from 0 to 5, and list every persistence document that should receive the entry. Accept or Reject opens the attended reviewer; it does not record the decision until you confirm.');
     lines.push('',
@@ -1054,7 +1105,7 @@ function dashboardErrorMessage(error) {
     case 'launcher-start':
       return 'Could not start Curator V2. Check the User setting serverCommand and the installed launcher.';
     case 'launcher-exit':
-      return 'The Curator V2 launcher exited before replying. Check its installation and startup.';
+      return TRANSPORT_CLOSED_MESSAGE;
     case 'timeout':
       return 'Curator V2 did not respond within 15 seconds. Check the local backend and try again.';
     case 'read-denied':
@@ -1372,6 +1423,7 @@ class McpStdioClient {
       .map((item) => item.text)
       .join('\n');
     if (!text) throw new Error('Curator returned no readable result.');
+    transportClosedAlertShown = false;
     return text;
   }
 
@@ -1454,6 +1506,23 @@ function activate(context) {
     () => openPendingReviewDocument(),
   );
   context.subscriptions.push(statusItem, openDashboard, openPendingReview);
+  reviewColorDecorations = createReviewColorDecorations();
+  if (reviewColorDecorations) {
+    context.subscriptions.push(...Object.values(reviewColorDecorations));
+    const colorPendingReview = (editor) => applyReviewColors(editor);
+    for (const editor of vscode.window.visibleTextEditors || []) colorPendingReview(editor);
+    if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
+      context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(colorPendingReview));
+    }
+    if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
+      context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
+        const editor = vscode.window.visibleTextEditors?.find(
+          (item) => item.document === event.document,
+        );
+        if (editor) applyReviewColors(editor);
+      }));
+    }
+  }
   if (vscode.languages && typeof vscode.languages.registerCodeLensProvider === 'function') {
     context.subscriptions.push(vscode.commands.registerCommand(
       'curatormdV2.reviewDocumentCandidate',
@@ -1685,6 +1754,72 @@ async function openPendingReviewDocument() {
   }
 }
 
+function createReviewColorDecorations() {
+  if (typeof vscode.window?.createTextEditorDecorationType !== 'function') return null;
+  const colors = {
+    heading: { light: '#075985', dark: '#7dd3fc' },
+    metadata: { light: '#6b21a8', dark: '#d8b4fe' },
+    key: { light: '#166534', dark: '#86efac' },
+    string: { light: '#9a3412', dark: '#fcd34d' },
+    number: { light: '#1d4ed8', dark: '#93c5fd' },
+  };
+  return Object.fromEntries(Object.entries(colors).map(([kind, palette]) => [kind,
+    vscode.window.createTextEditorDecorationType({
+      light: { color: palette.light },
+      dark: { color: palette.dark },
+      color: palette.dark,
+    })]));
+}
+
+function applyReviewColors(editor) {
+  if (!editor || !editor.document || !reviewColorDecorations || !isPendingReviewEditor(editor)) return;
+  const ranges = { heading: [], metadata: [], key: [], string: [], number: [] };
+  let inJson = false;
+  for (let lineNumber = 0; lineNumber < editor.document.lineCount; lineNumber += 1) {
+    const line = editor.document.lineAt(lineNumber);
+    const value = line.text;
+    if (/^```json\s*$/.test(value)) {
+      inJson = true;
+      continue;
+    }
+    if (inJson && /^```+$/.test(value)) {
+      inJson = false;
+      continue;
+    }
+    if (!inJson) {
+      if (/^#{1,6}\s/.test(value)) ranges.heading.push(line.range);
+      else if (/^- (?:SDE ID|Proposed title|Task started \(\+07\)|Successful completion \(\+07\)|Significance|Proposal rationale|Problem \/ plan task):/.test(value)) {
+        ranges.metadata.push(line.range);
+      }
+      continue;
+    }
+    for (const match of value.matchAll(/"(?:[^"\\]|\\.)*"(?=\s*:)/g)) {
+      ranges.key.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
+    }
+    for (const match of value.matchAll(/:\s*("(?:[^"\\]|\\.)*")/g)) {
+      const start = match.index + match[0].lastIndexOf(match[1]);
+      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
+    }
+    for (const match of value.matchAll(/^\s+("(?:[^"\\]|\\.)*")(?=,?$)/g)) {
+      const start = match.index + match[0].indexOf(match[1]);
+      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
+    }
+    for (const match of value.matchAll(/\b(?:true|false|null|-?\d+(?:\.\d+)?)\b/g)) {
+      ranges.number.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
+    }
+  }
+  for (const [kind, decoration] of Object.entries(reviewColorDecorations)) {
+    editor.setDecorations(decoration, ranges[kind]);
+  }
+}
+
+function isPendingReviewEditor(editor) {
+  const workspace = vscode.workspace?.workspaceFolders?.[0];
+  return Boolean(workspace && editor.document.uri.fsPath === path.join(
+    workspace.uri.fsPath, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+  ));
+}
+
 function reviewDocumentActions(document) {
   const workspace = vscode.workspace?.workspaceFolders?.[0];
   if (!workspace || document.uri.fsPath !== path.join(
@@ -1757,7 +1892,6 @@ async function launchDocumentReview(candidateId, decision) {
 
 function resetStatusBarHealth() {
   if (!dashboardStatusItem) return;
-  updateReviewStatusItem(0);
   dashboardStatusItem.text = '$(circle-filled) CuratorMD V2';
   dashboardStatusItem.color = STATUS_COLORS.neutral;
   dashboardStatusItem.tooltip = statusTooltip(
@@ -1884,6 +2018,7 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn, trigger
       && vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath === projectRoot) {
       updateStatusBarHealth(null, null, null, null, error);
     }
+    void notifyTransportClosed(error);
     return 'unknown';
   } finally {
     client.close();
@@ -2350,6 +2485,7 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
         terminal.sendText(command, true);
       }
     } catch (error) {
+      void notifyTransportClosed(error);
       goalIds.clear();
       candidateIds.clear();
       reportRevisions.clear();
@@ -3199,4 +3335,5 @@ module.exports = {
   validateReviewQueue,
   writePendingReviewDocument,
   writeWorkspaceQueueViews,
+  notifyTransportClosed,
 };

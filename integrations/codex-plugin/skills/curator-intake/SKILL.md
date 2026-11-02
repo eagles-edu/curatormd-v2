@@ -93,6 +93,13 @@ reason/next action, and outcome. `goal_report` accepts 1–16 facts per page; us
 scratch content. Claim facts saved only after the MCP write succeeds. If Curator
 is unavailable, report that and do not claim the work was recorded.
 
+If Codex reports that the Curator MCP transport is closed, tell the user:
+“Curator MCP transport closed. Save your work, then reload the VS Code window
+(Codex host) or start a fresh Codex session. Do not re-enroll the project or
+recreate its grants.”
+This is a Codex host connection recovery; it does not indicate that the project
+binding or grants need to change.
+
 Keep interrupted work together: the existing `goal_id` is the continuity key
 for all facts and checks about that task, even when records are separated by
 other work, turns, pauses, or new threads. Append later facts to that same goal
@@ -145,37 +152,39 @@ checked code is only in an uncommitted worktree with no configured runner,
 record a compact open gate or research fact without evidence and leave
 verification open.
 
-## Prepare SDE proposals for the user's decision
+## Curate historical SDEs separately from development
 
-Task evidence and SDE review are part of every tracked task; do not ask the user
-to enable capture or start a separate SDE mode. A hold records a checkpoint and
-pauses work; it does not discard facts. Resuming continues from that point.
+Task evidence and lifecycle tracking are part of each tracked task; do not ask
+the user to enable capture. A hold records a checkpoint and pauses work; it does
+not discard facts. Resuming continues from that point.
 
-At the endpoint of every completed plan item and one-off task, call
-`sde_assess` to create a pending proposal from supported task facts for the
-user's review. This is part of task completion, not a separate mode or a
-question to the user. Never suppress a proposal because you judge it routine,
-low-value, or superfluous. Present the facts and
-any suggested category or importance as recommendations only. The user decides
-what is memorialized, its importance, and whether it is approved, rejected, or
-otherwise disposed. `sde_assess` creates a pending proposal only; it never
-approves or codifies knowledge. Proposal creation does not wait for
-verification: include supported change/research facts and label any missing or
-stale proof. Task completion still requires its success checks, and proposal
-approval still requires current passing evidence. If required task evidence is
-missing, state exactly what is missing and keep the task open while its success
-check remains unmet. Still prepare the pending proposal from supported change
-or research facts at the user's endpoint; do not let the open check suppress
-owner review. Do not invent evidence or mark an unsupported fact as verified.
+Curator tracks development while the goal is active. If any required check is
+open or lacks current passing evidence, record the gap and next action, keep the
+goal active, and continue development. Do not call `sde_assess` or create an
+SDE review candidate for active, deferred, blocked, or otherwise incomplete
+work. SDE curation is a separate task over historical work, not a step in
+development or goal completion. Do not create an SDE proposal automatically
+when `goal_finish` succeeds. When historical curation is requested, select a
+goal whose `goal_status` is `complete`, summarize its supported facts and
+current passing evidence, then call `sde_assess` for the user's review. Never
+assess an active, reopened, deferred, blocked, or otherwise incomplete goal.
+Present facts and any suggested category or
+importance as recommendations only. The user decides what is memorialized,
+its importance, and whether it is approved or rejected. `sde_assess` creates a
+pending proposal only; it never approves or codifies knowledge. Do not invent
+evidence or mark an unsupported fact as verified.
 
 Use concise cues that report actual transitions:
 
 - Beginning work: “Beginning task tracking.”
 - Holding work: “Pausing task tracking.”
 - Resuming work: “Resuming task tracking.”
-- At a completed endpoint: “Item complete; preparing its SDE proposal
-  for your review.” Then create and present the pending proposal, or state the
-  specific evidence gap.
+- After `goal_finish` is confirmed: report task completion and end the
+  development workflow. Do not automatically start historical SDE curation.
+- When the user requests historical curation for a completed goal, prepare and
+  present its pending proposal for review.
+- When checks remain open: state the specific gap and next development action;
+  keep the goal active and do not create an SDE candidate.
 
 Never imply a tool write succeeded until the corresponding Curator tool
 returns success. After an accepted goal or fact write, read the same goal with

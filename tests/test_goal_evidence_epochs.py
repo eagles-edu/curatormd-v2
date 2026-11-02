@@ -128,7 +128,7 @@ class GoalEvidenceEpochTests(LifecycleTestSupport):
             impact="The earlier check passed before the goal was reopened",
             retrieval_value="Reviewers can find the earlier check result",
         )
-        with self.assertRaisesRegex(EvidenceGateError, "current passing evidence"):
+        with self.assertRaisesRegex(EvidenceGateError, "requires a completed goal"):
             self.service.sde_assess(request)
 
         self.service.goal_amend_criteria(
@@ -143,7 +143,7 @@ class GoalEvidenceEpochTests(LifecycleTestSupport):
                 expected_lifecycle_revision=reopened.lifecycle_revision,
             )
         )
-        with self.assertRaisesRegex(EvidenceGateError, "current passing evidence"):
+        with self.assertRaisesRegex(EvidenceGateError, "requires a completed goal"):
             self.service.sde_assess(request)
 
         current_verification = self.service.goal_fact(
@@ -153,6 +153,10 @@ class GoalEvidenceEpochTests(LifecycleTestSupport):
             criterion_id="unit",
             evidence=(self.proof("unit-after-amendment"),),
         )[0]
+        completed_after_amendment = self.service.goal_finish(
+            self.goal.goal_id, "Updated unit suite passed after criteria changed"
+        )
+        self.assertEqual(completed_after_amendment.status, GoalStatus.COMPLETE)
         with self.assertRaisesRegex(EvidenceGateError, "current passing evidence"):
             self.service.sde_assess(
                 SDEAssessmentRequest(

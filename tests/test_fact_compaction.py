@@ -324,6 +324,12 @@ class FactCompactionTests(unittest.TestCase):
             evidence=(self.proof(),),
             criterion_id="done",
         )
+        completed = self.service.goal_finish(
+            self.goal.goal_id,
+            "The material event was directly verified",
+            expected_lifecycle_revision=self.goal.lifecycle_revision,
+        )
+        self.assertEqual(completed.status, GoalStatus.COMPLETE)
         candidate = self.service.sde_assess(
             SDEAssessmentRequest(
                 self.goal.goal_id,

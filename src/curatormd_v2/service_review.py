@@ -14,6 +14,8 @@ from contextlib import (
 from dataclasses import dataclass
 import hashlib
 import json
+
+from .domain_enums import GoalStatus
 from .models import (
     AuditReceipt,
     Fact,
@@ -81,7 +83,7 @@ class _ReviewMixin(_GoalReadMixin):
         request: SDEAssessmentRequest,
         effect_fence: Callable[[], AbstractContextManager[object]] | None,
     ) -> SDECandidate:
-        """Validate current supporting evidence, then store one candidate."""
+        """Store a historical candidate only after task completion."""
 
         if request.impact is None or request.retrieval_value is None:
             raise EvidenceGateError(
@@ -96,6 +98,10 @@ class _ReviewMixin(_GoalReadMixin):
         if len(request.fact_ids) != len(set(request.fact_ids)):
             raise EvidenceGateError("SDE assessment fact IDs must be unique")
         goal = self.store.get_goal(request.goal_id, self.project_id)
+        if goal.status is not GoalStatus.COMPLETE:
+            raise EvidenceGateError(
+                "SDE assessment requires a completed goal"
+            )
         selected = tuple(
             self.store.get_fact(fact_id, self.project_id)
             for fact_id in request.fact_ids
@@ -138,7 +144,7 @@ class _ReviewMixin(_GoalReadMixin):
         *,
         require_verification: bool = False,
     ) -> bool:
-        """Validate selected proof; proposal creation may precede verification."""
+        """Validate any selected proof against the completed goal."""
 
         verification_facts = tuple(
             fact for fact in facts if fact.kind is FactKind.VERIFICATION
@@ -183,8 +189,11 @@ class _ReviewMixin(_GoalReadMixin):
         cutoff = self._evidence_epoch_cutoff(
             self.store.list_facts(candidate.goal_id, self.project_id)
         )
-        current = self._selected_verifications_are_current(
-            goal, facts, cutoff, require_verification=True
+        current = (
+            goal.status is GoalStatus.COMPLETE
+            and self._selected_verifications_are_current(
+                goal, facts, cutoff, require_verification=True
+            )
         )
         after_goal = self.store.get_goal(candidate.goal_id, self.project_id)
         after_candidate = self.store.get_sde_candidate(candidate_id, self.project_id)
@@ -199,7 +208,9 @@ class _ReviewMixin(_GoalReadMixin):
         ):
             raise ConflictError("SDE evidence changed while preparing review")
         if require_passing and not current:
-            raise EvidenceGateError("approval requires current passing evidence")
+            raise EvidenceGateError(
+                "approval requires a completed goal and current passing evidence"
+            )
         canonical = json.dumps(
             {
                 "project_id": self.project_id,
@@ -350,6 +361,10 @@ class _ReviewMixin(_GoalReadMixin):
         candidate = self.store.get_sde_candidate(request.candidate_id, self.project_id)
         if request.decision is ReviewDecision.APPROVED:
             goal = self.store.get_goal(candidate.goal_id, self.project_id)
+            if goal.status is not GoalStatus.COMPLETE:
+                raise EvidenceGateError(
+                    "approval requires a completed goal and current passing evidence"
+                )
             facts = tuple(
                 self.store.get_fact(fact_id, self.project_id)
                 for fact_id in candidate.fact_ids

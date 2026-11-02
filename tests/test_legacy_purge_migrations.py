@@ -221,6 +221,11 @@ class LegacyPurgeMigrationTests(LegacySchemaMigrationSupport):
                     ),
                 ),
             )
+            service.goal_finish(
+                goal.goal_id,
+                "The migration evidence fixture passed",
+                expected_lifecycle_revision=goal.lifecycle_revision,
+            )
             candidate = service.sde_assess(
                 SDEAssessmentRequest(
                     goal.goal_id,

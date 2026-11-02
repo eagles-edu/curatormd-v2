@@ -77,7 +77,6 @@ def _load(path: Path, project_id: str) -> dict[str, set[str]]:
         "summary_fact_goal_ids": set(),
         "summary_invalidated_goal_ids": set(),
         "summary_ready_goal_ids": set(),
-        "pending_sde_goal_ids": set(),
         "prompt_cues": set(),
         "stop_prompted_stages": set(),
     }
@@ -176,13 +175,6 @@ def has_recorded_fact(event: dict[str, object], project_id: str, goal_id: str) -
         path
         and goal_id in _load(path, project_id)["fact_recorded_goal_ids"]
     )
-
-
-def has_pending_sde(event: dict[str, object], project_id: str) -> list[str]:
-    """Return only opaque goal IDs awaiting an accepted SDE proposal."""
-
-    path = _state_path(event)
-    return sorted(_load(path, project_id)["pending_sde_goal_ids"]) if path else []
 
 
 def has_summary_fact(event: dict[str, object], project_id: str, goal_id: str) -> bool:
@@ -411,7 +403,7 @@ def record_stop_followup(
 ) -> bool:
     """Remember a bounded lifecycle follow-up stage without storing its text."""
 
-    if stage not in {"lifecycle", "report", "status", "summary", "sde"}:
+    if stage not in {"lifecycle", "report", "status", "summary"}:
         return False
     path = _state_path(event)
     if path is None:
@@ -424,7 +416,7 @@ def record_stop_followup(
 def resolve_finish_request(
     event: dict[str, object], project_id: str, goal_id: str, completed: bool
 ) -> bool:
-    """Queue SDE only when completion follows a report-backed summary."""
+    """Clear completion intent after its final status readback."""
 
     if not _GOAL_ID.fullmatch(goal_id):
         return False
@@ -439,11 +431,8 @@ def resolve_finish_request(
         state["active_goal_ids"].discard(goal_id)
         state["fact_recorded_goal_ids"].discard(goal_id)
         state["summary_ready_goal_ids"].discard(goal_id)
-        state["pending_sde_goal_ids"].add(goal_id)
     elif requested:
         state["summary_ready_goal_ids"].discard(goal_id)
-    if len(state["pending_sde_goal_ids"]) > 32:
-        return False
     return _write(path, project_id, state)
 
 
@@ -478,26 +467,6 @@ def resolve_task_summary_readback(
     state["summary_fact_goal_ids"].discard(goal_id)
     state["summary_invalidated_goal_ids"].discard(goal_id)
     state["summary_ready_goal_ids"].add(goal_id)
-    return _write(path, project_id, state)
-
-
-def record_sde_state(
-    event: dict[str, object], project_id: str, goal_id: str, pending: bool
-) -> bool:
-    """Remember a completed goal awaiting its pending SDE proposal."""
-
-    if not _GOAL_ID.fullmatch(goal_id):
-        return False
-    path = _state_path(event)
-    if path is None:
-        return False
-    state = _load(path, project_id)
-    if pending:
-        state["pending_sde_goal_ids"].add(goal_id)
-    else:
-        state["pending_sde_goal_ids"].discard(goal_id)
-    if len(state["pending_sde_goal_ids"]) > 32:
-        return False
     return _write(path, project_id, state)
 
 

@@ -9,8 +9,9 @@ goals. The plugin does not add a command-palette action or save raw prompt text.
 The Codex plugin supplies the intake skill and its own local MCP connection.
 The connection uses the active Codex workspace to select the configured V2
 project. Read and lifecycle tool approval depends on the effective server's
-Codex configuration; review and cleanup decisions remain unavailable to the task tracker. It tracks
-compact task facts and prepares a pending SDE at each completed task endpoint.
+Codex configuration; review and cleanup decisions remain unavailable to the
+task tracker. It tracks compact task facts. Historical SDE curation is a
+separate workflow over completed goals.
 Use the read-only `evidence_capture` tool for owner-configured host checks, then
 pass its returned reference unchanged to `fact_record`. It cannot accept
 arbitrary commands or paths; no separate capture mode is required.
@@ -36,27 +37,29 @@ message omits the transition. A pre-tool guard requires a Curator-
 confirmed active goal and a saved intent/progress fact before shell commands
 or edits in a configured project. It also requires a saved checkpoint fact
 before `goal_finish` or `goal_defer`. After a finish request, Codex must read
-`goal_status`; only a confirmed `complete` state creates the pending SDE follow-up.
+`goal_status`; only a confirmed `complete` state closes the development task.
 A post-tool hook tracks only accepted goal and fact IDs for the current turn.
 After an accepted goal, fact, lifecycle, or SDE write, the Stop hook requires a
 matching `goal_status` or `goal_report` readback before allowing the turn to
 end. It confirms only that the report names the same goal; it stores no report
 text.
-After confirmed completion, the stop hook requires the pending SDE proposal
-before allowing the turn to end. It also
-checks Codex's last response for a stated lifecycle transition. When Codex
+The stop hook checks Codex's last response for a stated lifecycle transition.
+When Codex
 says it is starting, pausing, resuming, moving to the next plan item, or
 finishing a task, the hook gives it one continuation for each missing lifecycle
-step before ending the turn: confirm finish/hold status, prepare the SDE proposal
-after confirmed completion, or record the matching start/progress/hold transition.
+step before ending the turn: confirm finish/hold status, or record the matching
+start/progress/hold transition.
 It ignores explicitly negated cues. The hooks inspect bounded text in memory
 only; they do not save or repeat prompts or responses. They do nothing in
 workspaces without `.curatormd-v2.toml`.
-At each completed plan item or one-off task, Codex calls `sde_assess` to create
-a pending SDE proposal from supported task facts, even when the work looks
-routine or its proof is not yet available. The proposal labels missing or stale
-proof; approval still requires current passing evidence. This is part of normal task completion, not a
-separate mode or a permission prompt.
+SDE curation is a separate historical workflow, requested after development
+completes. If any success check remains open or lacks current passing evidence,
+Codex keeps the goal active and records the gap and next action; it does not
+create a pending SDE candidate. When `goal_finish` succeeds and `goal_status`
+confirms `complete`, the development
+workflow ends. When historical curation is requested later, Codex calls
+`sde_assess` to prepare a proposal from supported task facts. It never assesses
+an active or reopened goal.
 It presents the facts and any suggested category or importance as
 recommendations. You decide what is memorialized, its importance, and its
 disposition. Curator does not approve, reject, or codify for you. A standalone
@@ -111,6 +114,10 @@ Before trusting a work-blocking hook, check `codex mcp list` and confirm that a
 fresh session can call `codex-intake` for the intended project. If its tools are
 unavailable in that session, disable the Curator V2 PreToolUse hook with
 `/hooks`, repair the connection, and reload before trusting it again.
+
+If the Curator MCP transport closes, save your work, then reload the VS Code
+window (Codex host) or start a fresh Codex session. Do not re-enroll the project
+or recreate its grants; transport recovery is handled by the Codex host.
 
 The prompt hook hashes Codex's prompt-turn ID and gives the model that stable
 `goal_start.event_id`; retries of that same turn can therefore replay the same

@@ -59,6 +59,7 @@ const {
   validateReviewQueue,
   writePendingReviewDocument,
   writeWorkspaceQueueViews,
+  notifyTransportClosed,
 } = require('./extension');
 Module._load = originalLoad;
 
@@ -556,6 +557,46 @@ test('MCP stdio dashboard client initializes and reads a tool result', async () 
   assert.equal(call.params._meta['hermes/profile_id'], 'fixture-profile');
   assert.match(call.params._meta['hermes/session_id'], /^[0-9a-f]{32}$/);
   client.close();
+});
+
+test('closed Curator transport shows one recovery modal with an explicit reload action', async () => {
+  const previousWindow = vscodeMock.window;
+  const previousCommands = vscodeMock.commands;
+  const warnings = [];
+  const commands = [];
+  vscodeMock.window = {
+    showWarningMessage: async (...args) => {
+      warnings.push(args);
+      return warnings.length === 1 ? 'Dismiss' : 'Reload Window';
+    },
+  };
+  vscodeMock.commands = {
+    executeCommand: async (...args) => { commands.push(args); },
+  };
+  try {
+    assert.equal(await notifyTransportClosed({ code: 'launcher-start' }), false);
+    assert.equal(await notifyTransportClosed({ code: 'launcher-exit' }), true);
+    assert.equal(await notifyTransportClosed({ code: 'launcher-exit' }), false);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0][0], /Save your work, then reload the VS Code window/);
+    assert.match(warnings[0][0], /start a fresh Codex session/);
+    assert.match(warnings[0][0], /Do not re-enroll the project or recreate its grants/);
+    assert.deepEqual(warnings[0][1], { modal: true });
+    assert.deepEqual(warnings[0].slice(2), ['Reload Window', 'Dismiss']);
+
+    const client = new McpStdioClient(
+      'fixture', [], '/tmp', 'fixture-profile', () => new FakeMcpProcess(),
+    );
+    await client.initialize();
+    await client.callTool('goal_list_page', { offset: 0, limit: 20 });
+    client.close();
+    assert.equal(await notifyTransportClosed({ code: 'launcher-exit' }), true);
+    assert.equal(warnings.length, 2);
+    assert.deepEqual(commands, [['workbench.action.reloadWindow']]);
+  } finally {
+    vscodeMock.window = previousWindow;
+    vscodeMock.commands = previousCommands;
+  }
 });
 
 test('MCP tool failures do not label rejected writes as denied reads', async () => {
@@ -2131,7 +2172,9 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
       ],
       future_utility: 'Reuse the project binding check for new integrations.',
       supporting_facts: [{
-        fact_id: 'fact-42', kind: 'change', bullet: 'The launcher checks the active project.',
+        fact_id: 'fact-42',
+        kind: 'change',
+        bullet: 'Task summary: Read-only source tracing is complete; tests were not run and verification remains open.',
       }],
     };
     const destination = path.join(
@@ -2142,14 +2185,23 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     ])), true);
     const generated = fs.readFileSync(destination, 'utf8');
     assert.ok(generated.includes('SDE ID: candidate\\-42'));
-    assert.ok(generated.includes('Started: 2026\\-11\\-01T09:20:00\\+07:00'));
-    assert.ok(generated.includes('Successfully completed: 2026\\-11\\-01T11:45:00\\+07:00'));
+    assert.ok(generated.includes('Task started (+07): 2026\\-11\\-01T09:20:00\\+07:00'));
+    assert.ok(generated.includes('Successful completion (+07): 2026\\-11\\-01T11:45:00\\+07:00'));
     assert.match(generated, /curator-v2-decision:candidate-42:start/);
     assert.match(generated, /"significance": 3/);
+    const jsonFences = [...generated.matchAll(/```json\n([\s\S]*?)\n```/g)];
+    assert.equal(jsonFences.length, 2);
+    assert.equal(jsonFences[0][1], jsonFences[1][1]);
+    assert.match(jsonFences[0][1], /"completed": \[\n    "Task summary: Read-only source tracing is complete; tests were not run and verification remains open\."\n  \]/);
+    assert.match(generated, /Completed task work, with verification still open:/);
 
-    const edited = generated
+    const draftStart = generated.indexOf('<!-- curator-v2-decision:candidate-42:start -->');
+    const draftEnd = generated.indexOf('<!-- curator-v2-decision:candidate-42:end -->');
+    const editedDraft = generated.slice(draftStart, draftEnd)
       .replace('"significance": 3', '"significance": 4')
+      .replace(/"completed": \[\n    "Task summary:[^\n]+\n  \]/, '"completed": []')
       .replace('"documents": []', '"documents": [\n    "persistence/HISTORY.md",\n    "persistence/LESSONS-LEARNED.md"\n  ]');
+    const edited = generated.slice(0, draftStart) + editedDraft + generated.slice(draftEnd);
     fs.writeFileSync(destination, edited, 'utf8');
     const refreshedOutline = { ...outline, future_utility: 'Updated source proposal text.' };
     assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], new Map([
@@ -2158,7 +2210,11 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     const refreshed = fs.readFileSync(destination, 'utf8');
     assert.match(refreshed, /"significance": 4/);
     assert.match(refreshed, /"persistence\/LESSONS-LEARNED\.md"/);
-    assert.doesNotMatch(refreshed, /Updated source proposal text\./);
+    assert.match(refreshed, /Updated source proposal text\./);
+    const refreshedFences = [...refreshed.matchAll(/```json\n([\s\S]*?)\n```/g)];
+    assert.equal(refreshedFences.length, 2);
+    assert.equal(refreshedFences[0][1], refreshedFences[1][1]);
+    assert.match(refreshedFences[0][1], /"completed": \[\n    "Task summary:/);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

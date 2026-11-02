@@ -487,6 +487,14 @@ class MarkdownPersistenceTests(MarkdownPersistenceFixture):
                 ),
             ),
         )
+        self.plugin.service.goal_finish(
+            self.goal.goal_id,
+            "Unit check passed",
+            expected_lifecycle_revision=(
+                self.plugin.service.goal_status(self.goal.goal_id)
+                .goal.lifecycle_revision
+            ),
+        )
         candidate = self.plugin.service.sde_assess(
             SDEAssessmentRequest(
                 self.goal.goal_id,
@@ -599,6 +607,14 @@ class MarkdownPersistenceTests(MarkdownPersistenceFixture):
                     hashlib.sha256(b"recovery-proof").hexdigest(),
                     EvidenceOutcome.PASSED,
                 ),
+            ),
+        )
+        self.plugin.service.goal_finish(
+            self.goal.goal_id,
+            "The recovery regression passes",
+            expected_lifecycle_revision=(
+                self.plugin.service.goal_status(self.goal.goal_id)
+                .goal.lifecycle_revision
             ),
         )
         candidate = self.plugin.sde_assess(
@@ -729,6 +745,14 @@ raise SystemExit(0)
             "Unit test passed",
             criterion_id="write",
             evidence=(evidence,),
+        )
+        self.plugin.service.goal_finish(
+            self.goal.goal_id,
+            "Unit test passed",
+            expected_lifecycle_revision=(
+                self.plugin.service.goal_status(self.goal.goal_id)
+                .goal.lifecycle_revision
+            ),
         )
         rationale = "Proposed SDE narrative that the reviewer rejected"
         candidate = self.plugin.service.sde_assess(

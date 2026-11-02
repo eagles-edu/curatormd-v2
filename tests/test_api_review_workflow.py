@@ -409,12 +409,16 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
             "Assess supported knowledge only",
             "Implemented the reviewed behavior",
             "The required verification passed",
+            complete=False,
         )
         proposal, _ = plugin.service.goal_fact(
             verified.goal_id, FactKind.PROPOSAL, "Maybe change the behavior later"
         )
         advice, _ = plugin.service.goal_fact(
             verified.goal_id, FactKind.ADVICE, "Consider a different design"
+        )
+        plugin.service.goal_finish(
+            verified.goal_id, "The required verification passed"
         )
         api = AuthenticatedCuratorAPI({"project-a": plugin}, self.authorizer)
 
@@ -449,9 +453,13 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
             "Recheck queued retained knowledge",
             "Implemented the reviewed behavior",
             "The required verification passed",
+            complete=False,
         )
         proposal, _ = plugin.service.goal_fact(
             verified.goal_id, FactKind.PROPOSAL, "Change the behavior later"
+        )
+        plugin.service.goal_finish(
+            verified.goal_id, "The required verification passed"
         )
         candidate = SDECandidate(
             goal_id=verified.goal_id,
@@ -570,6 +578,16 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
             dependency_map_sha256=packet.dependency_map_sha256,
             rationale="Review the current evidence state",
         )
+
+        completed_goal = plugin.service.goal_status(verified.goal_id).goal
+        plugin.service.goal_reopen(
+            verified.goal_id,
+            "Continue development after historical review was prepared",
+            "Rerun the scoped verification before completing the task",
+            expected_lifecycle_revision=completed_goal.lifecycle_revision,
+        )
+        with self.assertRaisesRegex(EvidenceGateError, "completed goal"):
+            api.sde_confirm(self.caller, "project-a", request)
 
         verifier.current = False
         with self.assertRaisesRegex(EvidenceGateError, "current"):

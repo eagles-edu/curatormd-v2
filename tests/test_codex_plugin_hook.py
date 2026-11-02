@@ -68,10 +68,12 @@ class CodexPluginHookTests(unittest.TestCase):
             "cues are hints",
             "advance only if continuing",
             "Current revisions",
-            "At a completed endpoint, say “Item complete; preparing its SDE proposal for your review”",
-            "At every endpoint propose supported facts, verified or not",
+            "At a claimed endpoint, read status",
+            "After `goal_finish` succeeds and `goal_status` confirms complete",
+            "do not automatically call `sde_assess`",
+            "Historical SDE curation is a separate task",
             "approval needs current passing evidence",
-            "The user decides disposition",
+            "Never approve/reject/codify",
             "Never approve/reject/codify",
             "Use exact `evidence_capture` references",
             "never invent",
@@ -91,8 +93,8 @@ class CodexPluginHookTests(unittest.TestCase):
             with self.subTest(cue=cue):
                 context = _CONTEXT("p" * 128, "codex-turn-" + "a" * 32, cue)
                 self.assertLessEqual(len(context), limit)
-                self.assertIn("At every endpoint propose supported facts", context)
-                self.assertIn("The user decides disposition", context)
+                self.assertIn("do not automatically call `sde_assess`", context)
+                self.assertIn("Historical SDE curation is a separate task", context)
                 if cue == "resume":
                     self.assertIn(
                         "`Resuming problem/task: <saved problem/title> [plan item X]. Open checks: <saved checks>.`",
@@ -554,7 +556,6 @@ class CodexPluginHookTests(unittest.TestCase):
             self.assertEqual(
                 finish_request_state["finish_requested_goal_ids"], ["goal-alpha"]
             )
-            self.assertEqual(finish_request_state["pending_sde_goal_ids"], [])
 
             status = invoke(POST_TOOL_HOOK, {
                 **base,
@@ -581,11 +582,13 @@ class CodexPluginHookTests(unittest.TestCase):
                 next((state_root / "task-state").glob("turn-*.json")).read_text()
             )
             self.assertEqual(pending_state["summary_ready_goal_ids"], [])
-            self.assertEqual(pending_state["pending_sde_goal_ids"], ["goal-alpha"])
+            self.assertNotIn("pending_sde_goal_ids", pending_state)
             self.assertNotIn("private fact body canary", json.dumps(pending_state))
             after_finish = invoke(PRE_TOOL_HOOK, {**base, "tool_name": "Bash"})
             self.assertEqual(
-                json.loads(after_finish.stdout)["hookSpecificOutput"]["permissionDecision"],
+                json.loads(after_finish.stdout)["hookSpecificOutput"][
+                    "permissionDecision"
+                ],
                 "deny",
             )
             state_files = list((state_root / "task-state").glob("turn-*.json"))
@@ -600,7 +603,6 @@ class CodexPluginHookTests(unittest.TestCase):
                 "summary_fact_goal_ids": [],
                 "summary_invalidated_goal_ids": [],
                 "summary_ready_goal_ids": [],
-                "pending_sde_goal_ids": ["goal-alpha"],
                 "prompt_cues": [],
                 "stop_prompted_stages": [],
             })
@@ -613,35 +615,6 @@ class CodexPluginHookTests(unittest.TestCase):
                 "private proposal text",
             ):
                 self.assertNotIn(private_value, serialized_state)
-
-            assessed = invoke(POST_TOOL_HOOK, {
-                **base,
-                "tool_name": "mcp__codex-intake__sde_assess",
-                "tool_input": {"goal_id": "goal-alpha", "rationale": "private proposal text"},
-                "tool_response": {"isError": False, "content": [{
-                    "type": "text",
-                    "text": '{"goal_id":"goal-alpha","candidate_id":"candidate-a",'
-                    '"status":"pending_review"}',
-                }]},
-            })
-            self.assertEqual(assessed.returncode, 0, assessed.stderr)
-            assessed_state = json.loads(state_files[0].read_text())
-            self.assertEqual(assessed_state["pending_sde_goal_ids"], [])
-            self.assertEqual(assessed_state["report_pending_goal_ids"], ["goal-alpha"])
-            self.assertNotIn("private proposal text", json.dumps(assessed_state))
-            report = invoke(POST_TOOL_HOOK, {
-                **base,
-                "tool_name": "mcp__codex-intake__goal_report",
-                "tool_input": {"goal_id": "goal-alpha", "fact_limit": 16},
-                "tool_response": {"isError": False, "content": [{
-                    "type": "text", "text": "# Goal `goal-alpha`\n- Outcome: complete",
-                }]},
-            })
-            self.assertEqual(report.returncode, 0, report.stderr)
-            self.assertEqual(
-                json.loads(state_files[0].read_text())["report_pending_goal_ids"],
-                [],
-            )
 
     def test_stop_hook_completes_lifecycle_cues_before_ending_turn(self) -> None:
         """Require the matching lifecycle write after Codex states a transition."""
@@ -679,7 +652,7 @@ class CodexPluginHookTests(unittest.TestCase):
             response = json.loads(next_item.stdout)
             self.assertEqual(response["decision"], "block")
             self.assertIn("finish it only if its checks pass", response["reason"])
-            self.assertIn("sde_assess", response["reason"])
+            self.assertIn("Historical SDE curation is separate", response["reason"])
             self.assertTrue((state_root / "task-state").is_dir())
 
             negated = invoke("I will not mark this item complete yet.")
@@ -818,8 +791,8 @@ class CodexPluginHookTests(unittest.TestCase):
                 self.assertEqual(response["decision"], "block")
                 self.assertIn(expected_action, response["reason"])
 
-    def test_stop_hook_requires_sde_after_goal_finish(self) -> None:
-        """Do not let a finished goal end the turn without its pending proposal."""
+    def test_stop_hook_does_not_require_sde_after_goal_finish(self) -> None:
+        """Let development end without starting historical SDE curation."""
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"
@@ -939,13 +912,10 @@ class CodexPluginHookTests(unittest.TestCase):
                 env=environment,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
-        response = json.loads(result.stdout)
-        self.assertEqual(response["decision"], "block")
-        self.assertIn("still needs its pending SDE proposal", response["reason"])
-        self.assertIn("sde_assess", response["reason"])
+        self.assertEqual(result.stdout, "")
 
-    def test_normal_request_runs_through_verified_endpoint_to_pending_sde(self) -> None:
-        """Follow one ordinary task through each hook guard without approving SDE."""
+    def test_normal_request_finishes_without_automatic_sde_curation(self) -> None:
+        """Complete development without queuing or requiring an SDE proposal."""
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"
@@ -1141,30 +1111,6 @@ class CodexPluginHookTests(unittest.TestCase):
                     "text": '{"goal":{"goal_id":"goal-lifecycle","status":"complete"}}',
                 }]},
             })
-            sde_prompt = invoke(STOP_HOOK, {**completion_turn, **stop_event})
-            self.assertIn("sde_assess", cast(str, sde_prompt["reason"]))
-            invoke(POST_TOOL_HOOK, {
-                **completion_turn,
-                "tool_name": "mcp__codex-intake__sde_assess",
-                "tool_input": {"goal_id": "goal-lifecycle"},
-                "tool_response": {"isError": False, "content": [{
-                    "type": "text",
-                    "text": '{"goal_id":"goal-lifecycle",'
-                    '"candidate_id":"candidate-lifecycle",'
-                    '"status":"pending_review"}',
-                }]},
-            })
-
-            report_prompt = invoke(STOP_HOOK, {**completion_turn, **stop_event})
-            self.assertIn("goal_report", cast(str, report_prompt["reason"]))
-            invoke(POST_TOOL_HOOK, {
-                **completion_turn,
-                "tool_name": "mcp__codex-intake__goal_report",
-                "tool_input": {"goal_id": "goal-lifecycle", "fact_limit": 16},
-                "tool_response": {"isError": False, "content": [{
-                    "type": "text", "text": "# Goal " + chr(96) + "goal-lifecycle" + chr(96),
-                }]},
-            })
             self.assertEqual(invoke(STOP_HOOK, {**completion_turn, **stop_event}), {})
             state_files = list((state_root / "task-state").glob("turn-*.json"))
             self.assertEqual(len(state_files), 3)
@@ -1172,11 +1118,7 @@ class CodexPluginHookTests(unittest.TestCase):
                 json.loads(path.read_text(encoding="utf-8"))
                 for path in state_files
             ]
-            resumed_state = next(
-                state for state in states
-                if "sde" in state["stop_prompted_stages"]
-            )
-            self.assertEqual(resumed_state["pending_sde_goal_ids"], [])
+            self.assertTrue(all("pending_sde_goal_ids" not in state for state in states))
             for path in state_files:
                 self.assertNotIn("private fact canary", path.read_text(encoding="utf-8"))
 
@@ -1251,7 +1193,7 @@ class CodexPluginHookTests(unittest.TestCase):
             state = json.loads(next((state_root / "task-state").glob("turn-*.json")).read_text())
             self.assertEqual(state["active_goal_ids"], [])
             self.assertEqual(state["defer_requested_goal_ids"], [])
-            self.assertEqual(state["pending_sde_goal_ids"], [])
+            self.assertNotIn("pending_sde_goal_ids", state)
 
     def test_prompt_turn_event_id_is_stable_and_does_not_expose_turn_id(self) -> None:
         """Use the same content-free event ID when one Codex turn is retried."""
@@ -1344,19 +1286,23 @@ class CodexPluginHookTests(unittest.TestCase):
             "never submit child fact IDs in the parent’s SDE proposal",
             "`fact_compaction_propose` followed by exact owner approval",
             "task endpoint alone does not approve cleanup",
-            "Task evidence and SDE review are part of every tracked task",
-            "do not ask the user to enable capture or start a separate SDE mode",
-            "At the endpoint of every completed plan item and one-off task",
-            "Never suppress a proposal because you judge it routine, low-value, or superfluous",
-            "Still prepare the pending proposal from supported change or research facts at the user's endpoint",
+            "Task evidence and lifecycle tracking are part of each tracked task",
+            "do not ask the user to enable capture",
+            "Do not call `sde_assess` or create an SDE review candidate for active, deferred, blocked, or otherwise incomplete work",
+            "SDE curation is a separate task over historical work",
+            "Do not create an SDE proposal automatically",
+            "When historical curation is requested",
             "read `goal_status` and pass its current lifecycle revision",
             "The user decides what is memorialized, its importance, and whether it is approved",
             "it never approves or codifies knowledge",
             "“Beginning task tracking.”",
             "“Pausing task tracking.”",
             "“Resuming task tracking.”",
-            "“Item complete; preparing its SDE proposal for your review.”",
+            "After `goal_finish` is confirmed: report task completion and end the",
             "Curator task tracking is the default workflow",
+            "If Codex reports that the Curator MCP transport is closed",
+            "reload the VS Code window (Codex host) or start a fresh Codex session",
+            "Do not re-enroll the project or recreate its grants.",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, skill)
@@ -1376,7 +1322,7 @@ class CodexPluginHookTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertLessEqual(len(prompt), 128)
         joined_prompts = " ".join(default_prompts)
-        for phrase in ("`Problem: ... Success: ...`", "Curator goal", "compact evidence facts", "pending SDE proposal", "user's decision", "before edits"):
+        for phrase in ("`Problem: ... Success: ...`", "Curator goal", "compact evidence facts", "completed goals", "never create proposals during active development", "before edits"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, joined_prompts)
 
@@ -1447,12 +1393,11 @@ class CodexPluginHookTests(unittest.TestCase):
             "do not ask the user to opt in or start a separate capture mode",
             '"Beginning task tracking"',
             '"Pausing task tracking"',
-            '"Item complete; preparing its SDE proposal for your review"',
-            "At each completed plan item and one-off task",
-            "call `sde_assess` to create a pending proposal",
-            "Never suppress a proposal because it seems low-value or superfluous",
+            "Do not create an SDE proposal automatically when a goal completes",
+            "Historical SDE curation is requested and handled separately",
+            "If a required check is open or lacks current passing evidence",
+            "end the development workflow without preparing an SDE proposal",
             "The user decides what is memorialized, its importance",
-            "Do not ask whether to prepare it",
             "Never approve/reject or codify on the user's behalf",
             "Before `goal_finish`, `goal_defer`, or `goal_activate`, read `goal_status`",
             "changed files/components",

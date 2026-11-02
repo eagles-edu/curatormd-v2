@@ -399,6 +399,7 @@ class PurgeFilesystemTests(PurgeTestSupport):
                 artifact_inventory_complete=True,
             )
         )
+        candidate_fact_ids = self.store.get_sde_candidate(candidate_id).fact_ids
         receipt = self.persist_canonical(receipt)
         database = self.root / "curator.sqlite3"
         self.store.close()
@@ -412,4 +413,7 @@ class PurgeFilesystemTests(PurgeTestSupport):
         reloaded = self.store.get_receipt(receipt.receipt_id)
         self.assertEqual(reloaded.decision, ReviewDecision.REJECTED)
         self.assertEqual(reloaded.purge_status, PurgeStatus.COMPLETE)
-        self.assertEqual(len(self.store.list_facts(self.goal.goal_id)), 2)
+        saved_fact_ids = {
+            fact.fact_id for fact in self.store.list_facts(self.goal.goal_id)
+        }
+        self.assertTrue(set(candidate_fact_ids).issubset(saved_fact_ids))

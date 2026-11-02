@@ -16,6 +16,10 @@ The tooltip shows the installed extension version, health, the pending review
 count or its unavailable state, and a short explanation of the active color.
 When a health read fails, it gives a fixed next step for the known failure
 instead of showing exception text or file paths.
+If the Curator MCP process exits before replying, VS Code shows a modal:
+save your work, then reload the VS Code window or start a fresh Codex session.
+The `Reload Window` action reloads VS Code; the message explicitly says not
+to re-enroll the project or recreate its grants.
 The dashboard's Open gates and Operational alerts rows show that same plain
 language reason, rather than an internal code such as
 `health_read_unavailable`.

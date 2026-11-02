@@ -10,7 +10,6 @@ from task_state import (
     active_goal_ids,
     has_summary_fact,
     has_summary_ready,
-    has_pending_sde,
     has_stop_followup,
     has_unconfirmed_defer,
     has_unconfirmed_finish,
@@ -49,19 +48,12 @@ def _continuation_reason(
         if needs_status_readback:
             return (
                 "Curator V2 accepted a finish request but its result is unconfirmed. "
-                "Read `goal_status`; prepare an SDE proposal only if it reports `complete`."
+                "Read `goal_status`; if it reports `complete`, report task completion "
+                "and end the development workflow without starting SDE curation."
             )
         return (
             "Curator V2 accepted a hold request but its result is unconfirmed. "
             "Read `goal_status` and confirm `deferred` before ending this turn."
-        )
-    if stage == "sde":
-        return (
-            "The completed Curator task still needs its pending SDE proposal. "
-            "Call `sde_assess` with supported task facts, even if verification "
-            "is missing or stale; label that evidence gap and do not claim it is "
-            "verified. Approval still requires current passing evidence. The "
-            "user decides importance and disposition."
         )
     if stage == "summary":
         return (
@@ -100,12 +92,14 @@ def _continuation_reason(
     }[cue]
     return (
         "Curator V2 transition detected. Before ending this turn, "
-        f"{action}. At a completed item or one-off task endpoint, call "
-        "`sde_assess` to create a pending SDE proposal from supported task facts "
-        "even if routine or not yet verified; label missing/stale proof. Approval "
-        "still requires current passing evidence. Use `evidence_capture` for "
-        "its returned fields unchanged to `fact_record`. Do not suppress the "
-        "proposal as superfluous. The owner decides what is recorded as "
+        f"{action}. If checks remain open or lack current passing evidence, "
+        "keep the goal active and continue development. After `goal_finish` "
+        "succeeds and `goal_status` confirms complete, report task completion "
+        "and end the development workflow. Historical SDE curation is separate "
+        "and only happens when requested for a completed goal; approval still "
+        "requires current passing evidence. Use `evidence_capture` for "
+        "its returned fields unchanged to `fact_record`. The owner decides "
+        "what is recorded as "
         "lasting knowledge, its importance, and its disposition. Do not claim a "
         "Curator write unless its tool succeeds; if a required task check or evidence "
         "is missing, report that clearly and leave the affected check open."
@@ -129,7 +123,6 @@ def main() -> int:
         if configured is None:
             return 0
         _, project_id = configured
-        pending_sde_goal_ids = has_pending_sde(event, project_id)
         needs_status_readback = has_unconfirmed_finish(event, project_id)
         needs_defer_readback = has_unconfirmed_defer(event, project_id)
         needs_report_readback = has_unconfirmed_report(event, project_id)
@@ -152,8 +145,6 @@ def main() -> int:
             for goal_id in active_goal_ids(event, project_id)
         ):
             stage = "summary"
-        elif pending_sde_goal_ids:
-            stage = "sde"
         elif needs_report_readback:
             stage = "report"
         elif cue in _ENDPOINT_CUES:
@@ -164,7 +155,7 @@ def main() -> int:
             return 0
         if not record_stop_followup(event, project_id, stage):
             return 0
-        if stage in {"status", "sde"}:
+        if stage == "status":
             # A lifecycle transition has already reached its accepted response;
             # subsequent continuations should ask only for the missing next step.
             record_stop_followup(event, project_id, "lifecycle")

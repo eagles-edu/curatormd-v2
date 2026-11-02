@@ -139,6 +139,12 @@ targets = ["persistence/HISTORY.md"]
     def candidate(self, label: str = "") -> str:
         """Create a verified change proposal and return its candidate ID."""
 
+        if self.store.get_goal(self.goal.goal_id).status.value != "active":
+            self.goal = self.service.goal_start(
+                "Record and purge reviewed development artifacts",
+                (SuccessCriterion("test", "targeted test passes"),),
+            )
+
         change, _ = self.service.goal_fact(
             self.goal.goal_id,
             FactKind.CHANGE,
@@ -150,6 +156,11 @@ targets = ["persistence/HISTORY.md"]
             "Targeted test passed",
             criterion_id="test",
             evidence=(self.evidence(),),
+        )
+        self.service.goal_finish(
+            self.goal.goal_id,
+            "Targeted test passed",
+            expected_lifecycle_revision=self.goal.lifecycle_revision,
         )
         candidate = self.service.sde_assess(
             SDEAssessmentRequest(

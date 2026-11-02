@@ -581,6 +581,8 @@ class _ApiTestSupport(unittest.TestCase):
         title: str,
         change_text: str,
         verification_text: str,
+        *,
+        complete: bool = True,
     ) -> _VerifiedGoal:
         """Create a goal with one passing verification for review tests."""
         goal = plugin.service.goal_start(
@@ -603,6 +605,12 @@ class _ApiTestSupport(unittest.TestCase):
             criterion_id="verified",
             evidence=(evidence,),
         )
+        if complete:
+            plugin.service.goal_finish(
+                goal.goal_id,
+                "The required verification passed",
+                expected_lifecycle_revision=goal.lifecycle_revision,
+            )
         return _VerifiedGoal(goal.goal_id, change.fact_id, verification.fact_id)
 
 

@@ -101,6 +101,11 @@ class McpClientWorkflowTests(McpServerTestSupport):
             criterion_id="verified",
             evidence=(evidence,),
         )
+        plugin.service.goal_finish(
+            reviewed_goal.goal_id,
+            "MCP test evidence passed",
+            expected_lifecycle_revision=reviewed_goal.lifecycle_revision,
+        )
         candidate = plugin.service.sde_assess(
             SDEAssessmentRequest(
                 reviewed_goal.goal_id,

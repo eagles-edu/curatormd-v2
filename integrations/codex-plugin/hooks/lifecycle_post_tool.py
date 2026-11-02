@@ -20,7 +20,6 @@ from task_state import (
     record_finish_request,
     record_goal_state,
     record_report_pending,
-    record_sde_state,
     resolve_defer_request,
     resolve_finish_request,
     resolve_report_pending,
@@ -103,7 +102,6 @@ def main() -> int:
             record_defer_request(event, project_id, goal_id)
             record_report_pending(event, project_id, goal_id)
         elif tool == "sde_assess" and accepted_sde_result(event, goal_id):
-            record_sde_state(event, project_id, goal_id, False)
             record_report_pending(event, project_id, goal_id)
         return 0
     except (OSError, ValueError, TypeError, json.JSONDecodeError):

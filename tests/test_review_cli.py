@@ -445,6 +445,11 @@ class ReviewCliTests(unittest.TestCase):
             criterion_id="verified",
             evidence=(evidence,),
         )
+        plugin.service.goal_finish(
+            goal.goal_id,
+            "The disposable proof passed",
+            expected_lifecycle_revision=goal.lifecycle_revision,
+        )
         candidate = plugin.service.sde_assess(
             SDEAssessmentRequest(
                 goal.goal_id,
