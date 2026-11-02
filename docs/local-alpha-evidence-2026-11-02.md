@@ -1,19 +1,19 @@
 # Curator V2 local alpha evidence checkpoint — 2026-11-02
 
-Status: interim, content-free checkpoint, updated 2026-11-02 18:08 +07. This
+Status: interim, content-free checkpoint, updated 2026-11-02 18:27 +07. This
 is not an accepted alpha evidence packet and does not close any plan item. The
-source is committed and pushed, the local quality and test suites pass, but the
-active editor has no post-install activation evidence and owner acceptance is
-absent.
+schema repair and dashboard retry fix are committed and pushed. Local tests
+pass, but the active editor has no post-install activation evidence and owner
+acceptance is absent.
 
 ## Scope and binding
 
 - Approved scope: `eaglesvn` (UID 1000), this Curator V2 repository, one active
   repository. Vhost Manager application and utility workflows are excluded.
 - Project: `curatormd-v2-dev-alpha`.
-- Implementation commit used for the test runs:
-  `832b6f9afd8b10e081751cf96dc45657fde8b293`. The checkpoint update itself
-  was committed afterward as a documentation-only change.
+- Current implementation commit: `3a47e95ace97c26219dee7c3ce82e9b5f05c33a7`.
+  The full Python suite ran at `cc2dec67be476b46a551b97832534b769e0196dc`;
+  the later commit changes only the VS Code extension and package.
 - Worktree: clean at the time of this observation; this checkpoint update is
   content-free and source-pinned to the commit above.
 - Project configuration SHA-256:
@@ -23,9 +23,9 @@ absent.
 - Configuration owner/mode: `eaglesvn`, UID 1000, `0600`.
 - Local alpha database: `/home/eaglesvn/.local/share/curatormd-v2-alpha/global.sqlite3`,
   owned by UID 1000, mode `0600`.
-- VS Code source and installed extension: `curatormd-v2-status` 0.9.53. The
-  active editor window has no post-install activation evidence, so current
-  rendering remains unverified.
+- VS Code source and installed extension: `curatormd-v2-status` 0.9.54. The
+  installed JavaScript hash matches source. The active editor window has no
+  post-install activation evidence, so current rendering remains unverified.
 - Installed wheel/source identity: not established for this repository and
   worktree.
 
@@ -36,8 +36,8 @@ absent.
 | Maintenance timer | Project timer is active; last trigger was 18:00:06 +07, service result is success with exit status 0, and next trigger is scheduled for 00:00:11 +07. Configured service-probe receipt: `45df5ad5e0ecfa54d3226343e0e6857337494ba6e32f189d1174070665d8c659`. | Read-only observation; a single run does not establish the full operating gate. |
 | Daily backups | Six recognized daily SQLite snapshots are present, dated 2026-10-28 through 2026-11-02; all six pass `quick_check` and have zero foreign-key violations. | Seven-copy rotation remains open. Unclassified files and sidecars were preserved. |
 | Restore to a new path | The latest 2026-11-02 snapshot was restored with the Curator V2 storage CLI to a new temporary path; the CLI returned `verified`, SQLite `quick_check` returned `ok`, and foreign-key check found zero violations. The temporary copy was removed after validation. | This proves one snapshot restore. It does not prove seven-copy rotation, package upgrade rollback, or live expiry. |
-| Source tests and quality | Python unittest passed 606/606, VS Code Node suite passed 38/38, Pyright reported 0 diagnostics, Bandit exited 0, and Pylint `--errors-only` passed. Full Pylint exited 24 with convention/refactor findings (9.93/10). | Local results; Python/quality output is not host-attested. The configured committed VS Code test receipt is `d4800e61e45102415e0acfd70e850f9af70d425813dc99207fe5833daf14b549`, for commit `832b6f9`. |
-| Project health and review status | Current source excludes pending SDE review from health degradation and gives outstanding reviews a separate blue/action state. | Source review only; the active VS Code rendering was not inspected. |
+| Source tests and quality | Python unittest passed 607/607 at `cc2dec6`; the VS Code Node suite passed 38/38 at `3a47e95`; Pyright reported 0 diagnostics and Pylint `--errors-only` passed at the Python change. Full Pylint exited 24 with convention/refactor findings (9.93/10). | Python/quality output is local and not host-attested. The configured current VS Code repository-test receipt is `310e3748d2aeff5326a4dfb211335dab15a3f24986a12a9c071b97a81f78dc80`; it proves the extension suite only. |
+| Project health and review status | Fresh Hermes probe matches the project, reports all seven dependencies healthy, and is degraded only for `event_failures`. The independent queue snapshot is complete: 3 failed events, 4 pending reviews, and no purge/expiry work. Pending review is not a health gate. | Read-only source observations; three failed event receipts still explain degraded health. The active editor rendering was not inspected. |
 | Review document | Editable draft, significance, multiple configured destinations, and receipt-binding paths are covered by the passing local suites. | No local attended review or receipt reconciliation was performed. |
 
 ## Follow-up observation — 2026-11-02 17:32 +07
@@ -50,6 +50,30 @@ absent.
   before checking the rendered dashboard or pending-review document.
 - This is package/version and activation-timing evidence only. No rendered UI,
   test suite, reviewer action, or plan criterion is verified by this update.
+
+## Follow-up observation — 2026-11-02 18:27 +07
+
+- The live database now reports schema version 46, includes
+  `sde_review_targets`, passes SQLite `quick_check`, and has zero foreign-key
+  violations. The missing table that caused the earlier incomplete health and
+  queue snapshots is repaired.
+- Commit `3a47e95ace97c26219dee7c3ce82e9b5f05c33a7` changes the dashboard's
+  initial read to a manual retry, so clicking the red `CuratorMD V2` status
+  item can clear a three-identical-failure pause. The separate pending-review
+  item remains blue and opens `pending-review.md`. The host-configured VS Code
+  suite passed 38/38 at this commit.
+- The installed extension is 0.9.54 and its `extension.js` hash matches source.
+  Extension-host logs show the latest activation before 0.9.54 was installed;
+  the active window still needs a reload and rendered check.
+- Fresh Hermes and Curator queue reads are project-matched and complete. Hermes
+  health is degraded only for three failed event receipts; the queue separately
+  reports four pending human reviews. No review decision or failed-event
+  disposition was made.
+- The Python suite passed 607/607 at `cc2dec6`; a `ResourceWarning` appeared
+  during a legacy schema migration test, but the suite completed successfully.
+  The new schema migration regression is included in that run. The seven
+  acceptance items remain open pending their broader runtime, privacy, reviewer,
+  cleanup, and recovery evidence.
 
 ## Acceptance work still open
 
@@ -81,3 +105,10 @@ and no SDE decision was made while preparing this checkpoint. The temporary
 restore copy created for the check was removed after validation. The acceptance
 scope and remaining work are defined by
 [`curator-v2-plan.md`](curator-v2-plan.md).
+
+## Documentation consistency — 2026-11-02 18:35 +07
+
+- Updated the dashboard retry contract: opening the dashboard is a manual
+  retry after the three-failure pause; page navigation remains automatic.
+- The VS Code window still has no post-install activation record. Reload and
+  rendered status/queue confirmation remain open.

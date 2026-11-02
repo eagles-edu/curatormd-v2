@@ -37,9 +37,10 @@ only from a fresh, complete SQLite observation for the configured project;
 host dependency warnings do not hide those counts.
 Each panel shows its own read time and a plain-language error when unavailable.
 Overlapping feed refreshes share one read. After three identical failures for
-one feed, its automatic checks pause until a manual refresh or a workspace or
-Curator setting change. The paused panel keeps showing that feed's last
-source-specific failure and check time. Generated inbox and proposal views are
+one feed, its automatic checks pause until the dashboard is opened, a manual
+refresh is requested, or a workspace or Curator setting changes. Opening the
+dashboard performs one fresh attempt. The paused panel keeps showing that feed's
+last source-specific failure and check time. Generated inbox and proposal views are
 replaced only when their saved data changes; their check time remains in the
 dashboard.
 The extension also creates `.curatormd-v2/` with three working areas:
