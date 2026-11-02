@@ -3054,7 +3054,9 @@ function dashboardHtml(webview, focusReviews = false) {
         requestGoals(goalOffset);
       }
     });
-    requestGoals(0);
+    // Opening the dashboard is an explicit retry after the status item points
+    // the owner here from a paused health or queue feed.
+    requestGoals(0, true);
     if (${JSON.stringify(focusReviews)}) {
       document.getElementById('reviewsSection').scrollIntoView();
     }

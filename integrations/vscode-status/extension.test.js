@@ -586,6 +586,7 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.match(html, /function requestGoals\(offset, manualRefresh = false\)/);
   assert.match(html, /api\.postMessage\(\{ type: 'loadGoals', offset, manualRefresh \}\)/);
   assert.match(html, /addEventListener\('click', \(\) => requestGoals\(0, true\)\)/);
+  assert.match(html, /requestGoals\(0, true\);\s*if \(false\)/);
   assert.match(html, /reportRevision\.slice\(0, 12\)/);
   assert.match(html, /report\.textContent = message\.report/);
   assert.match(html, /Pending SDE review/);
