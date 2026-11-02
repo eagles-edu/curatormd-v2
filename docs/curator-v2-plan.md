@@ -9438,6 +9438,18 @@ receipts. The independent queue snapshot reported those three failures, four
 pending SDE reviews, and no purge or expiry work. Pending reviews are not the
 health gate. No event disposition or SDE decision was made.
 
+Hermes producer handoff (2026-11-02 21:14 +07): the bounded Codex work-summary
+producer, outbox and profile-hook validation, and readiness checks are pushed
+to `fork/codex/curator-v2-hermes-integration-upstream` at `770f04d464` and
+`6d9760ba0d`. The readiness check now requires a supported event declaration
+and a top-level handler that accepts the event, context, and `ctx` arguments.
+Targeted Ruff, Python AST parsing, and `git diff --check` passed; proof tests
+were not run. The configured profile probe reports all seven dependencies
+healthy, while project status remains degraded by three failed event receipts;
+four pending reviews are separate and do not cause degradation. The active
+Hermes runtime, real event delivery/readback, and editor rendering remain
+unverified. Native Codex hooks remain disabled.
+
 - [ ] A real local Codex/Hermes task creates a correctly scoped goal with
       its original problem and success criteria intact. Proposed acceptance:
       submit one real task through the supported Hermes Core integration, with
