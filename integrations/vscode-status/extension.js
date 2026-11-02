@@ -1506,23 +1506,6 @@ function activate(context) {
     () => openPendingReviewDocument(),
   );
   context.subscriptions.push(statusItem, openDashboard, openPendingReview);
-  reviewColorDecorations = createReviewColorDecorations();
-  if (reviewColorDecorations) {
-    context.subscriptions.push(...Object.values(reviewColorDecorations));
-    const colorPendingReview = (editor) => applyReviewColors(editor);
-    for (const editor of vscode.window.visibleTextEditors || []) colorPendingReview(editor);
-    if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
-      context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(colorPendingReview));
-    }
-    if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
-      context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
-        const editor = vscode.window.visibleTextEditors?.find(
-          (item) => item.document === event.document,
-        );
-        if (editor) applyReviewColors(editor);
-      }));
-    }
-  }
   if (vscode.languages && typeof vscode.languages.registerCodeLensProvider === 'function') {
     context.subscriptions.push(vscode.commands.registerCommand(
       'curatormdV2.reviewDocumentCandidate',
@@ -1752,72 +1735,6 @@ async function openPendingReviewDocument() {
     );
     return;
   }
-}
-
-function createReviewColorDecorations() {
-  if (typeof vscode.window?.createTextEditorDecorationType !== 'function') return null;
-  const colors = {
-    heading: { light: '#075985', dark: '#7dd3fc' },
-    metadata: { light: '#6b21a8', dark: '#d8b4fe' },
-    key: { light: '#166534', dark: '#86efac' },
-    string: { light: '#9a3412', dark: '#fcd34d' },
-    number: { light: '#1d4ed8', dark: '#93c5fd' },
-  };
-  return Object.fromEntries(Object.entries(colors).map(([kind, palette]) => [kind,
-    vscode.window.createTextEditorDecorationType({
-      light: { color: palette.light },
-      dark: { color: palette.dark },
-      color: palette.dark,
-    })]));
-}
-
-function applyReviewColors(editor) {
-  if (!editor || !editor.document || !reviewColorDecorations || !isPendingReviewEditor(editor)) return;
-  const ranges = { heading: [], metadata: [], key: [], string: [], number: [] };
-  let inJson = false;
-  for (let lineNumber = 0; lineNumber < editor.document.lineCount; lineNumber += 1) {
-    const line = editor.document.lineAt(lineNumber);
-    const value = line.text;
-    if (/^```json\s*$/.test(value)) {
-      inJson = true;
-      continue;
-    }
-    if (inJson && /^```+$/.test(value)) {
-      inJson = false;
-      continue;
-    }
-    if (!inJson) {
-      if (/^#{1,6}\s/.test(value)) ranges.heading.push(line.range);
-      else if (/^- (?:SDE ID|Proposed title|Task started \(\+07\)|Successful completion \(\+07\)|Significance|Proposal rationale|Problem \/ plan task):/.test(value)) {
-        ranges.metadata.push(line.range);
-      }
-      continue;
-    }
-    for (const match of value.matchAll(/"(?:[^"\\]|\\.)*"(?=\s*:)/g)) {
-      ranges.key.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
-    }
-    for (const match of value.matchAll(/:\s*("(?:[^"\\]|\\.)*")/g)) {
-      const start = match.index + match[0].lastIndexOf(match[1]);
-      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
-    }
-    for (const match of value.matchAll(/^\s+("(?:[^"\\]|\\.)*")(?=,?$)/g)) {
-      const start = match.index + match[0].indexOf(match[1]);
-      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
-    }
-    for (const match of value.matchAll(/\b(?:true|false|null|-?\d+(?:\.\d+)?)\b/g)) {
-      ranges.number.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
-    }
-  }
-  for (const [kind, decoration] of Object.entries(reviewColorDecorations)) {
-    editor.setDecorations(decoration, ranges[kind]);
-  }
-}
-
-function isPendingReviewEditor(editor) {
-  const workspace = vscode.workspace?.workspaceFolders?.[0];
-  return Boolean(workspace && editor.document.uri.fsPath === path.join(
-    workspace.uri.fsPath, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
-  ));
 }
 
 function reviewDocumentActions(document) {
