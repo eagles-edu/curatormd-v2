@@ -144,3 +144,18 @@ scope and remaining work are defined by
   seven-copy rotation, restore, or rollback.
 - No unit/proof tests, editor reload, Hermes runtime update, SDE decision, or
   cleanup action was performed. All seven acceptance items remain open.
+
+## Live dashboard feed recheck — 2026-11-02 18:49 +07
+
+- The exact Hermes command and project profile configured for the dashboard
+  returned a complete, matching snapshot with all seven dependencies healthy.
+  Health is degraded only for `event_failures`; there are 3 failed events and
+  4 pending reviews. The pending reviews are not the cause of degradation.
+- The independent Curator queue snapshot is complete for the same project and
+  reports 3 failed events, 4 pending reviews, and zero purge/expiry work.
+- Curator's separate `project_health` read reports unknown dependencies and
+  `sqlite_payload_scrub_pending`; it is not the dashboard's Hermes readiness
+  feed. Keep these sources distinct.
+- No event disposition, payload cleanup, human review, editor reload, or proof
+  test was performed. Rendered status and the separate blue review action
+  remain unverified in the active editor.
