@@ -9426,6 +9426,18 @@ checking real summaries in steps 1 and 3.
    only result codes, IDs, hashes, and times—no prompt, credentials, or raw
    command output.
 
+Status-bar review action (2026-11-02 21:08 +07): extension 0.9.59 now uses
+one visible CuratorMD V2 item. Pending reviews turn it blue and open
+`.curatormd-v2/sde-proposals/pending-review.md`; otherwise it displays project
+health and opens the dashboard. The package is installed and commit `7519d9c`
+is pushed. `node --check` and `git diff --check` passed; proof tests and a
+post-install editor reload/render check remain open. At 21:09 +07, the exact
+configured Hermes command/profile returned a fresh matching snapshot with all
+seven dependencies healthy and health degraded only for three failed event
+receipts. The independent queue snapshot reported those three failures, four
+pending SDE reviews, and no purge or expiry work. Pending reviews are not the
+health gate. No event disposition or SDE decision was made.
+
 - [ ] A real local Codex/Hermes task creates a correctly scoped goal with
       its original problem and success criteria intact. Proposed acceptance:
       submit one real task through the supported Hermes Core integration, with
