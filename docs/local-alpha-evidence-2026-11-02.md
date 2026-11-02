@@ -11,7 +11,9 @@ absent.
 - Approved scope: `eaglesvn` (UID 1000), this Curator V2 repository, one active
   repository. Vhost Manager application and utility workflows are excluded.
 - Project: `curatormd-v2-dev-alpha`.
-- Repository `HEAD`: `832b6f9afd8b10e081751cf96dc45657fde8b293`.
+- Implementation commit used for the test runs:
+  `832b6f9afd8b10e081751cf96dc45657fde8b293`. The checkpoint update itself
+  was committed afterward as a documentation-only change.
 - Worktree: clean at the time of this observation; this checkpoint update is
   content-free and source-pinned to the commit above.
 - Project configuration SHA-256:
