@@ -30,6 +30,35 @@ from curatormd_v2.schema_migrations import (
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
 
+    def test_v45_migration_restores_missing_sde_review_targets(self) -> None:
+        """Version-45 stores missing the destination table regain its empty schema."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v45-missing-review-targets.sqlite3"
+            store = CuratorStore(database_path)
+            store.close()
+            connection = sqlite3.connect(database_path)
+            connection.execute("DROP TABLE sde_review_targets")
+            connection.execute("PRAGMA user_version = 45")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    columns = {
+                        row["name"]
+                        for row in connection.execute("PRAGMA table_info(sde_review_targets)")
+                    }
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                self.assertTrue(
+                    {"receipt_id", "target_path", "before_exists", "expected_sha256"}
+                    .issubset(columns)
+                )
+                self.assertEqual(version, SQLITE_SCHEMA_VERSION)
+            finally:
+                migrated.close()
+
     def test_v44_migration_adds_explicit_goal_timestamps(self) -> None:
         """Legacy goals gain nullable lifecycle times without guessed backfills."""
 

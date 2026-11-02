@@ -28,7 +28,7 @@ from .schema_migration_steps_v2_v20 import (
 )
 
 
-SQLITE_SCHEMA_VERSION = 45
+SQLITE_SCHEMA_VERSION = 46
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -843,6 +843,51 @@ def migrate_goal_lifecycle_timestamps_v45(connection: sqlite3.Connection) -> Non
     connection.execute("PRAGMA user_version = 45")
 
 
+def migrate_sde_review_target_table_v46(connection: sqlite3.Connection) -> None:
+    """Repair version-45 databases missing the SDE destination table."""
+
+    receipt_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(audit_receipts)")
+    }
+    if receipt_columns:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS sde_review_targets (
+                receipt_id TEXT NOT NULL REFERENCES audit_receipts(receipt_id),
+                target_path TEXT NOT NULL,
+                projection_sha256 TEXT,
+                projected_at TEXT,
+                before_exists INTEGER,
+                before_sha256 TEXT,
+                expected_sha256 TEXT,
+                prepared_at TEXT,
+                PRIMARY KEY (receipt_id, target_path)
+            )"""
+        )
+        target_columns = {
+            row["name"]: str(row["type"]).upper()
+            for row in connection.execute("PRAGMA table_info(sde_review_targets)")
+        }
+        required_columns = {
+            "receipt_id": "TEXT",
+            "target_path": "TEXT",
+            "projection_sha256": "TEXT",
+            "projected_at": "TEXT",
+            "before_exists": "INTEGER",
+            "before_sha256": "TEXT",
+            "expected_sha256": "TEXT",
+            "prepared_at": "TEXT",
+        }
+        if not required_columns.items() <= target_columns.items():
+            raise RuntimeError("SDE review target table is incompatible")
+        foreign_keys = {
+            (row["table"], row["from"], row["to"])
+            for row in connection.execute("PRAGMA foreign_key_list(sde_review_targets)")
+        }
+        if foreign_keys != {("audit_receipts", "receipt_id", "receipt_id")}:
+            raise RuntimeError("SDE review target foreign key is incompatible")
+    connection.execute("PRAGMA user_version = 46")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -888,6 +933,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_sde_projection_preparation_v43,
     migrate_sde_binding_payload_v44,
     migrate_goal_lifecycle_timestamps_v45,
+    migrate_sde_review_target_table_v46,
 )
 
 

@@ -31,10 +31,11 @@ absent.
 
 ## Current observations
 
-| Area | Observation at 2026-11-02 18:08 +07 | State |
+| Area | Observation at 2026-11-02 18:12 +07 | State |
 |---|---|---|
 | Maintenance timer | Project timer is active; last trigger was 18:00:06 +07, service result is success with exit status 0, and next trigger is scheduled for 00:00:11 +07. Configured service-probe receipt: `45df5ad5e0ecfa54d3226343e0e6857337494ba6e32f189d1174070665d8c659`. | Read-only observation; a single run does not establish the full operating gate. |
 | Daily backups | Six recognized daily SQLite snapshots are present, dated 2026-10-28 through 2026-11-02; all six pass `quick_check` and have zero foreign-key violations. | Seven-copy rotation remains open. Unclassified files and sidecars were preserved. |
+| Restore to a new path | The latest 2026-11-02 snapshot was restored with the Curator V2 storage CLI to a new temporary path; the CLI returned `verified`, SQLite `quick_check` returned `ok`, and foreign-key check found zero violations. The temporary copy was removed after validation. | This proves one snapshot restore. It does not prove seven-copy rotation, package upgrade rollback, or live expiry. |
 | Source tests and quality | Python unittest passed 606/606, VS Code Node suite passed 38/38, Pyright reported 0 diagnostics, Bandit exited 0, and Pylint `--errors-only` passed. Full Pylint exited 24 with convention/refactor findings (9.93/10). | Local results; Python/quality output is not host-attested. The configured committed VS Code test receipt is `d4800e61e45102415e0acfd70e850f9af70d425813dc99207fe5833daf14b549`, for commit `832b6f9`. |
 | Project health and review status | Current source excludes pending SDE review from health degradation and gives outstanding reviews a separate blue/action state. | Source review only; the active VS Code rendering was not inspected. |
 | Review document | Editable draft, significance, multiple configured destinations, and receipt-binding paths are covered by the passing local suites. | No local attended review or receipt reconciliation was performed. |
@@ -69,12 +70,14 @@ absent.
   decision or independent receipt reconciliation was performed here.
 - **Cleanup recovery:** no local attended decision, exact-inventory cleanup, or
   per-target recovery acceptance was exercised.
-- **Operating recovery:** the current service receipt and six verified daily
-  snapshots do not prove the 250 MiB warning boundary, live due 72-hour expiry,
-  seven-copy rotation, restore to a new path, or package rollback for this
-  alpha. The passing unit suite covers bounded implementations only; it does
-  not replace the required current runtime and recovery evidence.
+- **Operating recovery:** the current service receipt, six verified daily
+  snapshots, and one restore to a new path do not prove the 250 MiB warning
+  boundary, live due 72-hour expiry, seven-copy rotation, or package rollback
+  for this alpha. The passing unit suite covers bounded implementations only;
+  it does not replace the remaining current runtime and recovery evidence.
 
-No artifact was deleted, no service was restarted, and no SDE decision was
-made while preparing this checkpoint. The acceptance scope and remaining work
-are defined by [`curator-v2-plan.md`](curator-v2-plan.md).
+No project staging or backup artifact was deleted, no service was restarted,
+and no SDE decision was made while preparing this checkpoint. The temporary
+restore copy created for the check was removed after validation. The acceptance
+scope and remaining work are defined by
+[`curator-v2-plan.md`](curator-v2-plan.md).
