@@ -1,9 +1,5 @@
 # Curator V2: goal-ledger intelligence, not transcript curation
 
-## /home/eaglesvn/.nvm/versions/node/v24.21.0/bin/code
-
-## xpkill -f '/home/eaglesvn/.vscode/extensions/openai.chatgpt-.*codex.*app-server'code --disable-gpu'
-
 ## Summary
 
 Curator V2 is a standalone rewrite. It does not import V1 runtime code, state,
