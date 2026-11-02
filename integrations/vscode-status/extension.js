@@ -356,6 +356,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     const titleSource = goal.problem;
     const proposedTitle = titleSource.length > 160
       ? `${titleSource.slice(0, 157).trimEnd()}…` : titleSource;
+    const headingTitle = proposedTitle.replace(/[.!?;:,]+$/, '');
     const proposalRationale = outlineMatchesCandidate
       && typeof outline.proposal_rationale === 'string'
       && outline.proposal_rationale.length <= 1000
@@ -365,7 +366,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       && typeof outline.future_utility === 'string' && outline.future_utility.length <= 1000
       ? outline.future_utility : '';
     lines.push(`<!-- curator-v2-candidate: ${candidate.candidate_id} -->`,
-      `## SDE ${safe(candidate.candidate_id)} — ${safe(proposedTitle)}`, '',
+      `## SDE ${safe(candidate.candidate_id)} — ${safe(headingTitle)}`, '',
       `- SDE ID: ${safe(candidate.candidate_id)}`,
       `- Started: ${outline && typeof outline.task_started_at === 'string' ? safe(outline.task_started_at) : 'unknown'}`,
       `- Successfully completed: ${outline && typeof outline.successful_completion_at === 'string' ? safe(outline.successful_completion_at) : 'unknown'}`,
@@ -386,9 +387,9 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
         for (const fact of verificationFacts) lines.push(`- ${safe(fact.bullet)}`);
       }
     }
-    lines.push('', '### Difficulties encountered',
+    lines.push('', '### Difficulties encountered', '',
       '- No difficulty is separately recorded in the supporting facts.', '',
-      '### Plan changes required',
+      '### Plan changes required', '',
       '- No plan change is separately recorded in the supporting facts.', '',
       '### Lessons learned');
     if (proposedLesson) lines.push('', `- ${safe(proposedLesson)}`);
@@ -454,7 +455,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       draftBlock,
       `<!-- curator-v2-decision:${candidate.candidate_id}:end -->`, '');
   }
-  const body = `${lines.join('\n')}\n`;
+  const body = `${lines.join('\n').replace(/\n+$/, '')}\n`;
   if (Buffer.byteLength(body, 'utf8') > 1024 * 1024 - 128) return false;
   const generated = reviewDraftParts(body);
   if (!generated) return false;
