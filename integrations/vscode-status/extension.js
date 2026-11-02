@@ -151,6 +151,7 @@ function healthGateLabel(code) {
 }
 let dashboardStatusItem;
 let statusRefreshTimer;
+let reviewColorDecorations;
 let statusRefreshGeneration = 0;
 const feedRequestsInFlight = new Map();
 const feedFailureStates = new Map();
@@ -1463,7 +1464,32 @@ function activate(context) {
       { provideCodeLenses: (document) => reviewDocumentActions(document) },
     ));
   }
-  registerReviewDocumentColors(context);
+  reviewColorDecorations = createReviewColorDecorations();
+  if (reviewColorDecorations) {
+    context.subscriptions.push(...Object.values(reviewColorDecorations));
+    const colorPendingReview = (editor) => applyReviewColors(editor);
+    const colorVisibleEditors = () => {
+      for (const editor of vscode.window.visibleTextEditors || []) colorPendingReview(editor);
+    };
+    colorVisibleEditors();
+    if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
+      context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(colorPendingReview));
+    }
+    if (typeof vscode.window.onDidChangeVisibleTextEditors === 'function') {
+      context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(colorVisibleEditors));
+    }
+    if (vscode.workspace && typeof vscode.workspace.onDidChangeWorkspaceFolders === 'function') {
+      context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(colorVisibleEditors));
+    }
+    if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
+      context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
+        const editor = vscode.window.visibleTextEditors?.find(
+          (item) => item.document === event.document,
+        );
+        if (editor) applyReviewColors(editor);
+      }));
+    }
+  }
   void refreshStatusBarHealthFromWorkspace();
   statusRefreshTimer = setInterval(() => {
     void refreshStatusBarHealthFromWorkspace();
@@ -1493,70 +1519,79 @@ function activate(context) {
   }
 }
 
-function registerReviewDocumentColors(context) {
-  if (!vscode.window || typeof vscode.window.createTextEditorDecorationType !== 'function') return;
-  const main = vscode.window.createTextEditorDecorationType({ color: '#FBFFFF' });
-  const emphasis = vscode.window.createTextEditorDecorationType({
-    color: '#6DAAFF', fontWeight: 'bold',
-  });
-  context.subscriptions.push(main, emphasis);
-  const apply = (editor) => {
-    const root = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
-    const document = editor?.document;
-    if (!root || !document || document.uri?.fsPath !== path.join(
-      root, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
-    )) {
-      if (editor && typeof editor.setDecorations === 'function') {
-        editor.setDecorations(main, []);
-        editor.setDecorations(emphasis, []);
-      }
-      return;
-    }
-    const text = document.getText();
-    if (text.length > 1024 * 1024) {
-      editor.setDecorations(main, []);
-      editor.setDecorations(emphasis, []);
-      return;
-    }
-    const emphasisRanges = [];
-    let fence = null;
-    for (let line = 0; line < document.lineCount; line += 1) {
-      const value = document.lineAt(line).text;
-      const delimiter = /^\s*(`{3,}|~{3,})/.exec(value);
-      if (delimiter) {
-        if (!fence) fence = { character: delimiter[1][0], length: delimiter[1].length };
-        else if (delimiter[1][0] === fence.character && delimiter[1].length >= fence.length) fence = null;
-        continue;
-      }
-      if (fence) continue;
-      if (/^\s{0,3}#{1,6}\s/.test(value)) {
-        emphasisRanges.push(new vscode.Range(line, 0, line, value.length));
-        continue;
-      }
-      for (const match of value.matchAll(/\*\*[^*\r\n]+\*\*/g)) {
-        emphasisRanges.push(new vscode.Range(line, match.index, line, match.index + match[0].length));
-      }
-    }
-    editor.setDecorations(main, [new vscode.Range(document.positionAt(0), document.positionAt(text.length))]);
-    editor.setDecorations(emphasis, emphasisRanges);
+function createReviewColorDecorations() {
+  if (typeof vscode.window?.createTextEditorDecorationType !== 'function') return null;
+  const colors = {
+    heading: { light: '#075985', dark: '#7dd3fc' },
+    metadata: { light: '#6b21a8', dark: '#d8b4fe' },
+    key: { light: '#166534', dark: '#86efac' },
+    string: { light: '#9a3412', dark: '#fcd34d' },
+    number: { light: '#1d4ed8', dark: '#93c5fd' },
   };
-  const applyVisible = () => {
-    for (const editor of vscode.window.visibleTextEditors || []) apply(editor);
-  };
-  if (typeof vscode.window.onDidChangeVisibleTextEditors === 'function') {
-    context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(applyVisible));
+  return Object.fromEntries(Object.entries(colors).map(([kind, palette]) => [kind,
+    vscode.window.createTextEditorDecorationType({
+      light: { color: palette.light },
+      dark: { color: palette.dark },
+      color: palette.dark,
+    })]));
+}
+
+function applyReviewColors(editor) {
+  if (!editor || !editor.document || !reviewColorDecorations) return;
+  const decorationEntries = Object.entries(reviewColorDecorations);
+  if (!isPendingReviewEditor(editor)) {
+    for (const [, decoration] of decorationEntries) editor.setDecorations(decoration, []);
+    return;
   }
-  if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
-    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
-      for (const editor of vscode.window.visibleTextEditors || []) {
-        if (editor.document === event.document) apply(editor);
+  if (editor.document.getText().length > 1024 * 1024) {
+    for (const [, decoration] of decorationEntries) editor.setDecorations(decoration, []);
+    return;
+  }
+  const ranges = { heading: [], metadata: [], key: [], string: [], number: [] };
+  let inJson = false;
+  for (let lineNumber = 0; lineNumber < editor.document.lineCount; lineNumber += 1) {
+    const line = editor.document.lineAt(lineNumber);
+    const value = line.text;
+    if (/^```json\s*$/.test(value)) {
+      inJson = true;
+      continue;
+    }
+    if (inJson && /^```+$/.test(value)) {
+      inJson = false;
+      continue;
+    }
+    if (!inJson) {
+      if (/^#{1,6}\s/.test(value)) ranges.heading.push(line.range);
+      else if (/^- (?:SDE ID|Proposed title|Task started \(\+07\)|Successful completion \(\+07\)|Significance|Proposal rationale|Problem \/ plan task):/.test(value)) {
+        ranges.metadata.push(line.range);
       }
-    }));
+      continue;
+    }
+    for (const match of value.matchAll(/"(?:[^"\\]|\\.)*"(?=\s*:)/g)) {
+      ranges.key.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
+    }
+    for (const match of value.matchAll(/:\s*("(?:[^"\\]|\\.)*")/g)) {
+      const start = match.index + match[0].lastIndexOf(match[1]);
+      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
+    }
+    for (const match of value.matchAll(/^\s+("(?:[^"\\]|\\.)*")(?=,?$)/g)) {
+      const start = match.index + match[0].indexOf(match[1]);
+      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
+    }
+    for (const match of value.matchAll(/\b(?:true|false|null|-?\d+(?:\.\d+)?)\b/g)) {
+      ranges.number.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
+    }
   }
-  if (vscode.workspace && typeof vscode.workspace.onDidChangeWorkspaceFolders === 'function') {
-    context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(applyVisible));
+  for (const [kind, decoration] of decorationEntries) {
+    editor.setDecorations(decoration, ranges[kind]);
   }
-  applyVisible();
+}
+
+function isPendingReviewEditor(editor) {
+  const workspace = vscode.workspace?.workspaceFolders?.[0];
+  return Boolean(workspace && editor.document.uri.fsPath === path.join(
+    workspace.uri.fsPath, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+  ));
 }
 
 function deactivate() {
@@ -1640,7 +1675,8 @@ async function openPendingReviewDocument() {
       throw new Error('invalid approval projection');
     }
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(approvalJson));
-    await vscode.window.showTextDocument(document);
+    const editor = await vscode.window.showTextDocument(document);
+    applyReviewColors(editor);
   } catch (_) {
     vscode.window.showWarningMessage(
       'The pending review document is unavailable. Refresh CuratorMD V2 and try again.',
