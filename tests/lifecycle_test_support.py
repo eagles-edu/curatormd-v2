@@ -240,7 +240,7 @@ class LifecycleTestSupport(unittest.TestCase):
         # complete, and completed goals are terminal. Seed legacy persisted state.
         with self.store.transaction() as connection:
             connection.execute(
-                "UPDATE goals SET status = ?, superseded_by_goal_id = ? "
+                "UPDATE goals SET status = ?, superseded_by_goal_id = ?, completed_at = NULL "
                 "WHERE project_id = ? AND goal_id = ?",
                 (
                     dependency_terminal.value,

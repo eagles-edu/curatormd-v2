@@ -137,15 +137,39 @@ class CodexPluginHookTests(unittest.TestCase):
         )
         self.assertNotIn("--project-root", server["args"])
         self.assertNotIn("--evidence-config", server["args"])
+        self.assertNotIn("cwd", server)
 
         launcher = ROOT / "integrations" / "codex-plugin" / "bin" / "launch-curator-mcp.py"
         launcher_namespace = runpy.run_path(
             str(launcher), run_name="curator_v2_codex_launcher_test"
         )
-        self.assertEqual(
-            launcher_namespace["_v2_mcp_path"](),
-            ROOT / ".venv" / "bin" / "curatormd-v2-codex-mcp",
-        )
+        with patch.dict(os.environ, {"PATH": ""}, clear=True):
+            self.assertEqual(
+                launcher_namespace["_v2_mcp_path"](),
+                ROOT / ".venv" / "bin" / "curatormd-v2-codex-mcp",
+            )
+
+    def test_cached_launcher_finds_installed_executable(self) -> None:
+        """A copied plugin cache must not treat its parent as the checkout."""
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            cached = root / "cache" / "market" / "plugin" / "version" / "bin"
+            cached.mkdir(parents=True)
+            launcher = cached / "launch-curator-mcp.py"
+            launcher.write_text(
+                (ROOT / "integrations" / "codex-plugin" / "bin" / launcher.name)
+                .read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            installed = root / "bin" / "curatormd-v2-codex-mcp"
+            installed.parent.mkdir()
+            installed.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            installed.chmod(0o700)
+            namespace = runpy.run_path(str(launcher), run_name="cached_launcher_test")
+            with patch.dict(os.environ, {"PATH": str(installed.parent)}, clear=True):
+                self.assertEqual(namespace["_v2_mcp_path"](), installed)
+            with patch.dict(os.environ, {"CURATOR_V2_CODEX_MCP": "relative"}, clear=True):
+                self.assertIsNone(namespace["_v2_mcp_path"]())
 
     def test_plugin_bundles_prompt_and_lifecycle_hooks(self) -> None:
         """Install intake and endpoint checks with the plugin, not separately."""
@@ -1252,6 +1276,34 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertTrue(Path(args[database_index + 1]).is_absolute())
         self.assertIn("--allow-write", args)
         self.assertIsNone(transport["cwd"])
+
+    def test_user_mcp_detection_does_not_confuse_plugin_registration(self) -> None:
+        """Check the owner config before adding an override with the same name."""
+
+        has_user_server = _MCP_INSTALLER_MODULE["_has_user_server"]
+        with TemporaryDirectory() as directory:
+            config = Path(directory) / "config.toml"
+            with patch.dict(os.environ, {"CODEX_HOME": directory}):
+                self.assertFalse(has_user_server())
+                config.write_text('[mcp_servers.other]\ncommand = "other"\n', encoding="utf-8")
+                self.assertFalse(has_user_server())
+                config.write_text('[mcp_servers.codex-intake]\ncommand = "other"\n', encoding="utf-8")
+                self.assertTrue(has_user_server())
+
+    def test_user_mcp_installer_preserves_conflicting_registration(self) -> None:
+        """Never replace another owner-configured server with the same name."""
+
+        install = _MCP_INSTALLER_MODULE["install_user_mcp"]
+        with (
+            patch.dict(install.__globals__, {
+                "_has_user_server": lambda: True,
+                "_get_server": lambda: {"enabled": True, "transport": {"command": "other"}},
+            }),
+            patch("subprocess.run") as run,
+        ):
+            with self.assertRaises(ValueError):
+                install(Path("/tmp/curator-v2-test.sqlite3"))
+            run.assert_not_called()
 
     def test_codex_mcp_instructions_include_server_verified_project_fingerprints(self) -> None:
         """Make the enforced project and config binding available for audit receipts."""

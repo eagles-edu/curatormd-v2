@@ -74,6 +74,8 @@ class StoreOperations4Part1(StoreOperations4Part0):
                  COALESCE(length(CAST(g.source_event_payload_sha256 AS BLOB)), 0) +
                  length(CAST(g.created_at AS BLOB)) +
                  length(CAST(g.updated_at AS BLOB)) +
+                 COALESCE(length(CAST(g.started_at AS BLOB)), 0) +
+                 COALESCE(length(CAST(g.completed_at AS BLOB)), 0) +
                  COALESCE((SELECT SUM(
                    length(CAST(v.goal_id AS BLOB)) +
                    length(CAST(v.criteria_json AS BLOB)) +
@@ -192,10 +194,22 @@ class StoreOperations4Part1(StoreOperations4Part0):
                  length(CAST(r.artifact_inventory_complete AS TEXT)) +
                  COALESCE(length(CAST(r.reviewer_id AS BLOB)), 0) +
                  COALESCE(length(CAST(r.review_rationale AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.review_draft_json AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.review_binding_sha256 AS BLOB)), 0) +
+                 COALESCE(length(CAST(r.review_binding_json AS BLOB)), 0) +
                  length(CAST(r.canonical_persisted AS TEXT)) +
                  COALESCE(length(CAST(r.canonical_target AS BLOB)), 0) +
                  COALESCE(length(CAST(r.canonical_sha256 AS BLOB)), 0) +
                  COALESCE(length(CAST(r.canonical_persisted_at AS BLOB)), 0) +
+                 COALESCE((SELECT SUM(
+                   length(CAST(t.target_path AS BLOB)) +
+                   COALESCE(length(CAST(t.projection_sha256 AS BLOB)), 0) +
+                   COALESCE(length(CAST(t.projected_at AS BLOB)), 0) +
+                   COALESCE(length(CAST(t.before_sha256 AS BLOB)), 0) +
+                   COALESCE(length(CAST(t.expected_sha256 AS BLOB)), 0) +
+                   COALESCE(length(CAST(t.prepared_at AS BLOB)), 0) +
+                   COALESCE(length(CAST(t.before_exists AS TEXT)), 0)
+                 ) FROM sde_review_targets AS t WHERE t.receipt_id = r.receipt_id), 0) +
                  length(CAST(r.purge_status AS BLOB)) +
                  length(CAST(r.created_at AS BLOB)) +
                  length(CAST(r.updated_at AS BLOB))

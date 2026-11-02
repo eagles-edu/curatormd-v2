@@ -205,8 +205,8 @@ class StoreOperations2(StoreOperations2Part0):
                     depends_on_json, criteria_revision, lifecycle_revision,
                     superseded_by_goal_id, initial_status, source_event_id,
                     source_event_payload_sha256, status, next_action, created_at,
-                    updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    updated_at, started_at, completed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     goal.goal_id,
                     goal.project_id,
@@ -228,6 +228,10 @@ class StoreOperations2(StoreOperations2Part0):
                     goal.next_action,
                     goal.created_at,
                     goal.updated_at,
+                    goal.started_at or (
+                        goal.created_at if goal.status is not GoalStatus.PLANNED else None
+                    ),
+                    goal.completed_at,
                 ),
             )
             connection.execute(

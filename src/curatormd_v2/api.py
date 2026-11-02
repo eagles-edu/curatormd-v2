@@ -25,6 +25,7 @@ from .events import (
     MAX_EVENT_BYTES,
 )
 from .evidence import EvidenceCaptureVerifier, EvidenceVerificationContext
+from .sde_review_draft import SDEReviewBinding
 from .errors import RateLimitExceeded
 from .hermes_context import hermes_source_id
 from .health_evaluation import (
@@ -930,6 +931,24 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
             caller, project_id, ProjectAction.READ
         ).sde_review_detail(candidate_id)
 
+    def sde_review_has_current_passing_evidence(
+        self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
+    ) -> bool:
+        """Check whether selected SDE verification evidence is current and passing."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.READ
+        ).sde_review_has_current_passing_evidence(candidate_id)
+
+    def sde_review_documents(
+        self, caller: AuthenticatedCaller, project_id: str
+    ) -> tuple[str, ...]:
+        """List the configured Markdown targets available to SDE reviewers."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.READ
+        ).sde_review_documents()
+
     def sde_review_packet(
         self,
         caller: AuthenticatedCaller,
@@ -942,6 +961,16 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.REVIEW
         ).sde_review_packet(candidate_id, review_artifacts)
+
+    def prepare_sde_review_binding(
+        self, caller: AuthenticatedCaller, project_id: str,
+        request: SDEConfirmationRequest,
+    ) -> SDEReviewBinding:
+        """Authorize a read of the exact edited review binding before confirmation."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).prepare_sde_review_binding(request, authenticated_subject=caller.subject_id)
 
     def sde_confirm(
         self,
@@ -956,6 +985,39 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         ).sde_confirm(
             request,
             authenticated_subject=caller.subject_id,
+        )
+
+    def sde_review_projection_status(
+        self, caller: AuthenticatedCaller, project_id: str, receipt_id: str,
+    ) -> tuple[tuple[str, str | None, str | None], ...]:
+        """Read selected SDE destination states under the project review grant."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).sde_review_projection_status(receipt_id, authenticated_subject=caller.subject_id)
+
+    def sde_project_review_target(
+        self, caller: AuthenticatedCaller, project_id: str, receipt_id: str,
+        target: str, *, prepare_only: bool,
+    ) -> str:
+        """Reauthorize each prepared SDE destination operation separately."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).sde_project_review_target(
+            receipt_id, target, prepare_only=prepare_only,
+            authenticated_subject=caller.subject_id,
+        )
+
+    def sde_finalize_review_projection(
+        self, caller: AuthenticatedCaller, project_id: str, receipt_id: str,
+    ) -> AuditReceipt:
+        """Finalize all selected SDE documents before exact cleanup may start."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).sde_finalize_review_projection(
+            receipt_id, authenticated_subject=caller.subject_id
         )
 
     @_project_effect_fenced(ProjectAction.REVIEW)
@@ -1121,6 +1183,7 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.PURGE_RETRY
         ).retry_pending_purges()
+
 
 class AuthenticatedCuratorAPI(_APIReviewPurgeMethods):  # pylint: disable=too-few-public-methods  # Public facade inherits the complete API.
     """Expose project-scoped operations after host authentication/authorization.

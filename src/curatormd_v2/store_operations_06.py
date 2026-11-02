@@ -33,6 +33,7 @@ from .store_support_01 import (
     utc_now,
 )
 from .store_operations_05 import StoreOperations1
+from .sde_review_draft import SDEReviewBinding
 
 class StoreOperations2Part0(StoreOperations1):
     """Internal SQLite operation group ordered by method dependency."""
@@ -601,6 +602,27 @@ class StoreOperations2Part0(StoreOperations1):
             raise ValueError("cleanup dependency map must be a lowercase SHA-256")
         approved_at = utc_now()
         with self._transaction() as connection:
+            review = connection.execute(
+                """SELECT r.review_draft_json, r.review_binding_json, r.reviewer_id
+                   FROM audit_receipts AS r
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE r.receipt_id = ? AND g.project_id = ?""",
+                (receipt_id, project_id),
+            ).fetchone()
+            if review is not None and review["review_draft_json"] is not None:
+                if review["review_binding_json"] is None:
+                    raise ConflictError("edited SDE receipt is missing its binding")
+                binding = SDEReviewBinding.from_json(review["review_binding_json"])
+                if (
+                    binding.project_id != project_id
+                    or binding.reviewer_id != reviewer_id
+                    or binding.inventory_sha256 != manifest_sha256
+                    or binding.dependency_map_sha256 != dependency_map_sha256
+                ):
+                    raise ConflictError(
+                        "cleanup authorization does not match the reviewed SDE receipt"
+                    )
             self._validate_cleanup_authorization_inventory(
                 connection,
                 receipt_id,

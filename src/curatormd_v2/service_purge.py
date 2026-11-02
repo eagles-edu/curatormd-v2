@@ -17,6 +17,7 @@ from .models import (
     CleanupAuthorizationReceipt,
     PurgeFailureCode,
     PurgeOutcome,
+    ReviewDecision,
 )
 from .purge import PurgeError
 from .store_requests import PurgeTargetResult
@@ -149,6 +150,24 @@ class _PurgeMixin(_ReviewMixin):
         expected_effect_revision = self._capture_effect_revision()
         with self._effect_fence(expected_effect_revision):
             receipt = self.store.get_receipt(receipt_id, self.project_id)
+            if (
+                receipt.review_draft_json is not None
+                and receipt.decision is ReviewDecision.APPROVED
+            ):
+                destinations = self.store.sde_review_targets(
+                    receipt_id, self.project_id
+                )
+                if not destinations or any(
+                    digest is None or projected_at is None
+                    for _path, digest, projected_at in destinations
+                ):
+                    return receipt
+                for target_path, digest, _projected_at in destinations:
+                    preparation = self.store.sde_review_target_preparation(
+                        receipt_id, self.project_id, target_path
+                    )
+                    if preparation is None or preparation[2] != digest:
+                        return receipt
             if not receipt.artifact_inventory_complete or not receipt.canonical_persisted:
                 return receipt
             authorization = self.store.cleanup_authorization(receipt_id, self.project_id)

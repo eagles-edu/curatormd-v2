@@ -9,8 +9,7 @@
         "--database",
         "~/.local/share/curatormd-v2-alpha/global.sqlite3",
         "--allow-write"
-      ],
-      "cwd": "${PLUGIN_ROOT}"
+      ]
     }
   }
 }

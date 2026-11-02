@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import codecs
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,6 +36,7 @@ from .models import (
     SDEStatus,
 )
 from .project_config import ProjectConfig
+from .sde_review_draft import SDEReviewBinding, SDEReviewDraft
 from .store import CuratorStore, NotFoundError
 from .validation import is_exact_int
 
@@ -232,6 +234,366 @@ class MarkdownPersistenceAdapter:
         """Preview the bounded Markdown block without modifying its target."""
 
         return self._render_goal(goal_id)
+
+    def render_sde_review(self, receipt_id: str) -> str:
+        """Preview the exact approved, edited entry without changing a file."""
+
+        receipt = self.store.get_receipt(receipt_id, self.project_id)
+        if receipt.decision.value != "approved" or receipt.review_draft_json is None:
+            raise MarkdownPersistenceError("an approved edited SDE receipt is required")
+        draft = SDEReviewDraft.from_json(receipt.review_draft_json)
+        if receipt.review_binding_json is None or receipt.review_binding_sha256 is None:
+            raise MarkdownPersistenceError("SDE receipt binding is unavailable")
+        binding = SDEReviewBinding.from_json(receipt.review_binding_json)
+        if binding.sha256() != receipt.review_binding_sha256:
+            raise MarkdownPersistenceError("SDE receipt binding digest is invalid")
+        candidate = self.store.get_sde_candidate(receipt.candidate_id, self.project_id)
+        goal = self.store.get_goal(candidate.goal_id, self.project_id)
+        relative = self.target.relative_to(self.config.project_root).as_posix()
+        if relative not in draft.documents:
+            raise MarkdownPersistenceError("target is not in the reviewed SDE destinations")
+        marker_key = hashlib.sha256(receipt.receipt_id.encode("utf-8")).hexdigest()
+        start = f"<!-- curatormd-v2:sde:{marker_key}:start -->"
+        end = f"<!-- curatormd-v2:sde:{marker_key}:end -->"
+        lines = [
+            start,
+            f"### {_markdown_text(draft.title)}",
+            "",
+            f"- SDE: {_markdown_code(receipt.candidate_id)}",
+            f"- Significance: {draft.significance} / 5",
+            "- Decision: approved",
+            f"- Reviewed: {_markdown_code(_local_timestamp(receipt.created_at))}",
+            f"- Reviewer: {_markdown_code(receipt.reviewer_id or 'unknown')}",
+            f"- Review rationale: {_markdown_text(receipt.review_rationale or 'not recorded')}",
+            f"- Decision receipt: {_markdown_code(receipt.receipt_id)}",
+            f"- Project ID: {_markdown_code(binding.project_id)}",
+            f"- Receipt binding SHA-256: `{receipt.review_binding_sha256}`",
+            f"- Project config SHA-256: `{binding.project_config_sha256}`",
+            f"- Draft SHA-256: `{binding.draft_sha256}`",
+            f"- Supporting facts SHA-256: `{receipt.facts_sha256}`",
+            f"- Evidence state SHA-256: `{binding.evidence_state_sha256}`",
+            f"- Destination baseline SHA-256: `{binding.projection_state_sha256}`",
+            f"- Artifact inventory SHA-256: `{binding.inventory_sha256}`",
+            f"- Dependency map SHA-256: `{binding.dependency_map_sha256}`",
+            f"- Task started: {_markdown_code(_local_timestamp(goal.started_at) if goal.started_at else 'unknown')}",
+            f"- Successfully completed: {_markdown_code(_local_timestamp(goal.completed_at) if goal.completed_at else 'unknown')}",
+            f"- Problem / plan task: {_markdown_text(draft.problem)}",
+        ]
+        if receipt.cleanup_authorized:
+            lines.extend([
+                f"- Cleanup authorization reviewer: {_markdown_code(receipt.cleanup_reviewer_id or 'unknown')}",
+                f"- Cleanup authorization time: {_markdown_code(_local_timestamp(receipt.cleanup_approved_at or 'unknown'))}",
+                f"- Cleanup manifest SHA-256: `{_markdown_text(receipt.cleanup_manifest_sha256 or 'unknown')}`",
+            ])
+        for label, values in (
+            ("Completed successfully", draft.completed),
+            ("Difficulties encountered", draft.difficulties),
+            ("Plan changes required", draft.plan_changes),
+            ("Lessons learned", draft.lessons),
+        ):
+            if values:
+                lines.extend(["", f"**{label}**", ""])
+                lines.extend(f"- {_markdown_text(value)}" for value in values)
+        if draft.future_utility:
+            lines.extend(["", f"- Future utility: {_markdown_text(draft.future_utility)}"])
+        destinations = self.store.sde_review_targets(receipt_id, self.project_id)
+        lines.extend(["", "**Approved persistence destinations**", ""])
+        lines.extend(
+            f"- {_markdown_code(path)}"
+            for path, _digest, _projected_at in destinations
+        )
+        lines.append(end)
+        return _seal_goal_block("\n".join(lines))
+
+    def inspect_sde_review_projection(
+        self, receipt_id: str, binding: SDEReviewBinding
+    ) -> str:
+        """Classify a prepared target without writing or authorizing cleanup.
+
+        The caller must separately reauthorize and check current evidence. This
+        observation is not a reservation and must be repeated inside the
+        effect fence before acting on it.
+        """
+
+        receipt = self.store.get_receipt(receipt_id, self.project_id)
+        if receipt.review_draft_json is None or receipt.review_binding_sha256 != binding.sha256():
+            raise MarkdownPersistenceError("SDE review binding does not match its receipt")
+        draft = SDEReviewDraft.from_json(receipt.review_draft_json)
+        if (
+            binding.project_id != self.project_id
+            or binding.project_config_sha256 != self.config.config_sha256
+            or binding.candidate_id != receipt.candidate_id
+            or binding.decision != receipt.decision.value
+            or binding.reviewer_id != receipt.reviewer_id
+            or binding.review_rationale != receipt.review_rationale
+            or binding.supporting_facts_sha256 != receipt.facts_sha256
+            or binding.draft_sha256 != draft.sha256()
+        ):
+            raise MarkdownPersistenceError("SDE review receipt fields do not match its binding")
+        target = self.config.validated_persistence_target(self.target)
+        relative = target.relative_to(self.config.project_root).as_posix()
+        if relative not in draft.documents:
+            raise MarkdownPersistenceError("target is not in the reviewed SDE destinations")
+        preparation = self.store.sde_review_target_preparation(
+            receipt_id, self.project_id, relative
+        )
+        if preparation is None:
+            return "unprepared"
+        before_exists, before_sha256, expected_sha256, _prepared_at = preparation
+        recorded = {
+            path: digest for path, digest, _recorded_at in
+            self.store.sde_review_targets(receipt_id, self.project_id)
+        }[relative]
+        descriptor = self._open_target(target)
+        current_sha256: str | None = None
+        if descriptor is not None:
+            try:
+                before = os.fstat(descriptor)
+                if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_MARKDOWN_BYTES:
+                    raise MarkdownPersistenceError("SDE target is invalid or too large")
+                digest = hashlib.sha256()
+                total = 0
+                while chunk := os.read(descriptor, 64 * 1024):
+                    total += len(chunk)
+                    if total > MAX_MARKDOWN_BYTES:
+                        raise MarkdownPersistenceError("SDE target exceeds the size limit")
+                    digest.update(chunk)
+                after = os.fstat(descriptor)
+                current = os.stat(target, follow_symlinks=False)
+                if (
+                    (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                    != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                    or (current.st_dev, current.st_ino) != (after.st_dev, after.st_ino)
+                    or not stat.S_ISREG(current.st_mode)
+                    or total != after.st_size
+                ):
+                    raise MarkdownPersistenceError("SDE target changed during inspection")
+                current_sha256 = digest.hexdigest()
+            finally:
+                os.close(descriptor)
+        if recorded is not None:
+            return "complete" if recorded == expected_sha256 == current_sha256 else "conflict"
+        if current_sha256 == expected_sha256:
+            return "written_unrecorded"
+        if (current_sha256 is not None) == before_exists and current_sha256 == before_sha256:
+            return "ready"
+        return "conflict"
+
+    def prepare_sde_review_projection(
+        self, receipt_id: str, binding: SDEReviewBinding, *,
+        effect_fence: Callable[[], AbstractContextManager[object]],
+    ) -> None:
+        """Journal one target's before and after hashes before any target write.
+
+        Caller must reauthorize and check current evidence; this method does
+        not approve the decision or authorize cleanup.
+        """
+
+        with effect_fence():
+            with self.store.transaction():
+                state = self.inspect_sde_review_projection(receipt_id, binding)
+                if state != "unprepared":
+                    if state == "conflict":
+                        raise MarkdownPersistenceError("prepared SDE target has changed")
+                    return
+                receipt = self.store.get_receipt(receipt_id, self.project_id)
+                if receipt.review_draft_json is None:
+                    raise MarkdownPersistenceError("SDE draft is unavailable")
+                draft = SDEReviewDraft.from_json(receipt.review_draft_json)
+                if draft.projection_state_sha256(self.config) != binding.projection_state_sha256:
+                    raise MarkdownPersistenceError("SDE destination state changed since review")
+                target = self.config.validated_persistence_target(self.target)
+                relative = target.relative_to(self.config.project_root).as_posix()
+                source_fd = self._open_target(target)
+                before_exists = source_fd is not None
+                before_hash = hashlib.sha256()
+                after_hash = hashlib.sha256()
+                total = 0
+                last_byte = b""
+                marker_key = hashlib.sha256(receipt_id.encode("utf-8")).hexdigest()
+                marker = f"<!-- curatormd-v2:sde:{marker_key}:".encode("ascii")
+                tail = b""
+                decoder = codecs.getincrementaldecoder("utf-8")("strict")
+                try:
+                    if source_fd is not None:
+                        initial = os.fstat(source_fd)
+                        if not stat.S_ISREG(initial.st_mode) or initial.st_size > MAX_MARKDOWN_BYTES:
+                            raise MarkdownPersistenceError("SDE target is invalid or too large")
+                        while chunk := os.read(source_fd, 64 * 1024):
+                            total += len(chunk)
+                            if total > MAX_MARKDOWN_BYTES:
+                                raise MarkdownPersistenceError("SDE target exceeds the size limit")
+                            try:
+                                decoder.decode(chunk)
+                            except UnicodeDecodeError:
+                                raise MarkdownPersistenceError("SDE target must be UTF-8") from None
+                            if marker in tail + chunk:
+                                raise MarkdownPersistenceError("SDE target already contains a review marker")
+                            tail = (tail + chunk)[-(len(marker) - 1):]
+                            last_byte = chunk[-1:]
+                            before_hash.update(chunk)
+                            after_hash.update(chunk)
+                        try:
+                            decoder.decode(b"", final=True)
+                        except UnicodeDecodeError:
+                            raise MarkdownPersistenceError("SDE target must be UTF-8") from None
+                        final = os.fstat(source_fd)
+                        current = os.stat(target, follow_symlinks=False)
+                        if (
+                            (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns, initial.st_ctime_ns)
+                            != (final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns, final.st_ctime_ns)
+                            or (current.st_dev, current.st_ino) != (final.st_dev, final.st_ino)
+                            or not stat.S_ISREG(current.st_mode)
+                            or total != final.st_size
+                        ):
+                            raise MarkdownPersistenceError("SDE target changed during preparation")
+                finally:
+                    if source_fd is not None:
+                        os.close(source_fd)
+                suffix = (b"" if total == 0 else b"\n" if last_byte == b"\n" else b"\n\n")
+                suffix += self.render_sde_review(receipt_id).encode("utf-8") + b"\n"
+                if total + len(suffix) > MAX_MARKDOWN_BYTES:
+                    raise MarkdownPersistenceError("SDE target exceeds the size limit")
+                after_hash.update(suffix)
+                self.store.prepare_sde_review_target_projection(
+                    receipt_id, self.project_id, relative,
+                    before_exists=before_exists,
+                    before_sha256=before_hash.hexdigest() if before_exists else None,
+                    expected_sha256=after_hash.hexdigest(),
+                )
+
+    def persist_prepared_sde_review(
+        self, receipt_id: str, binding: SDEReviewBinding, *,
+        effect_fence: Callable[[], AbstractContextManager[object]],
+    ) -> str:
+        """Write or recover one already-prepared SDE target under the caller's fence.
+
+        The caller must reauthorize the reviewer, verify current evidence and
+        establish the reviewed multi-target preparation before invoking this.
+        This operation never authorizes or starts artifact cleanup.
+        """
+
+        with effect_fence():
+            with self.store.transaction():
+                destinations = self.store.sde_review_targets(receipt_id, self.project_id)
+                if not destinations or any(
+                    self.store.sde_review_target_preparation(receipt_id, self.project_id, path) is None
+                    for path, _digest, _time in destinations
+                ):
+                    raise MarkdownPersistenceError("every reviewed SDE destination must be prepared")
+                state = self.inspect_sde_review_projection(receipt_id, binding)
+                target = self.config.validated_persistence_target(self.target)
+                relative = target.relative_to(self.config.project_root).as_posix()
+                preparation = self.store.sde_review_target_preparation(
+                    receipt_id, self.project_id, relative
+                )
+                if preparation is None or state not in {"ready", "written_unrecorded", "complete"}:
+                    raise MarkdownPersistenceError("prepared SDE target is unavailable or changed")
+                before_exists, before_sha256, expected_sha256, _prepared_at = preparation
+                if state == "ready":
+                    self._write_prepared_sde_review(
+                        receipt_id, target, before_exists, before_sha256, expected_sha256
+                    )
+                    state = self.inspect_sde_review_projection(receipt_id, binding)
+                    if state != "written_unrecorded":
+                        raise MarkdownPersistenceError("SDE target write did not match preparation")
+                if state == "written_unrecorded":
+                    self._sync_parent_directory(target.parent)
+                    self.store.mark_sde_review_target_projected(
+                        receipt_id, self.project_id, relative, expected_sha256
+                    )
+                return expected_sha256
+
+    def _write_prepared_sde_review(
+        self, receipt_id: str, target: Path, before_exists: bool,
+        before_sha256: str | None, expected_sha256: str,
+    ) -> None:
+        """Stream an append to a temporary file and publish only its expected bytes."""
+
+        block = self.render_sde_review(receipt_id).encode("utf-8")
+        marker_key = hashlib.sha256(receipt_id.encode("utf-8")).hexdigest()
+        marker = f"<!-- curatormd-v2:sde:{marker_key}:".encode("ascii")
+        source_fd = self._open_target(target)
+        if (source_fd is not None) != before_exists:
+            if source_fd is not None:
+                os.close(source_fd)
+            raise MarkdownPersistenceError("SDE target existence changed")
+        temporary: str | None = None
+        try:
+            descriptor, temporary = tempfile.mkstemp(prefix=".curatormd-v2-sde-", dir=target.parent)
+            with os.fdopen(descriptor, "wb") as output:
+                old_hash = hashlib.sha256()
+                new_hash = hashlib.sha256()
+                decoder = codecs.getincrementaldecoder("utf-8")("strict")
+                total = 0
+                last_byte = b""
+                tail = b""
+                source_stat = os.fstat(source_fd) if source_fd is not None else None
+                if source_stat is not None:
+                    if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_size > MAX_MARKDOWN_BYTES:
+                        raise MarkdownPersistenceError("SDE target is invalid or too large")
+                    os.fchmod(output.fileno(), stat.S_IMODE(source_stat.st_mode))
+                else:
+                    os.fchmod(output.fileno(), 0o600)
+                while source_fd is not None and (chunk := os.read(source_fd, 64 * 1024)):
+                    total += len(chunk)
+                    if total > MAX_MARKDOWN_BYTES:
+                        raise MarkdownPersistenceError("SDE target exceeds the size limit")
+                    try:
+                        decoder.decode(chunk)
+                    except UnicodeDecodeError:
+                        raise MarkdownPersistenceError("SDE target must be UTF-8") from None
+                    if marker in tail + chunk:
+                        raise MarkdownPersistenceError("SDE target already contains a review marker")
+                    tail = (tail + chunk)[-(len(marker) - 1):]
+                    last_byte = chunk[-1:]
+                    old_hash.update(chunk)
+                    new_hash.update(chunk)
+                    if output.write(chunk) != len(chunk):
+                        raise OSError("short SDE target write")
+                try:
+                    decoder.decode(b"", final=True)
+                except UnicodeDecodeError:
+                    raise MarkdownPersistenceError("SDE target must be UTF-8") from None
+                if before_exists and old_hash.hexdigest() != before_sha256:
+                    raise MarkdownPersistenceError("SDE target changed before writing")
+                suffix = (b"" if total == 0 else b"\n" if last_byte == b"\n" else b"\n\n") + block + b"\n"
+                if total + len(suffix) > MAX_MARKDOWN_BYTES:
+                    raise MarkdownPersistenceError("SDE target exceeds the size limit")
+                if output.write(suffix) != len(suffix):
+                    raise OSError("short SDE target write")
+                new_hash.update(suffix)
+                if new_hash.hexdigest() != expected_sha256:
+                    raise MarkdownPersistenceError("SDE target does not match prepared output")
+                output.flush()
+                os.fsync(output.fileno())
+                if source_fd is not None and source_stat is not None:
+                    after = os.fstat(source_fd)
+                    current = os.stat(target, follow_symlinks=False)
+                    if (
+                        (source_stat.st_dev, source_stat.st_ino, source_stat.st_size,
+                         source_stat.st_mtime_ns, source_stat.st_ctime_ns)
+                        != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                        or (current.st_dev, current.st_ino) != (after.st_dev, after.st_ino)
+                        or not stat.S_ISREG(current.st_mode)
+                    ):
+                        raise MarkdownPersistenceError("SDE target changed during writing")
+            self.config.validated_persistence_target(target)
+            if before_exists:
+                os.replace(temporary, target)
+            else:
+                os.link(temporary, target, follow_symlinks=False)
+                os.unlink(temporary)
+            temporary = None
+            self._sync_parent_directory(target.parent)
+        finally:
+            if source_fd is not None:
+                os.close(source_fd)
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
 
     def reconcile_goal(self, goal_id: str) -> MarkdownReconciliationResult:
         """Compare one Markdown block with SQLite without repairing either side.
@@ -708,6 +1070,15 @@ def _markdown_text(value: str) -> str:
     for character in "\\`*_{}[]()#+-.!|~":
         safe = safe.replace(character, "\\" + character)
     return safe
+
+
+def _markdown_code(value: str) -> str:
+    """Wrap literal structured values without escaping inside Markdown code."""
+
+    longest = max((len(part) for part in re.findall(r"`+", value)), default=0)
+    delimiter = "`" * (longest + 1)
+    padding = " " if value.startswith("`") or value.endswith("`") else ""
+    return f"{delimiter}{padding}{value}{padding}{delimiter}"
 
 
 def _goal_markers(goal_id: str) -> tuple[str, str]:

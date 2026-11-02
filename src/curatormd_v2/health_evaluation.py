@@ -91,7 +91,7 @@ def evaluate_local_health(
     usage: ProjectStorageUsage,
     event_payload_scrub_pending_count: int = 0,
 ) -> _HealthEvaluation:
-    """Turn local queue, review, purge, capacity, and staging state into gates."""
+    """Turn local queue, purge, capacity, and staging state into health gates."""
 
     gates: list[str] = []
     degraded = False
@@ -102,7 +102,6 @@ def evaluate_local_health(
         (queue.quarantined_count > 0, "event_quarantine"),
         (queue.expired_claim_count > 0, "expired_event_claims"),
         (event_payload_scrub_pending_count > 0, "sqlite_payload_scrub_pending"),
-        (counts.pending_review_count > 0, "review_backlog"),
         (counts.pending_purge_receipt_count > 0, "purge_pending"),
         (counts.pending_purge_artifact_count > 0, "purge_artifacts_pending"),
         (counts.pending_expiry_purge_receipt_count > 0, "expiry_purge_pending"),

@@ -86,6 +86,28 @@ class GoalLifecycleTests(LifecycleTestSupport):
             [CriterionStatus.OPEN, CriterionStatus.OPEN],
         )
 
+    def test_goal_start_completion_and_reopen_timestamps_are_explicit(self) -> None:
+        """Expose recorded lifecycle times and clear completion on a new epoch."""
+
+        started = self.store.get_goal(self.goal.goal_id)
+        self.assertEqual(started.started_at, started.created_at)
+        self.assertIsNone(started.completed_at)
+        self.verify("unit", "The unit check passed")
+        self.verify("probe", "The readiness check passed")
+        completed = self.service.goal_finish(started.goal_id, "Checks passed")
+        self.assertIsNotNone(completed.completed_at)
+        self.assertIsNotNone(completed.started_at)
+        self.assertGreaterEqual(completed.completed_at or "", completed.started_at or "")
+
+        reopened = self.service.goal_reopen(
+            completed.goal_id,
+            "Run a fresh check after the change",
+            "Record current evidence",
+            completed.lifecycle_revision,
+        )
+        self.assertIsNone(reopened.completed_at)
+        self.assertGreaterEqual(reopened.started_at or "", completed.completed_at or "")
+
     def test_goal_start_replays_same_source_event_after_store_reopen(self) -> None:
         """An identical retry returns the existing task without resetting it."""
 

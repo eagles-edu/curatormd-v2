@@ -12,6 +12,8 @@ from contextlib import (
     nullcontext,
 )
 from dataclasses import dataclass
+import hashlib
+import json
 from .models import (
     AuditReceipt,
     Fact,
@@ -33,6 +35,7 @@ from .service_types import (
     SDEAssessmentRequest,
 )
 from .service_goal_read import _GoalReadMixin
+from .sde_review_draft import SDEReviewBinding
 from .store import ConflictError
 
 _SDE_FACT_KINDS = frozenset({FactKind.RESEARCH, FactKind.CHANGE, FactKind.VERIFICATION})
@@ -164,6 +167,77 @@ class _ReviewMixin(_GoalReadMixin):
         corrections = self.store.list_sde_corrections(candidate_id, self.project_id)
         return SDEReviewDetail(candidate, goal, facts, receipt, corrections)
 
+    def sde_review_evidence_state(
+        self, candidate_id: str, *, require_passing: bool
+    ) -> str:
+        """Recheck selected evidence and fingerprint its current goal epoch.
+
+        The digest is an observation, not an approval or a reservation. The
+        caller must repeat the check before committing the human decision.
+        """
+
+        candidate = self.store.get_sde_candidate(candidate_id, self.project_id)
+        goal = self.store.get_goal(candidate.goal_id, self.project_id)
+        before = self.store.facts_digest(candidate.fact_ids, self.project_id)
+        facts = tuple(self.store.get_fact(fact_id, self.project_id) for fact_id in candidate.fact_ids)
+        cutoff = self._evidence_epoch_cutoff(
+            self.store.list_facts(candidate.goal_id, self.project_id)
+        )
+        current = self._selected_verifications_are_current(
+            goal, facts, cutoff, require_verification=True
+        )
+        after_goal = self.store.get_goal(candidate.goal_id, self.project_id)
+        after_candidate = self.store.get_sde_candidate(candidate_id, self.project_id)
+        after = self.store.facts_digest(candidate.fact_ids, self.project_id)
+        if (
+            before != after
+            or after_candidate != candidate
+            or after_goal != goal
+            or self._evidence_epoch_cutoff(
+                self.store.list_facts(candidate.goal_id, self.project_id)
+            ) != cutoff
+        ):
+            raise ConflictError("SDE evidence changed while preparing review")
+        if require_passing and not current:
+            raise EvidenceGateError("approval requires current passing evidence")
+        canonical = json.dumps(
+            {
+                "project_id": self.project_id,
+                "candidate_id": candidate_id,
+                "candidate_materiality": candidate.materiality.value,
+                "candidate_rationale": candidate.rationale,
+                "candidate_impact": candidate.impact,
+                "candidate_retrieval_value": candidate.retrieval_value,
+                "candidate_fact_ids": candidate.fact_ids,
+                "candidate_created_at": candidate.created_at,
+                "goal_id": goal.goal_id,
+                "goal_problem": goal.problem,
+                "goal_status": goal.status.value,
+                "goal_started_at": goal.started_at,
+                "goal_completed_at": goal.completed_at,
+                "success_criteria": [
+                    (criterion.criterion_id, criterion.description)
+                    for criterion in goal.success_criteria
+                ],
+                "lifecycle_revision": goal.lifecycle_revision,
+                "criteria_revision": goal.criteria_revision,
+                "epoch_cutoff": cutoff,
+                "facts_sha256": before,
+                "passing": current,
+            },
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def sde_review_has_current_passing_evidence(self, candidate_id: str) -> bool:
+        """Report whether the candidate's selected verification remains current."""
+
+        try:
+            self.sde_review_evidence_state(candidate_id, require_passing=True)
+        except EvidenceGateError:
+            return False
+        return True
+
     def sde_correction_record(
         self,
         correction_id: str,
@@ -252,9 +326,16 @@ class _ReviewMixin(_GoalReadMixin):
         request: SDEConfirmationRequest,
         *,
         authenticated_subject: str | None = None,
+        validated_binding: SDEReviewBinding | None = None,
     ) -> _PreparedSDEConfirmation:
         """Authorize and recheck proof before any project write fence is opened."""
 
+        if request.review_draft is not None and validated_binding is None:
+            raise EvidenceGateError(
+                "editable SDE decisions require receipt and multi-document binding"
+            )
+        if request.review_draft is None and validated_binding is not None:
+            raise ValueError("a review binding requires an edited SDE draft")
         expected_effect_revision = self._capture_effect_revision()
         reviewer_id = self.review_authorizer.authorize(
             self.project_id,
@@ -286,14 +367,43 @@ class _ReviewMixin(_GoalReadMixin):
                 raise EvidenceGateError(
                     "approval requires selected verification evidence that is current"
                 )
+        facts_sha256 = self.store.facts_digest(candidate.fact_ids, self.project_id)
+        if validated_binding is not None:
+            draft = request.review_draft
+            if draft is None or (
+                validated_binding.project_id != self.project_id
+                or validated_binding.candidate_id != request.candidate_id
+                or validated_binding.decision != request.decision.value
+                or validated_binding.reviewer_id != reviewer_id
+                or validated_binding.review_rationale != request.rationale
+                or validated_binding.supporting_facts_sha256 != facts_sha256
+                or validated_binding.draft_sha256 != draft.sha256()
+                or validated_binding.sha256() != request.expected_review_binding_sha256
+            ):
+                raise ConflictError("edited SDE decision does not match its reviewed binding")
+            evidence_state = self.sde_review_evidence_state(
+                request.candidate_id,
+                require_passing=request.decision is ReviewDecision.APPROVED,
+            )
+            if evidence_state != validated_binding.evidence_state_sha256:
+                raise ConflictError("SDE evidence changed after the review was displayed")
         receipt = AuditReceipt(
             candidate_id=request.candidate_id,
             decision=request.decision,
-            facts_sha256=self.store.facts_digest(candidate.fact_ids, self.project_id),
+            facts_sha256=facts_sha256,
             artifacts=request.artifacts,
             artifact_inventory_complete=request.artifact_inventory_complete,
             reviewer_id=reviewer_id,
             review_rationale=request.rationale,
+            review_draft_json=(
+                request.review_draft.canonical_bytes().decode("utf-8")
+                if request.review_draft is not None else None
+            ),
+            review_binding_sha256=(validated_binding.sha256() if validated_binding else None),
+            review_binding_json=(
+                validated_binding.canonical_bytes().decode("utf-8")
+                if validated_binding else None
+            ),
         )
         return _PreparedSDEConfirmation(receipt, expected_effect_revision)
 

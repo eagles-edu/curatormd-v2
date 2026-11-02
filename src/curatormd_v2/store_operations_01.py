@@ -417,6 +417,8 @@ class StoreOperations0Part1(StoreOperations0Part0):
             criteria_revision=row["criteria_revision"],
             lifecycle_revision=row["lifecycle_revision"],
             superseded_by_goal_id=row["superseded_by_goal_id"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
         )
 
     def list_goal_criteria_versions(

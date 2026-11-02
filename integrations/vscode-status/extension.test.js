@@ -57,6 +57,7 @@ const {
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
   validateReviewQueue,
+  writePendingReviewDocument,
   writeWorkspaceQueueViews,
 } = require('./extension');
 Module._load = originalLoad;
@@ -722,7 +723,7 @@ test('status item follows Git Graph and uses project-bound health colors', async
   const subscriptions = [];
   activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } });
 
-  assert.equal(items.length, 1);
+  assert.equal(items.length, 2);
   assert.equal(items[0].alignment, vscodeMock.StatusBarAlignment.Left);
   assert.equal(items[0].priority, 0);
   assert.equal(items[0].text, '$(circle-filled) CuratorMD V2');
@@ -730,15 +731,15 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Blue means no health read has been attempted/);
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
-  assert.equal(commands.length, 1);
-  assert.equal(subscriptions.length, 3);
+  assert.equal(commands.length, 2);
+  assert.equal(subscriptions.length, 5);
 
   assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
   assert.equal(items[0].color, '#73d216');
   assert.match(items[0].tooltip, /Project health: healthy/);
   assert.match(items[0].tooltip, /no SDE reviews pending/);
   assertTooltipIncludesCurrentVersion(items[0]);
-  assert.match(items[0].tooltip, /Green means health is healthy with no SDE reviews pending/);
+  assert.match(items[0].tooltip, /Green means project health is healthy/);
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', [], {
       project_id: 'alpha', global_database_bytes: 200 * 1024 * 1024,
@@ -767,23 +768,27 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', [pendingReview],
   ), 'healthy');
-  assert.equal(items[0].color, '#ad7fa8');
-  assert.equal(items[0].text, '$(circle-filled) CuratorMD V2: review');
+  assert.equal(items[0].color, '#73d216');
+  assert.equal(items[0].text, '$(circle-filled) CuratorMD V2: healthy');
+  assert.equal(items[1].color, '#4daafc');
+  assert.equal(items[1].text, '$(checklist) CuratorMD V2: 1 review');
+  assert.equal(items[1].command, 'curatormdV2.openApprovalJson');
+  assert.match(items[1].tooltip, /Blue means SDE reviews are outstanding/);
   assert.match(items[0].tooltip, /1 pending SDE review/);
-  assert.match(items[0].tooltip, /Purple means an SDE review is pending/);
+  assert.match(items[0].tooltip, /Green means project health is healthy/);
   assert.equal(updateStatusBarHealth({
     project_id: 'alpha', status: 'degraded', gate_codes: ['review_backlog'],
-  }, 'alpha', [pendingReview]), 'degraded');
-  assert.equal(items[0].color, '#ad7fa8');
+  }, 'alpha', [pendingReview]), 'healthy');
+  assert.equal(items[0].color, '#73d216');
   assert.equal(updateStatusBarHealth({
     project_id: 'alpha', status: 'degraded',
     gate_codes: ['review_backlog', 'event_failures'],
   }, 'alpha', [pendingReview]), 'degraded');
   assert.equal(items[0].color, '#ef2929');
-  assert.match(items[0].tooltip, /Red means health is degraded beyond the review-only state/);
+  assert.match(items[0].tooltip, /Red means project health is degraded/);
   assert.equal(updateStatusBarHealth(
     { project_id: 'alpha', status: 'healthy' }, 'alpha', null,
-  ), 'healthy');
+  ), 'unknown');
   assert.equal(items[0].color, '#fce94f');
   assert.match(items[0].tooltip, /pending SDE review count unavailable/);
   assert.match(items[0].tooltip, /Yellow means the health or SDE review count is unknown/);
@@ -851,6 +856,18 @@ test('status item follows Git Graph and uses project-bound health colors', async
     assert.equal(items[0].color, '#73d216');
     assert.match(items[0].tooltip, /Project health: healthy/);
     assert.match(items[0].tooltip, /no SDE reviews pending/);
+    const pendingReview = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+    let openedPath;
+    let shownDocument;
+    vscodeMock.Uri = { file: (filePath) => ({ fsPath: filePath }) };
+    vscodeMock.workspace.openTextDocument = async (uri) => {
+      openedPath = uri.fsPath;
+      return { uri };
+    };
+    vscodeMock.window.showTextDocument = async (document) => { shownDocument = document; };
+    await commands[1].handler();
+    assert.equal(openedPath, pendingReview);
+    assert.equal(shownDocument.uri.fsPath, pendingReview);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
@@ -1096,7 +1113,8 @@ test('operational alert summary surfaces actionable queues and staging warnings 
     'curatormd_event_failures{project_id="alpha",category="other"} 0',
   ].join('\n');
   const summary = summarizeOperationalAlerts(health, storage, metrics, 'alpha');
-  assert.match(summary, /Readiness degraded: event_failures, review_backlog/);
+  assert.match(summary, /Readiness degraded: event_failures/);
+  assert.doesNotMatch(summary, /Readiness degraded: .*review_backlog/);
   assert.match(summary, /2 event receipt\(s\) waiting to process/);
   assert.match(summary, /Event failures by category: evidence rejected 1, adapter errors 0, other 0/);
   assert.match(summary, /1 SDE review\(s\) need a human decision/);
@@ -2027,7 +2045,7 @@ test('project workspace exposes inbox, SDE proposals, and side-buffer without co
     const proposals = fs.readFileSync(path.join(projectRoot, '.curatormd-v2/sde-proposals/pending.json'), 'utf8');
     assert.match(inbox, /"received_count": 2/);
     assert.match(proposals, /Retain this verified project decision/);
-    assert.match(proposals, /Open the CuratorMD V2 dashboard/);
+    assert.match(proposals, /Open pending-review\.md/);
     assert.match(inbox, /\+07:00/);
     assert.doesNotMatch(`${inbox}\n${proposals}`, /MUST_NOT_BE_COPIED/);
     const inboxPath = path.join(projectRoot, '.curatormd-v2/inbox/status.json');
@@ -2078,5 +2096,68 @@ test('project workspace initialization refuses symlinked state areas', () => {
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('pending SDE Markdown keeps editable rating and destination changes on refresh', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-sde-review-'));
+  try {
+    initializeWorkspaceAreas(projectRoot);
+    const review = {
+      candidate: {
+        candidate_id: 'candidate-42',
+        goal_id: 'goal-42',
+        status: 'pending_review',
+        materiality: 'decision',
+        rationale: 'Retain the verified project decision.',
+      },
+      goal: {
+        goal_id: 'goal-42',
+        project_id: 'alpha',
+        problem: 'Bind each task to the configured project.',
+      },
+    };
+    const outline = {
+      project_id: 'alpha',
+      candidate_id: 'candidate-42',
+      goal_id: 'goal-42',
+      status: 'pending_review',
+      task_started_at: '2026-11-01T09:20:00+07:00',
+      successful_completion_at: '2026-11-01T11:45:00+07:00',
+      persistence_documents: [
+        'persistence/HISTORY.md', 'persistence/LESSONS-LEARNED.md',
+      ],
+      future_utility: 'Reuse the project binding check for new integrations.',
+      supporting_facts: [{
+        fact_id: 'fact-42', kind: 'change', bullet: 'The launcher checks the active project.',
+      }],
+    };
+    const destination = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], new Map([
+      ['candidate-42', outline],
+    ])), true);
+    const generated = fs.readFileSync(destination, 'utf8');
+    assert.ok(generated.includes('SDE ID: candidate\\-42'));
+    assert.ok(generated.includes('Started: 2026\\-11\\-01T09:20:00\\+07:00'));
+    assert.ok(generated.includes('Successfully completed: 2026\\-11\\-01T11:45:00\\+07:00'));
+    assert.match(generated, /curator-v2-decision:candidate-42:start/);
+    assert.match(generated, /"significance": 3/);
+
+    const edited = generated
+      .replace('"significance": 3', '"significance": 4')
+      .replace('"documents": []', '"documents": [\n    "persistence/HISTORY.md",\n    "persistence/LESSONS-LEARNED.md"\n  ]');
+    fs.writeFileSync(destination, edited, 'utf8');
+    const refreshedOutline = { ...outline, future_utility: 'Updated source proposal text.' };
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], new Map([
+      ['candidate-42', refreshedOutline],
+    ])), true);
+    const refreshed = fs.readFileSync(destination, 'utf8');
+    assert.match(refreshed, /"significance": 4/);
+    assert.match(refreshed, /"persistence\/LESSONS-LEARNED\.md"/);
+    assert.doesNotMatch(refreshed, /Updated source proposal text\./);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
   }
 });

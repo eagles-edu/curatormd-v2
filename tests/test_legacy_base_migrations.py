@@ -50,7 +50,7 @@ class LegacyBaseMigrationTests(LegacySchemaMigrationSupport):
                     self.assertIn("source_event_payload_sha256", columns)
                     self.assertEqual(
                         connection.execute("PRAGMA user_version").fetchone()[0],
-                        41,
+                        SQLITE_SCHEMA_VERSION,
                     )
             finally:
                 migrated.close()

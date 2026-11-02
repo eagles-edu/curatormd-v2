@@ -31,6 +31,7 @@ PROJECT_USAGE_COLUMNS = {
         {
             "receipt_id", "candidate_id", "decision", "facts_sha256",
             "artifact_inventory_complete", "reviewer_id", "review_rationale",
+            "review_draft_json", "review_binding_sha256", "review_binding_json",
             "canonical_persisted", "canonical_target", "canonical_sha256",
             "canonical_persisted_at", "purge_status", "created_at", "updated_at",
         }
@@ -101,6 +102,7 @@ PROJECT_USAGE_COLUMNS = {
             "depends_on_json", "status", "next_action", "superseded_by_goal_id",
             "criteria_revision", "lifecycle_revision", "created_at", "updated_at",
             "initial_status", "source_event_id", "source_event_payload_sha256",
+            "started_at", "completed_at",
         }
     ),
     "purge_targets": frozenset(
@@ -116,6 +118,12 @@ PROJECT_USAGE_COLUMNS = {
         {
             "candidate_id", "goal_id", "materiality", "rationale", "fact_ids_json",
             "dedupe_key", "status", "created_at", "impact", "retrieval_value",
+        }
+    ),
+    "sde_review_targets": frozenset(
+        {
+            "receipt_id", "target_path", "projection_sha256", "projected_at",
+            "before_exists", "before_sha256", "expected_sha256", "prepared_at",
         }
     ),
     "sde_corrections": frozenset(

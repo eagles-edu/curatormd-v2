@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 # Continuation bases preserve the original method override order.
 # The old single module hid cross-version duplicate-code diagnostics.
 # pylint: disable=too-many-ancestors,duplicate-code
@@ -36,6 +38,7 @@ from .store_support_01 import (
     validate_safe_text,
 )
 from .store_operations_07 import StoreOperations2
+from .sde_review_draft import SDEReviewBinding, SDEReviewDraft
 
 class StoreOperations3Part0(StoreOperations2):
     """Internal SQLite operation group ordered by method dependency."""
@@ -257,6 +260,23 @@ class StoreOperations3Part0(StoreOperations2):
 
         if receipt.reviewer_id is None:
             raise ValueError("review receipt requires an authenticated reviewer identity")
+        if receipt.review_binding_json is not None:
+            if project_id is None:
+                raise ValueError("bound SDE receipt requires an explicit project scope")
+            binding = SDEReviewBinding.from_json(receipt.review_binding_json)
+            manifest = json.dumps(
+                [
+                    (item.path, item.sha256, item.occurrence_id)
+                    for item in sorted(receipt.artifacts, key=lambda item: item.path)
+                ],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if (
+                binding.project_id != project_id
+                or binding.inventory_sha256 != hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+            ):
+                raise ConflictError("SDE receipt binding does not match its project or inventory")
         with self._transaction() as connection:
             if project_id is not None and connection.execute(
                 """SELECT 1 FROM sde_candidates AS s JOIN goals AS g
@@ -277,6 +297,9 @@ class StoreOperations3Part0(StoreOperations2):
                     or existing["facts_sha256"] != receipt.facts_sha256
                     or existing["reviewer_id"] != receipt.reviewer_id
                     or existing["review_rationale"] != receipt.review_rationale
+                    or existing["review_draft_json"] != receipt.review_draft_json
+                    or existing["review_binding_sha256"] != receipt.review_binding_sha256
+                    or existing["review_binding_json"] != receipt.review_binding_json
                     or bool(existing["artifact_inventory_complete"])
                     != receipt.artifact_inventory_complete
                 ):
@@ -311,6 +334,14 @@ class StoreOperations3Part0(StoreOperations2):
                 ]
                 if saved_target_values != requested_targets:
                     raise ConflictError("candidate receipt already contains different artifacts")
+                if receipt.review_draft_json is not None:
+                    draft = SDEReviewDraft.from_json(receipt.review_draft_json)
+                    recorded = connection.execute(
+                        "SELECT target_path FROM sde_review_targets WHERE receipt_id = ? ORDER BY target_path",
+                        (existing["receipt_id"],),
+                    ).fetchall()
+                    if [row["target_path"] for row in recorded] != sorted(draft.documents):
+                        raise ConflictError("candidate receipt has different review destinations")
                 receipt_id = existing["receipt_id"]
             else:
                 candidate = connection.execute(
@@ -333,10 +364,11 @@ class StoreOperations3Part0(StoreOperations2):
                     """INSERT INTO audit_receipts
                        (receipt_id, candidate_id, decision, facts_sha256,
                         artifact_inventory_complete, reviewer_id, review_rationale,
+                        review_draft_json, review_binding_sha256, review_binding_json,
                         canonical_persisted,
                         canonical_target, canonical_sha256, canonical_persisted_at,
                         purge_status, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         receipt_id,
                         receipt.candidate_id,
@@ -345,6 +377,9 @@ class StoreOperations3Part0(StoreOperations2):
                         int(receipt.artifact_inventory_complete),
                         receipt.reviewer_id,
                         receipt.review_rationale,
+                        receipt.review_draft_json,
+                        receipt.review_binding_sha256,
+                        receipt.review_binding_json,
                         int(receipt.canonical_persisted),
                         receipt.canonical_target,
                         receipt.canonical_sha256,
@@ -354,6 +389,12 @@ class StoreOperations3Part0(StoreOperations2):
                         receipt.updated_at,
                     ),
                 )
+                if receipt.review_draft_json is not None:
+                    draft = SDEReviewDraft.from_json(receipt.review_draft_json)
+                    connection.executemany(
+                        "INSERT INTO sde_review_targets (receipt_id, target_path) VALUES (?, ?)",
+                        ((receipt_id, target) for target in draft.documents),
+                    )
                 for artifact in receipt.artifacts:
                     connection.execute(
                         """INSERT INTO purge_targets
@@ -394,6 +435,152 @@ class StoreOperations3Part0(StoreOperations2):
                     (status.value, receipt.candidate_id),
                 )
         return self.get_receipt(receipt_id, project_id)
+
+    def sde_review_targets(
+        self, receipt_id: str, project_id: str
+    ) -> tuple[tuple[str, str | None, str | None], ...]:
+        """Read all explicitly selected destinations for one project receipt."""
+
+        with self._lock:
+            receipt = self._connection.execute(
+                """SELECT r.review_draft_json FROM audit_receipts AS r
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE r.receipt_id = ? AND g.project_id = ?""",
+                (receipt_id, project_id),
+            ).fetchone()
+            if receipt is None:
+                raise NotFoundError("SDE review receipt not found")
+            if receipt["review_draft_json"] is None:
+                raise ConflictError("SDE review receipt has no edited draft")
+            rows = self._connection.execute(
+                """SELECT target_path, projection_sha256, projected_at
+                   FROM sde_review_targets WHERE receipt_id = ? ORDER BY target_path""",
+                (receipt_id,),
+            ).fetchall()
+        draft = SDEReviewDraft.from_json(receipt["review_draft_json"])
+        if [row["target_path"] for row in rows] != sorted(draft.documents):
+            raise ConflictError("SDE review destination inventory is incomplete")
+        return tuple(
+            (str(row["target_path"]), row["projection_sha256"], row["projected_at"])
+            for row in rows
+        )
+
+    def prepare_sde_review_target_projection(
+        self, receipt_id: str, project_id: str, target_path: str, *,
+        before_exists: bool, before_sha256: str | None, expected_sha256: str,
+    ) -> None:
+        """Record the exact before and expected-after digests before a write."""
+
+        if type(before_exists) is not bool:  # pylint: disable=unidiomatic-typecheck
+            raise ValueError("SDE projection before-exists must be boolean")
+        if (before_sha256 is None) != (not before_exists):
+            raise ValueError("SDE projection before digest must match file existence")
+        if type(expected_sha256) is not str:
+            raise ValueError("SDE projection expected digest is required")
+        for digest in (before_sha256, expected_sha256):
+            if digest is not None and (
+                type(digest) is not str or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            ):
+                raise ValueError("SDE projection digest must be SHA-256")
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT t.before_exists, t.before_sha256, t.expected_sha256, t.prepared_at
+                   FROM sde_review_targets AS t
+                   JOIN audit_receipts AS r ON r.receipt_id = t.receipt_id
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE t.receipt_id = ? AND t.target_path = ? AND g.project_id = ?
+                     AND r.review_draft_json IS NOT NULL AND r.decision = 'approved'""",
+                (receipt_id, target_path, project_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("approved SDE review destination not found")
+            if row["prepared_at"] is not None:
+                if (row["before_exists"], row["before_sha256"], row["expected_sha256"]) != (
+                    int(before_exists), before_sha256, expected_sha256
+                ):
+                    raise ConflictError("SDE projection preparation changed on retry")
+                return
+            connection.execute(
+                """UPDATE sde_review_targets
+                   SET before_exists = ?, before_sha256 = ?, expected_sha256 = ?, prepared_at = ?
+                   WHERE receipt_id = ? AND target_path = ?""",
+                (int(before_exists), before_sha256, expected_sha256, utc_now(), receipt_id, target_path),
+            )
+
+    def sde_review_target_preparation(
+        self, receipt_id: str, project_id: str, target_path: str
+    ) -> tuple[bool, str | None, str, str] | None:
+        """Read the durable preparation used to reconcile an interrupted write."""
+
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT t.before_exists, t.before_sha256, t.expected_sha256, t.prepared_at
+                   FROM sde_review_targets AS t
+                   JOIN audit_receipts AS r ON r.receipt_id = t.receipt_id
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE t.receipt_id = ? AND t.target_path = ? AND g.project_id = ?
+                     AND r.review_draft_json IS NOT NULL AND r.decision = 'approved'""",
+                (receipt_id, target_path, project_id),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError("approved SDE review destination not found")
+        if row["prepared_at"] is None:
+            if any(row[name] is not None for name in ("before_exists", "before_sha256", "expected_sha256")):
+                raise ConflictError("SDE projection preparation is incomplete")
+            return None
+        expected = row["expected_sha256"]
+        before = row["before_sha256"]
+        if (
+            row["before_exists"] not in (0, 1)
+            or type(expected) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", expected) is None
+            or (row["before_exists"] == 0 and before is not None)
+            or (row["before_exists"] == 1 and (
+                type(before) is not str or re.fullmatch(r"[0-9a-f]{64}", before) is None
+            ))
+        ):
+            raise ConflictError("SDE projection preparation is invalid")
+        return (
+            bool(row["before_exists"]), before, expected, row["prepared_at"],
+        )
+
+    def mark_sde_review_target_projected(
+        self, receipt_id: str, project_id: str, target_path: str, sha256: str
+    ) -> None:
+        """Record a verified destination once; reject a conflicting retry.
+
+        Callers must authorize the project and verify the actual projection
+        under its effect fence before invoking this store operation.
+        """
+
+        if type(sha256) is not str or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise ValueError("SDE review projection digest must be SHA-256")
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT t.projection_sha256, t.expected_sha256, t.prepared_at FROM sde_review_targets AS t
+                   JOIN audit_receipts AS r ON r.receipt_id = t.receipt_id
+                   JOIN sde_candidates AS s ON s.candidate_id = r.candidate_id
+                   JOIN goals AS g ON g.goal_id = s.goal_id
+                   WHERE t.receipt_id = ? AND t.target_path = ? AND g.project_id = ?
+                     AND r.review_draft_json IS NOT NULL""",
+                (receipt_id, target_path, project_id),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("SDE review destination not found")
+            if row["prepared_at"] is None or row["expected_sha256"] != sha256:
+                raise ConflictError("SDE review projection was not prepared with this digest")
+            if row["projection_sha256"] is not None:
+                if row["projection_sha256"] != sha256:
+                    raise ConflictError("SDE review destination already has a different digest")
+                return
+            connection.execute(
+                """UPDATE sde_review_targets SET projection_sha256 = ?, projected_at = ?
+                   WHERE receipt_id = ? AND target_path = ?""",
+                (sha256, utc_now(), receipt_id, target_path),
+            )
 
     def add_sde_correction(
         self, correction: SDECorrection, project_id: str

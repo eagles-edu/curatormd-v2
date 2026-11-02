@@ -1,6 +1,8 @@
 # Curator V2: goal-ledger intelligence, not transcript curation
 
-## /home/eaglesvn/.nvm/versions/node/v24.21.0/bin/codex
+## /home/eaglesvn/.nvm/versions/node/v24.21.0/bin/code
+
+## xpkill -f '/home/eaglesvn/.vscode/extensions/openai.chatgpt-.*codex.*app-server'code --disable-gpu'
 
 ## Summary
 
@@ -703,7 +705,7 @@ plugin or Hermes integration is installed and working end to end.
       refreshes current measurements only; durable-class retention, recovery
       horizons, and permanent-storage warning thresholds remain open.
       Fresh measurement (2026-10-29): the TTY-gated `VIEW
-      vhost-manager-alpha ACCESS` returned 3,145 logical bytes across the same
+    vhost-manager-alpha ACCESS` returned 3,145 logical bytes across the same
       11 project control-plane classes, with zero unassigned scrub-queue rows.
       SQLite reports 132 pages at 4,096 bytes (540,672-byte main file), 276,072
       WAL bytes, 32,768 unattributed main-file bytes, and 507,904 table B-tree
@@ -930,7 +932,7 @@ plugin or Hermes integration is installed and working end to end.
       non-reusable `source_epoch` bound to the authenticated producer, project,
       and registered `source_id`; an envelope value alone is never identity
       proof. Sequence cursors become scoped by `(project_id, source_id,
-      source_epoch)`, and resetting a sequence requires explicit enrollment of
+    source_epoch)`, and resetting a sequence requires explicit enrollment of
       a new epoch. Keep `(project_id, event_id)` deduplication project-wide so a
       new epoch cannot reuse an old event ID while its replay horizon remains
       open. Preserve v1 cursors as legacy state during migration; do not
@@ -1288,8 +1290,8 @@ plugin or Hermes integration is installed and working end to end.
       linked to selected compact fact bullets and evidence references; multiline
       session recaps are rejected by the domain model and regression-tested.
 - [x] Keep pending and rejected SDE candidate narratives out of canonical
-  Markdown; only approved candidates project, while every human decision stays
-  represented by compact facts and its immutable audit receipt.
+      Markdown; only approved candidates project, while every human decision stays
+      represented by compact facts and its immutable audit receipt.
 - [x] Add reviewer-quality feedback and evaluation metrics without claiming
       autonomous learning or improvement absent measured evidence. Schema v12
       stores one append-only, host-authorized label per reviewer/candidate after
@@ -2136,7 +2138,7 @@ plugin or Hermes integration is installed and working end to end.
       until Hermes supplies an authenticated human subject, exact project
       grants are provisioned, and the deployed transport is exercised.
       Current verification (2026-10-21): `hermes -p renew-ssl-coding mcp test
-      curator_v2` connects to the installed local stdio server and discovers
+    curator_v2` connects to the installed local stdio server and discovers
       46 tools. Hermes reports transport auth as `none`; this proves profile
       configuration and tool discovery only, not an authenticated identity or
       a tool-call authorization round trip. Identity and permission checks
@@ -2394,7 +2396,7 @@ plugin or Hermes integration is installed and working end to end.
       Latest status-item update (2026-10-27): the V2 extension is now 0.8.7.
       After reloading the ordinary `renew_ssl` VS Code window, the status-item
       hover rendered `CuratorMD V2 0.8.7. Project health has not been checked.
-      Click to open the dashboard.` The gray item and version are directly
+    Click to open the dashboard.` The gray item and version are directly
       visible in the editor. Package and source `extension.js` hashes match at
       `6209202ed1fac1f5a73398b4c4625e882a71a957fae5a9c276fe5686ac860188`; the
       VSIX SHA-256 is
@@ -2405,19 +2407,19 @@ plugin or Hermes integration is installed and working end to end.
       Post-hover read in the same window: clicking the status item
       rendered project health `unknown` with seven unverified dependency gates;
       the item changed from gray to yellow. Its hover then rendered `CuratorMD V2
-      0.8.7. Project health: unknown, no SDE reviews pending. Click to open the
-      project-scoped dashboard.` The dashboard showed 41 processed receipts, 18
+    0.8.7. Project health: unknown, no SDE reviews pending. Click to open the
+    project-scoped dashboard.` The dashboard showed 41 processed receipts, 18
       goals, 14 facts, zero pending SDEs, and a complete empty staging inventory.
       Purple was not exercised in the live editor because no real candidate is
       pending; focused UI tests cover that branch. This local project read is not
       deployment readiness evidence.
       Direct hover recheck (2026-10-27 17:58 +07): the current `renew_ssl`
       editor renders `CuratorMD V2 0.8.7. Project health: unknown, no SDE reviews
-      pending. Click to open the project-scoped dashboard.` The yellow item is
+    pending. Click to open the project-scoped dashboard.` The yellow item is
       immediately right of Git Graph. This supersedes the earlier owner report
       of 0.8.6 for this window; no production or pending-review color is inferred.
       Ordinary-window acceptance update (2026-10-27): after `Developer: Reload
-      Window`, the installed 0.7.0 extension activated and opening its status
+    Window`, the installed 0.7.0 extension activated and opening its status
       item rendered the configured project's health, retained-activity, and
       storage panels. Health was `unknown` with seven unverified dependency
       gates; activity showed 41 processed receipts, 18 goals, 14 facts, and no
@@ -3069,8 +3071,7 @@ plugin or Hermes integration is installed and working end to end.
       `unknown` with no SDE reviews pending. The health snapshot has seven
       `dependency_unknown` gates; retained activity shows 51 processed
       receipts, 23 goals, 19 facts, and no pending SDEs. Storage renders the
-      250 MiB warning-only threshold and staging usage; goals render page 1 of
-      2.
+      250 MiB warning-only threshold and staging usage; goals render page 1 of 2.
       This closes the local editor extension acceptance. It does not close
       deployment monitoring, runtime dependency probes, or any other open
       Definition-of-Done gate.
@@ -3558,7 +3559,7 @@ plugin or Hermes integration is installed and working end to end.
       Background producer source review (2026-10-25): Vhost Manager's server
       source has no background operation loop; its UI only polls current job
       status. The active root crontab separately runs `/root/.acme.sh/acme.sh
-      --cron --home /root/.acme.sh` at 01:52, 07:52, 13:52, and 19:52, with
+    --cron --home /root/.acme.sh` at 01:52, 07:52, 13:52, and 19:52, with
       output discarded. That scheduled certificate producer bypasses the Vhost
       route and currently emits no Curator receipt. The existing manual batch
       script is interactive; no Curator hook was found in its source. The root
@@ -4279,7 +4280,7 @@ plugin or Hermes integration is installed and working end to end.
       top-level ownership description and added regressions for symlink
       substitution after approval, unhealthy-service refusal, unconfigured
       service verification (`verification_incomplete`), and sanitized partial-
-cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
+      cleanup receipts. All 14 focused Host Steward tests pass; `python scripts/check`
       reports all 12 checks passing, with 0 blocking/advisory
       findings. These remain local disposable-host tests; approval identity,
       live account install, host-level attribution, and deployment recovery
@@ -4964,7 +4965,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       `LimitCORE=0`, and `UMask=0077`. These process controls remain only one
       part of the source-to-sink review; no crash canary was generated.
       Review aid: the content-free [`local-alpha privacy sink
-      matrix`](local-alpha-evidence-2026-10-28.md#local-alpha-privacy-sink-matrix)
+    matrix`](local-alpha-evidence-2026-10-28.md#local-alpha-privacy-sink-matrix)
       now separates tested boundaries, the approved retry/quarantine backup
       exception, and the unverified command-history, producer, and host sinks.
       The matrix is not owner-reviewed and does not close this checklist item.
@@ -5268,7 +5269,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       `codex/curator-v2-hermes-integration-upstream`, based on current upstream
       `main` and published to the user's fork `eagles-edu/hermes-agent`. The
       combined six-file Hermes batch passes 97 tests; Ruff and `git diff
-      --check` pass. Two test fixtures explicitly suppress an unrelated read
+    --check` pass. Two test fixtures explicitly suppress an unrelated read
       of the neighboring live Hermes install manifest because this checkout
       itself lives under `~/.hermes`. No PR or hosted CI run is claimed. The
       profile remains an operator assertion, not authenticated identity; live
@@ -5772,7 +5773,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       Global scrub-queue totals are grouped in `EventPayloadScrubUsage`, keeping
       the inbox-capacity read model within Pylint's attribute limit. All 28
       event tests pass, strict Pyright, errors-only Pylint, and `git diff
-      --check` pass. Targeted scans no longer flag `_project_record_usage_rows`
+    --check` pass. Targeted scans no longer flag `_project_record_usage_rows`
       or `GlobalEventInboxUsage`; a refreshed whole-tree inventory falls from
       163 to 161 findings. Repository-wide cleanup remains open.
       Further progress (2026-10-23): replaced the multi-parameter store
@@ -5889,7 +5890,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       `tests/test_review_cli.py` rates 10.00/10; strict Pyright reports zero
       diagnostics and `git diff --check` passes. Fresh whole-tree verification
       (2026-10-23): `uv run --locked --group quality pylint
-      src/curatormd_v2 tests` on HEAD `860ca84328dda9e3085460f257d1d5429519aa0f`
+    src/curatormd_v2 tests` on HEAD `860ca84328dda9e3085460f257d1d5429519aa0f`
       with 48 dirty status entries, using Pylint 4.1.3, reports 156 diagnostics
       at 9.91/10 and exits 28. This is down from the immediately prior
       158-diagnostic report; neither `tests/test_review_cli.py` finding remains.
@@ -6036,8 +6037,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       `860ca84328dda9e3085460f257d1d5429519aa0f`, with 56 dirty status entries
       (status fingerprint `f34a8de3f98eb387c7694797eb5c856eb8f678260602f192fea1de5680f68fcb`),
       `uv run --locked --group quality pylint src/curatormd_v2 tests` under
-      Pylint 4.1.3 / Python 3.12.3 reports 137 diagnostics at 9.93/10 and exits
-      24. The report hash is
+      Pylint 4.1.3 / Python 3.12.3 reports 137 diagnostics at 9.93/10 and exits 24. The report hash is
       `ea6d3e1e7954bb8affe48385aee761e4fc5cb60e80f18ac47edf89caffc3ba7c`.
       This is eight fewer findings than the preceding 145-diagnostic run:
       six `R0914`, one `R0903` with the one-method protocol exception, and one
@@ -6069,7 +6069,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       There are 58 dirty status entries; their status-list fingerprint is
       `79018ec416591aa025087da6ace80f8ae26fa6ae4714993dd10067b2ce7a5d79`.
       The pinned full-tree command `uv run --locked --group quality pylint
-      src/curatormd_v2 tests --output-format=json` reports 130 diagnostics
+    src/curatormd_v2 tests --output-format=json` reports 130 diagnostics
       (119 refactor, 11 convention) and exits 24. Report SHA-256:
       `8492f75cd16bcdaad0f9f27d1e0fc012d892e658670b8314172468950bfb0343`.
       This is 11 fewer than the preceding 141-finding run: one unnecessary
@@ -6364,8 +6364,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       count findings. The project-access suite and two hosted lifecycle
       regressions pass (23 tests); strict Pyright reports zero diagnostics and
       errors-only Pylint passes. Fresh full Pylint reports 122 non-blocking
-      findings (14 convention, 108 refactor), down from the previously recorded
-      126. The broader lint item remains open.
+      findings (14 convention, 108 refactor), down from the previously recorded 126. The broader lint item remains open.
       Further progress (2026-10-24): decomposed consumer-binding transition
       validation, idempotent replay, re-enrollment checks, and transactional
       persistence into separate helpers. Project-access and hosted-MCP
@@ -6442,7 +6441,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       separate check. This corrects the previous 85-count snapshot for the
       current dirty worktree; repository-wide cleanup remains open.
       Fresh full-warning run (2026-10-25): `./.venv/bin/pylint
-      src/curatormd_v2 tests --score=y --reports=no` exits 24 at 9.96/10.
+    src/curatormd_v2 tests --score=y --reports=no` exits 24 at 9.96/10.
       Remaining messages include oversized modules, interface/design limits,
       complexity, and duplicate code in the current source and test tree. The
       command is a failure for the full-warning inventory; the separately
@@ -6459,7 +6458,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       repository-wide warning inventory was not rerun after this delta; cleanup
       remains open.
       Fresh warning-level inventory (2026-10-25): `uv run --locked --group
-      quality pylint src/curatormd_v2 tests` exits 24 at 9.96/10. Structural
+    quality pylint src/curatormd_v2 tests` exits 24 at 9.96/10. Structural
       findings remain across core modules and test suites. A current JSON-format
       rerun reports 85 diagnostics (70 refactor, 15 convention), dominated by
       duplicate-code, module/class size, and argument/method complexity. The
@@ -6555,7 +6554,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       cases into `test_markdown_reconciliation.py` and shared their disposable
       project setup. The persistence and reconciliation modules pass all 20
       tests (17 and 3); strict Pyright, errors-only Pylint, and `git diff
-      --check` pass. Full warning-level Pylint falls from 73 to 71 findings
+    --check` pass. Full warning-level Pylint falls from 73 to 71 findings
       (10 convention, 61 refactor), removing the persistence module-size and
       test-class-size findings. The repository-wide Pylint item remains open.
       Shared test setup (2026-10-25): fact-compaction and lifecycle tests now
@@ -7016,7 +7015,7 @@ unknown. The dashboard and live event-delivery gates remain open.
       health tool reports `unknown` because five runtime dependency probes are
       unobserved. No legacy capture-status bridge was used.
       Vhost alpha test deployment (2026-10-20): `hermes -p renew-ssl-coding
-      gateway ensure --json --timeout 45` returned `state=ready` with a
+    gateway ensure --json --timeout 45` returned `state=ready` with a
       profile-scoped endpoint under the Hermes supervisor. A subsequent
       profile MCP test connected and discovered 45 tools. Ordinary gateway
       status still lists the default gateway PID; no interactive Vhost event
@@ -7421,43 +7420,43 @@ handoff. It makes partial completion and remaining work visible without
 replaying the full session:
 
 - **State the task.** Show the source checklist/request item, a concise
-      problem statement, repository/project, owner, and whether this is a new or
-      reopened goal.
+  problem statement, repository/project, owner, and whether this is a new or
+  reopened goal.
 - **Define success.** List stable, observable success criteria and how each
-      one can be verified before implementation begins. Preserve the original
-      wording/source revision; make later changes explicit amendments.
+  one can be verified before implementation begins. Preserve the original
+  wording/source revision; make later changes explicit amendments.
 - **Plan bounded work.** Break work into accepted tasks/subtasks with a
-      named result, dependencies, and verifier. Separate research, advice,
-      proposed actions, and decisions; label estimates and hypotheses as such.
+  named result, dependencies, and verifier. Separate research, advice,
+  proposed actions, and decisions; label estimates and hypotheses as such.
 - **Record only useful deltas.** At each update, append deduplicated,
-      provenance-linked bullets for new research, decisions/advice, changes,
-      verification results, and blockers. Do not repeat unchanged context or
-      retain raw chats, command dumps, imports, or scratch material as facts.
+  provenance-linked bullets for new research, decisions/advice, changes,
+  verification results, and blockers. Do not repeat unchanged context or
+  retain raw chats, command dumps, imports, or scratch material as facts.
 - **Reconcile success criteria.** For every criterion, show `verified` with
-      linked proof, or `open` with the exact missing proof, blocker/owner, and
-      next action. A claim, recommendation, expected result, or user report is
-      not independent verification.
+  linked proof, or `open` with the exact missing proof, blocker/owner, and
+  next action. A claim, recommendation, expected result, or user report is
+  not independent verification.
 - **Set the honest outcome.** At handoff state `complete` only if all
-      criteria pass; otherwise state `open`, `blocked`, `deferred`, `cancelled`,
-      or `superseded`, summarize
-      facts completed to date, name the remaining checklist/TODO item, and give a
-      concrete next action. Do not erase partial progress or mark the source
-      checklist item done merely because the agent stopped.
+  criteria pass; otherwise state `open`, `blocked`, `deferred`, `cancelled`,
+  or `superseded`, summarize
+  facts completed to date, name the remaining checklist/TODO item, and give a
+  concrete next action. Do not erase partial progress or mark the source
+  checklist item done merely because the agent stopped.
 - **Resolve review and cleanup separately.** Show SDE state, cleanup
-      authorization, canonical write/receipt state, artifact-inventory
-      completeness, artifact-to-criterion dependencies and their retention or
-      reacquisition consequences, and purge state as independent fields. One
-      explicit review action may decide SDE disposition and authorize cleanup
-      of the exact displayed inventory; retain distinct immutable receipts for
-      both. Persist canonical facts and both applicable receipts before
-      deletion. Leave unapproved cleanup visibly awaiting authorization and
-      failed cleanup visibly `purge_pending`, with a safe retry owner/action.
-      Cleanup success must not mark unfinished development complete.
+  authorization, canonical write/receipt state, artifact-inventory
+  completeness, artifact-to-criterion dependencies and their retention or
+  reacquisition consequences, and purge state as independent fields. One
+  explicit review action may decide SDE disposition and authorize cleanup
+  of the exact displayed inventory; retain distinct immutable receipts for
+  both. Persist canonical facts and both applicable receipts before
+  deletion. Leave unapproved cleanup visibly awaiting authorization and
+  failed cleanup visibly `purge_pending`, with a safe retry owner/action.
+  Cleanup success must not mark unfinished development complete.
 - **Keep the update efficient.** Emit a bounded bullet delta and current
-      status, not another narrative recap. Apply configured per-event, per-goal,
-      evidence, staging-byte, and retention limits; report budget/limit pressure
-      and request an explicit compaction or retention decision before discarding
-      required audit facts.
+  status, not another narrative recap. Apply configured per-event, per-goal,
+  evidence, staging-byte, and retention limits; report budget/limit pressure
+  and request an explicit compaction or retention decision before discarding
+  required audit facts.
 
 **Required handoff summary:** `Problem`; `Success criteria`; `Verified facts to
 date`; `Outcome`; `Open checklist/TODO items`; `Blocker and next action`; `SDE
@@ -7476,75 +7475,75 @@ not erase verified facts, and a purge failure does not invalidate already
 verified work.
 
 - **Intake and preserve scope.** Record the source request/checklist item,
-      repository/project, owner, parent and stable source IDs, concise problem,
-      and initial state. Preserve original success-criterion wording and source
-      revision/hash; do not silently rewrite intent.
+  repository/project, owner, parent and stable source IDs, concise problem,
+  and initial state. Preserve original success-criterion wording and source
+  revision/hash; do not silently rewrite intent.
 - **Define success before implementation.** Give each criterion a stable ID,
-      observable pass condition, allowed verifier/evidence kind, and expected
-      result. Identify external or human gates separately from code/test work.
+  observable pass condition, allowed verifier/evidence kind, and expected
+  result. Identify external or human gates separately from code/test work.
 - **Decompose transparently.** List proposed subtasks with their own problem,
-      criteria, dependencies, owner, and expected result. Keep agent-proposed
-      work visibly proposed until accepted; link accepted children to the parent
-      and do not let an unaccepted proposal expand authorized scope.
+  criteria, dependencies, owner, and expected result. Keep agent-proposed
+  work visibly proposed until accepted; link accepted children to the parent
+  and do not let an unaccepted proposal expand authorized scope.
 - **Record work as typed, compact facts.** Distinguish research findings
-      (source and date/reference), advice/recommendations (not decisions), plan
-      or intent, implementation/change, verification result, open gate, and
-      outcome. Keep each fact a deduplicated bullet with provenance; do not copy
-      chats, transcript passages, large command output, or raw artifacts.
+  (source and date/reference), advice/recommendations (not decisions), plan
+  or intent, implementation/change, verification result, open gate, and
+  outcome. Keep each fact a deduplicated bullet with provenance; do not copy
+  chats, transcript passages, large command output, or raw artifacts.
 - **Track criterion evidence as work proceeds.** Link each criterion to
-      proof facts and record verifier, exact check/probe identifier, result, and
-      evidence hash/reference. Separate observed results from inference,
-      expected impact, user report, and unverified claims.
+  proof facts and record verifier, exact check/probe identifier, result, and
+  evidence hash/reference. Separate observed results from inference,
+  expected impact, user report, and unverified claims.
 - **Keep the live task list truthful.** Show each goal/child as planned,
-      active, complete, open, blocked, deferred, cancelled, or superseded; expose unmet criteria,
-      dependency/blocker, owner, and next action. Partial progress remains
-      visible as completed facts plus open work; never check off a source item
-      solely because its agent session ended.
+  active, complete, open, blocked, deferred, cancelled, or superseded; expose unmet criteria,
+  dependency/blocker, owner, and next action. Partial progress remains
+  visible as completed facts plus open work; never check off a source item
+  solely because its agent session ended.
 - **Decide the task outcome independently of review/cleanup.** Mark
-      `completed` only when every required criterion has passing evidence.
-      Otherwise record `open`, `blocked`, or `deferred`, the exact remaining
-      criterion/reason, and a concrete next action. A completion claim is not
-      verification; SDE approval/rejection and purge success are not goal
-      criteria unless explicitly declared as such at intake.
+  `completed` only when every required criterion has passing evidence.
+  Otherwise record `open`, `blocked`, or `deferred`, the exact remaining
+  criterion/reason, and a concrete next action. A completion claim is not
+  verification; SDE approval/rejection and purge success are not goal
+  criteria unless explicitly declared as such at intake.
 - **Assess significance from supported facts.** Deduplicate facts first;
-      keep ordinary progress on the goal and present supported routine
-      assessments as pending owner-review candidates rather than suppressing
-      them. Select durable facts and passing evidence, with concise impact and
-      retrieval value. Label planned, inferred, and measured impact distinctly.
+  keep ordinary progress on the goal and present supported routine
+  assessments as pending owner-review candidates rather than suppressing
+  them. Select durable facts and passing evidence, with concise impact and
+  retrieval value. Label planned, inferred, and measured impact distinctly.
 - **Present review and cleanup consequences together.** Show the proposed
-      bullet record, selected fact/evidence references, project scope, decision
-      consequences, and complete exact eligible artifact inventory with hashes
-      and target. Before the one explicit review action, map each inventoried
-      artifact to any evidence reference and open criterion that depends on it;
-      show whether deletion removes the source needed for revalidation and the
-      approved retention or reacquisition path. That action may authorize cleanup
-      only for the displayed manifest and its stated consequences. Record SDE
-      and cleanup authorization in distinct immutable receipts; no purge is allowed
-      until both are durable and canonically projected.
+  bullet record, selected fact/evidence references, project scope, decision
+  consequences, and complete exact eligible artifact inventory with hashes
+  and target. Before the one explicit review action, map each inventoried
+  artifact to any evidence reference and open criterion that depends on it;
+  show whether deletion removes the source needed for revalidation and the
+  approved retention or reacquisition path. That action may authorize cleanup
+  only for the displayed manifest and its stated consequences. Record SDE
+  and cleanup authorization in distinct immutable receipts; no purge is allowed
+  until both are durable and canonically projected.
 - **Persist before purging.** Write the approved compact facts (or the
-      required rejection/goal facts) and disposition receipt to the configured
-      canonical target, verify the resulting projection/hash, then persist the
-      cleanup-authorization receipt from the same review action, bound to the
-      complete exact inventory, before purging only that allowlisted inventory.
-      If an authorized deletion removes the only source needed for an unresolved
-      criterion, retain its content-free verifier receipt for historical review,
-      keep the criterion open/stale, and record the approved reacquisition or
-      recovery action; the receipt alone cannot satisfy the criterion. If policy
-      requires preserving that source, keep it held and cleanup pending until a
-      valid retention or release decision exists. Never delete source, canonical,
-      or unrelated user files.
+  required rejection/goal facts) and disposition receipt to the configured
+  canonical target, verify the resulting projection/hash, then persist the
+  cleanup-authorization receipt from the same review action, bound to the
+  complete exact inventory, before purging only that allowlisted inventory.
+  If an authorized deletion removes the only source needed for an unresolved
+  criterion, retain its content-free verifier receipt for historical review,
+  keep the criterion open/stale, and record the approved reacquisition or
+  recovery action; the receipt alone cannot satisfy the criterion. If policy
+  requires preserving that source, keep it held and cleanup pending until a
+  valid retention or release decision exists. Never delete source, canonical,
+  or unrelated user files.
 - **Close the cleanup loop.** Report per-artifact deleted, already absent,
-      held, changed, or failed state. Retry safe failures idempotently. Any
-      missing, rejected, or stale cleanup approval prevents deletion and stays
-      visible as awaiting authorization. An incomplete inventory,
-      persistence/receipt failure, or failed deletion remains visible as
-      `purge_pending` with owner and recovery action; it must not be hidden by a
-      green service-health indicator.
+  held, changed, or failed state. Retry safe failures idempotently. Any
+  missing, rejected, or stale cleanup approval prevents deletion and stays
+  visible as awaiting authorization. An incomplete inventory,
+  persistence/receipt failure, or failed deletion remains visible as
+  `purge_pending` with owner and recovery action; it must not be hidden by a
+  green service-health indicator.
 - **Reconcile and report.** Compare the final user-facing summary with the
-      stored goal, criteria, verified fact IDs, open gates, SDE decision, receipt,
-      checklist state, and purge status. Include what is done, what remains,
-      evidence available, and the next action; do not imply unverified deployment
-      or runtime behavior.
+  stored goal, criteria, verified fact IDs, open gates, SDE decision, receipt,
+  checklist state, and purge status. Include what is done, what remains,
+  evidence available, and the next action; do not imply unverified deployment
+  or runtime behavior.
 
 **Per-request record shape:**
 
@@ -7649,7 +7648,7 @@ Final report: completed facts, open items, recovery path, next action
       real Hermes acceptance item remain open.
       SDE cue follow-up (2026-11-01): the hook, intake skill, MCP instructions,
       and README teach the exact `Begin`, `Pause`, `Resume`, and `End SDE
-      capture` phrases. The hook prompts at task start, explains Resume/End
+    capture` phrases. The hook prompts at task start, explains Resume/End
       when work pauses, and prompts End (or Pause to continue later) at task
       wrap-up when capture is active. It does not start/end capture for the user
       or repeat an invitation after decline/silence. Plugin 0.1.7 is installed;
@@ -8647,7 +8646,7 @@ substitute for evidence at a later integration boundary.
       `vhost-manager-alpha`; this is project-scope validation, not person
       authentication or live application evidence. Rechecked from the Hermes
       Core checkout with `./hermes -p renew-ssl-coding mcp test curator_v2
-      --probe-curator-status`: the trusted profile-context read exits 0 and
+    --probe-curator-status`: the trusted profile-context read exits 0 and
       returns the same project-bound counts and unknown health. The direct
       Codex MCP response remains an expected denial when Hermes context is not
       attached; it does not indicate missing or degraded SQLite persistence.
@@ -9048,7 +9047,7 @@ substitute for evidence at a later integration boundary.
       Invalid, timezone-naive, and future event timestamps leave age unknown
       rather than reporting a negative or misleading value.
       The six-test project-usage file and Hermes `scripts/check --base
-      d2aac32b8` (12 checks) pass. This source change has not been installed into the
+    d2aac32b8` (12 checks) pass. This source change has not been installed into the
       profile plugin copy. The current outbox snapshot below remains stale and
       coverage incomplete; no token-coverage or deployment checkbox changes.
       Active-runtime comparison (2026-10-28): the enabled profile's
@@ -9149,7 +9148,7 @@ substitute for evidence at a later integration boundary.
       runtime readiness and authenticated human identity remain open.
       Supported local-profile refresh (2026-10-28 11:41:50 +07:00): from the
       Hermes Core checkout, `./.venv/bin/hermes --profile renew-ssl-coding mcp
-      test curator_v2 --probe-curator-status` exits 0, reports host-injected
+    test curator_v2 --probe-curator-status` exits 0, reports host-injected
       profile/session context, connects to the installed stdio server, and
       discovers 50 tools. It reads `vhost-manager-alpha`: 56/56 receipts
       processed, 25 goals, 22 facts, and zero SDE candidates. The separate
@@ -9475,17 +9474,17 @@ checking real summaries in steps 1 and 3.
       as active. The current API session still lacks the plugin's direct tools.
       The native user hook remains disabled during live acceptance; the complete
       task endpoint and owner-reviewed evidence packet remain open.
-       Continuity-summary gate progress (2026-11-01): the Codex plugin now
-       blocks `goal_finish` until it has summarized all report pages and linked
-       plan-child history in a compact `Task summary:` change fact and read that
-       fact back. New task facts invalidate the prior summary; resumed goals can
-       reuse a saved summary only after a matching report readback. A focused
-       25-test plugin lifecycle suite passes. This closes the missing code gate
-       before terminal goals become read-only; the real local Codex/Hermes task
-       acceptance remains open. The local plugin was refreshed to 0.1.56;
-       Codex reports it enabled and the installed cache matches source. A fresh
-       thread and changed-hook trust review are still required before the real
-       task acceptance can be observed.
+      Continuity-summary gate progress (2026-11-01): the Codex plugin now
+      blocks `goal_finish` until it has summarized all report pages and linked
+      plan-child history in a compact `Task summary:` change fact and read that
+      fact back. New task facts invalidate the prior summary; resumed goals can
+      reuse a saved summary only after a matching report readback. A focused
+      25-test plugin lifecycle suite passes. This closes the missing code gate
+      before terminal goals become read-only; the real local Codex/Hermes task
+      acceptance remains open. The local plugin was refreshed to 0.1.56;
+      Codex reports it enabled and the installed cache matches source. A fresh
+      thread and changed-hook trust review are still required before the real
+      task acceptance can be observed.
       Separated-task matching follow-up (2026-11-01): Codex intake now requires
       paging through the full goal list and comparing saved problem plus
       success checks before reuse; it reuses one clear match, asks when matches
@@ -11041,7 +11040,7 @@ checking real summaries in steps 1 and 3.
       passes all 12 checks on the committed Hermes state.
       Current-source recovery recheck (2026-10-30 12:49 +07:00):
       `PYTHONPATH=src:tests .venv/bin/python -m unittest test_backup
-      test_project_plugin_storage` passes all 38 tests, covering verified
+    test_project_plugin_storage` passes all 38 tests, covering verified
       seven-copy rotation, restore to a new path, and 72-hour expiry decisions.
       This confirms the current implementation and disposable tests; it does
       not prove the live timer run, current live backup inventory, or attended
@@ -11289,8 +11288,7 @@ checking real summaries in steps 1 and 3.
       The dedicated `renew-ssl-coding` alpha now uses the wheel; its profile
       probe loaded 52 tools and returned 72/72 processed receipts, 32 goals,
       29 facts, healthy status, all seven dependencies healthy, and no pending
-      work. The live database passes integrity and foreign-key checks at schema
-      39. Existing VS Code MCP processes were not restarted; the backup tree
+      work. The live database passes integrity and foreign-key checks at schema 39. Existing VS Code MCP processes were not restarted; the backup tree
       still has only two recognized daily copies and the live expiry, rendered
       dashboard, and owner review remain open. No Hermes active-install update
       or Vhost operation was made.

@@ -67,7 +67,7 @@ class ProjectRepositoryMixin(ProjectStagingMixin):  # pylint: disable=abstract-m
                 for receipt in self.service.store.receipts_for_goal(
                     goal_id, self.config.project_id
                 )
-                if not receipt.canonical_persisted
+                if not receipt.canonical_persisted and receipt.review_draft_json is None
             )
             for receipt in unpersisted:
                 adapter.verify_projection(projection)
@@ -86,6 +86,7 @@ class ProjectRepositoryMixin(ProjectStagingMixin):  # pylint: disable=abstract-m
                 )
                 if receipt.cleanup_authorized
                 and not receipt.cleanup_canonical_persisted
+                and receipt.review_draft_json is None
             )
             for receipt in cleanup_unpersisted:
                 adapter.verify_projection(projection)

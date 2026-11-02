@@ -14,13 +14,15 @@ const STATUS_COLORS = Object.freeze({
   degraded: '#ef2929',
   unknown: '#fce94f',
   review: '#ad7fa8',
+  action: '#4daafc',
   neutral: new vscode.ThemeColor('textLink.foreground'),
 });
 const STATUS_COLOR_MEANINGS = Object.freeze({
-  healthy: 'Green means health is healthy with no SDE reviews pending.',
-  review: 'Purple means an SDE review is pending and no other health gate is degraded.',
+  healthy: 'Green means project health is healthy.',
+  review: 'Purple marks operational work that needs attention.',
   unknown: 'Yellow means the health or SDE review count is unknown.',
-  degraded: 'Red means health is degraded beyond the review-only state.',
+  degraded: 'Red means project health is degraded.',
+  action: 'Blue means SDE reviews are outstanding; click to open their review document.',
   neutral: 'Blue means no health read has been attempted.',
 });
 const STATUS_READ_FAILURES = Object.freeze({
@@ -148,6 +150,7 @@ function healthGateLabel(code) {
   return `Additional health gate: ${code.replace(/[_:.-]+/g, ' ')}.`;
 }
 let dashboardStatusItem;
+let reviewStatusItem;
 let statusRefreshTimer;
 let statusRefreshGeneration = 0;
 const feedRequestsInFlight = new Map();
@@ -213,7 +216,7 @@ function initializeWorkspaceAreas(projectRoot) {
       '# Curator V2 project work areas',
       '',
       '- `inbox/status.json` is a generated count-only view. Any payload retained for retry stays in SQLite under its retry and retention rules.',
-      '- `sde-proposals/pending.json` is a generated queue view. Inspect the full proposal and approve or reject it in the CuratorMD V2 dashboard.',
+      '- `sde-proposals/pending-review.md` is the generated review document; its actions open the attended reviewer. `pending.json` is its queue data.',
       '- `side-buffer/` is the configured temporary file area. Curator inventories it and only removes exact files after an approved cleanup receipt.',
       '- The SQLite ledger is authoritative. JSON files here are refreshable views, never approval receipts or canonical facts.',
       '',
@@ -256,18 +259,29 @@ function writeWorkspaceProjection(projectRoot, filename, value) {
   return true;
 }
 
-function writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire) {
+function writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire, outlines = new Map()) {
   const inboxFields = [
     'received_count', 'failed_count', 'quarantined_count',
     'claimed_count', 'expired_claim_count',
   ];
   const normalizedReviews = validateReviewQueue(reviewWire, projectId);
-  if (!inbox || !inboxFields.every((field) => Number.isSafeInteger(inbox[field]) && inbox[field] >= 0)
-      || (inbox.oldest_pending_age_seconds !== null
-        && (!Number.isSafeInteger(inbox.oldest_pending_age_seconds)
-          || inbox.oldest_pending_age_seconds < 0))
-      || normalizedReviews === null) return false;
-  writeWorkspaceProjection(projectRoot, 'inbox/status.json', {
+  const inboxValid = Boolean(inbox && inboxFields.every((field) => Number.isSafeInteger(inbox[field]) && inbox[field] >= 0)
+      && (inbox.oldest_pending_age_seconds === null
+        || (Number.isSafeInteger(inbox.oldest_pending_age_seconds)
+          && inbox.oldest_pending_age_seconds >= 0)));
+  if (normalizedReviews !== null) writeWorkspaceProjection(projectRoot, 'sde-proposals/pending.json', {
+    project_id: projectId,
+    generated_at: new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().replace('Z', '+07:00'),
+    source: 'Curator V2 SQLite review queue',
+    canonical: false,
+    queue_limit: REVIEW_QUEUE_SIZE,
+    may_be_truncated: normalizedReviews.length === REVIEW_QUEUE_SIZE,
+    review_action: 'Open pending-review.md to select a candidate for attended review.',
+    candidates: normalizedReviews,
+  });
+  const reviewDocumentUpdated = normalizedReviews !== null
+    && writePendingReviewDocument(projectRoot, projectId, normalizedReviews, outlines);
+  if (inboxValid) writeWorkspaceProjection(projectRoot, 'inbox/status.json', {
     project_id: projectId,
     generated_at: new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().replace('Z', '+07:00'),
     source: 'Curator V2 SQLite inbox summary',
@@ -281,23 +295,267 @@ function writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire) {
     claimed_count: inbox.claimed_count,
     expired_claim_count: inbox.expired_claim_count,
   });
-  writeWorkspaceProjection(projectRoot, 'sde-proposals/pending.json', {
-    project_id: projectId,
-    generated_at: new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().replace('Z', '+07:00'),
-    source: 'Curator V2 SQLite review queue',
-    canonical: false,
-    review_action: 'Open the CuratorMD V2 dashboard to inspect and decide each proposal.',
-    candidates: normalizedReviews,
-  });
+  return inboxValid && normalizedReviews !== null && reviewDocumentUpdated;
+}
+
+function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = new Map()) {
+  const directory = ensureWorkspaceArea(projectRoot, 'sde-proposals');
+  const destination = path.join(directory, 'pending-review.md');
+  const openDocument = vscode.workspace?.textDocuments?.find(
+    (document) => document.uri?.fsPath === destination,
+  );
+  if (openDocument?.isDirty) return false;
+  let previousDrafts = new Map();
+  let existingContent = null;
+  try {
+    const metadata = fs.lstatSync(destination);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) return false;
+    const existing = fs.readFileSync(destination, 'utf8');
+    existingContent = existing;
+    const marker = /^<!-- curator-v2-generated-sha256: ([0-9a-f]{64}) -->\n/.exec(existing);
+    if (!marker) return false;
+    const oldBody = existing.slice(marker[0].length);
+    const parts = reviewDraftParts(oldBody);
+    if (!parts) return false;
+    const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
+    if (hash(parts.normalized) !== marker[1] && hash(oldBody) !== marker[1]) return false;
+    const currentIds = new Set(reviews.map(({ candidate }) => candidate.candidate_id));
+    if ([...parts.drafts.keys()].some((id) => !currentIds.has(id))) return false;
+    previousDrafts = parts.drafts;
+  } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
+  const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]()#+.!<>|~-]/g, '\\$&');
+  const lines = [
+    '# Pending SDE reviews', '',
+    `Project: ${safe(projectId)}`, '',
+    'Edit each copy, then choose Accept or Reject. The attended reviewer shows the evidence and exact inventory before confirmation.', '',
+  ];
+  if (reviews.length === REVIEW_QUEUE_SIZE) lines.push('Only the first 100 candidates are shown.', '');
+  if (reviews.length === 0) lines.push('No pending candidates.', '');
+  for (const { candidate, goal } of reviews) {
+    const outline = outlines.get(candidate.candidate_id);
+    const outlineMatchesCandidate = Boolean(outline
+      && outline.project_id === projectId
+      && outline.candidate_id === candidate.candidate_id
+      && outline.goal_id === goal.goal_id
+      && outline.status === 'pending_review'
+      && Array.isArray(outline.supporting_facts)
+      && outline.supporting_facts.length <= 32
+      && outline.supporting_facts.every((fact) => fact && typeof fact.bullet === 'string'
+        && fact.bullet.length <= 1000 && typeof fact.kind === 'string'
+        && /^[a-z_]{1,32}$/.test(fact.kind)));
+    const supportingFacts = outlineMatchesCandidate ? outline.supporting_facts : [];
+    const verificationFacts = supportingFacts.filter((fact) => fact.kind === 'verification');
+    const changeFacts = supportingFacts.filter((fact) => fact.kind === 'change');
+    const suggestedSignificance = ({
+      implementation: 4,
+      decision: 3,
+      recovery: 3,
+      verified_lesson: 2,
+      routine: 1,
+    })[candidate.materiality] ?? null;
+    const titleSource = goal.problem;
+    const proposedTitle = titleSource.length > 160
+      ? `${titleSource.slice(0, 157).trimEnd()}…` : titleSource;
+    const proposalRationale = outlineMatchesCandidate
+      && typeof outline.proposal_rationale === 'string'
+      && outline.proposal_rationale.length <= 1000
+      ? outline.proposal_rationale : candidate.rationale;
+    const proposedImpact = outlineMatchesCandidate
+      && typeof outline.impact === 'string' && outline.impact.length <= 1000
+      ? outline.impact : '';
+    const proposedLesson = outlineMatchesCandidate
+      && candidate.materiality === 'verified_lesson'
+      && typeof outline.future_utility === 'string' && outline.future_utility.length <= 1000
+      ? outline.future_utility : '';
+    lines.push(`<!-- curator-v2-candidate: ${candidate.candidate_id} -->`,
+      `### SDE ${safe(candidate.candidate_id)} — ${safe(proposedTitle)}`, '',
+      `- SDE ID: ${safe(candidate.candidate_id)}`,
+      `- Started: ${outline && typeof outline.task_started_at === 'string' ? safe(outline.task_started_at) : 'unknown'}`,
+      `- Successfully completed: ${outline && typeof outline.successful_completion_at === 'string' ? safe(outline.successful_completion_at) : 'unknown'}`,
+      '', '**Proposed entry**', '',
+      `- Proposed title: ${safe(proposedTitle)}`,
+      `- Proposal rationale: ${safe(proposalRationale)}`,
+      `- Suggested significance: ${suggestedSignificance === null ? 'not available; choose 0–5' : `${suggestedSignificance} / 5`} (starting recommendation from candidate type; owner-editable; a score of 5 requires extra confirmation)`,
+      '', '**Problem / plan task**', '', `- ${safe(goal.problem)}`, '',
+      '**What was completed successfully**', '');
+    if (outlineMatchesCandidate && outline.successful_completion_evidence_current === true
+      && verificationFacts.length > 0) {
+      for (const fact of verificationFacts) lines.push(`- ${safe(fact.bullet)}`);
+      lines.push('- Evidence is current at document generation and is rechecked by the attended reviewer before accepting.');
+    } else {
+      lines.push('- No current passing verification supports a successful-completion claim; the attended reviewer will show the evidence state.');
+      if (verificationFacts.length > 0) {
+        lines.push('', '**Recorded verification statements — not current proof**', '');
+        for (const fact of verificationFacts) lines.push(`- ${safe(fact.bullet)}`);
+      }
+    }
+    lines.push('', '**Proposed impact on plan completion**', '');
+    if (proposedImpact) lines.push(`- ${safe(proposedImpact)}`);
+    else lines.push('- Not stated in the candidate.');
+    lines.push('', '**Difficulties encountered**',
+      '- No difficulty is separately recorded in the supporting facts.', '',
+      '**Plan changes required**',
+      '- No plan change is separately recorded in the supporting facts.', '',
+      '**Lessons learned**');
+    if (proposedLesson) lines.push('', `- ${safe(proposedLesson)}`);
+    else lines.push('', '- No lesson is separately stated in the candidate.');
+    lines.push('', '**Future utility**', '');
+    if (outlineMatchesCandidate && typeof outline.future_utility === 'string'
+      && outline.future_utility.length <= 1000) {
+      lines.push(`- ${safe(outline.future_utility)}`);
+    } else {
+      lines.push('- Not stated in the candidate.');
+    }
+    lines.push('', '**Other recorded work**', '');
+    if (changeFacts.length > 0) {
+      for (const fact of changeFacts.slice(0, 8)) lines.push(`- ${safe(fact.bullet)}`);
+      if (changeFacts.length > 8) lines.push('- Additional change facts are available in the attended review.');
+    } else {
+      lines.push('- No change facts are included in this candidate.');
+    }
+    lines.push('',
+      '**Configured persistence documents**', '');
+    if (outline && Array.isArray(outline.persistence_documents)
+      && outline.persistence_documents.length <= 16
+      && outline.persistence_documents.every((document) => typeof document === 'string'
+        && document.length <= 512 && !document.startsWith('/') && !document.includes('\\'))) {
+      for (const document of outline.persistence_documents) lines.push(`- \`${safe(document)}\``);
+    } else {
+      lines.push('- Configured destination list unavailable; the attended reviewer will validate selected paths.');
+    }
+    lines.push('',
+      '**Supporting facts — evidence not evaluated**', '');
+    if (outlineMatchesCandidate) {
+      for (const fact of supportingFacts.slice(0, 8)) {
+        const truncated = fact.bullet.length > 400;
+        lines.push(`- ${safe(fact.kind)}: ${safe(fact.bullet.slice(0, 400))}${truncated ? '… (truncated)' : ''}`);
+      }
+      if (supportingFacts.length > 8) lines.push('- Additional supporting facts are omitted; open the attended review for the full packet.');
+      if (supportingFacts.length === 0) lines.push('- No supporting facts returned.');
+    } else {
+      lines.push('- Outline unavailable; open the attended review for the full packet.');
+    }
+    const draft = {
+      title: proposedTitle,
+      significance: suggestedSignificance,
+      documents: [],
+      problem: goal.problem,
+      completed: outlineMatchesCandidate
+        && outline.successful_completion_evidence_current === true
+        ? verificationFacts.map((fact) => fact.bullet).slice(0, 32) : [],
+      difficulties: [],
+      plan_changes: [],
+      lessons: proposedLesson ? [proposedLesson] : [],
+      future_utility: outline && typeof outline.future_utility === 'string'
+        && outline.future_utility.length <= 1000
+        ? outline.future_utility : '',
+    };
+    const draftJson = JSON.stringify(draft, null, 2);
+    let fence = '```';
+    while (draftJson.includes(fence)) fence += '`';
+    const draftBlock = previousDrafts.get(candidate.candidate_id) ?? `${fence}json\n${draftJson}\n${fence}`;
+    lines.push('', '**Your editable copy**', '',
+      'Edit the entry, set significance from 0 to 5, and put one or more configured document paths in `documents` before accepting.', '',
+      `<!-- curator-v2-decision:${candidate.candidate_id}:start -->`,
+      draftBlock,
+      `<!-- curator-v2-decision:${candidate.candidate_id}:end -->`, '');
+  }
+  const body = `${lines.join('\n')}\n`;
+  if (Buffer.byteLength(body, 'utf8') > 1024 * 1024 - 128) return false;
+  const generated = reviewDraftParts(body);
+  if (!generated) return false;
+  const checksum = createHash('sha256').update(generated.normalized, 'utf8').digest('hex');
+  const content = `<!-- curator-v2-generated-sha256: ${checksum} -->\n${body}`;
+  if (existingContent === content) return true;
+  if (openDocument && openDocument.getText() === content) return true;
+  const temporary = path.join(directory, `.pending-review.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
+  try {
+    fs.writeFileSync(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    try {
+      const current = fs.lstatSync(destination);
+      if (!current.isFile() || current.isSymbolicLink() || current.size > 1024 * 1024
+        || existingContent === null || fs.readFileSync(destination, 'utf8') !== existingContent) {
+        fs.unlinkSync(temporary);
+        return false;
+      }
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT' || existingContent !== null) throw error;
+    }
+    fs.renameSync(temporary, destination);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch (_cleanupError) { /* Best effort. */ }
+    throw error;
+  }
   return true;
 }
 
-function tryWriteWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire) {
+function reviewDraftParts(body) {
+  const drafts = new Map();
+  const normalized = [];
+  const lines = body.split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const start = /^<!-- curator-v2-decision:([A-Za-z0-9_-]{1,128}):start -->$/.exec(lines[index]);
+    if (!start) {
+      if (lines[index].startsWith('<!-- curator-v2-decision:')) return null;
+      normalized.push(lines[index]);
+      continue;
+    }
+    if (drafts.has(start[1])) return null;
+    const end = `<!-- curator-v2-decision:${start[1]}:end -->`;
+    const saved = [];
+    index += 1;
+    while (index < lines.length && lines[index] !== end) {
+      if (lines[index].startsWith('<!-- curator-v2-decision:')) return null;
+      saved.push(lines[index++]);
+    }
+    if (index >= lines.length) return null;
+    drafts.set(start[1], saved.join('\n'));
+    normalized.push(start[0], '<!-- curator-v2-draft-content -->', end);
+  }
+  return { drafts, normalized: normalized.join('\n') };
+}
+
+function isUnmodifiedReviewDocument(content) {
+  const marker = /^<!-- curator-v2-generated-sha256: ([0-9a-f]{64}) -->\n/.exec(content);
+  if (!marker) return false;
+  const body = content.slice(marker[0].length);
+  const parts = reviewDraftParts(body);
+  if (!parts) return false;
+  const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
+  return hash(parts.normalized) === marker[1] || hash(body) === marker[1];
+}
+
+function tryWriteWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire, outlines = new Map()) {
   try {
-    return writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire);
+    return writeWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire, outlines);
   } catch (_error) {
     return false;
   }
+}
+
+async function readReviewOutlines(client, reviewWire, projectId) {
+  const reviews = validateReviewQueue(reviewWire, projectId);
+  const outlines = new Map();
+  if (!reviews) return outlines;
+  if (reviews.length === 0) return outlines;
+  let next = 1;
+  const firstId = reviews[0].candidate.candidate_id;
+  try {
+    outlines.set(firstId, JSON.parse(await client.callTool('sde_review_outline', { candidate_id: firstId })));
+  } catch (_) {
+    return outlines;
+  }
+  const worker = async () => {
+    while (next < reviews.length) {
+      const candidateId = reviews[next++].candidate.candidate_id;
+      try {
+        const value = JSON.parse(await client.callTool('sde_review_outline', { candidate_id: candidateId }));
+        outlines.set(candidateId, value);
+      } catch (_) { /* The document explicitly marks unavailable outlines. */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, reviews.length) }, () => worker()));
+  return outlines;
 }
 
 function healthGateSummary(health, projectId) {
@@ -305,9 +563,10 @@ function healthGateSummary(health, projectId) {
     return '';
   }
   const codes = health.gate_codes
-    .filter((code) => typeof code === 'string' && /^[a-z][a-z0-9_:.-]{0,127}$/.test(code))
+    .filter((code) => code !== 'review_backlog'
+      && typeof code === 'string' && /^[a-z][a-z0-9_:.-]{0,127}$/.test(code))
     .slice(0, 12);
-  const omitted = health.gate_codes.length - codes.length;
+  const omitted = health.gate_codes.filter((code) => code !== 'review_backlog').length - codes.length;
   if (codes.length === 0) return '';
   const suffix = omitted > 0 ? `; ${omitted} additional or invalid gate(s)` : '';
   return ` Health gates: ${codes.map(healthGateLabel).join(' ')}${suffix}.`;
@@ -944,9 +1203,14 @@ function summarizeOperationalAlerts(health, storage, metrics, projectId, queueSn
       && /^[a-z][a-z0-9_:.-]{0,127}$/.test(gate));
   if (!healthStatusValid) {
     alerts.push('Readiness unknown (Hermes health snapshot unavailable, incomplete, or mismatched).');
-  } else if (health.status !== 'healthy' || health.gate_codes.length > 0) {
-    const gates = health.gate_codes.slice(0, 20);
-    alerts.push(`Readiness ${health.status}${gates.length ? `: ${gates.join(', ')}` : '.'}`);
+  } else {
+    const gates = health.gate_codes.filter((gate) => gate !== 'review_backlog').slice(0, 20);
+    const status = health.status === 'degraded' && health.gate_codes.length > 0
+      && health.gate_codes.every((gate) => gate === 'review_backlog')
+      ? 'healthy' : health.status;
+    if (status !== 'healthy' || gates.length > 0) {
+      alerts.push(`Readiness ${status}${gates.length ? `: ${gates.join(', ')}` : '.'}`);
+    }
   }
 
   const queueComplete = queueSnapshot && queueSnapshot.project_id === projectId
@@ -1168,11 +1432,34 @@ function activate(context) {
   statusItem.command = 'curatormdV2.openDashboard';
   statusItem.show();
 
+  const reviewItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, -1);
+  reviewStatusItem = reviewItem;
+  reviewItem.name = 'CuratorMD V2 Reviews';
+  reviewItem.command = 'curatormdV2.openApprovalJson';
+  reviewItem.color = STATUS_COLORS.action;
+  reviewItem.tooltip = statusTooltip(STATUS_COLOR_MEANINGS.action);
+  if (typeof reviewItem.hide === 'function') reviewItem.hide();
+
   const openDashboard = vscode.commands.registerCommand(
     'curatormdV2.openDashboard',
     () => showDashboard(),
   );
-  context.subscriptions.push(statusItem, openDashboard);
+  const openApprovalJson = vscode.commands.registerCommand(
+    'curatormdV2.openApprovalJson',
+    () => openPendingApprovalJson(),
+  );
+  context.subscriptions.push(statusItem, reviewItem, openDashboard, openApprovalJson);
+  if (vscode.languages && typeof vscode.languages.registerCodeLensProvider === 'function') {
+    context.subscriptions.push(vscode.commands.registerCommand(
+      'curatormdV2.reviewDocumentCandidate',
+      (candidateId, decision) => launchDocumentReview(candidateId, decision),
+    ));
+    context.subscriptions.push(vscode.languages.registerCodeLensProvider(
+      { scheme: 'file', language: 'markdown', pattern: '**/.curatormd-v2/sde-proposals/pending-review.md' },
+      { provideCodeLenses: (document) => reviewDocumentActions(document) },
+    ));
+  }
+  registerReviewDocumentColors(context);
   void refreshStatusBarHealthFromWorkspace();
   statusRefreshTimer = setInterval(() => {
     void refreshStatusBarHealthFromWorkspace();
@@ -1202,10 +1489,77 @@ function activate(context) {
   }
 }
 
+function registerReviewDocumentColors(context) {
+  if (!vscode.window || typeof vscode.window.createTextEditorDecorationType !== 'function') return;
+  const main = vscode.window.createTextEditorDecorationType({ color: '#FBFFFF' });
+  const emphasis = vscode.window.createTextEditorDecorationType({
+    color: '#6DAAFF', fontWeight: 'bold',
+  });
+  context.subscriptions.push(main, emphasis);
+  const apply = (editor) => {
+    const root = vscode.workspace?.workspaceFolders?.[0]?.uri?.fsPath;
+    const document = editor?.document;
+    if (!root || !document || document.uri?.fsPath !== path.join(
+      root, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    )) {
+      if (editor && typeof editor.setDecorations === 'function') {
+        editor.setDecorations(main, []);
+        editor.setDecorations(emphasis, []);
+      }
+      return;
+    }
+    const text = document.getText();
+    if (text.length > 1024 * 1024) {
+      editor.setDecorations(main, []);
+      editor.setDecorations(emphasis, []);
+      return;
+    }
+    const emphasisRanges = [];
+    let fence = null;
+    for (let line = 0; line < document.lineCount; line += 1) {
+      const value = document.lineAt(line).text;
+      const delimiter = /^\s*(`{3,}|~{3,})/.exec(value);
+      if (delimiter) {
+        if (!fence) fence = { character: delimiter[1][0], length: delimiter[1].length };
+        else if (delimiter[1][0] === fence.character && delimiter[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fence) continue;
+      if (/^\s{0,3}#{1,6}\s/.test(value)) {
+        emphasisRanges.push(new vscode.Range(line, 0, line, value.length));
+        continue;
+      }
+      for (const match of value.matchAll(/\*\*[^*\r\n]+\*\*/g)) {
+        emphasisRanges.push(new vscode.Range(line, match.index, line, match.index + match[0].length));
+      }
+    }
+    editor.setDecorations(main, [new vscode.Range(document.positionAt(0), document.positionAt(text.length))]);
+    editor.setDecorations(emphasis, emphasisRanges);
+  };
+  const applyVisible = () => {
+    for (const editor of vscode.window.visibleTextEditors || []) apply(editor);
+  };
+  if (typeof vscode.window.onDidChangeVisibleTextEditors === 'function') {
+    context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(applyVisible));
+  }
+  if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
+    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
+      for (const editor of vscode.window.visibleTextEditors || []) {
+        if (editor.document === event.document) apply(editor);
+      }
+    }));
+  }
+  if (vscode.workspace && typeof vscode.workspace.onDidChangeWorkspaceFolders === 'function') {
+    context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(applyVisible));
+  }
+  applyVisible();
+}
+
 function deactivate() {
   if (statusRefreshTimer) clearInterval(statusRefreshTimer);
   statusRefreshTimer = undefined;
   dashboardStatusItem = undefined;
+  reviewStatusItem = undefined;
 }
 
 function updateStatusBarHealth(
@@ -1215,24 +1569,22 @@ function updateStatusBarHealth(
   const healthStatus = projectId
     && health?.project_id === projectId
     && ['healthy', 'degraded', 'unknown'].includes(health.status)
-    ? health.status
+    ? health.status === 'degraded'
+      && Array.isArray(health.gate_codes)
+      && health.gate_codes.length > 0
+      && health.gate_codes.every((gate) => gate === 'review_backlog')
+      ? 'healthy' : health.status
     : 'unknown';
   const reviewsKnown = Array.isArray(reviewItems);
   const pendingReviews = reviewsKnown ? reviewItems.length : null;
-  const reviewBacklogOnly = healthStatus === 'degraded'
-    && Array.isArray(health.gate_codes)
-    && health.gate_codes.length === 1
-    && health.gate_codes[0] === 'review_backlog';
   let displayStatus = healthStatus;
   if (healthStatus === 'healthy' && !reviewsKnown) displayStatus = 'unknown';
-  else if (pendingReviews > 0 && (healthStatus === 'healthy' || reviewBacklogOnly)) {
-    displayStatus = 'review';
-  }
+  updateReviewStatusItem(pendingReviews);
   const reviewSummary = !reviewsKnown
     ? 'pending SDE review count unavailable'
     : pendingReviews === 0
       ? 'no SDE reviews pending'
-      : `${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}`;
+      : `${pendingReviews === REVIEW_QUEUE_SIZE ? 'At least ' : ''}${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}`;
   const storageWarning = sqliteSizeWarning(storage, projectId);
   dashboardStatusItem.text = `$(circle-filled) CuratorMD V2: ${displayStatus}`
     + (storageWarning ? ' · SQLite size warning' : '');
@@ -1245,11 +1597,133 @@ function updateStatusBarHealth(
       + (storageWarning ? `${storageWarning} ` : '')
       + 'Click to open the project-scoped dashboard.',
   );
-  return healthStatus;
+  return displayStatus;
+}
+
+function updateReviewStatusItem(pendingReviews) {
+  if (!reviewStatusItem) return;
+  if (!Number.isSafeInteger(pendingReviews) || pendingReviews < 1) {
+    if (typeof reviewStatusItem.hide === 'function') reviewStatusItem.hide();
+    return;
+  }
+  const count = `${pendingReviews}${pendingReviews === REVIEW_QUEUE_SIZE ? '+' : ''}`;
+  reviewStatusItem.text = `$(checklist) CuratorMD V2: ${count} review${pendingReviews === 1 ? '' : 's'}`;
+  reviewStatusItem.color = STATUS_COLORS.action;
+  reviewStatusItem.tooltip = statusTooltip(
+    `${STATUS_COLOR_MEANINGS.action} ${pendingReviews === REVIEW_QUEUE_SIZE ? 'At least ' : ''}${pendingReviews} pending SDE review${pendingReviews === 1 ? '' : 's'}. Click to open the review document.`,
+  );
+  if (typeof reviewStatusItem.show === 'function') reviewStatusItem.show();
+}
+
+async function openPendingApprovalJson() {
+  const workspace = vscode.workspace
+    && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+  if (!workspace) {
+    vscode.window.showWarningMessage('Open a Curator-enabled project folder first.');
+    return;
+  }
+  const projectRoot = workspace.uri.fsPath;
+  if (!fs.existsSync(path.join(projectRoot, '.curatormd-v2.toml'))) {
+    vscode.window.showWarningMessage('Open a Curator-enabled project to review pending SDE proposals.');
+    return;
+  }
+  const approvalJson = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  try {
+    for (const directory of [
+      path.dirname(path.dirname(approvalJson)), path.dirname(approvalJson),
+    ]) {
+      const directoryStat = fs.lstatSync(directory);
+      if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+        throw new Error('invalid approval projection directory');
+      }
+    }
+    const metadata = fs.lstatSync(approvalJson);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) {
+      throw new Error('invalid approval projection');
+    }
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(approvalJson));
+    await vscode.window.showTextDocument(document);
+  } catch (_) {
+    vscode.window.showWarningMessage(
+      'The pending review document is unavailable. Refresh CuratorMD V2 and try again.',
+    );
+    return;
+  }
+}
+
+function reviewDocumentActions(document) {
+  const workspace = vscode.workspace?.workspaceFolders?.[0];
+  if (!workspace || document.uri.fsPath !== path.join(
+    workspace.uri.fsPath, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+  )) return [];
+  const lenses = [];
+  for (let line = 0; line < document.lineCount; line += 1) {
+    const match = /^<!-- curator-v2-candidate: ([A-Za-z0-9_-]{1,128}) -->$/.exec(document.lineAt(line).text);
+    if (!match) continue;
+    const range = new vscode.Range(line, 0, line, 0);
+    for (const [title, decision] of [['Accept', 'approve'], ['Reject', 'reject']]) {
+      lenses.push(new vscode.CodeLens(range, {
+        title, command: 'curatormdV2.reviewDocumentCandidate', arguments: [match[1], decision],
+      }));
+    }
+  }
+  return lenses;
+}
+
+async function launchDocumentReview(candidateId, decision) {
+  try {
+    if (typeof candidateId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(candidateId)
+      || !['approve', 'reject'].includes(decision)) throw new Error('invalid review action');
+    const workspace = vscode.workspace?.workspaceFolders?.[0];
+    if (!workspace) throw new Error('missing workspace');
+    const projectRoot = workspace.uri.fsPath;
+    const documentPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+    for (const directory of [path.dirname(path.dirname(documentPath)), path.dirname(documentPath)]) {
+      const metadata = fs.lstatSync(directory);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error('invalid review directory');
+    }
+    const documentStat = fs.lstatSync(documentPath);
+    if (!documentStat.isFile() || documentStat.isSymbolicLink() || documentStat.size > 1024 * 1024) {
+      throw new Error('invalid review document');
+    }
+    const openDocument = vscode.workspace?.textDocuments?.find((item) => item.uri?.fsPath === documentPath);
+    if (openDocument?.isDirty && !await openDocument.save()) {
+      vscode.window.showWarningMessage('Save the review document before continuing.');
+      return;
+    }
+    const diskContent = fs.readFileSync(documentPath, 'utf8');
+    if (openDocument?.isDirty || (openDocument && openDocument.getText() !== diskContent)
+      || !isUnmodifiedReviewDocument(diskContent)) {
+      vscode.window.showWarningMessage('The review document is stale or its generated sections changed. Your changes have been preserved.');
+      return;
+    }
+    if (!diskContent.includes(`<!-- curator-v2-decision:${candidateId}:start -->`)) throw new Error('draft missing');
+    if (!diskContent.includes(`<!-- curator-v2-candidate: ${candidateId} -->`)) throw new Error('candidate missing');
+    const projectId = readConfiguredProjectId(projectRoot);
+    const config = vscode.workspace.getConfiguration('curatormdV2');
+    if (hasWorkspaceSettingOverride(config, [
+      'databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+      'databaseBindings', 'hermesProfileBindings', 'evidenceConfig', 'evidenceConfigBindings',
+    ])) throw new Error('workspace configuration override');
+    const database = resolveDatabasePath(projectId, config.get('databaseBindings', {}), config.get('databasePath', ''));
+    const evidence = resolveEvidenceConfig(projectId, config.get('evidenceConfigBindings', {}), config.get('evidenceConfig', ''));
+    const serverCommand = config.get('serverCommand', 'curatormd-v2-mcp');
+    const reviewCommand = config.get('reviewCommand', '') || defaultReviewCommand(serverCommand);
+    if (!database || evidence === null || typeof reviewCommand !== 'string' || !reviewCommand.trim()) throw new Error('invalid binding');
+    const terminal = vscode.window.createTerminal({ name: 'Curator V2 SDE Review', cwd: projectRoot });
+    const command = [reviewCommand, '--project-root', projectRoot, '--database', database,
+      ...hostEvidenceConfigArguments(evidence), 'review', candidateId, '--decision-hint', decision, '--edited-draft',
+    ].map(quotePosixShellArgument).join(' ');
+    terminal.show();
+    terminal.sendText(command, true);
+  } catch (_) {
+    vscode.window.showWarningMessage('Unable to open the attended review. Check the project and Curator User settings.');
+  }
 }
 
 function resetStatusBarHealth() {
   if (!dashboardStatusItem) return;
+  updateReviewStatusItem(0);
   dashboardStatusItem.text = '$(circle-filled) CuratorMD V2';
   dashboardStatusItem.color = STATUS_COLORS.neutral;
   dashboardStatusItem.tooltip = statusTooltip(
@@ -1270,7 +1744,14 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn, trigger
     resetStatusBarHealth();
     return 'neutral';
   }
-  if (fs.existsSync(projectRoot)) initializeWorkspaceAreas(projectRoot);
+  try {
+    initializeWorkspaceAreas(projectRoot);
+  } catch (_error) {
+    updateStatusBarHealth(null, null, null, null, curatorError(
+      'status-workspace-unavailable', 'Curator workspace areas are unavailable.',
+    ));
+    return 'unknown';
+  }
 
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   if (hasWorkspaceSettingOverride(configuration,
@@ -1349,17 +1830,20 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn, trigger
         .then((wire) => JSON.parse(wire))
         .catch(() => null),
     ]);
-    tryWriteWorkspaceQueueViews(projectRoot, page.project_id, inboxWire, reviewWire);
     const reviews = validateReviewQueue(reviewWire, page.project_id);
     if (generation !== statusRefreshGeneration
       || vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath !== projectRoot) {
       return 'unknown';
     }
-    updateStatusBarHealth(feeds.health, page.project_id, reviews, storage,
+    const displayHealth = updateStatusBarHealth(feeds.health, page.project_id, reviews, storage,
       feeds.healthProbeError ? { code: feeds.healthProbeError } : null);
+    const outlines = await readReviewOutlines(client, reviewWire, page.project_id);
+    if (generation !== statusRefreshGeneration
+      || vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath !== projectRoot) return 'unknown';
+    tryWriteWorkspaceQueueViews(projectRoot, page.project_id, inboxWire, reviewWire, outlines);
     if (reviews === null) return 'unknown';
     if (!feeds.health) return 'unknown';
-    if (feeds.health.status !== 'healthy') return feeds.health.status;
+    if (displayHealth !== 'healthy') return displayHealth;
     return reviews.length > 0 ? 'review' : 'healthy';
   } catch (error) {
     if (generation === statusRefreshGeneration
@@ -1372,7 +1856,7 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn, trigger
   }
 }
 
-async function showDashboard(spawnProcess = spawn) {
+async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}) {
   const workspace = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
   if (!workspace) {
     resetStatusBarHealth();
@@ -1451,10 +1935,10 @@ async function showDashboard(spawnProcess = spawn) {
   const panel = vscode.window.createWebviewPanel(
     'curatormdV2Dashboard',
     'CuratorMD V2',
-    vscode.ViewColumn.One,
+    focusReviews ? vscode.ViewColumn.Beside : vscode.ViewColumn.One,
     { enableScripts: true, localResourceRoots: [] },
   );
-  panel.webview.html = dashboardHtml(panel.webview);
+  panel.webview.html = dashboardHtml(panel.webview, focusReviews);
   let goalIds = new Set();
   let candidateIds = new Set();
   let projectId = null;
@@ -1598,8 +2082,9 @@ async function showDashboard(spawnProcess = spawn) {
             reviewRequest,
             inboxRequest,
           ]);
+          const outlines = await readReviewOutlines(client, reviews, page.project_id);
           const workspaceViewsUpdated = tryWriteWorkspaceQueueViews(
-            workspace.uri.fsPath, page.project_id, inbox, reviews,
+            workspace.uri.fsPath, page.project_id, inbox, reviews, outlines,
           );
           const feeds = typeof page.project_id === 'string' && page.project_id
             ? await readProjectFeeds({
@@ -1654,9 +2139,11 @@ async function showDashboard(spawnProcess = spawn) {
             : 'Health snapshot unavailable; refresh to retry.']
           : health.project_id !== page.project_id
             ? ['Health snapshot belongs to a different project.']
-            : health.status === 'unknown' && health.gate_codes.length === 0
+            : health.status === 'unknown'
+              && health.gate_codes.every((gate) => gate === 'review_backlog')
               ? ['Hermes could not confirm local health.']
-              : health.gate_codes.map(healthGateLabel);
+              : health.gate_codes.filter((gate) => gate !== 'review_backlog')
+                .map(healthGateLabel);
         candidateIds = new Set((reviewItems || []).map((item) => item.candidate.candidate_id));
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage, reviews: reviewItems,
@@ -1810,6 +2297,7 @@ async function showDashboard(spawnProcess = spawn) {
         panel.webview.postMessage({ type: 'goalReopened', goalId: goal.goal_id });
       } else if (message.type === 'openReview'
         && typeof message.candidateId === 'string'
+        && (message.decision === undefined || message.decision === 'approve' || message.decision === 'reject')
         && typeof reviewCommand === 'string' && reviewCommand.trim().length > 0
         && candidateIds.has(message.candidateId)) {
         const terminal = vscode.window.createTerminal({
@@ -1822,6 +2310,7 @@ async function showDashboard(spawnProcess = spawn) {
           '--database', databasePath,
           ...hostEvidenceConfigArguments(evidenceConfig),
           'review', message.candidateId,
+          ...(message.decision ? ['--decision-hint', message.decision] : []),
         ].map(quotePosixShellArgument).join(' ');
         terminal.show();
         terminal.sendText(command, true);
@@ -1850,7 +2339,7 @@ async function showDashboard(spawnProcess = spawn) {
   });
 }
 
-function dashboardHtml(webview) {
+function dashboardHtml(webview, focusReviews = false) {
   const nonce = randomBytes(24).toString('base64');
   const csp = webview.cspSource;
   return `<!doctype html>
@@ -2252,14 +2741,20 @@ function dashboardHtml(webview) {
         const validHealthStatus = healthSnapshot
           && ['healthy', 'degraded', 'unknown'].includes(healthSnapshot.status);
         const healthStatus = healthProjectMatches && validHealthStatus
-          ? healthSnapshot.status : 'unknown';
+          ? healthSnapshot.status === 'degraded'
+            && Array.isArray(healthSnapshot.gate_codes)
+            && healthSnapshot.gate_codes.length > 0
+            && healthSnapshot.gate_codes.every((gate) => gate === 'review_backlog')
+            ? 'healthy' : healthSnapshot.status
+          : 'unknown';
         const healthGates = !healthSnapshot
           ? ['health_read_unavailable']
           : !healthProjectMatches
             ? ['health_project_mismatch']
             : !validHealthStatus || !Array.isArray(healthSnapshot.gate_codes)
               ? ['health_observation_invalid']
-              : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string');
+              : healthSnapshot.gate_codes.filter((gate) => typeof gate === 'string'
+                && gate !== 'review_backlog');
         const probeFailure = typeof message.healthProbeFailure === 'string'
           ? message.healthProbeFailure : null;
         const healthGateDescriptions = Array.isArray(message.healthGateDescriptions)
@@ -2271,7 +2766,7 @@ function dashboardHtml(webview) {
         let alertText = typeof message.alertSummary === 'string'
           ? message.alertSummary : 'Operational alerts: unknown. Alert summary unavailable.';
         if (message.workspaceViewsUpdated === false) {
-          alertText += ' Local inbox/proposal files could not be refreshed; database reads remain available.';
+          alertText += ' Local inbox or review files could not be refreshed, or the review document has unsaved edits; database reads remain available.';
         }
         setPanelState('health', healthStatus);
         renderMetricRows('healthRows', [
@@ -2505,14 +3000,17 @@ function dashboardHtml(webview) {
             const label = document.createElement('span');
             label.textContent = candidate.materiality + ': ' + goal.problem
               + ' — ' + candidate.rationale;
-            const button = document.createElement('button');
-            button.textContent = 'Review in terminal';
-            button.disabled = !message.reviewAvailable;
-            button.addEventListener('click', () => api.postMessage({
-              type: 'openReview', candidateId: candidate.candidate_id,
-            }));
             row.appendChild(label);
-            row.appendChild(button);
+            for (const decision of ['approve', 'reject']) {
+              const button = document.createElement('button');
+              button.textContent = decision === 'approve' ? 'Approve…' : 'Reject…';
+              button.title = 'Review in terminal; no decision is recorded until you confirm the packet and inventory.';
+              button.disabled = !message.reviewAvailable;
+              button.addEventListener('click', () => api.postMessage({
+                type: 'openReview', candidateId: candidate.candidate_id, decision,
+              }));
+              row.appendChild(button);
+            }
             reviews.appendChild(row);
           }
           if (!message.reviewAvailable) {
@@ -2557,6 +3055,9 @@ function dashboardHtml(webview) {
       }
     });
     requestGoals(0);
+    if (${JSON.stringify(focusReviews)}) {
+      document.getElementById('reviewsSection').scrollIntoView();
+    }
   </script>
 </body>
 </html>`;
@@ -2660,5 +3161,6 @@ module.exports = {
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
   validateReviewQueue,
+  writePendingReviewDocument,
   writeWorkspaceQueueViews,
 };

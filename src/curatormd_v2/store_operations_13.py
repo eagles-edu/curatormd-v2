@@ -661,15 +661,17 @@ class StoreOperations5Part0(StoreOperations4):
                 if fact.goal_id != request.goal_id:
                     raise ConflictError("transition facts must belong to the goal")
                 self._append_fact(connection, fact, request.project_id)
+            transitioned_at = utc_now()
             connection.execute(
                 "UPDATE goals SET status = ?, next_action = ?, lifecycle_revision = ?, "
-                "updated_at = ? "
+                "updated_at = ?, completed_at = ? "
                 "WHERE goal_id = ?",
                 (
                     request.status.value,
                     request.next_action,
                     request.expected_lifecycle_revision + 1,
-                    utc_now(),
+                    transitioned_at,
+                    transitioned_at if request.status is GoalStatus.COMPLETE else None,
                     request.goal_id,
                 ),
             )
@@ -710,14 +712,16 @@ class StoreOperations5Part0(StoreOperations4):
                     "goal lifecycle revision changed; reload before activation"
                 )
             self._append_fact(connection, fact, project_id)
+            activated_at = utc_now()
             connection.execute(
                 "UPDATE goals SET status = ?, lifecycle_revision = ?, "
-                "updated_at = ? "
+                "updated_at = ?, started_at = COALESCE(started_at, ?) "
                 "WHERE goal_id = ?",
                 (
                     GoalStatus.ACTIVE.value,
                     expected_lifecycle_revision + 1,
-                    utc_now(),
+                    activated_at,
+                    activated_at,
                     goal_id,
                 ),
             )
@@ -803,15 +807,17 @@ class StoreOperations5Part0(StoreOperations4):
                 raise ConflictError("goal lifecycle revision changed; reload before reopening")
             _validate_reopen_relationships(connection, goal_id, row)
             self._append_fact(connection, fact, project_id)
+            reopened_at = utc_now()
             connection.execute(
                 "UPDATE goals SET status = ?, next_action = ?, lifecycle_revision = ?, "
-                "updated_at = ? "
+                "updated_at = ?, started_at = ?, completed_at = NULL "
                 "WHERE goal_id = ?",
                 (
                     GoalStatus.ACTIVE.value,
                     next_action.strip(),
                     expected_lifecycle_revision + 1,
-                    utc_now(),
+                    reopened_at,
+                    reopened_at,
                     goal_id,
                 ),
             )

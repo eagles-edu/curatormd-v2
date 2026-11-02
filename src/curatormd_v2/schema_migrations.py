@@ -28,7 +28,7 @@ from .schema_migration_steps_v2_v20 import (
 )
 
 
-SQLITE_SCHEMA_VERSION = 41
+SQLITE_SCHEMA_VERSION = 45
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -751,6 +751,98 @@ def migrate_goal_source_event_payload_fingerprint_v41(
     connection.execute("PRAGMA user_version = 41")
 
 
+def migrate_sde_review_draft_v42(connection: sqlite3.Connection) -> None:
+    """Reserve durable receipt fields for the exact edited review and binding."""
+
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(audit_receipts)")}
+    if columns:
+        if "review_draft_json" not in columns:
+            connection.execute("ALTER TABLE audit_receipts ADD COLUMN review_draft_json TEXT")
+        if "review_binding_sha256" not in columns:
+            connection.execute("ALTER TABLE audit_receipts ADD COLUMN review_binding_sha256 TEXT")
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS sde_review_targets (
+                receipt_id TEXT NOT NULL REFERENCES audit_receipts(receipt_id),
+                target_path TEXT NOT NULL,
+                projection_sha256 TEXT,
+                projected_at TEXT,
+                PRIMARY KEY (receipt_id, target_path)
+            )"""
+        )
+        target_columns = {
+            row["name"]: (str(row["type"]).upper(), int(row["notnull"]), int(row["pk"]))
+            for row in connection.execute("PRAGMA table_info(sde_review_targets)")
+        }
+        required_target_columns = {
+            "receipt_id": ("TEXT", 1, 1),
+            "target_path": ("TEXT", 1, 2),
+            "projection_sha256": ("TEXT", 0, 0),
+            "projected_at": ("TEXT", 0, 0),
+        }
+        # The base schema is created at the newest version before legacy
+        # migrations run. Permit only the later, nullable preparation fields
+        # that migrations v43 added, while validating the v42 contract.
+        later_target_columns = {
+            "before_exists": ("INTEGER", 0, 0),
+            "before_sha256": ("TEXT", 0, 0),
+            "expected_sha256": ("TEXT", 0, 0),
+            "prepared_at": ("TEXT", 0, 0),
+        }
+        if (
+            not required_target_columns.items() <= target_columns.items()
+            or set(target_columns) - set(required_target_columns) - set(later_target_columns)
+            or any(
+                target_columns[name] != declaration
+                for name, declaration in target_columns.items()
+                if name in later_target_columns
+            )
+        ):
+            raise RuntimeError("SDE review target schema is incompatible")
+        foreign_keys = {
+            (row["table"], row["from"], row["to"])
+            for row in connection.execute("PRAGMA foreign_key_list(sde_review_targets)")
+        }
+        if foreign_keys != {("audit_receipts", "receipt_id", "receipt_id")}:
+            raise RuntimeError("SDE review target foreign key is incompatible")
+    connection.execute("PRAGMA user_version = 42")
+
+
+def migrate_sde_projection_preparation_v43(connection: sqlite3.Connection) -> None:
+    """Journal each approved destination's before and expected-after state."""
+
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(sde_review_targets)")}
+    if columns:
+        for name, declaration in (
+            ("before_exists", "INTEGER"),
+            ("before_sha256", "TEXT"),
+            ("expected_sha256", "TEXT"),
+            ("prepared_at", "TEXT"),
+        ):
+            if name not in columns:
+                connection.execute(f"ALTER TABLE sde_review_targets ADD COLUMN {name} {declaration}")
+    connection.execute("PRAGMA user_version = 43")
+
+
+def migrate_sde_binding_payload_v44(connection: sqlite3.Connection) -> None:
+    """Store the complete immutable binding needed for interrupted recovery."""
+
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(audit_receipts)")}
+    if columns and "review_binding_json" not in columns:
+        connection.execute("ALTER TABLE audit_receipts ADD COLUMN review_binding_json TEXT")
+    connection.execute("PRAGMA user_version = 44")
+
+
+def migrate_goal_lifecycle_timestamps_v45(connection: sqlite3.Connection) -> None:
+    """Add explicit task start and successful-completion timestamps."""
+
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(goals)")}
+    if columns and "started_at" not in columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN started_at TEXT")
+    if columns and "completed_at" not in columns:
+        connection.execute("ALTER TABLE goals ADD COLUMN completed_at TEXT")
+    connection.execute("PRAGMA user_version = 45")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -792,6 +884,10 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_receipt_archives_v39,
     migrate_goal_source_event_replay_v40,
     migrate_goal_source_event_payload_fingerprint_v41,
+    migrate_sde_review_draft_v42,
+    migrate_sde_projection_preparation_v43,
+    migrate_sde_binding_payload_v44,
+    migrate_goal_lifecycle_timestamps_v45,
 )
 
 

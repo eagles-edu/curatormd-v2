@@ -39,10 +39,86 @@ from curatormd_v2 import (
     EvidenceVerificationContext,
     SDECandidate,
 )
+from curatormd_v2.sde_review_draft import SDEReviewBinding, SDEReviewDraft
 
 
 class ApiReviewWorkflowTests(_ApiTestSupport):
     """Exercise apireviewworkflow behavior."""
+
+    def test_edited_sde_fields_are_bound_to_the_durable_review_receipt(self) -> None:
+        """Persist the exact editable entry and its authenticated review binding."""
+
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
+        )
+        verified = self._create_verified_goal(
+            plugin,
+            "Keep an edited SDE review bound to its evidence",
+            "Implemented the reviewed change",
+            "The reviewed change passed its focused verification",
+        )
+        api = self._api_with_healthy_dependencies(
+            plugin,
+            AllowProject(
+                {
+                    ("hermes-user-1", "project-a", ProjectAction.READ),
+                    ("hermes-user-1", "project-a", ProjectAction.WRITE),
+                    ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+                }
+            ),
+        )
+        candidate = api.sde_assess(
+            self.caller,
+            "project-a",
+            SDEAssessmentRequest(
+                verified.goal_id,
+                Materiality.IMPLEMENTATION,
+                "The task result is useful to retain",
+                (verified.change_fact_id, verified.verification_fact_id),
+                "The reviewed change completed the task successfully",
+                "The entry can guide future maintenance",
+            ),
+        )
+        assert candidate is not None
+        packet = api.sde_review_packet(self.caller, "project-a", candidate.candidate_id)
+        draft = SDEReviewDraft(
+            title="Keep the reviewed task result",
+            significance=4,
+            documents=("persistence/HISTORY.md",),
+            problem="The task outcome needs a durable, reviewable record.",
+            completed=("Implemented the scoped change.",),
+            difficulties=("The first attempt lacked current evidence.",),
+            plan_changes=("Added a focused verification step.",),
+            lessons=("Bind the retained result to current proof.",),
+            future_utility="Use this when reviewing related changes.",
+        )
+        request = SDEConfirmationRequest(
+            candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED,
+            artifacts=packet.artifact_inventory.artifacts,
+            artifact_inventory_complete=packet.artifact_inventory.usage.inventory_complete,
+            dependency_map_sha256=packet.dependency_map_sha256,
+            rationale="The edited entry matches the completed task and its proof.",
+            review_draft=draft,
+        )
+        binding = api.prepare_sde_review_binding(self.caller, "project-a", request)
+
+        receipt = api.sde_confirm(
+            self.caller,
+            "project-a",
+            replace(request, expected_review_binding_sha256=binding.sha256()),
+        )
+        saved = self.store.get_receipt(receipt.receipt_id, "project-a")
+
+        self.assertEqual(SDEReviewDraft.from_json(saved.review_draft_json or ""), draft)
+        self.assertEqual(saved.review_binding_sha256, binding.sha256())
+        self.assertEqual(
+            SDEReviewBinding.from_json(saved.review_binding_json or ""), binding
+        )
+        self.assertEqual(
+            self.store.sde_review_targets(saved.receipt_id, "project-a"),
+            (("persistence/HISTORY.md", None, None),),
+        )
 
     def test_projection_and_cleanup_receipt_failures_keep_artifact_until_retry(self) -> None:
         plugin = ProjectPlugin.bind(
@@ -579,8 +655,8 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
         self.assertEqual(review_health.operational_counts.pending_review_count, 1)
         fully_probed_api = self._api_with_healthy_dependencies(plugin)
         review_health = fully_probed_api.project_health(self.caller, "project-a")
-        self.assertEqual(review_health.status.value, "degraded")
-        self.assertIn("review_backlog", review_health.gate_codes)
+        self.assertEqual(review_health.status.value, "healthy")
+        self.assertNotIn("review_backlog", review_health.gate_codes)
         with self.assertRaisesRegex(EvidenceGateError, "fact IDs must be unique"):
             api.sde_assess(
                 self.caller,

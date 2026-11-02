@@ -10,10 +10,11 @@ from pathlib import Path
 import hashlib
 import subprocess
 import sys
+from types import SimpleNamespace
 from threading import Event
 import unittest
 from typing import BinaryIO, Self, cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from evidence_fixtures import attest_test_evidence
 from purge_fixtures import TestReviewAuthorizer
@@ -47,6 +48,7 @@ from curatormd_v2 import (
     restore_database,
 )
 from curatormd_v2.project_config import ProjectConfig, ProjectConfigError
+from curatormd_v2.sde_review_draft import SDEReviewBinding, SDEReviewDraft
 from curatormd_v2.service import SDEAssessmentRequest
 from curatormd_v2.store import ConflictError
 
@@ -384,6 +386,70 @@ class MarkdownPersistenceTests(MarkdownPersistenceFixture):
 
         self.assertIn(f"Superseded by goal: `{replacement.goal_id}`", block)
         self.assertIn("Superseded by goal", block)
+
+    def test_approved_sde_projection_renders_recorded_goal_times_in_plus_seven(self) -> None:
+        """Canonical SDE entries retain explicit start and completion times."""
+
+        draft = SDEReviewDraft(
+            title="Record the completed task",
+            significance=4,
+            documents=(
+                "persistence/HISTORY.md",
+                "persistence/LESSONS-LEARNED.md",
+            ),
+            problem="The SDE entry needs its task lifecycle times.",
+            completed=("Rendered recorded lifecycle times in the canonical entry.",),
+        )
+        binding = SDEReviewBinding(
+            project_id=self.config.project_id,
+            candidate_id="candidate-time-test",
+            decision="approved",
+            reviewer_id="local-uid:1000",
+            review_rationale="The bounded entry is ready to retain.",
+            project_config_sha256=self.config.config_sha256,
+            supporting_facts_sha256="a" * 64,
+            evidence_state_sha256="b" * 64,
+            projection_state_sha256="c" * 64,
+            inventory_sha256="d" * 64,
+            dependency_map_sha256="e" * 64,
+            draft_sha256=draft.sha256(),
+        )
+        receipt = SimpleNamespace(
+            receipt_id="receipt-time-test",
+            candidate_id="candidate-time-test",
+            decision=SimpleNamespace(value="approved"),
+            review_draft_json=draft.canonical_bytes().decode("utf-8"),
+            review_binding_json=binding.canonical_bytes().decode("utf-8"),
+            review_binding_sha256=binding.sha256(),
+            reviewer_id="local-uid:1000",
+            review_rationale=binding.review_rationale,
+            facts_sha256="a" * 64,
+            created_at="2026-11-02T02:00:00+07:00",
+            cleanup_authorized=False,
+        )
+        store = Mock()
+        store.get_receipt.return_value = receipt
+        store.get_sde_candidate.return_value = SimpleNamespace(goal_id="goal-time-test")
+        store.get_goal.return_value = SimpleNamespace(
+            started_at="2026-11-02T00:00:00+00:00",
+            completed_at="2026-11-02T01:30:00+00:00",
+        )
+        store.sde_review_targets.return_value = (
+            ("persistence/HISTORY.md", "f" * 64, "2026-11-02T02:00:00+07:00"),
+            ("persistence/LESSONS-LEARNED.md", "e" * 64, "2026-11-02T02:00:00+07:00"),
+        )
+        block = MarkdownPersistenceAdapter(
+            self.config, cast(CuratorStore, store), self.target
+        ).render_sde_review(receipt.receipt_id)
+
+        self.assertIn("Task started: `2026-11-02T07:00:00+07:00`", block)
+        self.assertIn("Successfully completed: `2026-11-02T08:30:00+07:00`", block)
+        self.assertIn("### Record the completed task", block)
+        self.assertIn("Significance: 4 / 5", block)
+        self.assertIn(f"Decision receipt: `{receipt.receipt_id}`", block)
+        self.assertIn("`persistence/HISTORY.md`", block)
+        self.assertIn("`persistence/LESSONS-LEARNED.md`", block)
+        self.assertIn(f"Receipt binding SHA-256: `{binding.sha256()}`", block)
 
     def _review_artifact_without_canonical_persistence(
         self,

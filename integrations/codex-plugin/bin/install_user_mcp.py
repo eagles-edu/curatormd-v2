@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
+import tomllib
 from typing import Any
 
 
-SERVER_NAME = "curator_v2_codex"
+SERVER_NAME = "codex-intake"
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = PLUGIN_ROOT / "bin" / "launch-curator-mcp.py"
 DEFAULT_DATABASE = (
@@ -48,6 +50,36 @@ def _get_server() -> dict[str, Any] | None:
     return value
 
 
+def _has_user_server() -> bool:
+    """Check only user registrations; the plugin may expose the same name."""
+
+    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+    path = home / "config.toml"
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return False
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_size > 1024 * 1024
+        ):
+            raise ValueError("Codex user config is not an expected owner-owned file")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            content = stream.read(1024 * 1024 + 1)
+        if len(content) > 1024 * 1024:
+            raise ValueError("Codex user config exceeds its size limit")
+        config = tomllib.loads(content.decode("utf-8"))
+    finally:
+        os.close(descriptor)
+    servers = config.get("mcp_servers", {})
+    if not isinstance(servers, dict):
+        raise ValueError("Codex user MCP configuration is invalid")
+    return SERVER_NAME in servers
+
+
 def _matches_expected(existing: dict[str, Any], expected: dict[str, Any]) -> bool:
     """Compare launch fields while allowing Codex's default empty fields."""
 
@@ -72,12 +104,14 @@ def install_user_mcp(database: Path | None = None) -> bool:
         raise ValueError("Curator V2 database path must be absolute")
     selected_database = selected_database.expanduser()
     expected = _expected_transport(selected_database)
-    existing = _get_server()
-    if existing is not None:
+    if _has_user_server():
+        existing = _get_server()
+        if existing is None:
+            raise ValueError("Codex user MCP server could not be read")
         if _matches_expected(existing, expected):
             return False
         raise ValueError(
-            "Codex already has a different curator_v2_codex server; review it before replacing"
+            "Codex already has a different codex-intake user server; review it before replacing"
         )
 
     subprocess.run(

@@ -21,6 +21,7 @@ from curatormd_v2 import (
     ArtifactPurger,
     ArtifactRef,
     ArtifactStatus,
+    AuditReceipt,
     ConflictError,
     CuratorService,
     CuratorStore,
@@ -38,10 +39,102 @@ from curatormd_v2.maintenance_cli import main as maintenance_main
 from curatormd_v2.project_config import ProjectConfig
 from curatormd_v2.store import ProjectRegistrationRequest, ProjectStatusChangeRequest
 from curatormd_v2.store_requests import PurgeTargetResult
+from curatormd_v2.sde_review_draft import SDEReviewBinding, SDEReviewDraft
 
 
 class PurgeLifecycleTests(PurgeTestSupport):
     """Exercise purge lifecycle behavior."""
+
+    def test_edited_sde_purge_waits_for_every_reviewed_destination(self) -> None:
+        """A cleanup receipt cannot bypass a missing selected-doc projection."""
+
+        candidate_id = self.candidate("edited review destination gate")
+        candidate = self.store.get_sde_candidate(candidate_id, "default")
+        _artifact_path, artifact = self.artifact("edited-review.json")
+        config = ProjectConfig.load(self.root)
+        draft = SDEReviewDraft(
+            title="Keep the review receipt bound",
+            significance=3,
+            documents=("persistence/HISTORY.md",),
+            problem="The review receipt must bind the saved entry.",
+            completed=("Bound the approved entry to its review receipt.",),
+        )
+        manifest = json.dumps(
+            [(artifact.path, artifact.sha256, artifact.occurrence_id)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        facts_sha256 = self.store.facts_digest(candidate.fact_ids, "default")
+        binding = SDEReviewBinding(
+            project_id="default",
+            candidate_id=candidate_id,
+            decision=ReviewDecision.APPROVED.value,
+            reviewer_id="test-reviewer",
+            review_rationale="The selected entry and inventory were reviewed.",
+            project_config_sha256=config.config_sha256,
+            supporting_facts_sha256=facts_sha256,
+            evidence_state_sha256=self.service.sde_review_evidence_state(
+                candidate_id, require_passing=True
+            ),
+            projection_state_sha256=draft.projection_state_sha256(config),
+            inventory_sha256=hashlib.sha256(manifest.encode("utf-8")).hexdigest(),
+            dependency_map_sha256="c" * 64,
+            draft_sha256=draft.sha256(),
+        )
+        receipt = AuditReceipt(
+            candidate_id=candidate_id,
+            decision=ReviewDecision.APPROVED,
+            facts_sha256=facts_sha256,
+            artifacts=(artifact,),
+            artifact_inventory_complete=True,
+            reviewer_id="test-reviewer",
+            review_rationale=binding.review_rationale,
+            review_draft_json=draft.canonical_bytes().decode("utf-8"),
+            review_binding_sha256=binding.sha256(),
+            review_binding_json=binding.canonical_bytes().decode("utf-8"),
+        )
+        saved = self.store.create_receipt(receipt, "default")
+        with self.store.transaction() as connection:
+            connection.execute(
+                "UPDATE purge_targets SET reacquisition_action = ? "
+                "WHERE receipt_id = ? AND path = ?",
+                (
+                    ReacquisitionAction.NOT_REQUIRED.value,
+                    saved.receipt_id,
+                    artifact.path,
+                ),
+            )
+        self.service.authorize_artifact_cleanup(
+            saved.receipt_id, binding.inventory_sha256, binding.dependency_map_sha256
+        )
+        target = "persistence/HISTORY.md"
+        canonical_sha256 = "d" * 64
+        self.service.mark_canonical_persisted(
+            saved.receipt_id, target, canonical_sha256
+        )
+        self.service.mark_cleanup_authorization_canonical_persisted(
+            saved.receipt_id, target, canonical_sha256
+        )
+        self.assertTrue(_artifact_path.exists())
+
+        before_sha256 = hashlib.sha256(
+            (self.root / target).read_bytes()
+        ).hexdigest()
+        self.store.prepare_sde_review_target_projection(
+            saved.receipt_id,
+            "default",
+            target,
+            before_exists=True,
+            before_sha256=before_sha256,
+            expected_sha256="e" * 64,
+        )
+        self.store.mark_sde_review_target_projected(
+            saved.receipt_id, "default", target, "e" * 64
+        )
+        completed = self.service.retry_pending_purges()
+
+        self.assertFalse(_artifact_path.exists())
+        self.assertEqual(completed[0].purge_status, PurgeStatus.COMPLETE)
 
     def test_same_content_replacement_after_review_is_not_unlinked(self) -> None:
         """A reviewed hash cannot authorize a different file occurrence."""

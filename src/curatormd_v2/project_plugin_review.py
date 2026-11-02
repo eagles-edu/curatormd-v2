@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hmac
+import re
 from .models import (
     ArtifactCleanupAuthorizationRequest,
     ArtifactRef,
@@ -18,7 +20,10 @@ from .models import (
     SDEQualityFeedbackSummary,
     SDEReviewDetail,
     SDEReviewPacket,
+    ReviewDecision,
 )
+from .sde_review_draft import SDEReviewBinding, SDEReviewDraft
+from .markdown_persistence import MarkdownPersistenceAdapter
 from .read_models import (
     artifact_dependency_map_sha256,
     build_artifact_review_dependencies,
@@ -84,6 +89,14 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
 
         return self.service.sde_review_queue(limit)
 
+    def sde_review_documents(self) -> tuple[str, ...]:
+        """Return configured project-relative Markdown destinations for draft editing."""
+
+        return tuple(
+            target.relative_to(self.config.project_root).as_posix()
+            for target in self.config.persistence_targets
+        )
+
     def sde_assess(
         self,
         request: SDEAssessmentRequest,
@@ -103,6 +116,11 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
         """Read one candidate and its selected evidence within this project."""
 
         return self.service.sde_review_detail(candidate_id)
+
+    def sde_review_has_current_passing_evidence(self, candidate_id: str) -> bool:
+        """Recheck selected evidence before presenting a successful-completion time."""
+
+        return self.service.sde_review_has_current_passing_evidence(candidate_id)
 
     def sde_review_packet(
         self,
@@ -184,6 +202,70 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
 
         return self.service.sde_quality_feedback_summary()
 
+    def prepare_sde_review_binding(
+        self,
+        request: SDEConfirmationRequest,
+        *,
+        authenticated_subject: str | None = None,
+    ) -> SDEReviewBinding:
+        """Observe the exact edited proposal and packet before human confirmation.
+
+        This is not a decision or cleanup approval. The caller must repeat
+        all checks when submitting the attended confirmation.
+        """
+
+        draft = request.review_draft
+        if draft is None or request.rationale is None:
+            raise ValueError("edited SDE review requires a draft and rationale")
+        if request.decision is ReviewDecision.APPROVED and not draft.documents:
+            raise ValueError("approval requires at least one configured document")
+        if not request.artifact_inventory_complete or request.dependency_map_sha256 is None:
+            raise ValueError("edited SDE review requires the complete displayed inventory")
+        reviewer = self.service.review_authorizer.authorize(
+            self.config.project_id, request.candidate_id, request.decision,
+            authenticated_subject,
+        )
+        if authenticated_subject is not None and reviewer != authenticated_subject:
+            raise PermissionError("reviewer does not match the authenticated subject")
+        expected_revision = self._capture_active_project_revision()
+        with self._locked_staging_root() as root_fd:
+            candidate = self.sde_review_detail(request.candidate_id).candidate
+            artifacts = self._require_current_artifact_inventory(
+                candidate.goal_id, request.artifacts, staging_root_fd=root_fd
+            )
+            self._require_current_dependency_map(
+                candidate.goal_id, artifacts, request.dependency_map_sha256
+            )
+            evidence_state = self.service.sde_review_evidence_state(
+                request.candidate_id,
+                require_passing=request.decision is ReviewDecision.APPROVED,
+            )
+            facts_sha256 = self.service.store.facts_digest(
+                candidate.fact_ids, self.config.project_id
+            )
+            projection_state = draft.projection_state_sha256(self.config)
+            if self.service.sde_review_evidence_state(
+                request.candidate_id,
+                require_passing=request.decision is ReviewDecision.APPROVED,
+            ) != evidence_state:
+                raise ConflictError("SDE evidence changed during review preparation")
+            if self._capture_active_project_revision() != expected_revision:
+                raise ConflictError("project changed during review preparation")
+        return SDEReviewBinding(
+            project_id=self.config.project_id,
+            candidate_id=request.candidate_id,
+            decision=request.decision.value,
+            reviewer_id=reviewer,
+            review_rationale=request.rationale,
+            project_config_sha256=self.config.config_sha256,
+            supporting_facts_sha256=facts_sha256,
+            evidence_state_sha256=evidence_state,
+            projection_state_sha256=projection_state,
+            inventory_sha256=artifact_manifest_sha256(artifacts),
+            dependency_map_sha256=request.dependency_map_sha256,
+            draft_sha256=draft.sha256(),
+        )
+
     def sde_confirm(
         self,
         request: SDEConfirmationRequest,
@@ -192,6 +274,20 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
     ) -> AuditReceipt:
         """Record disposition and exact cleanup authorization in one review action."""
 
+        current_binding: SDEReviewBinding | None = None
+        if request.review_draft is not None:
+            expected_binding = request.expected_review_binding_sha256
+            if not isinstance(expected_binding, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_binding):
+                raise ValueError("edited SDE decision requires the displayed binding digest")
+            if request.review_draft.significance == 5 and request.confirm_significance_five is not True:
+                raise PermissionError("significance 5 requires explicit human confirmation")
+            current_binding = self.prepare_sde_review_binding(
+                request, authenticated_subject=authenticated_subject
+            )
+            if not hmac.compare_digest(current_binding.sha256(), expected_binding):
+                raise ConflictError("SDE review changed after it was displayed")
+        elif request.expected_review_binding_sha256 is not None or request.confirm_significance_five:
+            raise ValueError("SDE binding options require an edited review draft")
         with self._locked_staging_root() as root_fd:
             expected_revision = self._capture_active_project_revision()
             validated_dependency_map_sha256: str | None = None
@@ -209,10 +305,19 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
                     candidate.goal_id, artifacts, request.dependency_map_sha256
                 )
                 validated_dependency_map_sha256 = request.dependency_map_sha256
+            if current_binding is not None:
+                draft = request.review_draft
+                if draft is None or (
+                    artifact_manifest_sha256(artifacts) != current_binding.inventory_sha256
+                    or validated_dependency_map_sha256 != current_binding.dependency_map_sha256
+                    or draft.projection_state_sha256(self.config) != current_binding.projection_state_sha256
+                ):
+                    raise ConflictError("SDE review state changed before confirmation")
             validated_request = replace(request, artifacts=artifacts)
             prepared_confirmation = self.service.prepare_sde_confirmation(
                 validated_request,
                 authenticated_subject=authenticated_subject,
+                validated_binding=current_binding,
             )
             with self._project_revision_fence(expected_revision):
                 receipt = self.service.commit_sde_confirmation(
@@ -233,6 +338,160 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
                         receipt.receipt_id, self.config.project_id
                     )
                 return receipt
+
+    def sde_review_projection_status(
+        self, receipt_id: str, *, authenticated_subject: str | None = None,
+    ) -> tuple[tuple[str, str | None, str | None], ...]:
+        """Read the approved destination states for the original reviewer."""
+
+        receipt = self.service.store.get_receipt(receipt_id, self.config.project_id)
+        if receipt.review_draft_json is None or receipt.review_binding_json is None:
+            raise ValueError("edited SDE receipt is required")
+        reviewer = self.service.review_authorizer.authorize(
+            self.config.project_id, receipt.candidate_id, receipt.decision,
+            authenticated_subject,
+        )
+        if reviewer != receipt.reviewer_id or (
+            authenticated_subject is not None and reviewer != authenticated_subject
+        ):
+            raise PermissionError("SDE projection requires the original reviewer")
+        return self.service.store.sde_review_targets(receipt_id, self.config.project_id)
+
+    def sde_project_review_target(
+        self, receipt_id: str, target: str, *, prepare_only: bool,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Prepare or project one previously reviewed SDE destination.
+
+        The API must reauthorize the project review grant for each call. This
+        operation never marks the whole review complete or starts cleanup.
+        """
+
+        if type(prepare_only) is not bool:  # pylint: disable=unidiomatic-typecheck
+            raise ValueError("projection phase must be explicit")
+        receipt = self.service.store.get_receipt(receipt_id, self.config.project_id)
+        if receipt.review_binding_json is None or receipt.review_draft_json is None:
+            raise ValueError("edited SDE receipt is required")
+        binding = SDEReviewBinding.from_json(receipt.review_binding_json)
+        if receipt.decision is not ReviewDecision.APPROVED:
+            raise ValueError("only approved SDE entries can be projected")
+        reviewer = self.service.review_authorizer.authorize(
+            self.config.project_id, receipt.candidate_id, receipt.decision,
+            authenticated_subject,
+        )
+        if reviewer != receipt.reviewer_id or (
+            authenticated_subject is not None and reviewer != authenticated_subject
+        ):
+            raise PermissionError("SDE projection requires the original reviewer")
+        if self.service.sde_review_evidence_state(
+            receipt.candidate_id, require_passing=True
+        ) != binding.evidence_state_sha256:
+            raise ConflictError("SDE evidence changed after approval")
+        expected_revision = self._capture_active_project_revision()
+        with self._locked_staging_root() as root_fd:
+            candidate = self.sde_review_detail(receipt.candidate_id).candidate
+            artifacts = self._require_current_artifact_inventory(
+                candidate.goal_id, receipt.artifacts, staging_root_fd=root_fd
+            )
+            if artifact_manifest_sha256(artifacts) != binding.inventory_sha256:
+                raise ConflictError("SDE inventory changed after approval")
+            self._require_current_dependency_map(
+                candidate.goal_id, artifacts, binding.dependency_map_sha256
+            )
+            adapter = MarkdownPersistenceAdapter(
+                self.config, self.service.store, target, self.service.evidence_verifier
+            )
+
+            def effect_fence():
+                return self._project_revision_fence(expected_revision)
+
+            if prepare_only:
+                adapter.prepare_sde_review_projection(
+                    receipt_id, binding, effect_fence=effect_fence
+                )
+                return "prepared"
+            return adapter.persist_prepared_sde_review(
+                receipt_id, binding, effect_fence=effect_fence
+            )
+
+    def sde_finalize_review_projection(
+        self, receipt_id: str, *, authenticated_subject: str | None = None,
+    ) -> AuditReceipt:
+        """Bind all verified destination writes before releasing exact cleanup."""
+
+        receipt = self.service.store.get_receipt(receipt_id, self.config.project_id)
+        if (
+            receipt.decision not in {ReviewDecision.APPROVED, ReviewDecision.REJECTED}
+            or receipt.review_draft_json is None
+            or receipt.review_binding_json is None
+        ):
+            raise ValueError("edited SDE receipt is required")
+        binding = SDEReviewBinding.from_json(receipt.review_binding_json)
+        reviewer = self.service.review_authorizer.authorize(
+            self.config.project_id, receipt.candidate_id, receipt.decision,
+            authenticated_subject,
+        )
+        if reviewer != receipt.reviewer_id or (
+            authenticated_subject is not None and reviewer != authenticated_subject
+        ):
+            raise PermissionError("SDE projection requires the original reviewer")
+        if self.service.sde_review_evidence_state(
+            receipt.candidate_id,
+            require_passing=receipt.decision is ReviewDecision.APPROVED,
+        ) != binding.evidence_state_sha256:
+            raise ConflictError("SDE evidence changed after the decision")
+        draft = SDEReviewDraft.from_json(receipt.review_draft_json)
+        expected_revision = self._capture_active_project_revision()
+        with self._locked_staging_root() as root_fd:
+            candidate = self.sde_review_detail(receipt.candidate_id).candidate
+            artifacts = self._require_current_artifact_inventory(
+                candidate.goal_id, receipt.artifacts, staging_root_fd=root_fd
+            )
+            if artifact_manifest_sha256(artifacts) != binding.inventory_sha256:
+                raise ConflictError("SDE inventory changed after approval")
+            self._require_current_dependency_map(
+                candidate.goal_id, artifacts, binding.dependency_map_sha256
+            )
+            if receipt.decision is ReviewDecision.REJECTED:
+                # A rejection is durable in the SQLite audit ledger and must
+                # not be projected as a knowledge entry. Its typed confirmation
+                # already bound the exact inventory and dependency map.
+                canonical_target = f"sqlite://audit_receipts/{receipt.receipt_id}"
+                canonical_digest = binding.sha256()
+                with self._project_revision_fence(expected_revision):
+                    self.service.mark_canonical_persisted(
+                        receipt_id, canonical_target, canonical_digest
+                    )
+                    return self.service.mark_cleanup_authorization_canonical_persisted(
+                        receipt_id, canonical_target, canonical_digest
+                    )
+            destinations = self.service.store.sde_review_targets(
+                receipt_id, self.config.project_id
+            )
+            if tuple(path for path, _digest, _time in destinations) != tuple(
+                sorted(draft.documents)
+            ):
+                raise ConflictError("SDE destination inventory changed after approval")
+            for target in draft.documents:
+                adapter = MarkdownPersistenceAdapter(
+                    self.config, self.service.store,
+                    self.config.validated_persistence_target(target),
+                    self.service.evidence_verifier,
+                )
+                if adapter.inspect_sde_review_projection(receipt_id, binding) != "complete":
+                    raise ConflictError("every SDE destination must match its recorded digest")
+            if any(digest is None or projected_at is None for _path, digest, projected_at in destinations):
+                raise ConflictError("every SDE destination must be fully recorded")
+            canonical_target, canonical_sha256, _projected_at = destinations[0]
+            if canonical_sha256 is None:
+                raise ConflictError("canonical SDE destination digest is missing")
+            with self._project_revision_fence(expected_revision):
+                self.service.mark_canonical_persisted(
+                    receipt_id, canonical_target, canonical_sha256
+                )
+                return self.service.mark_cleanup_authorization_canonical_persisted(
+                    receipt_id, canonical_target, canonical_sha256
+                )
 
     def artifact_inventory_complete(
         self,

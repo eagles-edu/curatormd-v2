@@ -30,6 +30,33 @@ from curatormd_v2.schema_migrations import (
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
 
+    def test_v44_migration_adds_explicit_goal_timestamps(self) -> None:
+        """Legacy goals gain nullable lifecycle times without guessed backfills."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "v44.sqlite3"
+            store = CuratorStore(database_path)
+            store.close()
+            connection = sqlite3.connect(database_path)
+            connection.execute("ALTER TABLE goals DROP COLUMN started_at")
+            connection.execute("ALTER TABLE goals DROP COLUMN completed_at")
+            connection.execute("PRAGMA user_version = 44")
+            connection.commit()
+            connection.close()
+
+            migrated = CuratorStore(database_path)
+            try:
+                with migrated.transaction() as connection:
+                    columns = {
+                        row["name"]
+                        for row in connection.execute("PRAGMA table_info(goals)")
+                    }
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                self.assertTrue({"started_at", "completed_at"}.issubset(columns))
+                self.assertEqual(version, SQLITE_SCHEMA_VERSION)
+            finally:
+                migrated.close()
+
     def test_current_schema_columns_have_explicit_storage_classes(self) -> None:
         """Require every durable column to enter a storage-class measure."""
 

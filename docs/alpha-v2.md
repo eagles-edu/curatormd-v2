@@ -18,6 +18,14 @@ Core integration and Host Steward are separate source
 changes in the Hermes Core repository; they are not part of this wheel. The
 Vhost Manager consumer plugin and hook are installed in its isolated local
 Hermes profile for alpha testing.
+The current source separates project health from pending SDE reviews. Pending
+reviews alone do not degrade health; a blue review action opens a generated
+Markdown review document with per-candidate Accept and Reject actions. Those
+actions open the attended reviewer for the full packet and decision. The source changes still require
+installation or reload and an owner-run editor proof.
+
+## Historical editor observation (versions 0.8.8 and 0.9.0)
+
 The separate V2-owned VS Code extension
 `curatormd.curatormd-v2-status@0.9.0` is installed. It provides the project
 dashboard, a bounded operational attention summary, review-queue display, and
@@ -42,9 +50,9 @@ An earlier dashboard snapshot had seven unknown dependency gates; the fresh
 trusted profile probe on 2026-10-29 returned all seven healthy. The desktop
 status-bar rendering has not been rechecked since that probe. This verifies the
 configured consumer editor and tooltip, not review/purge, complete token
-coverage, or deployed monitoring. The Curator V2 backend
-checkout remains a global backend, not a consumer project; it does not need a
-consumer config or status-bar activation.
+coverage, or deployed monitoring. The Curator V2 backend checkout remains a
+global backend. This observation does not establish the current editor
+installation, project binding, or status.
 
 ## 2026-10-29 installed alpha package refresh
 

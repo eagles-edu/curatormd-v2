@@ -1,11 +1,17 @@
 # CuratorMD V2 VS Code dashboard
 
 The V2-owned extension places its `CuratorMD V2` status item immediately to
-the right of Git Graph. Its colors are blue before a health read, yellow when
-health or the review count is unknown, green when health is healthy with no pending
-SDE review, purple when a human SDE decision is pending and health is healthy
-or review backlog is the only degraded gate, red for other degraded health,
-and yellow for an actual warning.
+the right of Git Graph. The health item is blue before a health read, yellow
+when health is unknown, green when project health is healthy, and red when
+project health is degraded. Pending SDE approvals do not degrade project
+health. A separate blue review action appears when approvals are waiting;
+clicking it opens `.curatormd-v2/sde-proposals/pending-review.md`. Each
+candidate has Accept and Reject actions directly in the document that open
+the attended reviewer in a terminal. The selected action is
+only a hint: the reviewer still sees the full packet and exact inventory,
+re-enters the decision, supplies a rationale, and types the bound confirmation
+before any decision or cleanup is recorded.
+Purple marks other review work in dashboard panels.
 The tooltip shows the installed extension version, health, the pending review
 count or its unavailable state, and a short explanation of the active color.
 When a health read fails, it gives a fixed next step for the known failure
@@ -15,8 +21,8 @@ language reason, rather than an internal code such as
 `health_read_unavailable`.
 For a same-project health result it also lists up to 12 plain-language gate
 descriptions, so yellow and red states point to the reported cause without
-exposing arbitrary server text. Other degraded health gates take priority over
-purple so a review queue cannot hide an operational problem. Unknown or
+exposing arbitrary server text. Pending SDE approvals appear in the review
+action and operational queue. Unknown or
 unavailable health is yellow; blue means a health read has not been attempted.
 Cross-project or unavailable health is shown as unknown. If the workspace has
 no `.curatormd-v2.toml`, the extension explains
@@ -38,12 +44,29 @@ replaced only when their saved data changes; their check time remains in the
 dashboard.
 The extension also creates `.curatormd-v2/` with three working areas:
 `inbox/status.json` is a count-only view of SQLite event receipts;
-`sde-proposals/pending.json` lists pending proposal summaries and points to the
-dashboard for full review and approval; `side-buffer/` is the configured
+`sde-proposals/pending.json` contains pending proposal summaries and
+`sde-proposals/pending-review.md` presents them with review actions;
+`side-buffer/` is the configured
 temporary artifact staging root. The two JSON files are rewritten from an
 authorized database read. They are views, not canonical records or approval
 receipts. SQLite remains authoritative. The extension refuses symlinked state
 directories and writes these local views with owner-only permissions.
+Each candidate includes a readable proposed SDE entry and a separate editable
+copy. The copy starts with a materiality-based significance recommendation;
+the owner may set any score from 0 to 5 and select multiple configured
+destinations. A score of 5 requires extra confirmation. The proposal separates
+the plan task, evidence-checked work, impact, difficulties, plan changes,
+lessons, and future utility; unsupported details are marked as not recorded.
+Accept and Reject open the attended reviewer with the saved copy. The reviewer
+displays the draft and exact inventory and requires typed confirmation; the
+edited review and projection path still needs proof.
+Review-document refresh pauses while the document has unsaved edits. Saved
+editable blocks for still-pending candidates are carried forward; changes to
+generated text, missing markers, and drafts for candidates no longer in the
+queue pause refresh for manual reconciliation. Existing documents without a
+recognized checksum are also preserved. Saving edits alone does not submit a
+decision. Review actions refuse a stale document or changes outside its editable
+blocks. Cleanup remains pending for edited reviews.
 The button opens a project-scoped dashboard for the first workspace folder.
 Task intake happens through the normal Codex request; there is no VS Code
 palette command for starting a task. The V2-owned Codex plugin's prompt hook

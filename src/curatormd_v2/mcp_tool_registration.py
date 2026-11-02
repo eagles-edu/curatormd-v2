@@ -7,7 +7,9 @@ from __future__ import annotations
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
 from dataclasses import asdict
+from datetime import datetime
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
@@ -53,6 +55,20 @@ from .mcp_tool_support import (
 )
 from .mcp_tool_cleanup_registration import register_cleanup_tools
 from .store import EventReceiptArchiveRequest, FactCompactionApprovalRequest
+
+
+def _owner_local_timestamp(value: str | None) -> str | None:
+    """Render a recorded aware timestamp in the owner's UTC+07 timezone."""
+
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).isoformat(timespec="seconds")
 
 class _McpToolRegistrar:
     """Capture trusted project context and share safe registration helpers."""
@@ -937,6 +953,54 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
 
         return json_result(
             api.sde_review_detail(caller, project_id, candidate_id)
+        )
+
+    @_safe_tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True, destructive_hint=False, open_world_hint=False
+        )
+    )
+    def sde_review_outline(candidate_id: str) -> str:
+        """Read bounded, selected fact text for one authorized SDE proposal.
+
+        A fact's presence here does not establish current verification or task
+        completion. The completion time is shown only when selected passing
+        evidence is currently valid; legacy values remain unknown.
+        """
+
+        detail = api.sde_review_detail(caller, project_id, candidate_id)
+        evidence_current = api.sde_review_has_current_passing_evidence(
+            caller, project_id, candidate_id
+        )
+        return json_result(
+            {
+                "project_id": project_id,
+                "candidate_id": detail.candidate.candidate_id,
+                "status": detail.candidate.status.value,
+                "goal_id": detail.goal.goal_id,
+                "problem": detail.goal.problem,
+                "materiality": detail.candidate.materiality.value,
+                "proposal_rationale": detail.candidate.rationale,
+                "impact": detail.candidate.impact,
+                "future_utility": detail.candidate.retrieval_value,
+                "task_started_at": _owner_local_timestamp(detail.goal.started_at),
+                "successful_completion_at": (
+                    _owner_local_timestamp(detail.goal.completed_at)
+                    if detail.goal.completed_at is not None and evidence_current
+                    else None
+                ),
+                "successful_completion_evidence_current": evidence_current,
+                "persistence_documents": api.sde_review_documents(
+                    caller, project_id
+                ),
+                "evidence_status": (
+                    "current_passing" if evidence_current else "not_current_or_missing"
+                ),
+                "supporting_facts": [
+                    {"fact_id": fact.fact_id, "kind": fact.kind.value, "bullet": fact.bullet}
+                    for fact in detail.facts
+                ],
+            }
         )
 
     @_safe_tool(

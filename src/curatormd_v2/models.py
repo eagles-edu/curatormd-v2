@@ -29,6 +29,7 @@ from .record_validation import (
     SHA256_RE as _SHA256_RE,
     parse_aware_timestamp as _parse_aware_timestamp,
 )
+from .sde_review_draft import SDEReviewBinding, SDEReviewDraft
 from .validation import is_exact_int, validate_checklist_snapshot
 
 
@@ -380,6 +381,8 @@ class GoalCard(GoalDefinitionFields):  # pylint: disable=too-many-instance-attri
     criteria_revision: int = 1
     lifecycle_revision: int = 1
     superseded_by_goal_id: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
     def __post_init__(self) -> None:
         _validate_goal_text_fields(self)
@@ -498,6 +501,18 @@ def _validate_goal_revisions_and_relations(goal: GoalCard) -> None:
         raise ValueError("criteria_revision must be positive")
     if goal.lifecycle_revision < 1:
         raise ValueError("lifecycle_revision must be positive")
+    started = (
+        _parse_aware_timestamp("started_at", goal.started_at)
+        if goal.started_at is not None else None
+    )
+    completed = (
+        _parse_aware_timestamp("completed_at", goal.completed_at)
+        if goal.completed_at is not None else None
+    )
+    if started is not None and completed is not None and completed < started:
+        raise ValueError("completed_at cannot precede started_at")
+    if completed is not None and goal.status is not GoalStatus.COMPLETE:
+        raise ValueError("completed_at requires a complete goal")
     if goal.parent_goal_id == goal.goal_id:
         raise ValueError("a goal cannot be its own parent")
     if len(goal.depends_on_goal_ids) != len(set(goal.depends_on_goal_ids)):
@@ -762,6 +777,9 @@ class SDEConfirmationRequest:
     artifact_inventory_complete: bool
     dependency_map_sha256: str | None = None
     rationale: str | None = None
+    review_draft: SDEReviewDraft | None = None
+    expected_review_binding_sha256: str | None = None
+    confirm_significance_five: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -832,6 +850,9 @@ class AuditReceipt:  # pylint: disable=too-many-instance-attributes  # Versioned
     artifact_inventory_complete: bool = False
     reviewer_id: str | None = None
     review_rationale: str | None = None
+    review_draft_json: str | None = None
+    review_binding_sha256: str | None = None
+    review_binding_json: str | None = None
     canonical_persisted: bool = False
     canonical_target: str | None = None
     canonical_sha256: str | None = None
@@ -850,6 +871,34 @@ class AuditReceipt:  # pylint: disable=too-many-instance-attributes  # Versioned
     def __post_init__(self) -> None:
         if self.review_rationale is not None:
             validate_safe_text(self.review_rationale, "review_rationale")
+        if (self.review_draft_json is None) != (self.review_binding_sha256 is None):
+            raise ValueError("SDE review draft and binding must be recorded together")
+        if (self.review_draft_json is None) != (self.review_binding_json is None):
+            raise ValueError("SDE review draft and binding payload must be recorded together")
+        if self.review_draft_json is not None:
+            draft = SDEReviewDraft.from_json(self.review_draft_json)
+            if self.decision is ReviewDecision.APPROVED and not draft.documents:
+                raise ValueError("approved SDE review requires a persistence destination")
+            if draft.canonical_bytes().decode("utf-8") != self.review_draft_json:
+                raise ValueError("SDE review draft must use canonical encoding")
+            if not isinstance(self.review_binding_sha256, str) or not _SHA256_RE.fullmatch(
+                self.review_binding_sha256
+            ):
+                raise ValueError("SDE review binding must be a lowercase SHA-256")
+            if self.review_binding_json is None:
+                raise ValueError("SDE review binding payload is required")
+            binding = SDEReviewBinding.from_json(self.review_binding_json)
+            if (
+                binding.canonical_bytes().decode("utf-8") != self.review_binding_json
+                or binding.sha256() != self.review_binding_sha256
+                or binding.candidate_id != self.candidate_id
+                or binding.decision != self.decision.value
+                or binding.reviewer_id != self.reviewer_id
+                or binding.review_rationale != self.review_rationale
+                or binding.supporting_facts_sha256 != self.facts_sha256
+                or binding.draft_sha256 != draft.sha256()
+            ):
+                raise ValueError("SDE review binding does not match the receipt")
         _validate_receipt_artifact_manifest(self)
         _validate_receipt_reviewer_and_rationale(self)
         _validate_receipt_canonical_proof(self)

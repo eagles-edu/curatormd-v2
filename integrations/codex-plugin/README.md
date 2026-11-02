@@ -8,8 +8,8 @@ goals. The plugin does not add a command-palette action or save raw prompt text.
 
 The Codex plugin supplies the intake skill and its own local MCP connection.
 The connection uses the active Codex workspace to select the configured V2
-project. Its read and lifecycle tools are configured for automatic approval;
-review and cleanup decisions remain unavailable to the task tracker. It tracks
+project. Read and lifecycle tool approval depends on the effective server's
+Codex configuration; review and cleanup decisions remain unavailable to the task tracker. It tracks
 compact task facts and prepares a pending SDE at each completed task endpoint.
 Use the read-only `evidence_capture` tool for owner-configured host checks, then
 pass its returned reference unchanged to `fact_record`. It cannot accept
@@ -94,12 +94,13 @@ definitions in `/hooks`, then start a fresh thread. Codex skips changed hooks
 until their current definitions are trusted. Desktop plugin installation uses
 the bundled hooks; Codex CLI uses the native user-hook installer below.
 
-The plugin's `mcp.json` registers its `codex-intake` server and the matching
-plugin-scoped tool approval settings in Codex. The server discovers the active
-workspace from its Codex parent, finds that workspace's `.curatormd-v2.toml`,
-and enforces its repository/config fingerprints and exact project grant. This
-keeps task intake attached to the enabled plugin instead of a separate global
-MCP registration.
+The plugin's `mcp.json` declares `codex-intake`. A shared Codex app server can
+start that bundled entry in the plugin cache, which does not identify the active
+workspace. The user-level registration below uses the same server name without
+a fixed working directory; Codex gives it precedence and starts it in the
+thread's working directory. The server finds that workspace's
+`.curatormd-v2.toml` and enforces its repository/config fingerprints and exact
+project grant. A thread without a valid binding fails closed.
 
 The server selects `~/.config/curatormd-v2/<project-id>-evidence.json` for the
 active project when that owner-managed file exists. An explicit
@@ -120,8 +121,25 @@ These displayed values do not grant access.
 ## Local installation
 
 The plugin is listed in `../.agents/plugins/marketplace.json`. Add the local
-marketplace and install `curator-v2` with the Codex plugin manager. For Codex
-CLI, install the native hooks from this checkout with:
+marketplace and install `curator-v2` with the Codex plugin manager. Install the
+`curatormd-v2-codex-mcp` entry point on Codex's `PATH`, or set the absolute
+`CURATOR_V2_CODEX_MCP` executable path in the Codex process environment. The
+checkout's `.venv` is also used when the launcher itself runs from that
+checkout. A cached plugin cannot infer the checkout from its own location.
+Install the owner-level server registration from this checkout:
+
+```bash
+python3 integrations/codex-plugin/bin/install_user_mcp.py
+```
+
+It refuses to replace a different user registration named `codex-intake`.
+The user-level registration has its own tool approval settings: plugin-scoped
+settings do not automatically configure that registration. Review the effective
+`mcp_servers.codex-intake` settings and copy any intended individual tool rules
+there. Keep the default at `prompt` if other tools require individual approval;
+do not grant task tracking tools authority to make review or cleanup decisions.
+Confirm the server can connect for the intended project before installing or
+trusting work-blocking hooks. For Codex CLI, install the native hooks with:
 
 ```bash
 python3 integrations/codex-plugin/bin/install_user_hook.py
