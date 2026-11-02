@@ -11623,3 +11623,10 @@ checking real summaries in steps 1 and 3.
       runtime install/restart, or hook configuration change was performed.
       Real Hermes task delivery and all owner/runtime acceptance checks remain
       open.
+      Proof-run package preparation (2026-11-02): VS Code extension version
+      0.9.55 packages the current dashboard and review formatting into
+      `integrations/vscode-status/curatormd-v2-status-0.9.55.vsix`. The
+      artifact is available for owner installation and proof testing; it was
+      not installed here. JavaScript syntax and whitespace checks pass. No
+      unit or proof tests were run, and runtime, owner-review, and remaining
+      plan acceptance gates stay open. Native hooks remain off.
