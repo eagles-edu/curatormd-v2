@@ -128,3 +128,19 @@ scope and remaining work are defined by
   runtime update, or restart was performed.
 - Active VS Code rendering remains unverified; the window still needs a
   reload and visual check of the red health and separate blue review actions.
+
+## Proof-run artifact checkpoint — 2026-11-02 18:47 +07
+
+- Curator V2 repository `HEAD` and `origin/main` match at
+  `0930be95fb5df02066ccdfc23766e512f63fd1fb`.
+- The proof-run package is
+  `integrations/vscode-status/curatormd-v2-status-0.9.55.vsix`, SHA-256
+  `af771732d8fa80a2d8052776a2cd7ed95a0a4c3f587766c9b47eb049665d6be5`.
+  The installed VS Code extension still reports 0.9.54; 0.9.55 has not been
+  installed and the active editor has not been reloaded.
+- The owner-configured maintenance service probe returned `passed` for
+  `service-probe:curator-maintenance-timer`. This is service-readiness evidence
+  only; it does not prove the 250 MiB warning boundary, 72-hour expiry,
+  seven-copy rotation, restore, or rollback.
+- No unit/proof tests, editor reload, Hermes runtime update, SDE decision, or
+  cleanup action was performed. All seven acceptance items remain open.
