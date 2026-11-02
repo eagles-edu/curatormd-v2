@@ -10673,6 +10673,12 @@ unverified. Native Codex hooks remain disabled.
       copy. `node --check`, Python source compilation, errors-only Pylint, and
       `git diff --check` pass. Tests were not run; rendered editor behavior,
       attended decisions, and receipt reconciliation remain open.
+      Canonical-entry Markdown cleanup (2026-11-02): the approved SDE
+      persistence projection now uses level-four headings for completed work,
+      difficulties, plan changes, lessons, and destinations instead of bold
+      pseudo-headings. A focused regression checks the heading structure.
+      Python AST parsing, errors-only Pylint, and `git diff --check` pass;
+      tests were not run. Human review and rendered acceptance remain open.
 - [ ] One explicit review action decides SDE disposition and authorizes cleanup
       of the complete exact inventory. Canonical facts, the distinct decision
       receipts, and a cleanup-authorization receipt bound to that inventory are

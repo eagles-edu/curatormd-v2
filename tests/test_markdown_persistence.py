@@ -399,6 +399,9 @@ class MarkdownPersistenceTests(MarkdownPersistenceFixture):
             ),
             problem="The SDE entry needs its task lifecycle times.",
             completed=("Rendered recorded lifecycle times in the canonical entry.",),
+            difficulties=("The source fact had no stored difficulty details.",),
+            plan_changes=("No plan change was required.",),
+            lessons=("Use recorded lifecycle times in future summaries.",),
         )
         binding = SDEReviewBinding(
             project_id=self.config.project_id,
@@ -445,6 +448,13 @@ class MarkdownPersistenceTests(MarkdownPersistenceFixture):
         self.assertIn("Task started: `2026-11-02T07:00:00+07:00`", block)
         self.assertIn("Successfully completed: `2026-11-02T08:30:00+07:00`", block)
         self.assertIn("### Record the completed task", block)
+        self.assertIn("#### Completed successfully", block)
+        self.assertIn("#### Difficulties encountered", block)
+        self.assertIn("#### Plan changes required", block)
+        self.assertIn("#### Lessons learned", block)
+        self.assertIn("#### Approved persistence destinations", block)
+        self.assertNotIn("**Completed successfully**", block)
+        self.assertNotIn("**Approved persistence destinations**", block)
         self.assertIn("Significance: 4 / 5", block)
         self.assertIn(f"Decision receipt: `{receipt.receipt_id}`", block)
         self.assertIn("`persistence/HISTORY.md`", block)

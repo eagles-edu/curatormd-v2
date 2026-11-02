@@ -293,12 +293,12 @@ class MarkdownPersistenceAdapter:
             ("Lessons learned", draft.lessons),
         ):
             if values:
-                lines.extend(["", f"**{label}**", ""])
+                lines.extend(["", f"#### {label}", ""])
                 lines.extend(f"- {_markdown_text(value)}" for value in values)
         if draft.future_utility:
             lines.extend(["", f"- Future utility: {_markdown_text(draft.future_utility)}"])
         destinations = self.store.sde_review_targets(receipt_id, self.project_id)
-        lines.extend(["", "**Approved persistence destinations**", ""])
+        lines.extend(["", "#### Approved persistence destinations", ""])
         lines.extend(
             f"- {_markdown_code(path)}"
             for path, _digest, _projected_at in destinations
