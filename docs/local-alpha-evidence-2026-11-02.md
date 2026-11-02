@@ -112,3 +112,19 @@ scope and remaining work are defined by
   retry after the three-failure pause; page navigation remains automatic.
 - The VS Code window still has no post-install activation record. Reload and
   rendered status/queue confirmation remain open.
+
+## Readiness source recheck — 2026-11-02 18:38 +07
+
+- The V2 dashboard's configured Hermes command is the Hermes development
+  checkout wrapper. Running that exact command for profile
+  `curatormd-v2-dev-alpha` returned a project-matched, complete health snapshot
+  with all seven dependencies healthy and only the `event_failures` gate.
+  The separate complete Curator queue snapshot reports 3 failed events, 4
+  pending reviews, and no purge or expiry work. Pending review does not cause
+  the degraded health state.
+- The default `hermes` command on `PATH` is a separate older installation and
+  does not accept the health-probe flags. Its result is not the dashboard's
+  readiness source. No failed-event disposition, SDE decision, test run,
+  runtime update, or restart was performed.
+- Active VS Code rendering remains unverified; the window still needs a
+  reload and visual check of the red health and separate blue review actions.
