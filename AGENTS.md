@@ -29,3 +29,15 @@ Steward belongs to the Hermes Core account, not CuratorMD.
 - Do not import V1 runtime state or raw artifacts into this repository.
 - No deployment, external publication, commit, or push without an explicit
   request.
+
+## Markdown documents
+
+- Treat lint findings as signs that the source may be difficult to scan. Fix
+  the heading structure, spacing, and line wrapping so the document reads
+  clearly in source and preview.
+- Do not suppress, bypass, or reconfigure lint rules just to obtain a passing
+  result. Use the repository's actual lint configuration and address the
+  underlying formatting issue.
+- Use real hierarchical headings instead of bold text as headings. Keep
+  editable fenced JSON readable and preserve owner edits when regenerating a
+  review document.

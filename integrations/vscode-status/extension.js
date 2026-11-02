@@ -312,26 +312,57 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) return false;
     const existing = fs.readFileSync(destination, 'utf8');
     existingContent = existing;
-    const marker = /^<!-- curator-v2-generated-sha256: ([0-9a-f]{64}) -->\n/.exec(existing);
+    const marker = pendingReviewChecksumMarker(existing);
     if (!marker) return false;
-    const oldBody = existing.slice(marker[0].length);
+    const oldBody = existing.slice(marker.length);
     const parts = reviewDraftParts(oldBody);
     if (!parts) return false;
     const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
-    if (hash(parts.normalized) !== marker[1] && hash(oldBody) !== marker[1]) return false;
+    if (hash(parts.normalized) !== marker.checksum && hash(oldBody) !== marker.checksum) return false;
     const currentIds = new Set(reviews.map(({ candidate }) => candidate.candidate_id));
     if ([...parts.drafts.keys()].some((id) => !currentIds.has(id))) return false;
     previousDrafts = parts.drafts;
   } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
-  const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]()#+.!<>|~-]/g, '\\$&');
+  const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~]/g, '\\$&');
+  const pushWrapped = (text, firstPrefix = '', continuationPrefix = '') => {
+    const words = text.trim().split(/\s+/);
+    let line = firstPrefix;
+    for (const word of words) {
+      const separator = line === firstPrefix || line === continuationPrefix ? '' : ' ';
+      if (line.length + separator.length + word.length > 78 && line !== firstPrefix) {
+        lines.push(line);
+        line = `${continuationPrefix}${word}`;
+      } else {
+        line += `${separator}${word}`;
+      }
+    }
+    if (line !== firstPrefix) lines.push(line);
+  };
+  const pushField = (label, value) => pushWrapped(`${label}: ${value}`, '- ', '  ');
+  const pushFacts = (facts, fallback) => {
+    if (facts.length === 0) {
+      pushWrapped(fallback, '  - ', '    ');
+      return;
+    }
+    for (const fact of facts) pushWrapped(safe(fact.bullet), '  - ', '    ');
+  };
   const lines = [
     '# Pending SDE reviews', '',
-    `Project: ${safe(projectId)}`, '',
-    'Edit each copy, then choose Accept or Reject. The attended reviewer shows the evidence and exact inventory before confirmation.', '',
   ];
-  if (reviews.length === REVIEW_QUEUE_SIZE) lines.push('Only the first 100 candidates are shown.', '');
-  if (reviews.length === 0) lines.push('No pending candidates.', '');
+  pushWrapped(`Project: ${safe(projectId)}`);
+  lines.push('');
+  pushWrapped('Review each proposal and its editable JSON copy. Accept or Reject opens the attended reviewer; the decision is recorded only after you confirm the evidence and proposed changes.');
+  lines.push('');
+  if (reviews.length === REVIEW_QUEUE_SIZE) {
+    pushWrapped('Only the first 100 candidates are shown.');
+    lines.push('');
+  }
+  if (reviews.length === 0) {
+    lines.push('No pending candidates.', '');
+  }
+  let candidateNumber = 0;
   for (const { candidate, goal } of reviews) {
+    candidateNumber += 1;
     const outline = outlines.get(candidate.candidate_id);
     const outlineMatchesCandidate = Boolean(outline
       && outline.project_id === projectId
@@ -353,10 +384,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       verified_lesson: 2,
       routine: 1,
     })[candidate.materiality] ?? null;
-    const titleSource = goal.problem;
-    const proposedTitle = titleSource.length > 160
-      ? `${titleSource.slice(0, 157).trimEnd()}…` : titleSource;
-    const headingTitle = proposedTitle.replace(/[.!?;:,]+$/, '');
+    const proposedTitle = goal.problem;
     const proposalRationale = outlineMatchesCandidate
       && typeof outline.proposal_rationale === 'string'
       && outline.proposal_rationale.length <= 1000
@@ -366,69 +394,53 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       && typeof outline.future_utility === 'string' && outline.future_utility.length <= 1000
       ? outline.future_utility : '';
     lines.push(`<!-- curator-v2-candidate: ${candidate.candidate_id} -->`,
-      `## SDE ${safe(candidate.candidate_id)} — ${safe(headingTitle)}`, '',
-      `- SDE ID: ${safe(candidate.candidate_id)}`,
-      `- Started: ${outline && typeof outline.task_started_at === 'string' ? safe(outline.task_started_at) : 'unknown'}`,
-      `- Successfully completed: ${outline && typeof outline.successful_completion_at === 'string' ? safe(outline.successful_completion_at) : 'unknown'}`,
-      '', '### Proposed entry', '',
-      `- Proposed title: ${safe(proposedTitle)}`,
-      `- Proposal rationale: ${safe(proposalRationale)}`,
-      `- Significance: ${suggestedSignificance === null ? 'choose 0–5' : `${suggestedSignificance} / 5 (initial recommendation)`} (owner-editable; guides future compression, summarization, archiving, and culling; a score of 5 requires extra confirmation)`,
-      '', '### Problem / plan task', '', `- ${safe(goal.problem)}`, '',
-      '### What was completed successfully', '');
-    if (outlineMatchesCandidate && outline.successful_completion_evidence_current === true
-      && verificationFacts.length > 0) {
-      for (const fact of verificationFacts) lines.push(`- ${safe(fact.bullet)}`);
-      lines.push('- Evidence is current at document generation and is rechecked by the attended reviewer before accepting.');
-    } else {
-      lines.push('- No current passing verification supports a successful-completion claim; the attended reviewer will show the evidence state.');
-      if (verificationFacts.length > 0) {
-        lines.push('', '#### Recorded verification statements — not current proof', '');
-        for (const fact of verificationFacts) lines.push(`- ${safe(fact.bullet)}`);
-      }
-    }
-    lines.push('', '### Difficulties encountered', '',
-      '- No difficulty is separately recorded in the supporting facts.', '',
-      '### Plan changes required', '',
-      '- No plan change is separately recorded in the supporting facts.', '',
-      '### Lessons learned');
-    if (proposedLesson) lines.push('', `- ${safe(proposedLesson)}`);
-    else lines.push('', '- No lesson is separately stated in the candidate.');
-    lines.push('', '### Future utility', '');
-    if (outlineMatchesCandidate && typeof outline.future_utility === 'string'
-      && outline.future_utility.length <= 1000) {
-      lines.push(`- ${safe(outline.future_utility)}`);
-    } else {
-      lines.push('- Not stated in the candidate.');
-    }
-    lines.push('', '### Other recorded work', '');
-    if (changeFacts.length > 0) {
-      for (const fact of changeFacts.slice(0, 8)) lines.push(`- ${safe(fact.bullet)}`);
-      if (changeFacts.length > 8) lines.push('- Additional change facts are available in the attended review.');
-    } else {
-      lines.push('- No change facts are included in this candidate.');
-    }
-    lines.push('',
-      '### Configured persistence documents', '');
+      `## SDE candidate ${candidateNumber}`, '',
+      `### ${candidateNumber}. Proposed entry`, '');
+    pushField('SDE ID', safe(candidate.candidate_id));
+    pushField('Proposed title', safe(proposedTitle));
+    pushField('Task started (+07)', outline && typeof outline.task_started_at === 'string'
+      ? safe(outline.task_started_at) : 'Unknown');
+    pushField('Successful completion (+07)', outline && typeof outline.successful_completion_at === 'string'
+      ? safe(outline.successful_completion_at) : 'Unknown');
+    pushField('Significance', suggestedSignificance === null
+      ? 'Choose 0–5'
+      : `${suggestedSignificance} / 5 initial recommendation; owner-editable. Use this rating to guide future compression, summarization, archiving, and culling. A rating of 5 requires extra confirmation.`);
+    pushField('Proposal rationale', safe(proposalRationale));
+    lines.push('- Available persistence documents:');
     if (outline && Array.isArray(outline.persistence_documents)
       && outline.persistence_documents.length <= 16
       && outline.persistence_documents.every((document) => typeof document === 'string'
         && document.length <= 512 && !document.startsWith('/') && !document.includes('\\'))) {
-      for (const document of outline.persistence_documents) lines.push(`- \`${safe(document)}\``);
+      for (const document of outline.persistence_documents) pushWrapped(`\`${safe(document)}\``, '  - ', '    ');
     } else {
-      lines.push('- Configured destination list unavailable; the attended reviewer will validate selected paths.');
+      pushWrapped('Choose one or more configured persistence documents in the editable copy.', '  - ', '    ');
     }
-    lines.push('',
-      '### Supporting facts — evidence not evaluated', '');
-    if (outlineMatchesCandidate) {
-      for (const fact of supportingFacts.slice(0, 8)) {
-        const truncated = fact.bullet.length > 400;
-        lines.push(`- ${safe(fact.kind)}: ${safe(fact.bullet.slice(0, 400))}${truncated ? '… (truncated)' : ''}`);
-      }
-      if (supportingFacts.length > 8) lines.push('- Additional supporting facts are omitted; open the attended review for the full packet.');
-      if (supportingFacts.length === 0) lines.push('- No supporting facts returned.');
+
+    lines.push('', `### ${candidateNumber}. Task and outcomes`, '');
+    pushField('Problem / plan task', safe(goal.problem));
+    lines.push('- Completed successfully:');
+    if (outlineMatchesCandidate && outline.successful_completion_evidence_current === true
+      && verificationFacts.length > 0) {
+      pushFacts(verificationFacts, 'No successful work is recorded.');
+      pushWrapped('The attended reviewer checks the current evidence before acceptance.', '  - ', '    ');
     } else {
-      lines.push('- Outline unavailable; open the attended review for the full packet.');
+      pushFacts([], 'No current passing verification supports a successful-completion claim.');
+      for (const fact of verificationFacts) {
+        pushWrapped(`Recorded verification, not current proof: ${safe(fact.bullet)}`, '  - ', '    ');
+      }
+    }
+    lines.push('- Difficulties encountered:');
+    pushFacts([], 'No difficulty is separately recorded.');
+    lines.push('- Plan changes required:');
+    pushFacts([], 'No plan change is separately recorded.');
+    lines.push('- Lessons learned:');
+    pushFacts(proposedLesson ? [{ bullet: proposedLesson }] : [], 'No lesson is separately stated.');
+    if (outlineMatchesCandidate && typeof outline.future_utility === 'string'
+      && outline.future_utility.length <= 1000) pushField('Future utility', safe(outline.future_utility));
+    if (changeFacts.length > 0) {
+      lines.push('- Other recorded work:');
+      pushFacts(changeFacts.slice(0, 8), 'No change facts are available.');
+      if (changeFacts.length > 8) pushWrapped('Additional change facts are available in the attended review.', '  - ', '    ');
     }
     const draft = {
       title: proposedTitle,
@@ -449,8 +461,9 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     let fence = '```';
     while (draftJson.includes(fence)) fence += '`';
     const draftBlock = previousDrafts.get(candidate.candidate_id) ?? `${fence}json\n${draftJson}\n${fence}`;
-    lines.push('', '### Editable copy', '',
-      'Edit the entry, set significance from 0 to 5 for future compression, summarization, archiving, and culling, and put one or more configured document paths in `documents` before accepting.', '',
+    lines.push('', `### ${candidateNumber}. Editable decision`, '');
+    pushWrapped('Edit this JSON copy, choose a significance rating from 0 to 5, and list every persistence document that should receive the entry. Accept or Reject opens the attended reviewer; it does not record the decision until you confirm.');
+    lines.push('',
       `<!-- curator-v2-decision:${candidate.candidate_id}:start -->`,
       draftBlock,
       `<!-- curator-v2-decision:${candidate.candidate_id}:end -->`, '');
@@ -460,7 +473,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
   const generated = reviewDraftParts(body);
   if (!generated) return false;
   const checksum = createHash('sha256').update(generated.normalized, 'utf8').digest('hex');
-  const content = `<!-- curator-v2-generated-sha256: ${checksum} -->\n${body}`;
+  const content = `<!-- sha256:${checksum} -->\n${body}`;
   if (existingContent === content) return true;
   if (openDocument && openDocument.getText() === content) return true;
   const temporary = path.join(directory, `.pending-review.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
@@ -510,14 +523,19 @@ function reviewDraftParts(body) {
   return { drafts, normalized: normalized.join('\n') };
 }
 
+function pendingReviewChecksumMarker(content) {
+  const match = /^<!-- (?:curator-v2-generated-sha256: |sha256:)([0-9a-f]{64}) -->\n/.exec(content);
+  return match ? { checksum: match[1], length: match[0].length } : null;
+}
+
 function isUnmodifiedReviewDocument(content) {
-  const marker = /^<!-- curator-v2-generated-sha256: ([0-9a-f]{64}) -->\n/.exec(content);
+  const marker = pendingReviewChecksumMarker(content);
   if (!marker) return false;
-  const body = content.slice(marker[0].length);
+  const body = content.slice(marker.length);
   const parts = reviewDraftParts(body);
   if (!parts) return false;
   const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
-  return hash(parts.normalized) === marker[1] || hash(body) === marker[1];
+  return hash(parts.normalized) === marker.checksum || hash(body) === marker.checksum;
 }
 
 function tryWriteWorkspaceQueueViews(projectRoot, projectId, inbox, reviewWire, outlines = new Map()) {
