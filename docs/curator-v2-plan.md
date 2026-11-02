@@ -11600,3 +11600,17 @@ checking real summaries in steps 1 and 3.
       dashboard acceptance, attended SDE/cleanup decisions, backup rotation,
       expiry, or package rollback. The local-alpha checklist remains open for
       those runtime and owner-controlled gates.
+      Hermes integration source recheck (2026-11-02): development checkout
+      `d3cd8671c37c186b65bc0cc996f5477c42591ebc` contains the Codex work-summary
+      producer. Its current local diff hardens path/credential filtering,
+      validates the summary schema at each event boundary, deduplicates check
+      results, and requires the installed profile handler to support the
+      manifest's declared events. The Hermes `scripts/check` suite passed all
+      12 checks, including Ruff and code-health guards. The exact local patch
+      is preserved in `hermes-agent-local-diff-2026-11-02.tar.zst` against the
+      verified live fork baseline; it was not committed or pushed under the
+      Hermes checkout policy. The installed Hermes runtime still reports
+      `0.22.2+1558.gad06e63.dirty` and lacks the producer. No proof tests,
+      runtime install/restart, or hook configuration change was performed.
+      Real Hermes task delivery and all owner/runtime acceptance checks remain
+      open.
