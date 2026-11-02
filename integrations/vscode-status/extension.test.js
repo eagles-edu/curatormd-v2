@@ -775,6 +775,7 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.match(items[0].tooltip, /Blue means SDE reviews are outstanding/);
   assert.match(items[0].tooltip, /Project health: healthy/);
   assert.match(items[0].tooltip, /1 pending SDE review/);
+  assert.match(items[0].tooltip, /Click to open pending-review\.md/);
   assert.equal(updateStatusBarHealth({
     project_id: 'alpha', status: 'degraded', gate_codes: ['review_backlog'],
   }, 'alpha', [pendingReview]), 'healthy');

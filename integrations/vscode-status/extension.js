@@ -1599,13 +1599,16 @@ function updateStatusBarHealth(
     dashboardStatusItem.color = STATUS_COLORS[displayStatus];
     dashboardStatusItem.command = 'curatormdV2.openDashboard';
   }
+  const clickAction = pendingReviews > 0
+    ? 'Click to open pending-review.md.'
+    : 'Click to open the project-scoped dashboard.';
   dashboardStatusItem.tooltip = statusTooltip(
     `${pendingReviews > 0 ? STATUS_COLOR_MEANINGS.action : statusColorMeaning(displayStatus)} Project health: ${healthStatus}.`
       + healthGateSummary(health, projectId)
       + (readError ? ` ${statusReadFailure(readError)}` : '')
       + ` ${reviewSummary}. `
       + (storageWarning ? `${storageWarning} ` : '')
-      + 'Click to open the project-scoped dashboard.',
+      + clickAction,
   );
   return displayStatus;
 }

@@ -9450,6 +9450,12 @@ four pending reviews are separate and do not cause degradation. The active
 Hermes runtime, real event delivery/readback, and editor rendering remain
 unverified. Native Codex hooks remain disabled.
 
+Status-bar review tooltip (2026-11-02 21:19 +07): extension 0.9.60 now says
+that the blue pending-review action opens `pending-review.md`; with no pending
+reviews the tooltip names the dashboard. A focused assertion was added, but
+tests were not run. JavaScript syntax and `git diff --check` passed. The VSIX
+was packaged and installed; reload and rendered confirmation remain open.
+
 - [ ] A real local Codex/Hermes task creates a correctly scoped goal with
       its original problem and success criteria intact. Proposed acceptance:
       submit one real task through the supported Hermes Core integration, with
