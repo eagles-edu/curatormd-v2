@@ -29,8 +29,6 @@ from project_fixtures import (
 from mcp import Client
 from mcp.types import RequestParamsMeta, TextContent
 
-from test_api import TestVerifier
-
 from curatormd_v2 import (
     AuthenticatedCaller,
     CuratorStore,
