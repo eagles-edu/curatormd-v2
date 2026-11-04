@@ -6,11 +6,10 @@ opens `.curatormd-v2/sde-proposals/pending-review.md`. With no pending reviews,
 it shows health in blue before a read, yellow when health is unknown, green
 when project health is healthy, and red when project health is degraded.
 Pending SDE approvals do not degrade project health. Each
-candidate has Accept and Reject actions directly in the document that open
-the attended reviewer in a terminal. The selected action is
-only a hint: the reviewer still sees the full packet and exact inventory,
-re-enters the decision, supplies a rationale, and types the bound confirmation
-before any decision or cleanup is recorded.
+candidate has Accept, Reject, Withdraw, and Refresh evidence actions directly
+above its editable decision.
+Review uses VS Code prompts for destinations, artifact actions, rationale, and
+the final packet-bound confirmation; it does not open a terminal.
 Purple marks other review work in dashboard panels.
 The tooltip shows the installed extension version, health, the pending review
 count or its unavailable state, and a short explanation of the active color.
@@ -63,9 +62,19 @@ archiving, and culling decisions, and select multiple configured destinations.
 A score of 5 requires extra confirmation. The proposal separates the plan task,
 evidence-checked work, difficulties, plan changes, lessons, and future utility;
 unsupported details are marked as not recorded.
-Accept and Reject open the attended reviewer with the saved copy. The reviewer
-displays the draft and exact inventory and requires typed confirmation; the
-edited review and projection path still needs proof.
+Accept and Reject open the attended reviewer with the saved copy. Withdraw
+asks for an owner rationale and confirmation, removes only the pending proposal,
+and retains its facts and audit receipt. Refresh evidence asks for a reason and
+next action, confirms reopening the completed source task, and then withdraws
+the stale proposal. The owner must record fresh passing evidence for every
+criterion, finish the task, and assess a new proposal. A blocked Accept now
+points directly to this action. Existing facts and receipts remain; the action
+does not accept the proposal or open a terminal.
+VS Code collects any missing destinations, artifact actions, and rationale,
+then asks for a final confirmation bound to the current evidence, inventory, dependency
+map, and edited decision. Acceptance stays blocked until current passing
+evidence is available. The edited review and projection path still needs live
+runtime proof.
 Review-document refresh pauses while the document has unsaved edits. Saved
 editable blocks for still-pending candidates are carried forward; changes to
 generated text, missing markers, and drafts for candidates no longer in the
@@ -120,9 +129,8 @@ Configure these **User** settings in VS Code:
   that supports the machine-readable Curator health probe; defaults to `hermes`.
 - `curatormdV2.serverCommand`: optional local `curatormd-v2-mcp` path or PATH
   command; defaults to `curatormd-v2-mcp`.
-- `curatormdV2.reviewCommand`: attended local SDE review CLI path or PATH
-  command; defaults beside an absolute `serverCommand`, otherwise
-  `curatormd-v2-review` on PATH.
+- `curatormdV2.reviewCommand`: legacy local SDE review CLI setting for manual
+  terminal use. The VS Code Accept and Reject actions do not use it.
 - `curatormdV2.evidenceConfig`: optional absolute path to the owner-only host
   evidence JSON file. The extension passes this path to each local Curator
   launcher. Keep the file outside the repository with mode `0600`; the backend
@@ -132,10 +140,11 @@ Configure these **User** settings in VS Code:
 
 The extension rejects workspace-level overrides for the Hermes command and
 profile bindings, Curator launcher, database path and database bindings,
-profile, review CLI, host evidence config, and evidence config bindings. It starts a local stdio MCP process
-for each request, pinned to the open repository's `.curatormd-v2.toml` project.
-Read requests stay read-only; only the attended, confirmed reopen action asks
-for write scope. The
+profile, review CLI, host evidence config, and evidence config bindings. It
+starts a local stdio MCP process for each request, pinned to the open
+repository's `.curatormd-v2.toml` project. Review actions request the existing
+project `review` grant; only a final confirmed decision requests write scope.
+The
 Python host derives the
 authorization subject from the kernel UID and checks the exact project read
 grant on every request. The profile ID is routing context, not an identity or
@@ -224,14 +233,12 @@ workspace lacks consumer configuration or required User settings. It turns
 yellow when an attempted health or review-count read is unknown or unavailable.
 
 The pending SDE section shows bounded candidate summaries from the authorized
-review queue. **Review in terminal** opens the attended CLI for that exact
-candidate, workspace, and database. The CLI rechecks the local OS identity and
-project grant, displays the current evidence and complete artifact inventory,
-rechecks selected verification evidence at approval time using the same
-owner-only evidence config as the dashboard,
-requires a typed confirmation bound to candidate and inventory digests, records
-the decision, and persists the canonical projection before cleanup becomes
-eligible. The extension does not submit review decisions or cleanup commands.
+review queue. Accept, Reject, Withdraw, and Refresh evidence open the attended
+VS Code review for that candidate and configured project. Curator rechecks the
+project grant, current evidence, edited decision binding, and complete artifact
+inventory at commit.
+VS Code requires a final modal confirmation before it records the receipt,
+projects approved destinations, and permits exact-inventory cleanup.
 The existing six-hour purge timer processes only already-approved cleanup
 receipts.
 

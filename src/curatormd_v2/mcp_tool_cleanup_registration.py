@@ -15,6 +15,7 @@ from .models import (
     SDEConfirmationRequest,
 )
 from .mcp_tool_support import ArtifactInput, json_result, parse_artifacts
+from .sde_review_draft import SDEReviewDraft
 
 from .api import AuthenticatedCaller, AuthenticatedCuratorAPI
 
@@ -51,8 +52,11 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
         artifact_inventory_complete: bool,
         dependency_map_sha256: str,
         rationale: str | None = None,
+        review_draft_json: str | None = None,
+        expected_review_binding_sha256: str | None = None,
+        confirm_significance_five: bool = False,
     ) -> str:
-        """Record disposition and authorize purge of its exact complete manifest."""
+        """Record disposition, optionally binding an edited decision and exact inventory."""
 
         return json_result(
             api.sde_confirm(
@@ -65,8 +69,94 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
                     artifact_inventory_complete=artifact_inventory_complete,
                     dependency_map_sha256=dependency_map_sha256,
                     rationale=rationale,
+                    review_draft=(
+                        SDEReviewDraft.from_json(review_draft_json)
+                        if review_draft_json is not None
+                        else None
+                    ),
+                    expected_review_binding_sha256=expected_review_binding_sha256,
+                    confirm_significance_five=confirm_significance_five,
                 ),
             )
+        )
+
+    @safe_tool(
+        annotations=ToolAnnotations(
+            destructive_hint=True, idempotent_hint=True, open_world_hint=False
+        )
+    )
+    def sde_withdraw_candidates(candidate_ids: list[str], rationale: str) -> str:
+        """Withdraw exact stale pending proposals, retaining facts and audit receipts."""
+
+        return json_result(
+            api.sde_withdraw_candidates(
+                caller,
+                project_id,
+                tuple(candidate_ids),
+                rationale,
+            )
+        )
+
+    @read_tool()
+    def sde_prepare_review_binding(
+        candidate_id: str,
+        decision: str,
+        artifacts: list[ArtifactInput],
+        artifact_inventory_complete: bool,
+        dependency_map_sha256: str,
+        rationale: str,
+        review_draft_json: str,
+        confirm_significance_five: bool = False,
+    ) -> str:
+        """Prepare the exact edited decision binding before owner confirmation."""
+
+        request = SDEConfirmationRequest(
+            candidate_id=candidate_id,
+            decision=ReviewDecision(decision),
+            artifacts=parse_artifacts(artifacts),
+            artifact_inventory_complete=artifact_inventory_complete,
+            dependency_map_sha256=dependency_map_sha256,
+            rationale=rationale,
+            review_draft=SDEReviewDraft.from_json(review_draft_json),
+            confirm_significance_five=confirm_significance_five,
+        )
+        binding = api.prepare_sde_review_binding(caller, project_id, request)
+        return json_result({"binding": binding, "sha256": binding.sha256()})
+
+    @read_tool()
+    def sde_review_projection_status(receipt_id: str) -> str:
+        """Read exact selected destination states for the original reviewer."""
+
+        return json_result(
+            api.sde_review_projection_status(caller, project_id, receipt_id)
+        )
+
+    @safe_tool(
+        annotations=ToolAnnotations(
+            destructive_hint=True, idempotent_hint=True, open_world_hint=False
+        )
+    )
+    def sde_project_review_target(
+        receipt_id: str, target: str, prepare_only: bool,
+    ) -> str:
+        """Prepare or write one previously approved SDE destination."""
+
+        return json_result(
+            api.sde_project_review_target(
+                caller, project_id, receipt_id, target, prepare_only=prepare_only
+            )
+        )
+
+    @safe_tool(
+        annotations=ToolAnnotations(
+            destructive_hint=True, idempotent_hint=True, open_world_hint=False
+        )
+    )
+    def sde_finalize_review_projection(receipt_id: str) -> str:
+        """Finalize approved destinations before cleanup can proceed."""
+
+        return json_result(
+            api.sde_finalize_review_projection(caller, project_id, receipt_id)
         )
 
     @safe_tool(

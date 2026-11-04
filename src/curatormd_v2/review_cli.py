@@ -43,100 +43,22 @@ from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
 from .process_privacy import protect_process_data
 from .rate_limiter import SQLiteTokenBucket
+from .local_review_authorizer import LocalUIDReviewAuthorizer as _LocalUIDReviewAuthorizer
 from .reviews import ReviewAuthorizationError
 from .service_types import EvidenceGateError
 from .store import CuratorStore
 from .sde_review_draft import SDEReviewDraft
 
 
-class LocalUIDReviewAuthorizer:
-    """Bind local review methods to the invoking, non-setuid OS account."""
+class LocalUIDReviewAuthorizer(_LocalUIDReviewAuthorizer):
+    """Keep CLI identity sourced from its attended process boundary."""
 
-    # This is a deliberately small implementation of the host review protocol.
     # pylint: disable=too-few-public-methods
-
-    def authorize(
-        self,
-        project_id: str,
-        candidate_id: str,
-        decision: ReviewDecision,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Authorize only the process's exact local UID subject."""
-        del project_id, candidate_id, decision
-        return self._subject(authenticated_subject)
-
-    def authorize_correction(
-        self,
-        project_id: str,
-        candidate_id: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Bind a correction to the invoking local UID."""
-        del project_id, candidate_id
-        return self._subject(authenticated_subject)
-
-    def authorize_feedback(
-        self,
-        project_id: str,
-        candidate_id: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Bind reviewer feedback to the invoking local UID."""
-        del project_id, candidate_id
-        return self._subject(authenticated_subject)
-
-    def authorize_hold_release(
-        self,
-        project_id: str,
-        receipt_id: str,
-        path: str,
-        rationale: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Bind an exact hold release to the invoking local UID."""
-        del project_id, receipt_id, path, rationale
-        return self._subject(authenticated_subject)
-
-    def authorize_expiry_purge(
-        self,
-        project_id: str,
-        manifest_sha256: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Bind expiry approval to the invoking local UID."""
-
-        del project_id, manifest_sha256
-        return self._subject(authenticated_subject)
-
-    def authorize_cleanup(
-        self,
-        project_id: str,
-        receipt_id: str,
-        manifest_sha256: str,
-        authenticated_subject: str | None = None,
-    ) -> str:
-        """Bind cleanup authorization to the invoking local UID."""
-
-        del project_id, receipt_id, manifest_sha256
-        return self._subject(authenticated_subject)
-
-    def authorize_database(
-        self, database: Path, authenticated_subject: str | None = None
-    ) -> str:
-        """Require the current local reviewer to own the pilot ledger file."""
-
-        subject = self._subject(authenticated_subject)
-        metadata = database.lstat()
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid():
-            raise ReviewAuthorizationError(
-                "database must be a regular file owned by the current local account"
-            )
-        return subject
 
     @staticmethod
     def _subject(authenticated_subject: str | None) -> str:
-        """Reject absent, substituted, or setuid caller identity."""
+        """Require the OS identity selected by the local review CLI."""
+
         subject = _local_subject()
         if authenticated_subject != subject:
             raise ReviewAuthorizationError(
@@ -188,7 +110,10 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("candidate_id")
     review.add_argument(
         "--decision-hint", choices=("approve", "reject"),
-        help="review action selected in the editor; it must be confirmed in the terminal",
+        help=(
+            "review action selected in the editor; the final binding phrase "
+            "confirms it in the terminal"
+        ),
     )
     review.add_argument(
         "--edited-draft", action="store_true",
@@ -336,26 +261,23 @@ def _select_review_artifacts(
 def _read_review_decision(
     streams: _CliStreams, decision_hint: str | None = None
 ) -> ReviewDecision | None:
-    """Read the attended SDE decision without consuming action input on error."""
+    """Read the attended SDE decision, using an editor choice when supplied."""
 
     if decision_hint:
         streams.errors.write(
-            f"Editor selection: {decision_hint}. Confirm it after reviewing the packet.\n"
+            f"Editor selection: {decision_hint}. Review the packet; "
+            "the final binding phrase confirms this choice.\n"
         )
+        return {
+            "approve": ReviewDecision.APPROVED,
+            "reject": ReviewDecision.REJECTED,
+        }.get(decision_hint)
     streams.errors.write("Decision (approve/reject; also purge this exact inventory): ")
     streams.errors.flush()
-    decision = {
+    return {
         "approve": ReviewDecision.APPROVED,
         "reject": ReviewDecision.REJECTED,
     }.get(streams.input.readline(16).strip().lower())
-    expected = {
-        "approve": ReviewDecision.APPROVED,
-        "reject": ReviewDecision.REJECTED,
-    }.get(decision_hint or "")
-    if decision is None or (decision_hint is not None and decision != expected):
-        streams.errors.write("SDE review cancelled; no decision was recorded.\n")
-        return None
-    return decision
 
 
 def _saved_review_draft(config: ProjectConfig, candidate_id: str) -> SDEReviewDraft:

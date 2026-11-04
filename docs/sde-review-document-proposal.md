@@ -5,23 +5,35 @@ fictional. Source code now generates an editable review document, binds the
 decision to an immutable receipt, and journals writes to selected configured
 destinations. Accepted canonical entries include recorded goal start and
 successful-completion times in +07; absent legacy timestamps remain unknown.
-The focused VS Code Node suite passes 39 tests, but no host-accepted test
-receipt or rendered editor proof exists for the current worktree. Projection,
-recovery, and persistence behavior still need owner proof.
+Review actions are placed above each editable decision and complete in the
+VS Code UI without opening a terminal. The current worktree still needs
+attended runtime proof for the review, projection, recovery, and persistence
+flow.
 
 ## Purpose
 
 Each significant development event (SDE) describes a plan task, its outcome,
 and knowledge the owner may choose to retain. The review document shows the
 original proposed entry and a separate editable copy. The owner selects
-**Accept** or **Reject** for each candidate.
+**Accept**, **Reject**, **Withdraw**, or **Refresh evidence** above that copy.
+Withdraw clears a pending proposal for retesting; it keeps its source facts and
+records a separate owner-attributed receipt. Refresh evidence asks for a reason
+and next action, confirms reopening the completed source task, then withdraws
+the stale proposal. This starts a new evidence epoch; the owner must record
+fresh passing evidence for every criterion, finish the task, and assess a new
+proposal. No decision is accepted and no facts or receipts are deleted.
+When Accept is blocked by missing or stale evidence, its warning points the
+owner to this action; it does not bypass the evidence gate.
+Missing persistence destinations are selected in VS Code. A final owner
+confirmation binds an acceptance or rejection to the live review packet and
+complete artifact inventory.
 
 ## Example: `pending-review.md`
 
 ````markdown
 # Pending SDE reviews
 
-<!-- VS Code renders Accept and Reject CodeLens actions above this candidate. -->
+<!-- VS Code places Accept, Reject, Withdraw, and Refresh evidence above Editable decision. -->
 
 ## SDE #042 — Preserve project binding during task intake
 
@@ -91,12 +103,14 @@ original proposed entry and a separate editable copy. The owner selects
 
 - Use the same binding check when adding another editor or agent integration.
 
-### Your editable copy
+<!-- curator-v2-actions: candidate-42 -->
+### Editable decision
 
-Edit the fields below, then choose **Accept** or **Reject**.
+Edit the fields below, then choose a review action above this section. Review,
+reopen, and confirmation stay in the VS Code UI; these actions do not open a
+terminal.
 
-<!-- curatormd-actions:042 -->
-<!-- curatormd-decision:042:start -->
+<!-- curator-v2-decision:candidate-42:start -->
 ```json
 {
   "title": "Preserve project binding during task intake",
@@ -122,7 +136,7 @@ Edit the fields below, then choose **Accept** or **Reject**.
   "future_utility": "Apply the binding check to future editor and agent integrations."
 }
 ```
-<!-- curatormd-decision:042:end -->
+<!-- curator-v2-decision:candidate-42:end -->
 
 The proposed JSON and editable copy show the same current decision content.
 The task and outcome summary above preserves the source proposal for comparison.
@@ -140,10 +154,9 @@ active development or automatically when a goal finishes. Start a proposal only
 when historical curation is requested for a completed goal with current passing
 evidence.
 
-- Keep ordinary prose at the editor's default color. In the pending-review
-  source editor, use readable light- and dark-theme colors for headings,
-  proposal metadata, and JSON keys, strings, and values. Apply colors through
-  editor decorations so the Markdown and editable JSON remain unchanged.
+- Keep the pending-review source editor at the editor's default colors for
+  headings, proposal metadata, and JSON keys, strings, and values. Do not apply
+  custom color decorations, so the Markdown and editable JSON remain unchanged.
 - Show the SDE ID, proposed title, task start and successful completion times
   in UTC+07:00. Do not invent a time: show it as unknown when unsupported, and
   do not label a task successfully completed without current passing proof.
@@ -152,7 +165,9 @@ evidence.
   type, clearly label it as a recommendation, and let the owner change it. A
   rating of 5 requires extra human confirmation.
 - Let the owner select one or more approved persistence documents when
-  appropriate. Preserve a clear purpose for each selected entry and avoid
+  appropriate. If an accepted draft has no destination, prompt for one or
+  more configured documents in VS Code and save that selection into the
+  editable JSON. Preserve a clear purpose for each selected entry and avoid
   accidental duplicate writes when a decision is retried.
 - Render the proposed entry as a JSON fence and make it identical to the
   editable JSON copy. Add supported task-summary content when the editable
@@ -164,9 +179,14 @@ evidence.
   Keep unsupported categories visible as not recorded; do not fill them with
   guesses. Mark proposed work as pending when current passing evidence has not
   been rechecked by the attended reviewer.
-- Provide **Accept** and **Reject** actions immediately above each candidate
-  in VS Code's Markdown editor. Each opens the attended review flow and never
-  records a decision directly.
+- Provide **Accept**, **Reject**, **Withdraw**, and **Refresh evidence** actions
+  immediately above the editable decision section in VS Code's Markdown
+  editor. Refresh evidence reopens the source task and clears the stale
+  proposal only after explicit owner confirmation. It requires a fresh evidence
+  pass and a new proposal; it does not accept the proposal or delete facts.
+  Keep destination selection, rationale, significance-5 confirmation, final
+  confirmation, and receipt results in VS Code. Review actions do not open a
+  terminal or record a decision before the owner confirms.
 - Show evidence and the complete exact cleanup inventory before the owner
   confirms a decision. Approval requires current passing evidence. Record
   the decision and rationale in an auditable receipt; retain the existing

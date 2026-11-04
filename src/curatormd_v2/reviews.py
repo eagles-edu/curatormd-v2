@@ -20,6 +20,15 @@ class ReviewAuthorizer(Protocol):
         """Authorize the caller and return that reviewer's opaque subject ID."""
         ...
 
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Authorize clearing a pending proposal without deciding its content."""
+        ...
+
     def authorize_correction(
         self,
         project_id: str,
@@ -82,6 +91,17 @@ class RejectUnauthenticatedReview:
         """Reject decisions until the trusted host provides reviewer identity."""
 
         del project_id, candidate_id, decision, authenticated_subject
+        raise ReviewAuthorizationError("no authenticated reviewer is configured")
+
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Reject withdrawals until a trusted owner identity is configured."""
+
+        del project_id, candidate_id, authenticated_subject
         raise ReviewAuthorizationError("no authenticated reviewer is configured")
 
     def authorize_correction(

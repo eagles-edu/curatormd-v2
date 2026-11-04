@@ -37,13 +37,17 @@ from curatormd_v2 import (
     EventEnvelope,
     EventInboxReceipt,
     EventInboxStatus,
+    FactKind,
     GoalStarted,
+    Materiality,
     ProjectAccessManager,
     ProjectAction,
     ProjectAdministrationAction,
     ProjectConfig,
     ProjectPlugin,
     ProjectStatusChangeRequest,
+    ReviewDecision,
+    SDECandidate,
     SQLiteTokenBucket,
     SuccessCriterion,
     hosted_mcp,
@@ -393,6 +397,100 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
                     profile_id="read-only-profile",
                     allow_review=True,
                 )
+
+    def test_review_grant_uses_local_uid_for_attended_mcp_review_tools(self) -> None:
+        """The opted-in VS Code stdio route can review as its local OS owner."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "global.sqlite3"
+            self._provision(root, database, "reviewer-profile", allow_review=True)
+            runtime = build_local_profile_mcp(
+                project_root=root,
+                database=database,
+                profile_id="reviewer-profile",
+                allow_review=True,
+            )
+            try:
+                plugin = getattr(runtime.api, "_plugins")["bound-project"]
+                goal = plugin.service.goal_start(
+                    "Exercise the attended local review adapter",
+                    (SuccessCriterion("review", "The owner review action is attributable"),),
+                )
+                fact, _ = plugin.service.goal_fact(
+                    goal.goal_id,
+                    FactKind.RESEARCH,
+                    "The fixture proposal is retained after withdrawal.",
+                )
+                candidate = SDECandidate(
+                    goal_id=goal.goal_id,
+                    materiality=Materiality.ROUTINE,
+                    rationale="Exercise the local reviewer identity binding.",
+                    fact_ids=(fact.fact_id,),
+                    impact="The local review grant reaches the reviewer adapter.",
+                    retrieval_value="Diagnose approval authorization in the alpha host.",
+                )
+                runtime.store.add_sde_candidate(candidate, "bound-project")
+                reviewer = plugin.service.review_authorizer.authorize(
+                    "bound-project",
+                    candidate.candidate_id,
+                    ReviewDecision.APPROVED,
+                    runtime.caller.subject_id,
+                )
+                self.assertEqual(reviewer, _local_subject())
+
+                async def exercise() -> None:
+                    async with Client(runtime.server, raise_exceptions=False) as client:
+                        outline_result = await client.call_tool(
+                            "sde_review_outline",
+                            {"candidate_id": candidate.candidate_id},
+                            meta=hermes_meta("reviewer-profile"),
+                        )
+                        self.assertFalse(outline_result.is_error)
+                        outline_content = outline_result.content[0]
+                        assert isinstance(outline_content, TextContent)
+                        outline = json.loads(outline_content.text)
+                        self.assertEqual(outline["status"], "pending_review")
+                        self.assertNotEqual(outline["evidence_status"], "current_passing")
+                        packet_result = await client.call_tool(
+                            "sde_review_packet",
+                            {"candidate_id": candidate.candidate_id},
+                            meta=hermes_meta("reviewer-profile"),
+                        )
+                        self.assertFalse(packet_result.is_error)
+                        packet_content = packet_result.content[0]
+                        assert isinstance(packet_content, TextContent)
+                        packet = json.loads(packet_content.text)
+                        self.assertEqual(
+                            packet["detail"]["candidate"]["status"], "pending_review"
+                        )
+                        result = await client.call_tool(
+                            "sde_withdraw_candidates",
+                            {
+                                "candidate_ids": [candidate.candidate_id],
+                                "rationale": "Clear this fixture after testing owner authorization",
+                            },
+                            meta=hermes_meta("reviewer-profile"),
+                        )
+                        self.assertFalse(result.is_error)
+                        receipt_content = result.content[0]
+                        assert isinstance(receipt_content, TextContent)
+                        receipt = json.loads(receipt_content.text)
+                        self.assertEqual(receipt[0]["reviewer_id"], _local_subject())
+                        queue = await client.call_tool(
+                            "sde_review_queue",
+                            {"limit": 100},
+                            meta=hermes_meta("reviewer-profile"),
+                        )
+                        self.assertFalse(queue.is_error)
+                        queue_content = queue.content[0]
+                        assert isinstance(queue_content, TextContent)
+                        self.assertEqual(json.loads(queue_content.text), [])
+
+                asyncio.run(exercise())
+            finally:
+                runtime.close()
 
     def test_typed_mcp_event_retry_ignores_regenerated_occurrence_time(self) -> None:
         """A new MCP invocation can safely replay a processed event identity."""

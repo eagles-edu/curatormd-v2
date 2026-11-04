@@ -22,6 +22,7 @@ from curatormd_v2 import (
 )
 from curatormd_v2.schema_migrations import (
     apply_schema_migrations,
+    migrate_sde_candidate_withdrawals_v47,
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
 )
@@ -29,6 +30,33 @@ from curatormd_v2.schema_migrations import (
 
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
+
+    def test_v47_adds_candidate_withdrawal_audit_table(self) -> None:
+        """Version 47 stores withdrawals separately from SDE dispositions."""
+
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.execute(
+                "CREATE TABLE sde_candidates (candidate_id TEXT PRIMARY KEY)"
+            )
+            connection.execute("PRAGMA user_version = 46")
+            migrate_sde_candidate_withdrawals_v47(connection)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 47)
+            self.assertEqual(
+                connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' "
+                    "AND name = 'sde_candidate_withdrawals'"
+                ).fetchone()[0],
+                "sde_candidate_withdrawals",
+            )
+            self.assertEqual(
+                connection.execute(
+                    "PRAGMA foreign_key_list(sde_candidate_withdrawals)"
+                ).fetchone()[2:5],
+                ("sde_candidates", "candidate_id", "candidate_id"),
+            )
+        finally:
+            connection.close()
 
     def test_v45_migration_restores_missing_sde_review_targets(self) -> None:
         """Version-45 stores missing the destination table regain its empty schema."""

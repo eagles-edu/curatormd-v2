@@ -68,6 +68,7 @@ from .models import (
     SDEQualityFeedbackSummary,
     SDEReviewDetail,
     SDEReviewPacket,
+    SDEWithdrawal,
 )
 from .markdown_persistence import (
     MarkdownProjectReconciliation,
@@ -930,6 +931,24 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
         ).sde_review_detail(candidate_id)
+
+    @_project_effect_fenced(ProjectAction.REVIEW)
+    def sde_withdraw_candidates(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        candidate_ids: tuple[str, ...],
+        rationale: str,
+    ) -> tuple[SDEWithdrawal, ...]:
+        """Withdraw exact pending proposals under the project review grant."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.REVIEW
+        ).sde_withdraw_candidates(
+            candidate_ids,
+            rationale,
+            authenticated_subject=caller.subject_id,
+        )
 
     def sde_review_has_current_passing_evidence(
         self, caller: AuthenticatedCaller, project_id: str, candidate_id: str

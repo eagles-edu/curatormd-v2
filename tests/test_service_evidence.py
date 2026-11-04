@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import hashlib
+import os
 from pathlib import Path
 import socket
 import sys
@@ -122,7 +123,7 @@ class LocalServiceProbeResolverTests(unittest.TestCase):
         """Keep the restricted child environment while allowing user-unit probes."""
 
         runtime_root = self.root / "runtime"
-        runtime_directory = runtime_root / "1000"
+        runtime_directory = runtime_root / str(os.getuid())
         runtime_directory.mkdir(parents=True)
         bus_socket = runtime_directory / "bus"
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as bus:

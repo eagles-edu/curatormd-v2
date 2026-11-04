@@ -2,7 +2,7 @@
   "name": "curatormd-v2-status",
   "displayName": "CuratorMD V2 Status",
   "description": "A local, project-scoped CuratorMD V2 dashboard and status bar integration.",
-  "version": "0.9.61",
+  "version": "0.9.65",
   "publisher": "curatormd",
   "repository": {
     "type": "git",
@@ -63,7 +63,7 @@
         "type": "string",
         "default": "",
         "scope": "application",
-        "description": "Optional attended review CLI path or PATH command; defaults to the executable beside serverCommand, or curatormd-v2-review on PATH."
+        "description": "Legacy command for manual terminal reviews; in-editor review and evidence-refresh actions use serverCommand."
       },
       "curatormdV2.evidenceConfig": {
         "type": "string",

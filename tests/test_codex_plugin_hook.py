@@ -1250,8 +1250,19 @@ class CodexPluginHookTests(unittest.TestCase):
     def test_codex_mcp_instructions_include_server_verified_project_fingerprints(self) -> None:
         """Make the enforced project and config binding available for audit receipts."""
 
-        config = ProjectConfig.load(ROOT)
-        instructions = _bound_codex_instructions(config)
+        parent = ROOT / ".curatormd-v2"
+        staging_root = parent / "side-buffer"
+        created_parent = not parent.exists()
+        created_staging_root = not staging_root.exists()
+        staging_root.mkdir(parents=True, exist_ok=True)
+        try:
+            config = ProjectConfig.load(ROOT)
+            instructions = _bound_codex_instructions(config)
+        finally:
+            if created_staging_root:
+                staging_root.rmdir()
+            if created_parent:
+                parent.rmdir()
         self.assertIn(f"project_id={config.project_id}", instructions)
         self.assertIn(f"repository_fingerprint={config.repository_fingerprint}", instructions)
         self.assertIn(f"config_sha256={config.config_sha256}", instructions)

@@ -178,6 +178,18 @@ class ReviewHost:  # pylint: disable=too-few-public-methods
             raise PermissionError("review subject is not authenticated")
         return authenticated_subject
 
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Attribute proposal withdrawal to the authenticated test subject."""
+        del project_id, candidate_id
+        if authenticated_subject != "hermes-user-1":
+            raise PermissionError("withdrawal subject is not authenticated")
+        return authenticated_subject
+
     def authorize_correction(
         self,
         project_id: str,
@@ -253,6 +265,7 @@ class _ReviewScenario:
     goal_id: str
     candidate_id: str
     unrelated_goal_id: str
+    mapped_fact_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -542,13 +555,51 @@ class _ApiTestSupport(unittest.TestCase):
             "Implement a verified change",
             "Implemented the change",
             "Verification passed",
+            complete=False,
+        )
+        stage_root = self.root / ".curatormd-v2" / "staging"
+        staged_dir = stage_root / verified.goal_id
+        staged_dir.mkdir(parents=True)
+        staged = staged_dir / "cue.json"
+        staged.write_bytes(b'{"temporary":true}')
+        staged_evidence = EvidenceRef(
+            "staging_artifact",
+            str(staged),
+            hashlib.sha256(staged.read_bytes()).hexdigest(),
+            EvidenceOutcome.PASSED,
+        )
+        mapped_fact, _ = plugin.service.goal_fact(
+            verified.goal_id,
+            FactKind.RESEARCH,
+            "Staged evidence source recorded",
+            criterion_id="verified",
+            evidence=(staged_evidence,),
+        )
+        second_mapped_fact, _ = plugin.service.goal_fact(
+            verified.goal_id,
+            FactKind.RESEARCH,
+            "A second fact references the same staged evidence",
+            criterion_id="verified",
+            evidence=(staged_evidence,),
+        )
+        plugin.service.goal_finish(
+            verified.goal_id,
+            "The required verification and staged evidence passed",
+            expected_lifecycle_revision=plugin.service.goal_status(
+                verified.goal_id
+            ).goal.lifecycle_revision,
         )
         candidate = plugin.service.sde_assess(
             SDEAssessmentRequest(
                 verified.goal_id,
                 Materiality.IMPLEMENTATION,
                 "A durable change has passing evidence",
-                (verified.change_fact_id, verified.verification_fact_id),
+                (
+                    verified.change_fact_id,
+                    verified.verification_fact_id,
+                    mapped_fact.fact_id,
+                    second_mapped_fact.fact_id,
+                ),
                 impact="Observed in the bounded test scenario",
                 retrieval_value="Useful for future maintenance review",
             )
@@ -572,6 +623,7 @@ class _ApiTestSupport(unittest.TestCase):
             verified.goal_id,
             candidate.candidate_id,
             unrelated_goal.goal_id,
+            (mapped_fact.fact_id, second_mapped_fact.fact_id),
         )
 
 
@@ -631,36 +683,14 @@ class _ApiTestSupport(unittest.TestCase):
         self, scenario: _ReviewScenario
     ) -> _ReviewArtifacts:
         """Create mapped, unrelated, and unmapped files; reject a stale packet."""
-        plugin = scenario.plugin
         stage_root = self.root / ".curatormd-v2" / "staging"
-        staged_dir = stage_root / scenario.goal_id
-        staged_dir.mkdir()
-        staged = staged_dir / "cue.json"
-        staged.write_bytes(b'{"temporary":true}')
-        staged_evidence = EvidenceRef(
-            "staging_artifact",
-            str(staged),
-            hashlib.sha256(staged.read_bytes()).hexdigest(),
-            EvidenceOutcome.PASSED,
-        )
-        mapped_fact, _ = plugin.service.goal_fact(
-            scenario.goal_id,
-            FactKind.RESEARCH,
-            "Staged evidence source recorded",
-            criterion_id="verified",
-            evidence=(staged_evidence,),
-        )
+        staged = stage_root / scenario.goal_id / "cue.json"
         displayed_packet = scenario.api.sde_review_packet(
             self.caller, "project-a", scenario.candidate_id
         )
-        plugin.service.goal_fact(
-            scenario.goal_id,
-            FactKind.RESEARCH,
-            "A later fact changes the displayed dependency map",
-            criterion_id="verified",
-            evidence=(staged_evidence,),
-        )
-        with self.assertRaisesRegex(ConflictError, "dependency map changed"):
+        unmapped_staged = staged.parent / "unmapped.json"
+        unmapped_staged.write_bytes(b'{"unmapped":true}')
+        with self.assertRaisesRegex(ConflictError, "does not match current inventory"):
             scenario.api.sde_confirm(
                 self.caller,
                 "project-a",
@@ -677,13 +707,11 @@ class _ApiTestSupport(unittest.TestCase):
         unrelated_dir.mkdir()
         unrelated_staged = unrelated_dir / "cue.json"
         unrelated_staged.write_bytes(b'{"unrelated":true}')
-        unmapped_staged = staged_dir / "unmapped.json"
-        unmapped_staged.write_bytes(b'{"unmapped":true}')
         return _ReviewArtifacts(
             staged,
             unrelated_staged,
             unmapped_staged,
-            mapped_fact.fact_id,
+            scenario.mapped_fact_ids[0],
         )
 
 

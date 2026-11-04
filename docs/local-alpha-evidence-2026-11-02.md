@@ -159,3 +159,34 @@ scope and remaining work are defined by
 - No event disposition, payload cleanup, human review, editor reload, or proof
   test was performed. Rendered status and the separate blue review action
   remain unverified in the active editor.
+
+## Recovery follow-up — 2026-11-04
+
+- The configured local maintenance service probe returned `passed` for
+  `service-probe:curator-maintenance-timer`. This proves that configured
+  service probe only.
+- Seven daily backups dated 2026-10-29 through 2026-11-04 passed SQLite
+  `quick_check`, foreign-key checks, and owner-only permission checks. The
+  newest restored through `curatormd-v2-storage` to a disposable new path. This
+  is a command-level observation, not a host-accepted recovery attestation.
+- The configured dashboard Hermes probe at 2026-11-04 14:39 +07 returned a
+  connected, project-matched snapshot with all seven dependencies healthy and
+  no gates. The complete Curator queue snapshot at 14:38 +07 reports zero
+  received, failed, quarantined, or pending-review items. The separate direct
+  `project_health` call is `unknown` because that request contained no current
+  observations for the seven Hermes-supplied dependencies; it is not the
+  dashboard's Hermes readiness feed.
+- The review document now has a **Refresh evidence** action. A blocked Accept
+  points to it before loading the artifact inventory. With an explicit
+  reason, next action, and confirmation, it reopens the completed source goal
+  and withdraws the stale proposal. The owner must add fresh passing evidence
+  for every criterion, finish the goal, and assess a new proposal. Existing
+  facts and receipts remain; no decision is accepted and no terminal opens.
+- VS Code extension 0.9.65 is installed and its JavaScript matches the current
+  source. Local checks passed: extension suite 44/44, hosted MCP review test
+  1/1, and `git diff --check`. The active window still needs reload and the
+  action needs rendered verification against a pending proposal; the live
+  review queue is empty.
+- A read-only expiry-inventory request was denied for this caller. The live
+  due 72-hour expiry, warning-only 250 MiB boundary, package rollback, privacy
+  sink audit, owner review, and full local-alpha acceptance remain open.
