@@ -56,6 +56,8 @@ const {
   statusColorMeaning,
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
+  reviewDocumentActions,
+  launchDocumentReview,
   validateReviewQueue,
   writePendingReviewDocument,
   writeWorkspaceQueueViews,
@@ -93,6 +95,7 @@ class FakeMcpProcess extends EventEmitter {
     reportRevision = 'a'.repeat(64), denyToolCall = false,
     denyToolName = null, reportFactId = null, emptyReviewQueue = false,
     seenGoalEvents = new Set(), goalState = null, queueSnapshot = null,
+    toolResponses = {},
   ) {
     super();
     this.requests = [];
@@ -104,6 +107,7 @@ class FakeMcpProcess extends EventEmitter {
     this.seenGoalEvents = seenGoalEvents;
     this.goalState = goalState || { status: 'active', lifecycle_revision: 1 };
     this.queueSnapshot = queueSnapshot || healthyCuratorQueueSnapshot();
+    this.toolResponses = toolResponses;
     this.startedGoal = null;
     this.startedReceiptStatus = null;
     this.stdout = new PassThrough();
@@ -123,6 +127,12 @@ class FakeMcpProcess extends EventEmitter {
               code: 'forbidden',
               message: 'The caller is not allowed to perform this operation.',
             }) }] };
+          } else if (Object.hasOwn(this.toolResponses, request.params.name)) {
+            const response = this.toolResponses[request.params.name];
+            const value = typeof response === 'function'
+              ? response(request.params.arguments || {}) : response;
+            result = { content: [{ type: 'text', text: typeof value === 'string'
+              ? value : JSON.stringify(value) }] };
           } else if (request.params.name === 'project_queue_snapshot') {
             result = { content: [{ type: 'text', text: JSON.stringify(this.queueSnapshot) }] };
           } else if (request.params.name === 'project_activity_status') {
@@ -667,7 +677,7 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.match(html, /goal\.problem/);
   assert.match(html, /Reopen completed task/);
   assert.match(html, /type: 'reopenGoal'/);
-  assert.match(html, /Review in terminal/);
+  assert.match(html, /Review and confirm in VS Code; no terminal is opened/);
   assert.match(html, /label\.textContent = candidate\.materiality/);
   assert.match(html, /Evidence references/);
   assert.match(html, /type: 'loadEvidence'/);
@@ -1375,6 +1385,7 @@ test('review queue rejects malformed and cross-project candidates instead of sho
 
 test('dashboard opens a panel, reads goal and report pages, and clears on disposal', async () => {
   const messages = [];
+  const reviewErrors = [];
   let receiveMessage;
   let disposePanel;
   let processCount = 0;
@@ -1399,7 +1410,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   vscodeMock.ViewColumn = { One: 1 };
   vscodeMock.window = {
     showWarningMessage: assert.fail,
-    showErrorMessage: assert.fail,
+    showErrorMessage: (message) => { reviewErrors.push(message); },
     createTerminal: (options) => ({
       show: () => terminalCalls.push({ action: 'show', options }),
       sendText: (text, addNewLine) => terminalCalls.push({ action: 'sendText', text, addNewLine }),
@@ -1447,17 +1458,9 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   await receiveMessage({ type: 'openReview', candidateId: 'unlisted-candidate' });
   assert.equal(terminalCalls.length, 0);
   await receiveMessage({ type: 'openReview', candidateId: 'candidate-1' });
-  assert.equal(terminalCalls[0].action, 'show');
-  assert.equal(terminalCalls[1].action, 'sendText');
-  assert.match(terminalCalls[1].text, /'\/opt\/curator tools\/curatormd-v2-review'/);
-  assert.match(terminalCalls[1].text, /'--evidence-config'/);
-  assert.match(
-    terminalCalls[1].text,
-    /'\/home\/eaglesvn\/\.local\/state\/curator\/evidence\.json'/,
-  );
-  assert.match(terminalCalls[1].text, /'\/tmp\/project'/);
-  assert.match(terminalCalls[1].text, /'candidate-1'/);
-  assert.equal(terminalCalls[1].addNewLine, true);
+  assert.equal(terminalCalls.length, 0, 'review actions must never launch an interactive terminal');
+  assert.equal(reviewErrors.length, 1);
+  assert.match(reviewErrors[0], /review was not recorded/);
   await receiveMessage({ type: 'loadReport', goalId: 'goal-1', factOffset: 0 });
   const report = messages.find((message) => message.type === 'report');
   assert.match(report.report, /Open TODOs/);
@@ -1483,7 +1486,7 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     'Curator denied this request; check the project access grant.',
   );
   await receiveMessage({ type: 'openReview', candidateId: 'candidate-1' });
-  assert.equal(terminalCalls.length, 2, 'a denied read clears cached review authority');
+  assert.equal(terminalCalls.length, 0, 'a denied read clears cached review authority');
   disposePanel();
 });
 
@@ -2142,6 +2145,454 @@ test('project workspace initialization refuses symlinked state areas', () => {
   }
 });
 
+test('pending SDE Accept uses VS Code, binds the edited packet, and never opens a terminal', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-flow-'));
+  const projectId = 'alpha';
+  const candidateId = 'candidate-42';
+  const candidate = {
+    candidate_id: candidateId,
+    goal_id: 'goal-42',
+    status: 'pending_review',
+    materiality: 'decision',
+    rationale: 'Retain the verified project decision.',
+  };
+  const target = 'persistence/HISTORY.md';
+  const outline = {
+    project_id: projectId,
+    candidate_id: candidateId,
+    goal_id: candidate.goal_id,
+    status: 'pending_review',
+    evidence_status: 'current_passing',
+    successful_completion_evidence_current: true,
+    persistence_documents: [target],
+    supporting_facts: [],
+  };
+  const packet = {
+    detail: { candidate },
+    artifact_inventory: {
+      usage: { inventory_complete: true },
+      manifest_sha256: 'a'.repeat(64),
+      artifacts: [],
+    },
+    dependency_map_sha256: 'b'.repeat(64),
+    artifact_dependencies: [],
+  };
+  const binding = { sha256: 'c'.repeat(64), binding: {} };
+  const reviewResponses = {
+    sde_review_outline: outline,
+    sde_review_packet: packet,
+    sde_prepare_review_binding: binding,
+    sde_confirm: { receipt_id: 'receipt-42' },
+    sde_project_review_target: 'written',
+    sde_review_projection_status: [[target, 'd'.repeat(64), '2026-11-04T00:00:00+00:00']],
+    sde_finalize_review_projection: { receipt_id: 'receipt-42', purge_status: 'complete' },
+    artifact_purge_status: [{ receipt_id: 'receipt-42', purge_status: 'complete' }, []],
+  };
+  const projectFile = path.join(projectRoot, '.curatormd-v2.toml');
+  fs.writeFileSync(projectFile, 'project_id = "alpha"\n');
+  const priorWorkspace = vscodeMock.workspace;
+  const priorWindow = vscodeMock.window;
+  const priorUri = vscodeMock.Uri;
+  const priorRange = vscodeMock.Range;
+  const priorCodeLens = vscodeMock.CodeLens;
+  const children = [];
+  const launchArgs = [];
+  const warnings = [];
+  const information = [];
+  const errors = [];
+  const terminalCalls = [];
+  const settings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+    evidenceConfig: '/tmp/evidence.json',
+  };
+  try {
+    initializeWorkspaceAreas(projectRoot);
+    fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+    const reviewPath = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    assert.equal(writePendingReviewDocument(projectRoot, projectId, [{
+      candidate,
+      goal: { goal_id: candidate.goal_id, project_id: projectId, problem: 'Smoke goal' },
+    }], new Map([[candidateId, outline]])), true);
+    let documentText = fs.readFileSync(reviewPath, 'utf8');
+    const document = {
+      uri: { fsPath: reviewPath },
+      isDirty: false,
+      get lineCount() { return documentText.split('\n').length; },
+      lineAt: (line) => ({ text: documentText.split('\n')[line] }),
+      getText: () => documentText,
+      positionAt: (offset) => ({ offset }),
+      edit: async (callback) => {
+        let edit;
+        callback({ replace: (range, replacement) => { edit = { range, replacement }; } });
+        if (!edit) return false;
+        documentText = documentText.slice(0, edit.range.start.offset)
+          + edit.replacement + documentText.slice(edit.range.end.offset);
+        return true;
+      },
+      save: async () => {
+        fs.writeFileSync(reviewPath, documentText, 'utf8');
+        return true;
+      },
+    };
+    vscodeMock.Uri = { file: (fsPath) => ({ fsPath }) };
+    vscodeMock.Range = class Range {
+      constructor(start, end) { this.start = start; this.end = end; }
+    };
+    vscodeMock.CodeLens = class CodeLens {
+      constructor(range, command) { this.range = range; this.command = command; }
+    };
+    vscodeMock.workspace = {
+      workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+      textDocuments: [document],
+      openTextDocument: async () => document,
+      getConfiguration: () => ({
+        get: (key, fallback) => settings[key] ?? fallback,
+        inspect: () => ({ globalValue: true }),
+      }),
+    };
+    vscodeMock.window = {
+      showTextDocument: async () => ({ document }),
+      showQuickPick: async (items, options) => options.canPickMany
+        ? items : items[0],
+      showInputBox: async () => 'Reviewed and verified for retention.',
+      showWarningMessage: async (message, options, confirmation) => {
+        warnings.push({ message, options, confirmation });
+        return confirmation;
+      },
+      showInformationMessage: async (message) => { information.push(message); },
+      showErrorMessage: async (message) => { errors.push(message); },
+      createTerminal: () => { terminalCalls.push('opened'); throw new Error('terminal opened'); },
+    };
+
+    const actionLine = documentText.split('\n').findIndex(
+      (line) => line === `<!-- curator-v2-actions: ${candidateId} -->`,
+    );
+    const headingLine = documentText.split('\n').findIndex(
+      (line) => line.endsWith('Editable decision'),
+    );
+    const lenses = reviewDocumentActions(document);
+    assert.equal(lenses.length, 4);
+    assert.ok(actionLine < headingLine);
+    assert.deepEqual(lenses.map((lens) => lens.command.title), ['Accept', 'Reject', 'Withdraw', 'Refresh evidence']);
+
+    await launchDocumentReview(candidateId, 'approve', (command, args) => {
+      launchArgs.push({ command, args });
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, false, new Set(), null, null, reviewResponses,
+      );
+      children.push(child);
+      return child;
+    });
+
+    assert.equal(errors.length, 0);
+    assert.deepEqual(terminalCalls, []);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0].message, /Accept SDE candidate-42/);
+    assert.match(warnings[0].options.detail, /Review binding SHA-256/);
+    assert.equal(information.length, 1);
+    assert.match(information[0], /accepted and receipt receipt-42 finalized/);
+    assert.equal(children.length, 4);
+    assert.ok(launchArgs.slice(0, 3).every(({ args }) => args.includes('--allow-review')
+      && !args.includes('--allow-write')));
+    assert.ok(launchArgs[3].args.includes('--allow-review'));
+    assert.ok(launchArgs[3].args.includes('--allow-write'));
+    const confirm = children[3].requests.find(
+      (request) => request.params?.name === 'sde_confirm',
+    );
+    assert.ok(confirm);
+    assert.equal(confirm.params.arguments.expected_review_binding_sha256, binding.sha256);
+    assert.deepEqual(
+      JSON.parse(confirm.params.arguments.review_draft_json).documents,
+      [target],
+    );
+  } finally {
+    vscodeMock.workspace = priorWorkspace;
+    vscodeMock.window = priorWindow;
+    vscodeMock.Uri = priorUri;
+    vscodeMock.Range = priorRange;
+    vscodeMock.CodeLens = priorCodeLens;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending SDE Withdraw clears one stale proposal in VS Code and retains its audit receipt', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-withdraw-'));
+  const projectId = 'alpha';
+  const candidateId = 'candidate-withdraw-42';
+  const candidate = {
+    candidate_id: candidateId,
+    goal_id: 'goal-withdraw-42',
+    status: 'pending_review',
+    materiality: 'implementation',
+    rationale: 'Clear this stale alpha test proposal.',
+  };
+  const outline = {
+    project_id: projectId,
+    candidate_id: candidateId,
+    goal_id: candidate.goal_id,
+    status: 'pending_review',
+    evidence_status: 'not_current_or_missing',
+    supporting_facts: [{ fact_id: 'fact-retained-42' }],
+  };
+  const withdrawal = {
+    withdrawal_id: 'withdrawal-42',
+    project_id: projectId,
+    candidate_id: candidateId,
+    reviewer_id: 'local-uid:1000',
+    rationale: 'Clear stale alpha proposal before retest.',
+    candidate_sha256: 'd'.repeat(64),
+  };
+  const reviewResponses = {
+    sde_review_outline: outline,
+    sde_withdraw_candidates: [withdrawal],
+  };
+  const priorWorkspace = vscodeMock.workspace;
+  const priorWindow = vscodeMock.window;
+  const priorUri = vscodeMock.Uri;
+  const priorRange = vscodeMock.Range;
+  const priorCodeLens = vscodeMock.CodeLens;
+  const children = [];
+  const launchArgs = [];
+  const warnings = [];
+  const information = [];
+  const errors = [];
+  const terminalCalls = [];
+  const settings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+  };
+  try {
+    initializeWorkspaceAreas(projectRoot);
+    fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+    const reviewPath = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    assert.equal(writePendingReviewDocument(projectRoot, projectId, [{
+      candidate,
+      goal: { goal_id: candidate.goal_id, project_id: projectId, problem: 'Smoke goal' },
+    }], new Map([[candidateId, outline]])), true);
+    const documentText = fs.readFileSync(reviewPath, 'utf8');
+    assert.match(documentText, /Refresh evidence reopens the source task/);
+    const document = {
+      uri: { fsPath: reviewPath },
+      isDirty: false,
+      get lineCount() { return documentText.split('\n').length; },
+      lineAt: (line) => ({ text: documentText.split('\n')[line] }),
+      getText: () => documentText,
+      save: async () => true,
+    };
+    vscodeMock.Uri = { file: (fsPath) => ({ fsPath }) };
+    vscodeMock.Range = class Range {
+      constructor(start, end) { this.start = start; this.end = end; }
+    };
+    vscodeMock.CodeLens = class CodeLens {
+      constructor(range, command) { this.range = range; this.command = command; }
+    };
+    vscodeMock.workspace = {
+      workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+      textDocuments: [document],
+      openTextDocument: async () => document,
+      getConfiguration: () => ({
+        get: (key, fallback) => settings[key] ?? fallback,
+        inspect: () => ({ globalValue: true }),
+      }),
+    };
+    vscodeMock.window = {
+      showTextDocument: async () => ({ document }),
+      showInputBox: async () => 'Clear stale alpha proposal before retest.',
+      showWarningMessage: async (message, options, confirmation) => {
+        warnings.push({ message, options, confirmation });
+        return confirmation;
+      },
+      showInformationMessage: async (message) => { information.push(message); },
+      showErrorMessage: async (message) => { errors.push(message); },
+      createTerminal: () => { terminalCalls.push('opened'); throw new Error('terminal opened'); },
+    };
+
+    const lenses = reviewDocumentActions(document);
+    assert.deepEqual(lenses.map((lens) => lens.command.title), ['Accept', 'Reject', 'Withdraw', 'Refresh evidence']);
+    const spawnReviewProcess = (command, args) => {
+      launchArgs.push({ command, args });
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, false, new Set(), null, null, reviewResponses,
+      );
+      children.push(child);
+      return child;
+    };
+    await launchDocumentReview(candidateId, 'approve', spawnReviewProcess);
+    assert.match(warnings[0].message, /Click Refresh evidence above Editable decision/);
+    assert.ok(children[0].requests.every(
+      (request) => !['sde_review_packet', 'sde_confirm'].includes(request.params?.name),
+    ));
+    await launchDocumentReview(candidateId, 'withdraw', spawnReviewProcess);
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(terminalCalls, []);
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[1].message, /Withdraw SDE proposal candidate-withdraw-42/);
+    assert.match(warnings[1].options.detail, /task facts and evidence remain unchanged/);
+    assert.match(information[0], /source facts retained.*withdrawal-42/);
+    assert.equal(children.length, 3);
+    assert.ok(launchArgs[0].args.includes('--allow-review'));
+    assert.ok(launchArgs.slice(0, 2).every(({ args }) => !args.includes('--allow-write')));
+    assert.ok(launchArgs[1].args.includes('--allow-review'));
+    assert.ok(launchArgs[2].args.includes('--allow-review'));
+    assert.ok(launchArgs[2].args.includes('--allow-write'));
+    const withdrawalCall = children[2].requests.find(
+      (request) => request.params?.name === 'sde_withdraw_candidates',
+    );
+    assert.ok(withdrawalCall);
+    assert.deepEqual(withdrawalCall.params.arguments.candidate_ids, [candidateId]);
+    assert.equal(withdrawalCall.params.arguments.rationale, 'Clear stale alpha proposal before retest.');
+    assert.ok(children.every((child) => child.requests.every(
+      (request) => request.params?.name !== 'sde_review_packet',
+    )));
+  } finally {
+    vscodeMock.workspace = priorWorkspace;
+    vscodeMock.window = priorWindow;
+    vscodeMock.Uri = priorUri;
+    vscodeMock.Range = priorRange;
+    vscodeMock.CodeLens = priorCodeLens;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('Refresh evidence reopens the source task and withdraws the stale proposal without a terminal', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-refresh-'));
+  const projectId = 'alpha';
+  const candidateId = 'candidate-refresh-42';
+  const candidate = {
+    candidate_id: candidateId,
+    goal_id: 'goal-refresh-42',
+    status: 'pending_review',
+    materiality: 'implementation',
+    rationale: 'Clear stale proof before a fresh review.',
+  };
+  const completeOutline = {
+    project_id: projectId,
+    candidate_id: candidateId,
+    goal_id: candidate.goal_id,
+    goal_status: 'complete',
+    lifecycle_revision: 7,
+    problem: 'Verify the local alpha review path.',
+    status: 'pending_review',
+    evidence_status: 'not_current_or_missing',
+    supporting_facts: [{ fact_id: 'fact-refresh-42' }],
+  };
+  const activeOutline = { ...completeOutline, goal_status: 'active', lifecycle_revision: 8 };
+  let outlineReads = 0;
+  const responses = {
+    sde_review_outline: () => (outlineReads++ < 2 ? completeOutline : activeOutline),
+    goal_reopen: { project_id: projectId, status: 'processed' },
+    sde_withdraw_candidates: [{
+      candidate_id: candidateId,
+      withdrawal_id: 'withdrawal-refresh-42',
+      candidate_sha256: 'd'.repeat(64),
+    }],
+  };
+  const priorWorkspace = vscodeMock.workspace;
+  const priorWindow = vscodeMock.window;
+  const priorUri = vscodeMock.Uri;
+  const priorRange = vscodeMock.Range;
+  const priorCodeLens = vscodeMock.CodeLens;
+  const children = [];
+  const launchArgs = [];
+  const warnings = [];
+  const information = [];
+  const errors = [];
+  const terminalCalls = [];
+  const settings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+  };
+  try {
+    initializeWorkspaceAreas(projectRoot);
+    fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+    const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+    assert.equal(writePendingReviewDocument(projectRoot, projectId, [{
+      candidate,
+      goal: { goal_id: candidate.goal_id, project_id: projectId, problem: completeOutline.problem },
+    }], new Map([[candidateId, completeOutline]])), true);
+    const documentText = fs.readFileSync(reviewPath, 'utf8');
+    const document = {
+      uri: { fsPath: reviewPath },
+      isDirty: false,
+      get lineCount() { return documentText.split('\n').length; },
+      lineAt: (line) => ({ text: documentText.split('\n')[line] }),
+      getText: () => documentText,
+      save: async () => true,
+    };
+    vscodeMock.Uri = { file: (fsPath) => ({ fsPath }) };
+    vscodeMock.Range = class Range { constructor(start, end) { this.start = start; this.end = end; } };
+    vscodeMock.CodeLens = class CodeLens { constructor(range, command) { this.range = range; this.command = command; } };
+    vscodeMock.workspace = {
+      workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+      textDocuments: [document],
+      openTextDocument: async () => document,
+      getConfiguration: () => ({
+        get: (key, fallback) => settings[key] ?? fallback,
+        inspect: () => ({ globalValue: true }),
+      }),
+    };
+    vscodeMock.window = {
+      showTextDocument: async () => ({ document }),
+      showInputBox: async () => 'Refresh current passing evidence for the source task.',
+      showWarningMessage: async (message, options, confirmation) => {
+        warnings.push({ message, options, confirmation });
+        return confirmation;
+      },
+      showInformationMessage: async (message) => { information.push(message); },
+      showErrorMessage: async (message) => { errors.push(message); },
+      createTerminal: () => { terminalCalls.push('opened'); throw new Error('terminal opened'); },
+    };
+
+    const lenses = reviewDocumentActions(document);
+    assert.deepEqual(lenses.map((lens) => lens.command.title), ['Accept', 'Reject', 'Withdraw', 'Refresh evidence']);
+    await launchDocumentReview(candidateId, 'refresh-evidence', (command, args) => {
+      launchArgs.push({ command, args });
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, false, new Set(), null, null, responses,
+      );
+      children.push(child);
+      return child;
+    });
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(terminalCalls, []);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0].message, /Reopen/);
+    assert.match(warnings[0].options.detail, /fresh passing evidence for every criterion/);
+    assert.match(information[0], /task reopened and stale proposal withdrawn/i);
+    assert.equal(children.length, 3);
+    assert.ok(launchArgs.every(({ args }) => args.includes('--allow-review')));
+    assert.ok(launchArgs.slice(1).every(({ args }) => args.includes('--allow-write')));
+    assert.ok(!launchArgs[0].args.includes('--allow-write'));
+    const reopen = children[1].requests.find((request) => request.params?.name === 'goal_reopen');
+    assert.ok(reopen);
+    assert.equal(reopen.params.arguments.expected_lifecycle_revision, 7);
+    assert.equal(reopen.params.arguments.goal_id, candidate.goal_id);
+    const withdrawal = children[2].requests.find(
+      (request) => request.params?.name === 'sde_withdraw_candidates',
+    );
+    assert.ok(withdrawal);
+    assert.deepEqual(withdrawal.params.arguments.candidate_ids, [candidateId]);
+    assert.ok(withdrawal.params.arguments.rationale.includes('Refresh current passing evidence'));
+  } finally {
+    vscodeMock.workspace = priorWorkspace;
+    vscodeMock.window = priorWindow;
+    vscodeMock.Uri = priorUri;
+    vscodeMock.Range = priorRange;
+    vscodeMock.CodeLens = priorCodeLens;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
 test('pending SDE Markdown keeps editable rating and destination changes on refresh', () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-sde-review-'));
   try {
@@ -2215,6 +2666,64 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     assert.equal(refreshedFences.length, 2);
     assert.equal(refreshedFences[0][1], refreshedFences[1][1]);
     assert.match(refreshedFences[0][1], /"completed": \[\n    "Task summary:/);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('withdrawn proposals leave the pending document when their editable copies are untouched', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-withdrawn-review-'));
+  const review = {
+    candidate: {
+      candidate_id: 'candidate-withdrawn', goal_id: 'goal-withdrawn',
+      status: 'pending_review', materiality: 'routine',
+      rationale: 'This proposal is being cleared for retest.',
+    },
+    goal: {
+      goal_id: 'goal-withdrawn', project_id: 'alpha',
+      problem: 'Test withdrawal refresh of the pending review document.',
+    },
+  };
+  try {
+    const destination = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const original = fs.readFileSync(destination, 'utf8');
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', []), true);
+    const refreshed = fs.readFileSync(destination, 'utf8');
+    assert.match(refreshed, /No pending candidates\./);
+    assert.doesNotMatch(refreshed, /candidate-withdrawn/);
+    assert.notEqual(original, refreshed);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('withdrawal refresh preserves owner edits to a removed proposal', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-withdrawn-edits-'));
+  const review = {
+    candidate: {
+      candidate_id: 'candidate-edited', goal_id: 'goal-edited',
+      status: 'pending_review', materiality: 'routine',
+      rationale: 'This proposal is being cleared for retest.',
+    },
+    goal: {
+      goal_id: 'goal-edited', project_id: 'alpha',
+      problem: 'Test owner edit preservation during withdrawal refresh.',
+    },
+  };
+  try {
+    const destination = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const original = fs.readFileSync(destination, 'utf8');
+    const edited = original.replace(/("significance": )\d+/, '$1 4');
+    assert.notEqual(edited, original);
+    fs.writeFileSync(destination, edited, 'utf8');
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', []), false);
+    assert.equal(fs.readFileSync(destination, 'utf8'), edited);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

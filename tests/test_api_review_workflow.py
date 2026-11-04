@@ -26,6 +26,7 @@ from test_api import (
     ReviewHost,
     SDEAssessmentRequest,
     SDEConfirmationRequest,
+    SuccessCriterion,
     TestVerifier,
     _ApiTestSupport,
     hashlib,
@@ -44,6 +45,85 @@ from curatormd_v2.sde_review_draft import SDEReviewBinding, SDEReviewDraft
 
 class ApiReviewWorkflowTests(_ApiTestSupport):
     """Exercise apireviewworkflow behavior."""
+
+    def test_exact_stale_sde_batch_can_be_withdrawn_without_losing_facts(self) -> None:
+        """Clear stale alpha proposals atomically and retain owner audit receipts."""
+
+        goal = self.plugin.service.goal_start(
+            "Prepare stale SDE withdrawal coverage",
+            (SuccessCriterion("withdrawal", "A stale review proposal is clearable"),),
+        )
+        fact, _ = self.plugin.service.goal_fact(
+            goal.goal_id,
+            FactKind.RESEARCH,
+            "A source fact remains available after withdrawal",
+        )
+        candidates = tuple(
+            SDECandidate(
+                goal_id=goal.goal_id,
+                materiality=materiality,
+                rationale=f"Proposal to withdraw for {materiality.value} review retest",
+                fact_ids=(fact.fact_id,),
+                impact="A test proposal appears in the pending queue",
+                retrieval_value="Use this fixture to retest the review flow",
+            )
+            for materiality in (Materiality.IMPLEMENTATION, Materiality.ROUTINE)
+        )
+        for candidate in candidates:
+            self.store.add_sde_candidate(candidate, "project-a")
+        reviewer = AllowProject(
+            {
+                ("hermes-user-1", "project-a", ProjectAction.READ),
+                ("hermes-user-1", "project-a", ProjectAction.WRITE),
+                ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+            }
+        )
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier(self.store), ReviewHost()
+        )
+        api = self._api_with_healthy_dependencies(plugin, reviewer)
+        candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+        rationale = "Withdraw stale alpha review proposals before a clean retest"
+
+        with self.assertRaisesRegex(NotFoundError, "SDE candidate not found"):
+            api.sde_withdraw_candidates(
+                self.caller,
+                "project-a",
+                (candidate_ids[0], "missing-candidate"),
+                rationale,
+            )
+        self.assertEqual(
+            self.store.get_sde_candidate(candidate_ids[0], "project-a").status.value,
+            "pending_review",
+        )
+
+        withdrawals = api.sde_withdraw_candidates(
+            self.caller, "project-a", candidate_ids, rationale
+        )
+        retry = api.sde_withdraw_candidates(
+            self.caller, "project-a", candidate_ids, rationale
+        )
+
+        self.assertEqual(len(withdrawals), 2)
+        self.assertEqual(
+            tuple(item.withdrawal_id for item in retry),
+            tuple(item.withdrawal_id for item in withdrawals),
+        )
+        self.assertTrue(all(len(item.candidate_sha256) == 64 for item in withdrawals))
+        self.assertEqual(
+            tuple(item.candidate.status.value for item in api.sde_review_queue(
+                self.caller, "project-a"
+            )),
+            (),
+        )
+        self.assertEqual(
+            self.store.get_fact(fact.fact_id, "project-a").bullet,
+            "A source fact remains available after withdrawal",
+        )
+        activity = api.project_activity_status(self.caller, "project-a")
+        self.assertEqual(activity.pending_sde_count, 0)
+        self.assertEqual(activity.withdrawn_sde_count, 2)
+        self.assertEqual(activity.sde_candidate_count, 2)
 
     def test_edited_sde_fields_are_bound_to_the_durable_review_receipt(self) -> None:
         """Persist the exact editable entry and its authenticated review binding."""

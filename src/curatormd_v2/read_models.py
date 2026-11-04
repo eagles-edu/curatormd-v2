@@ -616,6 +616,7 @@ class ProjectActivitySnapshot:  # pylint: disable=too-many-instance-attributes
     approved_sde_count: int
     rejected_sde_count: int
     events_observed: bool
+    withdrawn_sde_count: int = 0
 
     def __post_init__(self) -> None:
         """Ensure aggregate totals cannot contradict their component counts."""
@@ -632,6 +633,7 @@ class ProjectActivitySnapshot:  # pylint: disable=too-many-instance-attributes
             self.pending_sde_count,
             self.approved_sde_count,
             self.rejected_sde_count,
+            self.withdrawn_sde_count,
         )
         if any(not is_exact_int(value) or value < 0 for value in counts):
             raise ValueError("activity counts must be non-negative integers")
@@ -647,7 +649,7 @@ class ProjectActivitySnapshot:  # pylint: disable=too-many-instance-attributes
             or sum(item.count for item in self.goal_status_counts) != self.goal_count
         ):
             raise ValueError("goal status counts must cover the exact goal total")
-        if self.sde_candidate_count != sum(counts[8:11]):
+        if self.sde_candidate_count != sum(counts[8:12]):
             raise ValueError("SDE total must match its review states")
         if not is_exact_bool(self.events_observed):
             raise ValueError("events_observed must be a boolean")

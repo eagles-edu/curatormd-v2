@@ -28,7 +28,7 @@ from .schema_migration_steps_v2_v20 import (
 )
 
 
-SQLITE_SCHEMA_VERSION = 46
+SQLITE_SCHEMA_VERSION = 47
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -888,6 +888,49 @@ def migrate_sde_review_target_table_v46(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA user_version = 46")
 
 
+def migrate_sde_candidate_withdrawals_v47(connection: sqlite3.Connection) -> None:
+    """Keep an immutable reviewer receipt when a stale proposal leaves the queue."""
+
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS sde_candidate_withdrawals (
+               withdrawal_id TEXT PRIMARY KEY,
+               project_id TEXT NOT NULL,
+               candidate_id TEXT NOT NULL UNIQUE
+                   REFERENCES sde_candidates(candidate_id),
+               reviewer_id TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               candidate_sha256 TEXT NOT NULL,
+               created_at TEXT NOT NULL
+           )"""
+    )
+    columns = {
+        row[1]: str(row[2]).upper()
+        for row in connection.execute(
+            "PRAGMA table_info(sde_candidate_withdrawals)"
+        ).fetchall()
+    }
+    expected_columns = {
+        "withdrawal_id": "TEXT",
+        "project_id": "TEXT",
+        "candidate_id": "TEXT",
+        "reviewer_id": "TEXT",
+        "rationale": "TEXT",
+        "candidate_sha256": "TEXT",
+        "created_at": "TEXT",
+    }
+    foreign_keys = {
+        (row[2], row[3], row[4])
+        for row in connection.execute(
+            "PRAGMA foreign_key_list(sde_candidate_withdrawals)"
+        ).fetchall()
+    }
+    if columns != expected_columns or foreign_keys != {
+        ("sde_candidates", "candidate_id", "candidate_id")
+    }:
+        raise RuntimeError("SDE candidate withdrawal schema is incompatible")
+    connection.execute("PRAGMA user_version = 47")
+
+
 _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_event_router_v2,
     migrate_purge_observability_v3,
@@ -934,6 +977,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_sde_binding_payload_v44,
     migrate_goal_lifecycle_timestamps_v45,
     migrate_sde_review_target_table_v46,
+    migrate_sde_candidate_withdrawals_v47,
 )
 
 

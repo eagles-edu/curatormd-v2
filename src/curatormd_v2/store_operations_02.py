@@ -259,6 +259,7 @@ class StoreOperations0(StoreOperations0Part1):
         pending_sde = sde_counts.get(SDEStatus.PENDING_REVIEW.value, 0)
         approved_sde = sde_counts.get(SDEStatus.APPROVED.value, 0)
         rejected_sde = sde_counts.get(SDEStatus.REJECTED.value, 0)
+        withdrawn_sde = sde_counts.get(SDEStatus.WITHDRAWN.value, 0)
         return ProjectActivitySnapshot(
             project_id=project_id,
             observed_at=utc_now(),
@@ -277,11 +278,14 @@ class StoreOperations0(StoreOperations0Part1):
                 for status in GoalStatus
             ),
             fact_count=fact_count,
-            sde_candidate_count=pending_sde + approved_sde + rejected_sde,
+            sde_candidate_count=(
+                pending_sde + approved_sde + rejected_sde + withdrawn_sde
+            ),
             pending_sde_count=pending_sde,
             approved_sde_count=approved_sde,
             rejected_sde_count=rejected_sde,
             events_observed=(processed + received + failed + quarantined) > 0,
+            withdrawn_sde_count=withdrawn_sde,
         )
 
     @staticmethod

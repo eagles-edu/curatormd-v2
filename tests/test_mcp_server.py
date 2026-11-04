@@ -256,6 +256,18 @@ class TestReviewAuthorizer:  # pylint: disable=too-few-public-methods
             raise PermissionError("MCP reviewer is not authenticated")
         return authenticated_subject
 
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Authorize only the authenticated host's proposal withdrawal."""
+        del project_id, candidate_id
+        if authenticated_subject != "host-subject":
+            raise PermissionError("MCP withdrawal reviewer is not authenticated")
+        return authenticated_subject
+
     def authorize_correction(
         self,
         project_id: str,

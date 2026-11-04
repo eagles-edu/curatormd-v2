@@ -79,6 +79,7 @@ class SDEStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
     REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
 
 
 class ReviewDecision(StrEnum):

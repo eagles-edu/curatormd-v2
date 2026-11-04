@@ -30,15 +30,94 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     AuthenticatedCuratorAPI,
     CuratorStore,
+    FactKind,
     InMemoryTokenBucket,
+    Materiality,
     PurgeError,
     PurgeFailureCode,
     build_mcp_server,
+    SDECandidate,
+    SuccessCriterion,
 )
 
 
 class McpSdeWorkflowTests(McpServerTestSupport):
     """MCP SDE review and purge workflow tests."""
+
+    def test_stale_pending_candidates_can_be_withdrawn_through_mcp(self) -> None:
+        """The alpha recovery tool clears queue state but preserves proposal facts."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            workflow = self._create_mcp_sde_workflow(Path(temporary))
+            goal = workflow.plugin.service.goal_start(
+                "Prepare a pending proposal for alpha recovery",
+                (SuccessCriterion("test", "The proposal can be withdrawn"),),
+            )
+            fact, _ = workflow.plugin.service.goal_fact(
+                goal.goal_id,
+                FactKind.RESEARCH,
+                "This source fact remains after the review proposal is withdrawn",
+            )
+            candidate = SDECandidate(
+                goal_id=goal.goal_id,
+                materiality=Materiality.IMPLEMENTATION,
+                rationale="A stale test proposal needs a clean retry",
+                fact_ids=(fact.fact_id,),
+                impact="The proposal blocks alpha review testing",
+                retrieval_value="A fresh candidate can be tested after cleanup",
+            )
+            workflow.store.add_sde_candidate(candidate, "mcp-project")
+            server = self._mcp_sde_server(workflow)
+
+            async def exercise() -> tuple[int, str, str]:
+                async with Client(server, raise_exceptions=True) as client:
+                    rationale = "Withdraw stale alpha proposal before a clean retest"
+                    withdrawals = await self._call_mcp_json(
+                        client,
+                        "sde_withdraw_candidates",
+                        {
+                            "candidate_ids": [candidate.candidate_id],
+                            "rationale": rationale,
+                        },
+                    )
+                    retry = await self._call_mcp_json(
+                        client,
+                        "sde_withdraw_candidates",
+                        {
+                            "candidate_ids": [candidate.candidate_id],
+                            "rationale": rationale,
+                        },
+                    )
+                    queue = await self._call_mcp_json(
+                        client, "sde_review_queue_cards", {}
+                    )
+                    detail = await self._call_mcp_json(
+                        client,
+                        "sde_review_detail",
+                        {"candidate_id": candidate.candidate_id},
+                    )
+                    self.assertEqual(len(withdrawals), 1)
+                    self.assertEqual(withdrawals[0]["candidate_id"], candidate.candidate_id)
+                    self.assertEqual(retry, withdrawals)
+                    self.assertEqual(queue["candidates"], [])
+                    self.assertEqual(detail["candidate"]["status"], "withdrawn")
+                    self.assertEqual(
+                        detail["facts"][0]["fact_id"],
+                        candidate.fact_ids[0],
+                    )
+                    return (
+                        len(queue["candidates"]),
+                        withdrawals[0]["withdrawal_id"],
+                        detail["candidate"]["status"],
+                    )
+
+            try:
+                queue_count, withdrawal_id, status = asyncio.run(exercise())
+                self.assertEqual(queue_count, 0)
+                self.assertTrue(withdrawal_id)
+                self.assertEqual(status, "withdrawn")
+            finally:
+                workflow.store.close()
 
     def test_mcp_sde_assessment_review_persistence_and_purge_are_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

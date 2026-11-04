@@ -21,6 +21,7 @@ from .models import (
     SDEReviewDetail,
     SDEReviewPacket,
     ReviewDecision,
+    SDEWithdrawal,
 )
 from .sde_review_draft import SDEReviewBinding, SDEReviewDraft
 from .markdown_persistence import MarkdownPersistenceAdapter
@@ -116,6 +117,38 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
         """Read one candidate and its selected evidence within this project."""
 
         return self.service.sde_review_detail(candidate_id)
+
+    def sde_withdraw_candidates(
+        self,
+        candidate_ids: tuple[str, ...],
+        rationale: str,
+        *,
+        authenticated_subject: str | None = None,
+    ) -> tuple[SDEWithdrawal, ...]:
+        """Remove exact stale proposals from the queue and retain audit receipts."""
+
+        if not candidate_ids or len(candidate_ids) > 100:
+            raise ValueError("withdrawal requires 1-100 candidate IDs")
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("withdrawal candidate IDs must be unique")
+        reviewer_ids = tuple(
+            self.service.review_authorizer.authorize_withdrawal(
+                self.config.project_id,
+                candidate_id,
+                authenticated_subject,
+            )
+            for candidate_id in candidate_ids
+        )
+        if len(set(reviewer_ids)) != 1:
+            raise PermissionError("one authenticated reviewer must authorize the batch")
+        expected_revision = self._capture_active_project_revision()
+        with self._project_revision_fence(expected_revision):
+            return self.service.store.withdraw_sde_candidates(
+                candidate_ids,
+                self.config.project_id,
+                reviewer_ids[0],
+                rationale,
+            )
 
     def sde_review_has_current_passing_evidence(self, candidate_id: str) -> bool:
         """Recheck selected evidence before presenting a successful-completion time."""

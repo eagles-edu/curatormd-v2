@@ -79,10 +79,13 @@ requires a durable `write` grant, and without the flag the launcher denies
 writes even if one exists in the registry. The process cannot use grants for
 other scopes. Review-gated inventory, `goal_persist`, SDE disposition, and
 fact-archive approval additionally require the optional `--allow-review` flag
-and an exact durable `review` grant. The flag defaults off and does not create a
-grant. Purge retry, retention-hold release, and event retry remain separately
-scoped operations and are not enabled by either flag; there is no MCP tool
-parameter for selecting another caller or project. An absent/invalid
+and an exact durable `review` grant. For this local stdio launcher, review
+decisions are attributed to the kernel-derived non-setuid local UID and require
+that same identity on the request; the profile ID is not a human identity. The
+flag defaults off and does not create a grant. Purge retry, retention-hold
+release, and event retry remain separately scoped operations and are not
+enabled by either flag; there is no MCP tool parameter for selecting another
+caller or project. An absent/invalid
 repository config fails startup. The local event router and purge scheduler
 are not started by this entrypoint.
 
@@ -239,20 +242,25 @@ it does not replace Curator's profile, project, or action authorization.
 | `project_reconcile` | Requires project `read` authorization; scan one configured target once, return a page of per-goal comparisons and identify valid orphaned/malformed marker hashes plus unrecognized marker counts. The goal page is limited to 100 records and the marker inventory is bounded; incomplete scans are explicit. It never edits either store. |
 | `sde_assess` | Requires project `write` scope. Assess up to 32 unique selected facts from the same goal, with compact `impact` and `retrieval_value` descriptions. Routine materiality and missing verification do not suppress a proposal; any selected verification facts must be current and passing. Those descriptions do not verify impact. Only a pending review proposal is created; the owner decides its importance and disposition. Approval still requires current passing evidence. |
 | `sde_review_queue` | List pending review packets. |
+| `sde_withdraw_candidates` | Requires project `review` scope and a separately authorized owner identity. Atomically clear 1–100 exact pending proposals for an alpha retest while retaining their source facts and one immutable withdrawal receipt per candidate. Withdrawal is neither approval nor rejection; exact retries are idempotent. |
 | `sde_review_detail` | Inspect one candidate's selected facts and evidence. |
 | `sde_review_packet` | Under project `review` scope, return one bounded packet containing candidate facts/provenance and a freshly hashed staging inventory scoped to the candidate goal. The inventory is point-in-time and must still match at decision time; incomplete scans cannot authorize cleanup. |
 | `sde_correction_record` | Append an authenticated, immutable correction linked to a decided candidate. |
 | `sde_quality_feedback_record` | Record one authenticated post-disposition reviewer label; identical retries are idempotent and changed/duplicate submissions conflict. |
 | `sde_quality_feedback_summary` | Return project-scoped counts by explicit label without reviewer IDs or rationale. |
 | `artifact_inventory_discover(goal_id)` | Reviewer-scoped, bounded streaming hash inventory of regular files in `.curatormd-v2/staging/<goal_id>/`; files belonging to other goals cannot enter this receipt's manifest. Incomplete scans cannot release purge. |
-| `sde_confirm` | One authorized approve/reject action records the SDE disposition and authorizes purge of the complete exact artifact manifest supplied with that action. The plugin re-scans before recording a distinct cleanup receipt; canonical projection of both receipts must succeed before deletion. An artifact may carry `retention_hold: legal` or `retention_hold: operational`; the hold is reviewer-selected and never inferred by the backend. |
+| `sde_prepare_review_binding` | Read-only preparation of an edited decision binding over the authenticated reviewer, current evidence and facts, selected documents, rationale, exact artifact inventory, and dependency map. The caller must repeat the same fields at confirmation. |
+| `sde_confirm` | One authorized approve/reject action records the SDE disposition and authorizes purge of the complete exact artifact manifest supplied with that action. Edited decisions also require their prepared binding digest and significance-5 confirmation when applicable. The plugin re-scans before recording a distinct cleanup receipt; canonical projection of both receipts must succeed before deletion. An artifact may carry `retention_hold: legal` or `retention_hold: operational`; the hold is reviewer-selected and never inferred by the backend. |
+| `sde_project_review_target` | Prepare or write one configured destination for the original reviewer after an approved, edited decision receipt. Every destination is reauthorized and checked against the receipt binding. |
+| `sde_review_projection_status` | Read each configured destination's projection digest and timestamp for the original reviewer. |
+| `sde_finalize_review_projection` | Verify all approved destinations or finalize a rejection before exact cleanup can proceed. |
 | `artifact_inventory_complete` | Declare a receipt's full inventory without granting cleanup authority. Newly assigned holds are attributed to the authenticated reviewer; unchanged existing hold attribution is preserved. |
 | `artifact_cleanup_approve` | Compatibility path for a receipt without cleanup authorization: record a human approval bound to the complete exact artifact manifest and configured Markdown target. Normal `sde_confirm` already creates this authorization as part of the same review action. The plugin rescans the live inventory and persists the cleanup authorization receipt before deletion. Changed or incomplete manifests fail closed. |
 | `artifact_purge_status` | Inspect the receipt plus each artifact's status and observed outcome (`deleted`, `already_absent`, `held`, `changed`, or `failed`; legacy rows may have unknown outcome), retention category, attempt count, creation/last-attempt timestamps and ages, persisted retry deadline/countdown, content-free last error code, and next safe recovery action. |
 | `release_artifact_hold` | Release one exact held path in a receipt after dedicated project `retention_hold_release` scope and plugin reviewer authorization; persist actor, timestamp, and rationale, then resume eligible purge. Exact replay is idempotent; changed actor/rationale conflicts. |
 | `retry_pending_purges` | Immediately retry only manifests with durable, canonically projected cleanup authorization; authenticated use overrides an automatic retry deadline. |
 | `event_queue_status` | Read this bound project's received/failed/quarantined counts, oldest pending age, and aggregate active/expired worker claims without exposing event content. |
-| `project_activity_status` | Read retained event receipt/processing counts and recency, goal/fact totals, and pending/approved/rejected SDE totals. Advertises MCP `readOnlyHint=true` for Hermes trust gating. `events_observed=false` means no event receipt is retained; it does not assert capture completeness. This is activity, not readiness or a `project_health` signal. |
+| `project_activity_status` | Read retained event receipt/processing counts and recency, goal/fact totals, and pending/approved/rejected/withdrawn SDE totals. Advertises MCP `readOnlyHint=true` for Hermes trust gating. `events_observed=false` means no event receipt is retained; it does not assert capture completeness. This is activity, not readiness or a `project_health` signal. |
 | `project_health` | Read an authorized, content-free aggregate of local queue/review/purge/capacity/staging state and trusted timestamped host dependency probes. Reports the SQLite snapshot timestamp/completeness, the separate staging scan timestamp/completeness, and each host dependency's own status/time. These are not one atomic cross-source snapshot. Missing, malformed, or older-than-60-second probes are `unknown`; known backlog/failure is `degraded`; `healthy` requires complete fresh positive observations. |
 | `project_metrics` | Render a content-free Prometheus exposition snapshot for this authorized project, including explicit reviewer-feedback label counts; excludes user content, reviewer IDs/rationale, artifact paths, and global database/WAL sizes. It does not provide an HTTP scrape server, dashboards, alerts, or model/token usage. |
 | `event_quarantine_retry` | Retry one retained quarantined event; requires `event_retry` authorization and records the host-authenticated actor. |

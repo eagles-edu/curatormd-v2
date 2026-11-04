@@ -5,8 +5,11 @@ Hermes profile spawning one MCP subprocess. The operating system supplies the
 authenticated local account; Hermes separately supplies the profile and
 session for routing. Neither identity can be selected by tool arguments.
 The profile receives only project read access by default and optional project
-write access, each requiring an exact durable grant. Review, purge,
-retention-hold, and event-retry actions remain denied.
+write and review access, each requiring an exact durable grant and an explicit
+launcher ceiling. Review decisions are additionally bound to the current
+non-setuid local UID. This is an attended single-user alpha identity; it does
+not authenticate a remote Hermes user. Purge, retention-hold, and event-retry
+actions remain separately scoped.
 """
 
 from __future__ import annotations
@@ -24,13 +27,14 @@ from .api import AuthenticatedCaller, AuthenticatedCuratorAPI, ProjectAction
 from .cli_interaction import SafeArgumentParser, parse_safe_arguments
 from .evidence import EvidenceVerifier
 from .local_evidence_config import load_local_evidence_verifier
+from .local_review_authorizer import LocalUIDReviewAuthorizer
 from .mcp_server import HermesContextOptions, RequestHostReadiness, build_mcp_server
-from .project_config import ProjectConfig
-from .project_plugin import ProjectPlugin
 from .project_access import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
     ProjectAuthorizationBinding,
 )
+from .project_config import ProjectConfig
+from .project_plugin import ProjectPlugin
 from .process_privacy import protect_process_data
 from .rate_limiter import SQLiteTokenBucket
 from .store import CuratorStore
@@ -171,7 +175,10 @@ def build_local_profile_mcp(
         api = AuthenticatedCuratorAPI(
             {
                 config.project_id: ProjectPlugin.bind(
-                    config, store, evidence_verifier=selected_evidence_verifier
+                    config,
+                    store,
+                    evidence_verifier=selected_evidence_verifier,
+                    review_authorizer=LocalUIDReviewAuthorizer(),
                 )
             },
             authorizer=authorizer,

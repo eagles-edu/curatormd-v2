@@ -178,6 +178,18 @@ class ReviewHost:  # pylint: disable=too-few-public-methods
             raise PermissionError("review subject is not authenticated")
         return authenticated_subject
 
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Attribute proposal withdrawal to the authenticated test subject."""
+        del project_id, candidate_id
+        if authenticated_subject != "hermes-user-1":
+            raise PermissionError("withdrawal subject is not authenticated")
+        return authenticated_subject
+
     def authorize_correction(
         self,
         project_id: str,

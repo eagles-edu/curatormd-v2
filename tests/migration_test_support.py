@@ -120,6 +120,12 @@ PROJECT_USAGE_COLUMNS = {
             "dedupe_key", "status", "created_at", "impact", "retrieval_value",
         }
     ),
+    "sde_candidate_withdrawals": frozenset(
+        {
+            "withdrawal_id", "project_id", "candidate_id", "reviewer_id",
+            "rationale", "candidate_sha256", "created_at",
+        }
+    ),
     "sde_review_targets": frozenset(
         {
             "receipt_id", "target_path", "projection_sha256", "projected_at",
@@ -226,6 +232,16 @@ class MigrationReviewAuthorizer:
         """Return a stable reviewer identity for the local fixture."""
 
         del project_id, candidate_id, decision
+        return authenticated_subject or "migration-operator"
+
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Return the migration fixture's exact local reviewer identity."""
+        del project_id, candidate_id
         return authenticated_subject or "migration-operator"
 
     def authorize_correction(

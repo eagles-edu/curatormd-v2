@@ -5,10 +5,10 @@ from __future__ import annotations
 # Preserve the established store-module import surface for callers.
 # pylint: disable=wildcard-import,unused-wildcard-import
 from .store_support_01 import *
-from .store_operations_14 import StoreOperations5 as _StoreOperations5
+from .store_operations_15 import StoreOperations6 as _StoreOperations6
 
 # Segment inheritance preserves the existing operation override order.
-class CuratorStore(_StoreOperations5):  # pylint: disable=too-many-ancestors
+class CuratorStore(_StoreOperations6):  # pylint: disable=too-many-ancestors
     """Thread-safe SQLite store using short, explicit write transactions."""
 
     def __init__(self, database: str | Path) -> None:

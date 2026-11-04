@@ -979,6 +979,8 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
                 "status": detail.candidate.status.value,
                 "goal_id": detail.goal.goal_id,
                 "problem": detail.goal.problem,
+                "goal_status": detail.goal.status.value,
+                "lifecycle_revision": detail.goal.lifecycle_revision,
                 "materiality": detail.candidate.materiality.value,
                 "proposal_rationale": detail.candidate.rationale,
                 "impact": detail.candidate.impact,

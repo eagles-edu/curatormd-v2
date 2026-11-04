@@ -152,7 +152,6 @@ function healthGateLabel(code) {
 }
 let dashboardStatusItem;
 let statusRefreshTimer;
-let reviewColorDecorations;
 let statusRefreshGeneration = 0;
 let transportClosedAlertShown = false;
 const feedRequestsInFlight = new Map();
@@ -342,8 +341,11 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
     const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
     if (hash(parts.normalized) !== marker.checksum && hash(oldBody) !== marker.checksum) return false;
     const currentIds = new Set(reviews.map(({ candidate }) => candidate.candidate_id));
-    if ([...parts.drafts.keys()].some((id) => !currentIds.has(id))) return false;
-    previousDrafts = parts.drafts;
+    const removedIds = [...parts.drafts.keys()].filter((id) => !currentIds.has(id));
+    if (removedIds.some((id) => !reviewDraftMatchesProposal(existing, id, parts.drafts.get(id)))) {
+      return false;
+    }
+    previousDrafts = new Map([...parts.drafts].filter(([id]) => currentIds.has(id)));
   } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
   const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~\-]/g, '\\$&');
   const pushWrapped = (text, firstPrefix = '', continuationPrefix = '') => {
@@ -373,7 +375,7 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
   ];
   pushWrapped(`Project: ${safe(projectId)}`);
   lines.push('');
-  pushWrapped('Review each proposal and its editable JSON copy. Accept or Reject opens the attended reviewer; the decision is recorded only after you confirm the evidence and proposed changes.');
+  pushWrapped('Review each proposal and its editable JSON copy. Accept and Reject open the attended reviewer. Withdraw clears a proposal while retaining its source facts and receipt. Refresh evidence reopens the source task for a new proof pass, then withdraws the stale proposal; it does not accept or delete facts.');
   lines.push('');
   if (reviews.length === REVIEW_QUEUE_SIZE) {
     pushWrapped('Only the first 100 candidates are shown.');
@@ -512,8 +514,9 @@ function writePendingReviewDocument(projectRoot, projectId, reviews, outlines = 
       pushFacts(changeFacts.slice(0, 8), 'No change facts are available.');
       if (changeFacts.length > 8) pushWrapped('Additional change facts are available in the attended review.', '  - ', '    ');
     }
-    lines.push('', `### ${candidateNumber}. Editable decision`, '');
-    pushWrapped('Edit this JSON copy, choose a significance rating from 0 to 5, and list every persistence document that should receive the entry. Accept or Reject opens the attended reviewer; it does not record the decision until you confirm.');
+    lines.push('', `<!-- curator-v2-actions: ${candidate.candidate_id} -->`);
+    lines.push(`### ${candidateNumber}. Editable decision`, '');
+    pushWrapped('Edit this JSON copy, choose a significance rating from 0 to 5, and list persistence documents for the accepted entry. Accept and Reject open the attended review in VS Code. Withdraw retains task facts and receipts. Refresh evidence reopens the source task; fresh proof and a new proposal are required. These actions do not open a terminal.');
     lines.push('',
       `<!-- curator-v2-decision:${candidate.candidate_id}:start -->`,
       draftBlock,
@@ -572,6 +575,24 @@ function reviewDraftParts(body) {
     normalized.push(start[0], '<!-- curator-v2-draft-content -->', end);
   }
   return { drafts, normalized: normalized.join('\n') };
+}
+
+function reviewDraftMatchesProposal(content, candidateId, draftBlock) {
+  const marker = `<!-- curator-v2-candidate: ${candidateId} -->`;
+  const candidateStart = content.indexOf(marker);
+  if (candidateStart < 0) return false;
+  const nextCandidate = content.indexOf('<!-- curator-v2-candidate:', candidateStart + marker.length);
+  const section = content.slice(candidateStart, nextCandidate < 0 ? undefined : nextCandidate);
+  const proposedMatch = section.match(/### \d+\. Proposed entry\s+(`{3,})json\s*\n([\s\S]*?)\n\1/);
+  const editableMatch = typeof draftBlock === 'string'
+    ? draftBlock.match(/^(`{3,})json\s*\n([\s\S]*?)\n\1$/) : null;
+  if (!proposedMatch || !editableMatch) return false;
+  try {
+    return JSON.stringify(JSON.parse(proposedMatch[2]))
+      === JSON.stringify(JSON.parse(editableMatch[2]));
+  } catch (_) {
+    return false;
+  }
 }
 
 function pendingReviewChecksumMarker(content) {
@@ -1516,32 +1537,6 @@ function activate(context) {
       { provideCodeLenses: (document) => reviewDocumentActions(document) },
     ));
   }
-  reviewColorDecorations = createReviewColorDecorations();
-  if (reviewColorDecorations) {
-    context.subscriptions.push(...Object.values(reviewColorDecorations));
-    const colorPendingReview = (editor) => applyReviewColors(editor);
-    const colorVisibleEditors = () => {
-      for (const editor of vscode.window.visibleTextEditors || []) colorPendingReview(editor);
-    };
-    colorVisibleEditors();
-    if (typeof vscode.window.onDidChangeActiveTextEditor === 'function') {
-      context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(colorPendingReview));
-    }
-    if (typeof vscode.window.onDidChangeVisibleTextEditors === 'function') {
-      context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(colorVisibleEditors));
-    }
-    if (vscode.workspace && typeof vscode.workspace.onDidChangeWorkspaceFolders === 'function') {
-      context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(colorVisibleEditors));
-    }
-    if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
-      context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
-        const editor = vscode.window.visibleTextEditors?.find(
-          (item) => item.document === event.document,
-        );
-        if (editor) applyReviewColors(editor);
-      }));
-    }
-  }
   void refreshStatusBarHealthFromWorkspace();
   statusRefreshTimer = setInterval(() => {
     void refreshStatusBarHealthFromWorkspace();
@@ -1569,81 +1564,6 @@ function activate(context) {
       if (event && event.focused) void refreshStatusBarHealthFromWorkspace();
     }));
   }
-}
-
-function createReviewColorDecorations() {
-  if (typeof vscode.window?.createTextEditorDecorationType !== 'function') return null;
-  const colors = {
-    heading: { light: '#075985', dark: '#7dd3fc' },
-    metadata: { light: '#6b21a8', dark: '#d8b4fe' },
-    key: { light: '#166534', dark: '#86efac' },
-    string: { light: '#9a3412', dark: '#fcd34d' },
-    number: { light: '#1d4ed8', dark: '#93c5fd' },
-  };
-  return Object.fromEntries(Object.entries(colors).map(([kind, palette]) => [kind,
-    vscode.window.createTextEditorDecorationType({
-      light: { color: palette.light },
-      dark: { color: palette.dark },
-      color: palette.dark,
-    })]));
-}
-
-function applyReviewColors(editor) {
-  if (!editor || !editor.document || !reviewColorDecorations) return;
-  const decorationEntries = Object.entries(reviewColorDecorations);
-  if (!isPendingReviewEditor(editor)) {
-    for (const [, decoration] of decorationEntries) editor.setDecorations(decoration, []);
-    return;
-  }
-  if (editor.document.getText().length > 1024 * 1024) {
-    for (const [, decoration] of decorationEntries) editor.setDecorations(decoration, []);
-    return;
-  }
-  const ranges = { heading: [], metadata: [], key: [], string: [], number: [] };
-  let inJson = false;
-  for (let lineNumber = 0; lineNumber < editor.document.lineCount; lineNumber += 1) {
-    const line = editor.document.lineAt(lineNumber);
-    const value = line.text;
-    if (/^```json\s*$/.test(value)) {
-      inJson = true;
-      continue;
-    }
-    if (inJson && /^```+$/.test(value)) {
-      inJson = false;
-      continue;
-    }
-    if (!inJson) {
-      if (/^#{1,6}\s/.test(value)) ranges.heading.push(line.range);
-      else if (/^- (?:SDE ID|Proposed title|Task started \(\+07\)|Successful completion \(\+07\)|Significance|Proposal rationale|Problem \/ plan task):/.test(value)) {
-        ranges.metadata.push(line.range);
-      }
-      continue;
-    }
-    for (const match of value.matchAll(/"(?:[^"\\]|\\.)*"(?=\s*:)/g)) {
-      ranges.key.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
-    }
-    for (const match of value.matchAll(/:\s*("(?:[^"\\]|\\.)*")/g)) {
-      const start = match.index + match[0].lastIndexOf(match[1]);
-      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
-    }
-    for (const match of value.matchAll(/^\s+("(?:[^"\\]|\\.)*")(?=,?$)/g)) {
-      const start = match.index + match[0].indexOf(match[1]);
-      ranges.string.push(new vscode.Range(lineNumber, start, lineNumber, start + match[1].length));
-    }
-    for (const match of value.matchAll(/\b(?:true|false|null|-?\d+(?:\.\d+)?)\b/g)) {
-      ranges.number.push(new vscode.Range(lineNumber, match.index, lineNumber, match.index + match[0].length));
-    }
-  }
-  for (const [kind, decoration] of decorationEntries) {
-    editor.setDecorations(decoration, ranges[kind]);
-  }
-}
-
-function isPendingReviewEditor(editor) {
-  const workspace = vscode.workspace?.workspaceFolders?.[0];
-  return Boolean(workspace && editor.document.uri.fsPath === path.join(
-    workspace.uri.fsPath, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
-  ));
 }
 
 function deactivate() {
@@ -1727,8 +1647,7 @@ async function openPendingReviewDocument() {
       throw new Error('invalid approval projection');
     }
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(approvalJson));
-    const editor = await vscode.window.showTextDocument(document);
-    applyReviewColors(editor);
+    await vscode.window.showTextDocument(document);
   } catch (_) {
     vscode.window.showWarningMessage(
       'The pending review document is unavailable. Refresh CuratorMD V2 and try again.',
@@ -1744,10 +1663,13 @@ function reviewDocumentActions(document) {
   )) return [];
   const lenses = [];
   for (let line = 0; line < document.lineCount; line += 1) {
-    const match = /^<!-- curator-v2-candidate: ([A-Za-z0-9_-]{1,128}) -->$/.exec(document.lineAt(line).text);
+    const match = /^<!-- curator-v2-actions: ([A-Za-z0-9_-]{1,128}) -->$/.exec(document.lineAt(line).text);
     if (!match) continue;
     const range = new vscode.Range(line, 0, line, 0);
-    for (const [title, decision] of [['Accept', 'approve'], ['Reject', 'reject']]) {
+    for (const [title, decision] of [
+      ['Accept', 'approve'], ['Reject', 'reject'], ['Withdraw', 'withdraw'],
+      ['Refresh evidence', 'refresh-evidence'],
+    ]) {
       lenses.push(new vscode.CodeLens(range, {
         title, command: 'curatormdV2.reviewDocumentCandidate', arguments: [match[1], decision],
       }));
@@ -1756,10 +1678,14 @@ function reviewDocumentActions(document) {
   return lenses;
 }
 
-async function launchDocumentReview(candidateId, decision) {
+async function launchDocumentReview(candidateId, decision, spawnProcess = spawn) {
+  let receiptId = null;
   try {
     if (typeof candidateId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(candidateId)
-      || !['approve', 'reject'].includes(decision)) throw new Error('invalid review action');
+      || (decision !== undefined
+        && !['approve', 'reject', 'withdraw', 'refresh-evidence'].includes(decision))) {
+      throw new Error('invalid review action');
+    }
     const workspace = vscode.workspace?.workspaceFolders?.[0];
     if (!workspace) throw new Error('missing workspace');
     const projectRoot = workspace.uri.fsPath;
@@ -1772,7 +1698,11 @@ async function launchDocumentReview(candidateId, decision) {
     if (!documentStat.isFile() || documentStat.isSymbolicLink() || documentStat.size > 1024 * 1024) {
       throw new Error('invalid review document');
     }
-    const openDocument = vscode.workspace?.textDocuments?.find((item) => item.uri?.fsPath === documentPath);
+    let openDocument = vscode.workspace?.textDocuments?.find((item) => item.uri?.fsPath === documentPath);
+    if (!openDocument) {
+      openDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(documentPath));
+    }
+    await vscode.window.showTextDocument(openDocument, { preview: false });
     if (openDocument?.isDirty && !await openDocument.save()) {
       vscode.window.showWarningMessage('Save the review document before continuing.');
       return;
@@ -1785,26 +1715,519 @@ async function launchDocumentReview(candidateId, decision) {
     }
     if (!diskContent.includes(`<!-- curator-v2-decision:${candidateId}:start -->`)) throw new Error('draft missing');
     if (!diskContent.includes(`<!-- curator-v2-candidate: ${candidateId} -->`)) throw new Error('candidate missing');
-    const projectId = readConfiguredProjectId(projectRoot);
-    const config = vscode.workspace.getConfiguration('curatormdV2');
-    if (hasWorkspaceSettingOverride(config, [
-      'databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
-      'databaseBindings', 'hermesProfileBindings', 'evidenceConfig', 'evidenceConfigBindings',
-    ])) throw new Error('workspace configuration override');
-    const database = resolveDatabasePath(projectId, config.get('databaseBindings', {}), config.get('databasePath', ''));
-    const evidence = resolveEvidenceConfig(projectId, config.get('evidenceConfigBindings', {}), config.get('evidenceConfig', ''));
-    const serverCommand = config.get('serverCommand', 'curatormd-v2-mcp');
-    const reviewCommand = config.get('reviewCommand', '') || defaultReviewCommand(serverCommand);
-    if (!database || evidence === null || typeof reviewCommand !== 'string' || !reviewCommand.trim()) throw new Error('invalid binding');
-    const terminal = vscode.window.createTerminal({ name: 'Curator V2 SDE Review', cwd: projectRoot });
-    const command = [reviewCommand, '--project-root', projectRoot, '--database', database,
-      ...hostEvidenceConfigArguments(evidence), 'review', candidateId, '--decision-hint', decision, '--edited-draft',
-    ].map(quotePosixShellArgument).join(' ');
-    terminal.show();
-    terminal.sendText(command, true);
-  } catch (_) {
-    vscode.window.showWarningMessage('Unable to open the attended review. Check the project and Curator User settings.');
+    let selectedDecision = decision;
+    if (!selectedDecision) {
+      const choice = await vscode.window.showQuickPick([
+        { label: '$(check) Accept', value: 'approve' },
+        { label: '$(circle-slash) Reject', value: 'reject' },
+        { label: '$(trash) Withdraw stale proposal', value: 'withdraw' },
+        { label: '$(sync) Refresh stale evidence', value: 'refresh-evidence' },
+      ], { title: 'Curator V2 SDE review', placeHolder: 'Choose a decision' });
+      if (!choice) return;
+      selectedDecision = choice.value;
+    }
+
+    const outline = await withReviewClient(projectRoot, async (client, projectId) => {
+      const outline = JSON.parse(await client.callTool('sde_review_outline', {
+        candidate_id: candidateId,
+      }));
+      if (outline.project_id !== projectId || outline.candidate_id !== candidateId
+        || outline.status !== 'pending_review') {
+        throw new Error('The candidate is no longer pending in this project. Refresh the review document.');
+      }
+      return outline;
+    }, { spawnProcess });
+
+    if (selectedDecision === 'refresh-evidence') {
+      if (outline.goal_status !== 'complete'
+        || !Number.isSafeInteger(outline.lifecycle_revision)) {
+        throw new Error('The source task is no longer eligible for an evidence refresh. Refresh the review document.');
+      }
+      if (outline.evidence_status === 'current_passing') {
+        vscode.window.showInformationMessage(
+          'This proposal already has current passing evidence; no evidence refresh is needed.',
+        );
+        return;
+      }
+      const reason = await vscode.window.showInputBox({
+        title: 'Refresh stale SDE evidence',
+        prompt: 'Why does the source task need a new evidence pass?',
+        ignoreFocusOut: true,
+        validateInput: (value) => value.trim().length > 0 && value.length <= 1000
+          ? null : 'Enter 1–1000 non-blank characters.',
+      });
+      if (reason === undefined) return;
+      const nextAction = await vscode.window.showInputBox({
+        title: 'Next action for the reopened task',
+        prompt: 'Describe the fresh checks needed before creating a new proposal.',
+        ignoreFocusOut: true,
+        validateInput: (value) => value.trim().length > 0
+          && reason.trim().length + value.trim().length + 18 <= 1000
+          ? null : 'Enter a non-blank next action that keeps the combined reopen text within 1,000 characters.',
+      });
+      if (nextAction === undefined) return;
+      const confirmation = await vscode.window.showWarningMessage(
+        `Reopen “${outline.problem}” and withdraw stale proposal ${candidateId}?`,
+        {
+          modal: true,
+          detail: 'The source task becomes active and needs fresh passing evidence for every criterion. Existing facts and receipts remain. No evidence is fabricated and no terminal is opened. Finish the task and assess a new proposal after the checks pass.',
+        },
+        'Reopen task and withdraw proposal',
+        'Cancel',
+      );
+      if (confirmation !== 'Reopen task and withdraw proposal') return;
+
+      let reopenedGoalId = null;
+      try {
+        await withReviewClient(projectRoot, async (client, projectId) => {
+          const current = JSON.parse(await client.callTool('sde_review_outline', {
+            candidate_id: candidateId,
+          }));
+          if (current.project_id !== projectId || current.candidate_id !== candidateId
+            || current.status !== 'pending_review' || current.goal_id !== outline.goal_id
+            || current.goal_status !== 'complete'
+            || current.lifecycle_revision !== outline.lifecycle_revision) {
+            throw new Error('The proposal or source task changed; refresh the review document and try again.');
+          }
+          const result = JSON.parse(await client.callTool('goal_reopen', {
+            event_id: randomBytes(16).toString('hex'),
+            goal_id: current.goal_id,
+            reason: reason.trim(),
+            next_action: nextAction.trim(),
+            expected_lifecycle_revision: current.lifecycle_revision,
+          }));
+          if (result.project_id !== projectId || result.status !== 'processed') {
+            throw new Error('Curator did not confirm reopening the source task.');
+          }
+          reopenedGoalId = current.goal_id;
+        }, { allowWrite: true, spawnProcess });
+
+        const withdrawal = await withReviewClient(projectRoot, async (client, projectId) => {
+          const current = JSON.parse(await client.callTool('sde_review_outline', {
+            candidate_id: candidateId,
+          }));
+          if (current.project_id !== projectId || current.candidate_id !== candidateId
+            || current.status !== 'pending_review' || current.goal_id !== reopenedGoalId
+            || current.goal_status !== 'active') {
+            throw new Error('The task reopened, but the proposal changed; refresh the review document before clearing it.');
+          }
+          return JSON.parse(await client.callTool('sde_withdraw_candidates', {
+            candidate_ids: [candidateId],
+            rationale: reason.trim(),
+          }));
+        }, { allowWrite: true, spawnProcess });
+        if (!Array.isArray(withdrawal) || withdrawal.length !== 1
+          || withdrawal[0]?.candidate_id !== candidateId
+          || typeof withdrawal[0]?.withdrawal_id !== 'string') {
+          throw new Error('The task reopened, but Curator did not confirm withdrawal of the stale proposal.');
+        }
+      } catch (error) {
+        if (reopenedGoalId) {
+          vscode.window.showWarningMessage(
+            `Source task ${reopenedGoalId} was reopened, but stale proposal ${candidateId} was not confirmed withdrawn. Its facts and receipts remain; refresh the review document and withdraw the proposal before assessing a new one.`,
+          );
+          return;
+        }
+        throw error;
+      }
+      vscode.window.showInformationMessage(
+        `Source task reopened and stale proposal withdrawn. Record fresh evidence for every criterion, finish the task, then create a new SDE proposal. Existing facts and receipts remain.`,
+      );
+      void refreshStatusBarHealthFromWorkspace();
+      return;
+    }
+
+    if (selectedDecision === 'approve' && outline.evidence_status !== 'current_passing') {
+      vscode.window.showWarningMessage(
+        'Curator cannot accept this proposal because current passing evidence is missing or stale. Click Refresh evidence above Editable decision to reopen the source task, add fresh passing evidence, finish it, and assess a new proposal; this proposal can still be rejected or withdrawn.',
+      );
+      return;
+    }
+
+    if (selectedDecision === 'withdraw') {
+      const rationale = await vscode.window.showInputBox({
+        title: 'Curator V2 withdrawal rationale',
+        prompt: 'Explain why this pending proposal is being cleared for retest (1–1000 characters).',
+        ignoreFocusOut: true,
+        validateInput: (value) => value.trim().length > 0 && value.length <= 1000
+          ? null : 'Enter 1–1000 non-blank characters.',
+      });
+      if (rationale === undefined) return;
+      const confirmed = await vscode.window.showWarningMessage(
+        `Withdraw SDE proposal ${candidateId} from the pending review queue?`,
+        {
+          modal: true,
+          detail: 'This clears only the pending proposal. Its task facts and evidence remain unchanged, and Curator records an owner-attributed withdrawal receipt. This does not approve or reject the proposed knowledge.',
+        },
+        'Confirm withdrawal',
+      );
+      if (confirmed !== 'Confirm withdrawal') return;
+      const result = await withReviewClient(projectRoot, async (client, projectId) => {
+        if (outline.project_id !== projectId) throw new Error('Project binding changed; no withdrawal was recorded.');
+        const current = JSON.parse(await client.callTool('sde_review_outline', {
+          candidate_id: candidateId,
+        }));
+        if (current.project_id !== projectId || current.candidate_id !== candidateId
+          || current.status !== 'pending_review') {
+          throw new Error('The candidate changed after confirmation; refresh the review document.');
+        }
+        const receipts = JSON.parse(await client.callTool('sde_withdraw_candidates', {
+          candidate_ids: [candidateId], rationale,
+        }));
+        if (!Array.isArray(receipts) || receipts.length !== 1
+          || receipts[0]?.candidate_id !== candidateId
+          || typeof receipts[0]?.withdrawal_id !== 'string'
+          || !/^[0-9a-f]{64}$/.test(receipts[0]?.candidate_sha256 || '')) {
+          throw new Error('Curator did not return a valid withdrawal receipt.');
+        }
+        return receipts[0];
+      }, { allowWrite: true, spawnProcess });
+      vscode.window.showInformationMessage(
+        `SDE proposal withdrawn from the pending queue; source facts retained. Receipt ${result.withdrawal_id}.`,
+      );
+      return;
+    }
+
+    let draft = readEditableReviewDraft(diskContent, candidateId);
+    if (!draft) throw new Error('The editable decision JSON is missing or invalid.');
+    const initial = await withReviewClient(projectRoot, async (client, projectId) => {
+      const packet = JSON.parse(await client.callTool('sde_review_packet', {
+        candidate_id: candidateId,
+      }));
+      if (outline.project_id !== projectId || packet.detail?.candidate?.candidate_id !== candidateId
+        || packet.detail?.candidate?.status !== 'pending_review') {
+        throw new Error('The candidate is no longer pending in this project. Refresh the review document.');
+      }
+      if (!packet.artifact_inventory?.usage?.inventory_complete
+        || typeof packet.artifact_inventory.manifest_sha256 !== 'string') {
+        throw new Error('The current artifact inventory is incomplete; no decision was recorded.');
+      }
+      return { outline, packet };
+    }, { spawnProcess });
+
+    if (selectedDecision === 'approve') {
+      const configuredDocuments = Array.isArray(initial.outline.persistence_documents)
+        ? initial.outline.persistence_documents.filter((item) => typeof item === 'string') : [];
+      if (configuredDocuments.length === 0) {
+        throw new Error('This project has no configured persistence documents for an approved entry.');
+      }
+      const documentChoices = await vscode.window.showQuickPick(
+        configuredDocuments.map((item) => ({
+          label: item,
+          picked: Array.isArray(draft.documents) && draft.documents.includes(item),
+        })),
+        {
+          canPickMany: true,
+          title: 'Choose persistence documents',
+          placeHolder: 'Select at least one destination for the accepted SDE',
+        },
+      );
+      if (!documentChoices || documentChoices.length === 0) {
+        vscode.window.showWarningMessage('Acceptance needs at least one persistence document.');
+        return;
+      }
+      draft = { ...draft, documents: documentChoices.map((item) => item.label) };
+      const updated = await writeEditableReviewDraft(openDocument, diskContent, candidateId, draft);
+      if (!updated) {
+        vscode.window.showWarningMessage('Could not save the selected destinations. Your review decision was not recorded.');
+        return;
+      }
+      if (draft.significance === 5) {
+        const confirmation = await vscode.window.showWarningMessage(
+          'Significance 5 is the highest rating. Confirm this rating before acceptance.',
+          { modal: true },
+          'Confirm significance 5',
+        );
+        if (confirmation !== 'Confirm significance 5') return;
+      }
+    }
+
+    const rationale = await vscode.window.showInputBox({
+      title: `Curator V2 ${selectedDecision === 'approve' ? 'acceptance' : 'rejection'} rationale`,
+      prompt: 'Enter the rationale to bind to this decision (1–1000 characters).',
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length > 0 && value.length <= 1000
+        ? null : 'Enter 1–1000 non-blank characters.',
+    });
+    if (rationale === undefined) return;
+
+    const selectedArtifacts = await selectReviewArtifacts(initial.packet);
+    if (selectedArtifacts === null) return;
+    const reviewed = await withReviewClient(projectRoot, async (client, projectId) => {
+      const packet = JSON.parse(await client.callTool('sde_review_packet', {
+        candidate_id: candidateId,
+        review_artifacts: selectedArtifacts,
+      }));
+      if (packet.detail?.candidate?.candidate_id !== candidateId
+        || packet.detail?.candidate?.status !== 'pending_review'
+        || packet.artifact_inventory?.manifest_sha256 !== initial.packet.artifact_inventory.manifest_sha256
+        || !packet.artifact_inventory?.usage?.inventory_complete) {
+        throw new Error('The review packet changed. Refresh it and start again; no decision was recorded.');
+      }
+      const reviewDraftJson = JSON.stringify(draft);
+      const binding = JSON.parse(await client.callTool('sde_prepare_review_binding', {
+        candidate_id: candidateId,
+        decision: selectedDecision,
+        artifacts: selectedArtifacts,
+        artifact_inventory_complete: true,
+        dependency_map_sha256: packet.dependency_map_sha256,
+        rationale,
+        review_draft_json: reviewDraftJson,
+        confirm_significance_five: selectedDecision === 'approve' && draft.significance === 5,
+      }));
+      if (typeof binding.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(binding.sha256)) {
+        throw new Error('Curator did not return a valid review binding.');
+      }
+      return { packet, binding, reviewDraftJson, projectId };
+    }, { spawnProcess });
+    if (!reviewDraftMatchesDocument(openDocument, documentPath, candidateId, draft)) {
+      vscode.window.showWarningMessage('The editable decision changed during review. Refresh and review it again; no decision was recorded.');
+      return;
+    }
+
+    const artifactList = selectedArtifacts.length === 0
+      ? 'No staged artifacts are included.'
+      : `${selectedArtifacts.length} staged artifact(s) and their allowed actions were reviewed one by one; the manifest digest is below.`;
+    const decisionLabel = selectedDecision === 'approve' ? 'Accept' : 'Reject';
+    const destinationSummary = selectedDecision === 'approve'
+      ? `\nDestinations: ${draft.documents.join(', ')}` : '';
+    const confirmed = await vscode.window.showWarningMessage(
+      `${decisionLabel} SDE ${candidateId}?`,
+      {
+        modal: true,
+        detail: [
+          `Significance: ${draft.significance}/5`,
+          artifactList,
+          `Inventory SHA-256: ${reviewed.packet.artifact_inventory.manifest_sha256}`,
+          `Dependency map SHA-256: ${reviewed.packet.dependency_map_sha256}`,
+          `Review binding SHA-256: ${reviewed.binding.sha256}`,
+          destinationSummary,
+        ].filter(Boolean).join('\n'),
+      },
+      `Confirm ${decisionLabel.toLowerCase()}`,
+    );
+    if (confirmed !== `Confirm ${decisionLabel.toLowerCase()}`) return;
+    if (!reviewDraftMatchesDocument(openDocument, documentPath, candidateId, draft)) {
+      vscode.window.showWarningMessage('The editable decision changed after confirmation. Refresh and review it again; no decision was recorded.');
+      return;
+    }
+
+    const result = await withReviewClient(projectRoot, async (client, projectId) => {
+      if (projectId !== reviewed.projectId) throw new Error('Project binding changed; no decision was recorded.');
+      const currentPacket = JSON.parse(await client.callTool('sde_review_packet', {
+        candidate_id: candidateId,
+        review_artifacts: selectedArtifacts,
+      }));
+      if (currentPacket.artifact_inventory?.manifest_sha256
+        !== reviewed.packet.artifact_inventory.manifest_sha256
+        || currentPacket.dependency_map_sha256 !== reviewed.packet.dependency_map_sha256
+        || currentPacket.detail?.candidate?.status !== 'pending_review') {
+        throw new Error('The review packet changed after confirmation. Refresh it and try again.');
+      }
+      const currentBinding = JSON.parse(await client.callTool('sde_prepare_review_binding', {
+        candidate_id: candidateId,
+        decision: selectedDecision,
+        artifacts: selectedArtifacts,
+        artifact_inventory_complete: true,
+        dependency_map_sha256: currentPacket.dependency_map_sha256,
+        rationale,
+        review_draft_json: reviewed.reviewDraftJson,
+        confirm_significance_five: selectedDecision === 'approve' && draft.significance === 5,
+      }));
+      if (currentBinding.sha256 !== reviewed.binding.sha256) {
+        throw new Error('The review binding changed after confirmation. Refresh it and try again.');
+      }
+      const receipt = JSON.parse(await client.callTool('sde_confirm', {
+        candidate_id: candidateId,
+        decision: selectedDecision,
+        artifacts: selectedArtifacts,
+        artifact_inventory_complete: true,
+        dependency_map_sha256: currentPacket.dependency_map_sha256,
+        rationale,
+        review_draft_json: reviewed.reviewDraftJson,
+        expected_review_binding_sha256: currentBinding.sha256,
+        confirm_significance_five: selectedDecision === 'approve' && draft.significance === 5,
+      }));
+      if (typeof receipt.receipt_id !== 'string' || !receipt.receipt_id) {
+        throw new Error('Curator did not return a decision receipt.');
+      }
+      receiptId = receipt.receipt_id;
+      if (selectedDecision === 'approve') {
+        for (const target of draft.documents) {
+          await client.callTool('sde_project_review_target', {
+            receipt_id: receiptId, target, prepare_only: true,
+          });
+        }
+        for (const target of draft.documents) {
+          await client.callTool('sde_project_review_target', {
+            receipt_id: receiptId, target, prepare_only: false,
+          });
+        }
+        const projections = JSON.parse(await client.callTool(
+          'sde_review_projection_status', { receipt_id: receiptId },
+        ));
+        if (!Array.isArray(projections) || projections.length !== draft.documents.length
+          || projections.some((item) => !Array.isArray(item) || item[1] === null || item[2] === null)) {
+          throw new Error('The decision receipt was saved, but one or more document writes remain pending.');
+        }
+      }
+      const finalReceipt = JSON.parse(await client.callTool(
+        'sde_finalize_review_projection', { receipt_id: receiptId },
+      ));
+      const purge = JSON.parse(await client.callTool('artifact_purge_status', {
+        receipt_id: receiptId,
+      }));
+      return { receipt: finalReceipt, purge };
+    }, { allowWrite: true, spawnProcess });
+
+    const purgeReceipt = Array.isArray(result.purge)
+      ? result.purge[0] : (result.purge?.receipt || result.purge);
+    const purgeStatus = purgeReceipt?.purge_status || result.receipt?.purge_status;
+    if (purgeStatus !== 'complete') {
+      vscode.window.showWarningMessage(
+        `SDE ${selectedDecision === 'approve' ? 'acceptance' : 'rejection'} recorded as receipt ${receiptId}; cleanup status is ${purgeStatus || 'unknown'}.`,
+      );
+    } else {
+      vscode.window.showInformationMessage(
+        `SDE ${selectedDecision === 'approve' ? 'accepted' : 'rejected'} and receipt ${receiptId} finalized.`,
+      );
+    }
+    void refreshStatusBarHealthFromWorkspace();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected review failure.';
+    if (receiptId) {
+      vscode.window.showWarningMessage(`Decision receipt ${receiptId} exists, but review finalization needs attention: ${message}`);
+    } else {
+      vscode.window.showErrorMessage(`Curator V2 review was not recorded: ${message}`);
+    }
   }
+}
+
+async function withReviewClient(
+  projectRoot, operation, { allowWrite = false, spawnProcess = spawn } = {},
+) {
+  const configuration = vscode.workspace.getConfiguration('curatormdV2');
+  if (hasWorkspaceSettingOverride(configuration, [
+    'databasePath', 'profileId', 'serverCommand', 'databaseBindings',
+    'evidenceConfig', 'evidenceConfigBindings',
+  ])) throw new Error('Set Curator project bindings in User settings, not workspace settings.');
+  const projectId = readConfiguredProjectId(projectRoot);
+  const database = resolveDatabasePath(
+    projectId, configuration.get('databaseBindings', {}), configuration.get('databasePath', ''),
+  );
+  const evidence = resolveEvidenceConfig(
+    projectId, configuration.get('evidenceConfigBindings', {}), configuration.get('evidenceConfig', ''),
+  );
+  const profileId = configuration.get('profileId', '');
+  const serverCommand = configuration.get('serverCommand', 'curatormd-v2-mcp');
+  if (!database || evidence === null || typeof profileId !== 'string' || !profileId.trim()
+    || typeof serverCommand !== 'string' || !serverCommand.trim()) {
+    throw new Error('Curator project, database, evidence, or profile binding is unavailable.');
+  }
+  const args = [
+    '--project-root', projectRoot,
+    '--database', database,
+    '--profile-id', profileId,
+    ...hostEvidenceConfigArguments(evidence),
+    '--allow-review',
+  ];
+  if (allowWrite) args.push('--allow-write');
+  const client = new McpStdioClient(serverCommand, args, projectRoot, profileId, spawnProcess);
+  try {
+    await client.initialize();
+    const page = JSON.parse(await client.callTool('goal_list_page', { offset: 0, limit: 1 }));
+    if (page.project_id !== projectId) throw new Error('Curator returned a different project binding.');
+    return await operation(client, projectId);
+  } finally {
+    client.close();
+  }
+}
+
+function readEditableReviewDraft(content, candidateId) {
+  const parts = reviewDraftParts(content);
+  if (!parts) return null;
+  const block = parts.drafts.get(candidateId);
+  if (typeof block !== 'string') return null;
+  const match = /^\s*(`{3,})json\s*\n([\s\S]*?)\n\1\s*$/.exec(block);
+  if (!match) return null;
+  try {
+    const draft = JSON.parse(match[2]);
+    return draft && typeof draft === 'object' && !Array.isArray(draft) ? draft : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function writeEditableReviewDraft(document, content, candidateId, draft) {
+  if (document.isDirty || document.getText() !== content) return false;
+  const startMarker = `<!-- curator-v2-decision:${candidateId}:start -->`;
+  const endMarker = `<!-- curator-v2-decision:${candidateId}:end -->`;
+  const startIndex = content.indexOf(startMarker);
+  const endIndex = content.indexOf(endMarker, startIndex + startMarker.length);
+  if (startIndex < 0 || endIndex < 0 || content.indexOf(startMarker, startIndex + 1) >= 0
+    || content.indexOf(endMarker, endIndex + 1) >= 0) return false;
+  const replaceStart = startIndex + startMarker.length;
+  const replacement = `\n\`\`\`json\n${JSON.stringify(draft, null, 2)}\n\`\`\`\n`;
+  const range = new vscode.Range(document.positionAt(replaceStart), document.positionAt(endIndex));
+  if (!await document.edit((builder) => builder.replace(range, replacement))) return false;
+  return document.save();
+}
+
+function reviewDraftMatchesDocument(document, documentPath, candidateId, draft) {
+  try {
+    if (document.isDirty) return false;
+    const diskContent = fs.readFileSync(documentPath, 'utf8');
+    if (document.getText() !== diskContent || !isUnmodifiedReviewDocument(diskContent)) return false;
+    const currentDraft = readEditableReviewDraft(diskContent, candidateId);
+    return JSON.stringify(currentDraft) === JSON.stringify(draft);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function selectReviewArtifacts(packet) {
+  const inventory = packet.artifact_inventory;
+  if (!inventory?.usage?.inventory_complete || !Array.isArray(inventory.artifacts)) {
+    throw new Error('The artifact inventory is incomplete.');
+  }
+  const selected = [];
+  for (const [index, artifact] of inventory.artifacts.entries()) {
+    const dependency = (packet.artifact_dependencies || []).find(
+      (item) => item.artifact?.path === artifact.path,
+    );
+    const actions = artifact.retention_hold !== null && artifact.retention_hold !== undefined
+      ? ['retain_under_hold']
+      : (dependency?.evidence_dependencies || []).some((item) => item.criterion_status === 'open')
+        ? ['reacquire_from_source'] : ['not_required', 'reacquire_from_source'];
+    const dependencyDetails = (dependency?.evidence_dependencies || [])
+      .map((item) => `${item.criterion_id}: ${item.criterion_status}`).join('\n');
+    const choices = actions.map((value) => ({
+      label: value.replaceAll('_', ' '),
+      description: value === 'retain_under_hold' ? 'Required by the active retention hold' : undefined,
+      detail: [
+        `SHA-256: ${artifact.sha256}`,
+        artifact.retention_hold ? `Retention hold: ${artifact.retention_hold}` : '',
+        dependencyDetails,
+      ].filter(Boolean).join('\n'),
+      value,
+    }));
+    const choice = await vscode.window.showQuickPick(choices, {
+      title: `Review staged artifact ${index + 1}/${inventory.artifacts.length}: ${artifact.path}`,
+      placeHolder: 'Review its digest and dependencies, then choose the allowed action',
+    });
+    if (!choice) return null;
+    const action = choice.value;
+    selected.push({
+      path: artifact.path,
+      sha256: artifact.sha256,
+      ...(artifact.device_id === null || artifact.device_id === undefined ? {} : { device_id: artifact.device_id }),
+      ...(artifact.inode_id === null || artifact.inode_id === undefined ? {} : { inode_id: artifact.inode_id }),
+      ...(artifact.occurrence_id ? { occurrence_id: artifact.occurrence_id } : {}),
+      ...(artifact.retention_hold ? { retention_hold: artifact.retention_hold } : {}),
+      reacquisition_action: action,
+    });
+  }
+  return selected;
 }
 
 function resetStatusBarHealth() {
@@ -1840,7 +2263,7 @@ async function refreshStatusBarHealthFromWorkspace(spawnProcess = spawn, trigger
 
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   if (hasWorkspaceSettingOverride(configuration,
-    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+    ['databasePath', 'profileId', 'serverCommand', 'hermesCommand',
       'databaseBindings', 'hermesProfileBindings', 'evidenceConfig',
       'evidenceConfigBindings'])) {
     resetStatusBarHealth();
@@ -1973,7 +2396,7 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
   const configuration = vscode.workspace.getConfiguration('curatormdV2');
   const workspaceOverride = hasWorkspaceSettingOverride(
     configuration,
-    ['databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+    ['databasePath', 'profileId', 'serverCommand', 'hermesCommand',
       'databaseBindings', 'hermesProfileBindings', 'evidenceConfig',
       'evidenceConfigBindings'],
   );
@@ -1996,8 +2419,6 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
   );
   let hermesCommand = configuration.get('hermesCommand', 'hermes');
   let hermesProfileBindings = configuration.get('hermesProfileBindings', {});
-  let configuredReviewCommand = configuration.get('reviewCommand', '');
-  let reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
   if (workspaceOverride) {
     resetStatusBarHealth();
     vscode.window.showErrorMessage(
@@ -2047,7 +2468,7 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
       clearFeedFailureStates();
       const current = vscode.workspace.getConfiguration('curatormdV2');
       if (hasWorkspaceSettingOverride(current, [
-        'databasePath', 'profileId', 'serverCommand', 'reviewCommand', 'hermesCommand',
+        'databasePath', 'profileId', 'serverCommand', 'hermesCommand',
         'databaseBindings', 'hermesProfileBindings', 'evidenceConfig',
         'evidenceConfigBindings',
       ])) {
@@ -2076,8 +2497,6 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
       );
       hermesCommand = current.get('hermesCommand', 'hermes');
       hermesProfileBindings = current.get('hermesProfileBindings', {});
-      configuredReviewCommand = current.get('reviewCommand', '');
-      reviewCommand = configuredReviewCommand || defaultReviewCommand(serverCommand);
       if (!databasePath || !profileId || !serverCommand || !hermesCommand) {
         panel.webview.postMessage({
           type: 'error',
@@ -2263,7 +2682,7 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
             health, storage, metrics, page.project_id, queueSnapshot,
           ),
           workspaceViewsUpdated,
-          reviewAvailable: Boolean(reviewCommand),
+          reviewAvailable: Boolean(profileId && serverCommand && databasePath && evidenceConfig !== null),
         });
         })();
         goalLoadInFlight = loadGoals;
@@ -2384,22 +2803,8 @@ async function showDashboard(spawnProcess = spawn, { focusReviews = false } = {}
       } else if (message.type === 'openReview'
         && typeof message.candidateId === 'string'
         && (message.decision === undefined || message.decision === 'approve' || message.decision === 'reject')
-        && typeof reviewCommand === 'string' && reviewCommand.trim().length > 0
         && candidateIds.has(message.candidateId)) {
-        const terminal = vscode.window.createTerminal({
-          name: 'Curator V2 SDE Review',
-          cwd: workspace.uri.fsPath,
-        });
-        const command = [
-          reviewCommand,
-          '--project-root', workspace.uri.fsPath,
-          '--database', databasePath,
-          ...hostEvidenceConfigArguments(evidenceConfig),
-          'review', message.candidateId,
-          ...(message.decision ? ['--decision-hint', message.decision] : []),
-        ].map(quotePosixShellArgument).join(' ');
-        terminal.show();
-        terminal.sendText(command, true);
+        await launchDocumentReview(message.candidateId, message.decision);
       }
     } catch (error) {
       void notifyTransportClosed(error);
@@ -3090,8 +3495,8 @@ function dashboardHtml(webview, focusReviews = false) {
             row.appendChild(label);
             for (const decision of ['approve', 'reject']) {
               const button = document.createElement('button');
-              button.textContent = decision === 'approve' ? 'Approve…' : 'Reject…';
-              button.title = 'Review in terminal; no decision is recorded until you confirm the packet and inventory.';
+              button.textContent = decision === 'approve' ? 'Accept' : 'Reject';
+              button.title = 'Review and confirm in VS Code; no terminal is opened.';
               button.disabled = !message.reviewAvailable;
               button.addEventListener('click', () => api.postMessage({
                 type: 'openReview', candidateId: candidate.candidate_id, decision,
@@ -3101,7 +3506,7 @@ function dashboardHtml(webview, focusReviews = false) {
             reviews.appendChild(row);
           }
           if (!message.reviewAvailable) {
-            reviewSummary.textContent += ' Configure the User-scoped reviewCommand to open the attended reviewer.';
+            reviewSummary.textContent += ' Configure the Curator project, profile, database, and server in User settings; an invalid evidence binding also blocks review.';
           }
         }
         document.getElementById('previousGoals').disabled = goalOffset === 0;
@@ -3249,6 +3654,8 @@ module.exports = {
   sqliteSizeWarning,
   updateStatusBarHealth,
   refreshStatusBarHealthFromWorkspace,
+  reviewDocumentActions,
+  launchDocumentReview,
   validateReviewQueue,
   writePendingReviewDocument,
   writeWorkspaceQueueViews,

@@ -55,6 +55,16 @@ class TestReviewAuthorizer:
         del project_id, candidate_id, decision, authenticated_subject
         return "test-reviewer"
 
+    def authorize_withdrawal(
+        self,
+        project_id: str,
+        candidate_id: str,
+        authenticated_subject: str | None = None,
+    ) -> str:
+        """Return the test identity for one proposal withdrawal."""
+        del project_id, candidate_id, authenticated_subject
+        return "test-reviewer"
+
     def authorize_correction(
         self,
         project_id: str,

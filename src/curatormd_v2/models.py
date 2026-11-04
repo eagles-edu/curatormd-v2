@@ -644,6 +644,38 @@ class SDECandidate:  # pylint: disable=too-many-instance-attributes  # Review ca
 
 
 @dataclass(frozen=True, slots=True)
+class SDEWithdrawal:
+    """Auditable removal of a stale proposal from the pending review queue."""
+
+    withdrawal_id: str
+    project_id: str
+    candidate_id: str
+    reviewer_id: str
+    rationale: str
+    candidate_sha256: str
+    created_at: str = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        for name, value, limit in (
+            ("withdrawal_id", self.withdrawal_id, 128),
+            ("project_id", self.project_id, 128),
+            ("candidate_id", self.candidate_id, 128),
+            ("reviewer_id", self.reviewer_id, 128),
+        ):
+            validate_safe_text(value, f"sde_withdrawal.{name}")
+            if not value.strip() or len(value) > limit or "\n" in value or "\r" in value:
+                raise ValueError(f"SDE withdrawal {name} must be a bounded single line")
+        validate_safe_text(self.rationale, "sde_withdrawal.rationale")
+        if not self.rationale.strip() or len(self.rationale) > 1000:
+            raise ValueError("SDE withdrawal rationale must contain 1-1000 characters")
+        if "\n" in self.rationale or "\r" in self.rationale:
+            raise ValueError("SDE withdrawal rationale must be a single line")
+        if not _SHA256_RE.fullmatch(self.candidate_sha256):
+            raise ValueError("SDE withdrawal candidate digest must be lowercase SHA-256")
+        _parse_aware_timestamp("sde_withdrawal.created_at", self.created_at)
+
+
+@dataclass(frozen=True, slots=True)
 class SDECorrection:
     """Immutable reviewer-attributed correction linked to a prior SDE."""
 

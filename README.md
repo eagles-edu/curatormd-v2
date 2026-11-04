@@ -39,9 +39,11 @@ or project records.
   the in-process review queue exposes selected evidence by project. A
   project-scoped review API/MCP surface exists. `curatormd-v2-review` provides
   an attended local-alpha reviewer bound to the current non-setuid Linux UID
-  and exact project grants. Hermes profile review remains denied until Hermes
-  Core supplies an authenticated human identity; the local CLI is not that
-  production identity binding. See the [consumer operations guide](docs/consumer-operations-v1.md#review-one-local-alpha-candidate).
+  and exact project grants. The local profile MCP can expose the same review
+  tools only with `--allow-review` and that exact grant; its review receipt is
+  attributed to the local UID, not to a verified Hermes person. Remote and
+  production Hermes human-review identity remains unimplemented. See the
+  [consumer operations guide](docs/consumer-operations-v1.md#review-one-local-alpha-candidate).
 - SDE disposition and destructive cleanup require separate human decisions.
   Cleanup approval binds the complete exact artifact manifest and is projected
   canonically before deletion.
