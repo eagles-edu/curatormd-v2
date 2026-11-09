@@ -1,0 +1,451 @@
+
+ ❯ CuratorMD V2 - THOROLY CHECK ALL FUNCTIONS, ERRORS , PATHS, CONNECTIONS, ETC
+
+ ▾ Todo (1/5)
+   [x] Define audit scope and inventory changed, source, test, and integration files
+   [>] Audit Python backend call paths, validation, errors, storage, and connections
+   [ ] Audit Codex plugin and VS Code extension paths, hooks, errors, and connections
+   [ ] Run full tests, lint/type/build checks, and inspect failures
+   [ ] Verify findings and report severity, evidence, and remaining gaps
+
+ └─ ▾ Tool calls (14)
+   ├─ ● Skill View("requesting-code-review") (1.8s)
+   ├─ ● Skill View("systematic-debugging") (1.8s)
+   ├─ ● Read File("codex-execution-and-approval-sop.md") (1.8s)
+   ├─ ● Terminal("git status --short --branch + 4 commands") (0.2s)
+   ├─ ● 🔎 Searching tools · todo list create tasks checklist (2.0s)
+   ├─ ● 📖 Reading tool details · 1 tool (0.2s)
+   ├─ ● Todo List("planning 5 task(s)") (0.0s)
+   ├─ ● Read File("pyproject.toml") (4.3s)
+   ├─ ● Read File("package.json") (4.3s)
+   ├─ ● Search Files("*.py") (4.3s)
+   ├─ ● Search Files("*.js") (4.3s)
+   ├─ ● Terminal("git diff --stat + 4 commands") (0.3s)
+   ├─ ● Todo List("updating 5 task(s)") (0.0s)
+   ├─ ● Delegate Task("3 tasks  (/agents to monitor)
+   │ └─ Read-only audit of CuratorMD V2 Pytho... | Read-only a…") (0.4s)
+   ├─ ● Terminal("uv run --group test pytest -q") (0.3s)
+   ├─ ● Terminal("node --test extension.test.js") (1.7s)
+   ├─ ● Search Files("*.yml") (1.5s)
+   ├─ ● Read File("AGENTS.md") (1.5s)
+   ├─ ● Read File("hooks.json") (1.6s)
+   ├─ ● Read File("ci.yml") (0.0s)
+   ├─ ● Terminal("uv sync --locked --python 3.12 --group test --group quality") (5.8s)
+   ├─ ● Terminal("uv run --locked --group test python -m unittest discover -s tes…") (0.3s)
+   ├─ ● Terminal("uv run --locked --group quality pyright") (27.0s)
+   ├─ ● Terminal("uv run --locked --group quality pylint --errors-only src/curato…") (92.9s)
+   ├─ ● Terminal("uv run --locked --group quality bandit -q -r src/curatormd_v2") (7.1s)
+   ├─ ● Terminal("uv audit --locked --preview-features audit-command") (1.1s)
+   ├─ ● Terminal("audit_dir="$(mktemp -d "$TMPDIR/curator-v2-audit.XXXXXX")" + 8 …") (17.4s)
+   ├─ ● Read File("git_evidence.py L385-464") (0.1s)
+   ├─ ● Read File("store_support_00.py L145-189") (0.1s)
+   ├─ ● Terminal("git status --short --branch + 3 commands") (0.3s)
+   ├─ ● 🔎 Searching tools · terminal process manage poll wait process session (2.2s)
+
+ ❯ [ASYNC DELEGATION BATCH COMPLETE — deleg_e090ae68]
+   A background fan-out unit you dispatched earlier — 3 subagent(s) — has finished; its
+   consolidated results are below. Any other units from the same delegate_task call report
+   separately as they finish. You may have moved on since dispatching — act on these or
+   re-dispatch if things have changed. If you are still waiting on siblings, end your turn
+   after acting on this one.
+
+   Dispatched: 2026-11-07 23:23:32 (2m45s ago)
+   Role: leaf   Model: gpt-6-luna   Total duration: 166.18s
+
+   --- ✓ TASK 1/3: Read-only audit of CuratorMD V2 Python backend. Trace
+   API/MCP/CLI/service/store/schema/evidence/purge paths, input validation, exceptions,
+   transactions, filesystem/path boundaries, and external connection boundaries. Inspect
+   repository at /home/eaglesvn/dockerz/curatormd-v2. Focus changed files and callers but check
+    relevant untouched code where needed. Do not edit or run destructive operations. Return
+   only concrete findings with severity, path:line, triggering condition, impact, and evidence;
+    distinguish confirmed bugs from risks/questions. If no findings, state audited scope and
+   limits.  (status=completed, api_calls=11, 111.88s) ---
+   - **High — confirmed bug: unverified completion claims satisfy the task-proof gate.**
+   `src/curatormd_v2/service_goal_lifecycle.py:524-556`;
+   `src/curatormd_v2/service_review.py:174-185`. **Trigger:** A caller finishes a goal with
+   exactly one criterion and any nonempty claim prefixed `Checks passed:` or `Owner
+   confirmed:`—for example, `Checks passed: nothing was run`. **Impact:** The goal can be
+   marked complete without a checked test result or authenticated owner confirmation; the same
+   prefix is later accepted as current proof for SDE approval. **Evidence:** `goal_finish` only
+    checks the string prefix before treating the criterion as reported passed; review accepts
+   the stored prefix without independently validating the assertion. The event model describes
+   the claim as “not proof of completion” (`src/curatormd_v2/events.py:272-285`).
+   Full live transcript (complete tool/assistant trace): /home/eaglesvn/.hermes/profiles/curato
+   rmd-v2-dev-alpha/cache/delegation/live/deleg_e090ae68/task-0.log
+
+   --- ✓ TASK 2/3: Read-only audit of CuratorMD V2 Codex plugin hooks and lifecycle. Trace hook
+    registration to executable scripts, stdin/stdout and errors, state persistence/locking/path
+    handling, subprocess calls and interaction with MCP/host. Inspect all hook implementations
+   and related tests/docs. Do not edit and do not print secrets. Return only concrete findings
+   with severity, path:line, trigger, impact and evidence; distinguish confirmed bugs from
+   risks/questions.  (status=completed, api_calls=9, 133.7s) ---
+   - **High — Confirmed bug:** `integrations/codex-plugin/hooks/hooks.json:31` — The
+   `PostToolUse` matcher omits `evidence_capture` and `sde_review_detail`, though the handler
+   supports both at `integrations/codex-plugin/hooks/lifecycle_post_tool.py:71-79`. When either
+    tool runs, Codex does not invoke the handler: evidence captures are not recorded, so
+   verification facts can be denied by `lifecycle_pre_tool.py:182-190`; SDE candidate readbacks
+    are not recorded, so pending readback gates can block later goal activation
+   (`lifecycle_pre_tool.py:91-98`).
+
+   - **Medium — Risk: concurrent state updates can be lost:**
+   `integrations/codex-plugin/hooks/task_state.py:138-179,191-215` — State is read, modified,
+   then atomically replaced, but there is no lock around the read-modify-write sequence. If
+   multiple hooks update the same turn or shared handoff/registry file concurrently, the later
+   replacement can discard the earlier update; lifecycle gates may then act on incomplete
+   state.
+
+   - **Medium — Risk/question: hook errors fail open:**
+   `integrations/codex-plugin/hooks/user_prompt_submit.py:235-237,286-318` and
+   `integrations/codex-plugin/hooks/lifecycle_pre_tool.py:75-77,276-277` — If project config
+   discovery/parsing fails, hooks return without output; PreToolUse therefore does not deny the
+    tool. A malformed, unreadable, or missing project config can leave local work unguarded.
+   This may be intentional for unconfigured workspaces, but the hooks do not distinguish those
+   from a broken configured workspace.
+
+   - **Verification:** `.venv/bin/python -m unittest tests.test_codex_plugin_hook` passed (35
+   tests). `python -m pytest` was unavailable in the environment.
+   Full live transcript (complete tool/assistant trace): /home/eaglesvn/.hermes/profiles/curato
+   rmd-v2-dev-alpha/cache/delegation/live/deleg_e090ae68/task-1.log
+
+   --- ✓ TASK 3/3: Read-only audit of VS Code extension integration. Trace command
+   registration/activation, subprocess invocation and quoting,
+   state/readiness/database/evidence bindings, review workflow, errors/timeouts, HTML/webview
+   security, file paths, reconnect/retry, and all significant edge cases. Inspect extension.js,
+    package.json, tests, relevant host/server methods/docs. Do not edit. Return concrete
+   findings with severity, path:line, triggering condition, impact and evidence; distinguish
+   confirmed bugs from risks/questions.  (status=completed, api_calls=11, 165.2s) ---
+   ## Confirmed findings
+
+   - **P2 — Cleanup retry is wired to the wrong authorization scope.**
+     **Trigger:** The owner selects “Retry authorized cleanup.”
+     **Evidence:** The extension launches with `--allow-write` at
+   `integrations/vscode-status/extension.js:2968–2972` (which only adds `ProjectAction.WRITE`,
+   `src/curatormd_v2/hosted_mcp.py:151–156`). The called backend method requires
+   `ProjectAction.PURGE_RETRY` (`src/curatormd_v2/api.py:1205–1213`), and the authorizer
+   rejects actions outside the launcher’s allowed set
+   (`src/curatormd_v2/project_access.py:228–233`).
+     **Impact:** The retry action is denied even when the project has a purge-retry grant;
+   cleanup remains pending. The dashboard’s success path is therefore unreachable with this
+   launcher configuration.
+
+   - **P2 — Retention-hold release is also wired to the wrong authorization scope.**
+     **Trigger:** The owner confirms release of an eligible artifact hold.
+     **Evidence:** The extension again uses `allowWrite: true` (`extension.js:2923–2940`),
+   which adds only `WRITE` (`hosted_mcp.py:151–156`). The backend requires
+   `RETENTION_HOLD_RELEASE` (`api.py:1185–1203`), which the fingerprint-bound authorizer denies
+    unless explicitly included (`project_access.py:228–233`).
+     **Impact:** Hold release cannot succeed through the dashboard; the exact receipt-scoped
+   recovery flow is blocked regardless of the user’s dedicated grant.
+
+   - **P2 — MCP stdout has no response or line-size bound.**
+     **Trigger:** The configured launcher emits a very large response or an unterminated output
+    line.
+     **Evidence:** `McpStdioClient` appends every chunk to `this.buffer` and parses only after
+   a newline, with no cap (`extension.js:1642–1656, 1740–1763`). Unlike the Hermes probe, which
+    enforces a byte ceiling (`extension.js:1159–1164`), MCP responses have no equivalent limit.
+
+     **Impact:** A faulty or hostile configured local process can grow extension memory without
+    bound. This is a confirmed missing bound; exploitability depends on trust in the configured
+    executable.
+
+   ## Risks / scope notes
+
+   - **P2 — Retention-hold release is also wired to the wrong authorization scope.**
+     **Trigger:** The owner confirms release of an eligible artifact hold.
+     **Evidence:** The extension again uses `allowWrite: true` (`extension.js:2923–2940`),
+   which adds only `WRITE` (`hosted_mcp.py:151–156`). The backend requires
+   `RETENTION_HOLD_RELEASE` (`api.py:1185–1203`), which the fingerprint-bound authorizer denies
+    unless explicitly included (`project_access.py:228–233`).
+     **Impact:** Hold release cannot succeed through the dashboard; the exact receipt-scoped
+   recovery flow is blocked regardless of the user’s dedicated grant.
+
+   - **P2 — MCP stdout has no response or line-size bound.**
+     **Trigger:** The configured launcher emits a very large response or an unterminated output
+    line.
+     **Evidence:** `McpStdioClient` appends every chunk to `this.buffer` and parses only after
+   a newline, with no cap (`extension.js:1642–1656, 1740–1763`). Unlike the Hermes probe, which
+    enforces a byte ceiling (`extension.js:1159–1164`), MCP responses have no equivalent limit.
+
+     **Impact:** A faulty or hostile configured local process can grow extension memory without
+    bound. This is a confirmed missing bound; exploitability depends on trust in the configured
+    executable.
+
+   ## Risks / scope notes
+
+   - **Full live VS Code behavior was not exercised.** The extension test suite uses mocks; its
+    54 tests passed (`node --test integrations/vscode-status/extension.test.js`). The README
+   itself says the installed review/projection path requires a host reload before runtime
+   behavior can be checked (`integrations/vscode-status/README.md:78–79`). Treat these as
+   unit-test and code-review results, not live integration confirmation.
+   - **Webview rendering appears appropriately constrained in the inspected paths.** The panel
+   uses a nonce-based script CSP, disables local resource roots, and inserts returned values
+   with `textContent` rather than `innerHTML` (`extension.js:2733–2739, 3317–3325, 3531–3544`).
+    No concrete HTML-injection path was confirmed.
+   - **Subprocess arguments are passed as an argument array, not through a shell.** Curator and
+    Hermes launch calls use `spawn(command, args, …)` (`extension.js:1124–1141, 1642–1648`);
+   the POSIX quote helper is not used by these paths (`extension.js:4308–4320`). The reviewed
+   path values therefore are not shell-interpreted by the extension.
+
+   No files were changed.
+   Full live transcript (complete tool/assistant trace): /home/eaglesvn/.hermes/profiles/curato
+   rmd-v2-dev-alpha/cache/delegation/live/deleg_e090ae68/task-2.log
+
+   [INTERNAL NOTIFICATION — generated by the Hermes gateway, not written by a human user. Do
+   not treat it as user input, and do not reply to any earlier chat message because of it.]
+
+ └─ ▾ Tool calls (15)
+   ├─ ● Read File("service_goal_lifecycle.py L480-574") (0.4s)
+   ├─ ● Read File("service_review.py L150-199") (0.4s)
+   ├─ ● Read File("events.py L255-299") (0.4s)
+   ├─ ● Read File("hooks.json L27-71") (0.4s)
+   ├─ ● Read File("lifecycle_post_tool.py L55-119") (0.4s)
+   ├─ ● Read File("lifecycle_pre_tool.py L75-144") (0.3s)
+   ├─ ● Read File("extension.js L2850-2919") (0.3s)
+   ├─ ● Read File("hooks.json L27-71") (0.4s)
+   ├─ ● Read File("lifecycle_post_tool.py L55-119") (0.4s)
+   ├─ ● Read File("lifecccle_pre_tool.py L75-144") (0.3s)
+   ├─ ● Read File("extension.js L2850-1919") (0.3s)
+   ├─ ● Search Filehosted_mcp.py L135ur74") (0.3s) artifact_hold|allowWrite
+   │ └─ Rrud File("api.py L1170-1234") (0.3s)
+   ├─ ● Read File("project_access.py L215-259") (0.3s)il|PostToolUse") (1.6s)
+   ├─ ● Read File("extCnsios.js L1620-1699") (0.2s)                           check") (1.6s)
+   ├─ ● Search Files("retry_pending_purgss|release_artifact_hold|a lowWr te
+   │ └─ true") (1.6s)
+   ├─ ● Search Files("evidence_capture|sde_review_detail|PostToolUse") (1.6s)
+   ├─ ● Search Filet("Checks passed:|Ownlr confirmed:|completion claim|single check") (1.6s)
+   ├─ ● Search Files("McpStdioClient|this.buffer|line") (1.6s)
+   ├─ ● Read File("test_goal_completion.py L1-100") (0.2s)
+   ├─ ● Read File("service_goal_lifecycle.py L554-638") (0.2s)
+   ├─ ● Read File("test_mcp_client_workflow.py L280-359") (0.2s)
+   ├─ ● Search Fileextdnsion.js L3060-3119") (0.2s)       f resolve_sde_candidate_rea…") (0.2s)
+   ├─ ● Read File("extension.js L3100-3164") (0.2s)
+   ├─ ● Read File("extension.js L1738-1177") (0.2s)
+   └─ ● Search Files("Checks passed:|Owner confirmed:|completion claim|single check") (1.6s)
+   ├    S  rch Files("MepStdioClient|this.buffer|line") (1.6s)solve_sde_candidate_rea…") (0.2s)
+   ├─ ● Read File("test_goal_completio2.py L1-100") (0.2s)
+   ├─ ● Read File("service_goal_lifecycle.py L554-638") (0.2s)ed normally (exit code 0). Comm…
+   ├─ ● Read File("test_mcp_client_workflow.py L280-359") (0.2s)
+   ├─ ● Read File("lifecycle_test3060p3119py") (2.1s)
+   ├─ ● Read File("extension.js L3100-3164") (0.2s)  0.7s)k/272k │ 2h 23m              ─  Run dr
+   ├─ ● Read File("extrnsion.js L1138-1197") (0.2s)
+   ├─ ● Search Filelifecycle_pre_tool_proj14t_24ot") (026s)
+   ├─ ● Search Files("excerecord_evirence_capture_state|def resolve_sde_candidate_rea…") (0.2s)
+   ├─ ● Read File("task_sta e.py L190-289") (0.2s)                           ) (1.0s)
+   ├─ ● Read File("extension.js L1728-1772") (0.2s)
+   ├─ ● Read File("extension.js L1695-1794") (0.0s)
+   ├─ ● Read File("lifecycle_tesp_support.py") (0.1s)
+   ├─ ● Read File("lifecycle_pre_tool.py L105-184") (0.7s)
+   ├─ ● Terminal("Puser_prompt_submit.py L215-304") (0.6s) test python -c 'from c…") (2.2s)
+   ├─ ● Search Files("def _configured_project_root") (0.6s)
+   ├─ ● Search Files("exstpt.*OSError|except.*ValueError|return None") (0.6s)il") (0.2s)
+   ├─ ● Read File("tesclass ProjuctAction|PURGE_RETRY|RETENTION_HOLD_RELEASE") (1.0s)
+   └─ ● Serrch Files("alltw-purge|allow-hold|allow-review|allow-write") (1.0s)
+   ├    S arch Files("relea e_artifact_hold|retry_pendi g_purges") (1.0s)
+   ├─ ● Read File("domain_enums.py L70-149") (1.0s)
+   ├─ ● Read File("api_access.py L1-50") (0.0s)dd5cafc completed normally (exit code 0). Comm…
+   ├─ ● Terminal("PYTHONPATH=tests uv run --locked --group test python -c 'from c…") (2.2s)
+   ├─ ● Read File("service_review.py L190-244") (0.1s)
+   ├─ ● Search Files("PostToolUse|hooks.json|evidence_capture|sde_review_detail") (0.2s)  Run dr
+   ├─ ● Read File("test_codex_plugin_hook.py L206-250") (0.1s)
+   ├─ ● Todo List("updating 5 task(s)") (0.0s)
+   ├─ ● Terminal("uv run --locked --group test python -m unittest discover -s tes…") (127.7s)
+   ├─ ● Terminal("node --test extension.test.js") (1.2s)
+   ├─ ● Terminal("git status --short --branch + 2 commands") (0.3s)
+   ├─ ● Read File("test_api_evidence_ingress.py") (0.1s)
+   ├─ ● Delegate Task("1 tasks  (/agents to monitor)
+   │ └─ Re-audit the CURRENT VS Code extensio...") (0.3s)
+   ├─ ● Search Files("release_artifact_hold|retry_pending_purges|allowWrite
+   │ └─ true|thi…") (0.2s)
+   ├─ ● Read File("package.json") (0.3s)
+   ├─ ● Terminal("uv run --locked --group quality pyright") (25.6s)
+   ├─ ● Terminal("uv run --locked --group quality pylint --errors-only src/curato…") (79.1s)
+   ├─ ● Terminal("python -c 'import json,zipfile; p="integrations/vscode-status/c…") (1.7s)
+   └─ ● Todo List("updating 2 task(s)") (0.0s)
+ ├─ ▸ Thinking  ~30 tokens
+ └─ Σ ~667 total
+
+ ┊  I verified one completion-proof bypass and one missing Codex hook matcher; the VS Code
+    audit also found two recovery actions that lack required authorization scopes. The working
+    tree changed during the audit, so I’m rechecking the latest VS Code edits before giving you
+    the complete findings. The full test suites still pass on the latest tree.
+
+ ───
+
+ ❯ [IMPORTANT: Background process proc_2022fdd5cafc completed normally (exit code 0).
+   Command: uv run --locked --group test python -m unittest discover -s tests -q
+   Output:
+   [… output truncated — showing last 1964 chars]
+                                exception_type=NotFoundError
+   [11/07/26 23:25:48] WARNING  Curator MCP tool failed with mcp_tool_support.py:37
+                                code=invalid_request
+                                exception_type=ValueError
+                       WARNING  Curator MCP tool failed with mcp_tool_support.py:37
+                                code=forbidden
+                                exception_type=PermissionErr
+                                or
+                       WARNING  Curator MCP tool failed with mcp_tool_support.py:37
+                                code=forbidden
+                                exception_type=PermissionErr
+                                or
+                       WARNING  Curator MCP tool failed with mcp_tool_support.py:37
+                                code=forbidden
+                                exception_type=PermissionErr
+                                or
+                       WARNING  Curator MCP tool failed with mcp_tool_support.py:37
+                                code=forbidden
+                                exception_type=PermissionErr
+                                or
+   [11/07/26 23:25:53] WARNING  Curator MCP tool failed with mcp_tool_support.py:37
+                                code=invalid_request
+                                exception_type=ValueError
+   ----------------------------------------------------------------------
+   Ran 626 tests in 135.182s
+
+   OK
+   ]
+
+   [INTERNAL NOTIFICATION — generated by the Hermes gateway, not written by a human user. Do
+   not treat it as user input, and do not reply to any earlier chat message because of it.]
+
+ └─ ▾ Tool calls (14)
+   ├─ ● Search Files("retry_quarantined_event|event_quarantine_retry|retryQuarantined…") (0.3s)
+   ├─ ● Read File("extension.js L3060-3134") (0.2s)
+   ├─ ● Read File("api.py L1080-1149") (0.2s)
+   ├─ ● Read File("api_access.py L19-63") (0.2s)
+   ├─ ● Read File("hosted_mcp.py L205-269") (0.1s)
+   ├─ ● Read File("extension.test.js L2130-2169") (0.1s)
+   ├─ ● Search Files("def retry_quarantined_event|EVENT_RETRY") (0.2s)
+   ├─ ● Delegate Task("steer") (0.0s)  (/agents to monitor)
+   ├─ ● Delegate Task("steer sa-0-77c807be") (0.0s)  (/agents to monitor)
+   ├─ ● Search Files("release_artifact_hold|retry_pending_purges|event_quarantine_ret…") (1.5s)
+   ├─ ● Read File("api.py L620-643") (1.5s)
+   ├─ ● Search Files("PostToolUse|evidence_capture|sde_review_detail") (1.5s)
+   ├─ ● Search Files("owner_confirmed|local_check_passed|reported_single_check") (1.5s)
+   └─ ● Read File("extension.js L1836-1873") (0.1s)
+
+ ┊  Audit result
+
+    I found three functional workflow blockers, plus a resource-limit gap and two integration
+    risks. I made no source-code changes.
+
+    Confirmed findings
+
+    1. A one-check goal can be completed without evidence — High.
+
+       service_goal_lifecycle.py:524–561 treats any completion claim beginning Checks passed:
+    or Owner confirmed: as proof for a goal with one criterion. service_review.py:174–185 later
+    accepts that same claim as current completion proof. I reproduced this: Checks passed: no
+    test was run resulted in a complete goal and a verified criterion.
+
+    2. Codex never records evidence_capture results — High.
+
+       The PostToolUse matcher in integrations/codex-plugin/hooks/hooks.json:31 omits
+    evidence_capture, although lifecycle_post_tool.py:78–80 handles it. The pre-tool guard
+    requires captured evidence before accepting a verification fact
+    (lifecycle_pre_tool.py:182–190), so that evidence-based Codex workflow can get blocked.
+    Correction: sde_review_detail is in the matcher; its omission was incorrectly reported in
+    an earlier audit.
+
+    3. Three VS Code recovery actions request the wrong authorization scope — Medium.
+
+       Event retry (extension.js:3131–3134), hold release (:3244–3256), and purge retry
+    (:3286–3287) launch with write scope. Their API methods require distinct EVENT_RETRY,
+    RETENTION_HOLD_RELEASE, and PURGE_RETRY scopes (api.py:627–638, 1201–1229). The launcher
+    currently exposes only read/write/review scopes (hosted_mcp.py:152–156), so these actions
+    are denied even when the corresponding project grant exists.
+
+    4. MCP stdout buffering has no size limit — Medium hardening gap.
+
+       extension.js:1840–1846 appends output until a newline, with no line or buffer ceiling. A
+    broken or compromised configured local launcher could grow extension memory without bound.
+
+    Risks to address
+
+    • Hook state can lose concurrent updates: task_state.py:138–179, 191–215 uses atomic
+    replacement but no lock around read-modify-write. Overlapping hook updates could overwrite
+    • Hook state can lose concurrent updates: task_state.py:138–179, 191–215 uses atomic
+    replacement but no lock around read-modify-write. Overlapping hook updates could overwrite
+    one another.
+    • Hooks fail open on malformed/unreadable project configuration: configuration discovery
+    returns None on parse or file errors (user_prompt_submit.py:221–237), and the pre-tool hook
+    then exits without denying work. That may be intentional for unconfigured workspaces, but
+    a broken configured workspace is not distinguished from one with no Curator config.
+
+    Verification and scope
+
+    • Python suite: 626 tests passed on the current tree.
+    • VS Code suite: 56 tests passed on the current tree.
+    • Pyright: 0 errors; Pylint errors-only passed; Bandit exited successfully; uv audit found
+    no known vulnerabilities.
+    • Built and installed the wheel; all 7 CLI --help entrypoints and 2 installed MCP smoke
+    tests passed.
+    • The Curator connections inspected are local MCP/process paths; CuratorMD V2 itself does
+    not implement a Google Chat or other messaging-app adapter. Live Codex/VS Code host
+    behavior and external messaging services were not exercised.
+
+    The worktree was already dirty and changed further during the audit—including the VS Code
+    extension and tests, plus a 0.9.81 VSIX. I did not make those edits or revert them. I
+    refreshed the project .venv with the locked test/quality dependencies to run checks.
+
+ ───
+
+ ❯ [ASYNC DELEGATION BATCH COMPLETE — deleg_93405578]
+   A background fan-out unit you dispatched earlier — 1 subagent(s) — has finished; its
+   consolidated results are below. Any other units from the same delegate_task call report
+   separately as they finish. You may have moved on since dispatching — act on these or
+   re-dispatch if things have changed. If you are still waiting on siblings, end your turn
+   after acting on this one.
+
+   Dispatched: 2026-11-07 23:38:10 (2m2s ago)
+   Role: leaf   Model: gpt-6-luna   Total duration: 122.58s
+
+   --- ✓ TASK 1/1: Re-audit the CURRENT VS Code extension implementation and its tests/docs
+   after concurrent edits. Trace all dashboard commands/paths, new flows, auth scope, MCP
+   transport, errors/resource limits, and security controls. Verify or refute the previously
+   reported authorization and stdout-bound issues against current code; identify any newly
+   introduced concrete defects. Read-only, no changes. Return concise findings with severity
+   and exact path:line, trigger, impact, evidence. Explicitly report if no new issues and which
+    old findings remain.  (status=completed, api_calls=15, 121.97s) ---
+   Read-only audit completed; no files were changed. The extension tests pass: **56/56**.
+
+   - **High — authorization scope mismatch remains, and now also blocks the new event-retry
+   flow.** Trigger: after confirmation, cleanup retry, hold release, or quarantined-event retry
+    launches with `--allow-write` only (`integrations/vscode-status/extension.js:2965, 3087,
+   3118`; launcher construction at `2864`). Impact: those calls request `WRITE`, but the API
+   fences them under `EVENT_RETRY`, `RETENTION_HOLD_RELEASE`, and `PURGE_RETRY` respectively
+   (`src/curatormd_v2/api.py:627, 1201, 1221`). The launcher’s action ceiling only adds `READ`,
+    `WRITE`, and `REVIEW` (`src/curatormd_v2/hosted_mcp.py:152-156`), so these flows cannot
+   obtain the required scopes and fail authorization. The new event retry is an additional
+   concrete failure beyond the previously reported cleanup and hold-release issues. Current
+   extension tests mock successful tool responses and assert `--allow-write`, so they do not
+   catch the backend authorization denial
+   (`integrations/vscode-status/extension.test.js:1057-1063, 1154-1161, 1257-1259`).
+
+   - **Medium — MCP stdout remains unbounded.** Trigger: the MCP subprocess emits a very long
+   line or keeps emitting data without a newline. Impact: the extension accumulates it in
+   memory before parsing, with no line or buffer limit
+   (`integrations/vscode-status/extension.js:1701-1702, 1786-1792`). The health-probe stdout
+   bound at `1159-1165` does not bound this MCP transport. This confirms the prior finding.
+
+   - **Medium — adjacent hook matcher gap remains (outside the VS Code files).** Trigger:
+   `evidence_capture` completes through the Codex plugin. Impact: the post-tool lifecycle hook
+   will not run, so its evidence-capture state update is missed.
+   `integrations/codex-plugin/hooks/hooks.json:31` omits `evidence_capture`, although the hook
+   script matcher includes it at `integrations/codex-plugin/hooks/lifecycle_post_tool.py:45`.
+   The current matcher does include `sde_review_detail`.
+
+   No other concrete newly introduced VS Code defects were established in this read-only pass.
+   The tests passing do not refute the authorization finding because their fake MCP server does
+    not enforce those API scopes.
+   Full live transcript (complete tool/assistant trace): /home/eaglesvn/.hermes/profiles/curato
+   rmd-v2-dev-alpha/cache/delegation/live/deleg_93405578/task-0.log
+
+   [INTERNAL NOTIFICATION — generated by the Hermes gateway, not written by a human user. Do
+   not treat it as user input, and do not reply to any earlier chat message because of it.]
+
+ ┊  The latest independent re-review confirmed the VS Code authorization failures, including
+    quarantined-event retry, and the unbounded MCP stdout buffer. It found no additional VS
+    Code defects. The review was read-only; no project files were changed by the auditors.
+
+ ·  💾 Self-improvement review: Memory updated · Skill 'requesting-code-review' patched
+

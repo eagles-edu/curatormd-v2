@@ -1,0 +1,18 @@
+# Keep this repository's Hermes tools attached to its dedicated profile.
+[mcp_servers.hermes-tools]
+command = "/home/eaglesvn/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/python3"
+args = ["-m", "agent.transports.hermes_tools_mcp_server"]
+startup_timeout_sec = 30.0
+tool_timeout_sec = 600.0
+
+[mcp_servers.hermes-tools.env]
+HERMES_HOME = "/home/eaglesvn/.hermes/profiles/curatormd-v2-dev-alpha"
+HERMES_QUIET = "1"
+HERMES_REDACT_SECRETS = "true"
+PYTHONPATH = "/usr/local/lib/hermes-agent:/home/eaglesvn/.hermes/installs/76f6e7e5145b5f39/environments/8a5edb0a1cbe411196fc2265da4dd654/venv/lib/python3.14/site-packages"
+
+[mcp_servers.curator_v2]
+command = "/home/eaglesvn/dockerz/curatormd-v2.0/.venv/bin/curatormd-v2-codex-mcp"
+args = ["--project-root", "/home/eaglesvn/dockerz/curatormd-v2.0", "--database", "/home/eaglesvn/.local/share/curatormd-v2-alpha/global.sqlite3", "--allow-write"]
+startup_timeout_sec = 30.0
+tool_timeout_sec = 600.0

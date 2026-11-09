@@ -1,0 +1,27 @@
+{
+	"mcpServers": {
+		"curatormd-filesystem": {
+			"type": "local",
+			"command": "npx",
+			"args": [
+				"@modelcontextprotocol/server-filesystem@2.1.0",
+				"/home/eaglesvn/dockerz/curatormd-v2.0"
+			],
+			"tools": [
+				"*"
+			]
+		},
+		"curatormd-git": {
+			"type": "local",
+			"command": "uvx",
+			"args": [
+				"mcp-server-git==2026.10.28",
+				"--repository",
+				"/home/eaglesvn/dockerz/curatormd-v2.0"
+			],
+			"tools": [
+				"*"
+			]
+		}
+	}
+}
