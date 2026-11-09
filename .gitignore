@@ -15,3 +15,6 @@ coverage.xml
 .env
 .env.*
 !.env.example
+docs/client_secret_781363356815-2vrv6d17pler9qpl0d880ii6s5vvur53.apps.googleusercontent.com.json
+docs/client_secret_821010090086-ub6eh977prgp9jstk1qpg84cefeturp9.apps.googleusercontent.com.json
+docs/OAuth client created.txt
