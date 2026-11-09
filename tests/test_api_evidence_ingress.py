@@ -408,6 +408,22 @@ class ApiEvidenceIngressTests(_ApiTestSupport):
         )
         self.assertEqual(quarantined.status, EventInboxStatus.QUARANTINED)
 
+        inventory = api.terminal_event_inventory(
+            self.caller, "project-a", limit=10
+        )
+        self.assertEqual(inventory.count_after_cursor, 1)
+        self.assertTrue(inventory.complete)
+        self.assertEqual(len(inventory.events), 1)
+        self.assertEqual(inventory.events[0].event_id, event.event_id)
+        self.assertEqual(inventory.events[0].status, EventInboxStatus.QUARANTINED)
+        self.assertEqual(
+            inventory.events[0].payload_sha256, quarantined.payload_sha256
+        )
+        with self.assertRaisesRegex(PermissionError, "not authorized"):
+            api.terminal_event_inventory(
+                AuthenticatedCaller("other-user"), "project-a"
+            )
+
         status = api.event_queue_status(self.caller, "project-a")
         self.assertEqual(status.quarantined_count, 1)
         self.assertEqual(status.claimed_count, 0)
@@ -424,6 +440,11 @@ class ApiEvidenceIngressTests(_ApiTestSupport):
             self.caller, "project-a", event.event_id
         )
         self.assertEqual(retried.status, EventInboxStatus.FAILED)
+        self.assertEqual(
+            api.terminal_event_inventory(self.caller, "project-a").count_after_cursor,
+            1,
+            "the retry remains visibly failed until its next processing attempt",
+        )
         with self.store.transaction() as connection:
             audit = connection.execute(
                 "SELECT actor_id FROM event_retry_audit "

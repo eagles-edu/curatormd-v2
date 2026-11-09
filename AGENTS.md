@@ -8,15 +8,31 @@ Steward belongs to the Hermes Core account, not CuratorMD.
 ## Development contract
 
 - Start each task with the problem and observable success criteria.
-- Record typed goal events: intent, changed fact, verification, open gate, and
-  outcome. A completion claim is not evidence.
+- Follow the [Codex Execution and Approval SOP](docs/codex-execution-and-approval-sop.md).
+  Owner UX approval reviews usable, repeatable behavior; it is not a prerequisite
+  for coding, local checks, or closing passed engineering criteria. Ask the owner
+  about material project decisions, resolve routine engineering choices, and
+  keep independent work moving.
+- Record compact typed goal facts for intent, changes, checks, open gaps, and
+  outcome. A passing local test/lint result or the owner's explicit confirmation
+  is evidence; a bare completion claim is not.
 - Persist compact, deduplicated bullet facts. Do not retain raw chats,
   transcripts, imports, cues, or scratch artifacts as canonical knowledge.
 - Keep proposed SDEs reviewable and separate from ordinary goal progress.
+- After the owner's SDE approval, transfer approved facts to pertinent
+  persistence docs and verify the saved content. That single decision
+  authorizes automatic cleanup of eligible, candidate-scoped transient
+  artifacts after successful readback and an internal comparison confirms the
+  saved entry contains the same artifact-inventory and dependency-map
+  fingerprints as the rechecked transient set; do not ask for another deletion
+  approval.
+- Build and recheck the complete exact cleanup inventory internally. Keep held,
+  changed, incomplete, out-of-scope, or failed artifacts pending.
 - Commit durable facts and an auditable receipt before purging transient
   artifacts. Make purge retries idempotent and expose failures as
   `purge_pending`; never report a false healthy/green state.
-- Human approval is required for SDE disposition and destructive cleanup.
+- Human approval is required for SDE disposition. The approved SDE decision
+  also authorizes only its verified, candidate-scoped transient cleanup.
 - Keep event payloads bounded; stream large inputs rather than reading them
   fully into memory.
 - Mark unimplemented architecture and interfaces as proposed. Do not describe

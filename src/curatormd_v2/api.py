@@ -84,6 +84,7 @@ from .store import (
     FactCompactionApprovalRequest,
     NotFoundError,
     ProjectRegistrationRecord,
+    TerminalEventInventory,
 )
 from .store_requests import (
     ProjectDrainEffectContext,
@@ -410,6 +411,21 @@ class _APIEventMethods(_APIState):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
         ).event_queue_status()
+
+    def terminal_event_inventory(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        *,
+        limit: int = 100,
+        after_event_id: str | None = None,
+    ) -> TerminalEventInventory:
+        """Read a bounded, payload-free inventory of failed and quarantined events."""
+
+        plugin = self._authorized_plugin(caller, project_id, ProjectAction.READ)
+        return plugin.service.store.terminal_event_inventory(
+            project_id, limit=limit, after_event_id=after_event_id
+        )
 
     def consumer_source_epoch(
         self, caller: AuthenticatedCaller, project_id: str,
@@ -958,6 +974,15 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.READ
         ).sde_review_has_current_passing_evidence(candidate_id)
+
+    def sde_review_completion_claim(
+        self, caller: AuthenticatedCaller, project_id: str, candidate_id: str
+    ) -> dict[str, str] | None:
+        """Read a current single-check completion claim for review display."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.READ
+        ).sde_review_completion_claim(candidate_id)
 
     def sde_review_documents(
         self, caller: AuthenticatedCaller, project_id: str

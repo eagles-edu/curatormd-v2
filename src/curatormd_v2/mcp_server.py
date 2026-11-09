@@ -38,43 +38,70 @@ Curator V2 work protocol:
    guardrails. Do not invent checks or silently rewrite the request. State
    them briefly to the user, then save before implementation; do not add a
    confirmation round when the request already authorizes the work. First read
-   the project's goals and reuse only an exact problem-and-criteria match;
-   otherwise create a new goal. Use active status when the user asked you
-   to do the work, and planned status when they asked only for a plan or when
-   acceptance is still needed. For a plan, keep its parent and child tasks
-   planned until execution is requested. Once a goal is active, call hermes_goal_bind to
+   the project's goals and reuse only an exact problem-and-criteria match for
+   the same task; repository or topic similarity alone is not a match.
+   Otherwise start a distinct goal. If a new bounded task clearly belongs
+   within an active broader goal, link it with `parent_goal_id` while keeping its checks, facts,
+   and lifecycle on the child. If unrelated to the active item, create a
+   top-level one-off. Never append a distinct task's facts to its parent merely
+   because both touch the same repository. Use active status when the user asks
+   you to do the work and planned status only when they ask for a plan. Owner
+   UX approval is not a prerequisite for coding, local checks, or closing
+   passed engineering criteria. Ask about material product or scope decisions;
+   resolve routine reversible engineering choices and continue independent
+   work. Track UX review separately after the behavior is usable and repeatable.
+   Respect `ootask:` as a distinct one-off with its own
+   lifecycle; set its parent only when it is a bounded task within that scope.
+   `aotask <parent-or-child>:` adds progress to that existing goal and keeps its
+   same ID and lifecycle.
+   For a plan, keep its parent and child tasks planned until execution is
+   requested. Once a goal is active, call hermes_goal_bind to
    validate the current-session association; Hermes persists the host binding
    only after this succeeds. If goal creation or binding fails, say so plainly
    and do not claim the task is tracked or bound.
-2. At meaningful checkpoints, record deduplicated compact fact bullets with
-   fact_record: distinguish research, advice, intent, change, verification,
-   open gates, and outcomes. Verification needs evidence; claims, session end,
-   and healthy readiness are not proof. Never store raw chats, transcripts,
-   large command output, or source artifacts as canonical facts.
+2. Record compact facts at task start, after changes/checks, and at the
+   outcome. Use one practical success check per task unless it has independent
+   outcomes. A passing relevant test/lint check or the owner's explicit
+   confirmation is task evidence only when recorded as current verification
+   evidence. Never store raw chats,
+   transcripts, large command output, or source artifacts as canonical facts.
 3. Treat the user's ordinary words as lifecycle controls for both plan children
    and one-off tasks. On hold/pause, record facts, reason, and next action and
    call goal_defer. On resume/continue, read the checkpoint and call
    goal_activate. On next/check-off/done, record the endpoint facts, reconcile
-   with goal_report, and call goal_finish; its result decides whether evidence
-   permits completion. For a plan, activate the next child only after the
+   record current verification facts for every success criterion using
+   evidence returned by evidence_capture and passed unchanged to fact_record,
+   then call goal_finish. Its completion_claim is an outcome note only; no
+   claim prefix satisfies a criterion. If current evidence is unavailable,
+   leave the goal open and report the gap and next action. For a plan, activate the next child only after the
    current child finishes. Read goal_status before each lifecycle call and pass
    its current lifecycle revision. Show verified checks separately from open checks,
    TODOs, blocker/owner, and next action. Never claim a task was closed when
    goal_finish leaves it open.
    At each completed child or one-off task, prepare a pending proposal from
-   supported task facts, even when routine or not yet verified. Label missing
-   or stale proof; approval still requires current passing evidence. Show the facts and any suggested importance only as a
-   recommendation. The user decides what is memorialized, its importance, and
-   its disposition. Never silently suppress a proposal as routine.
+   that task's supported facts, with a concise summary, category, and importance
+   recommendation. A passing relevant local test/lint result or explicit owner
+   confirmation is the task proof; the owner decides the SDE disposition. Show
+   the proposal and supporting facts for review. After approval, transfer only
+   approved facts to the pertinent persistence document, read it back to verify
+   the saved content, then automatically clear eligible candidate-scoped
+   transient artifacts after an internal comparison confirms that the saved
+   entry contains the same artifact-inventory and dependency-map fingerprints
+   as the rechecked transient set. The SDE decision is the single owner
+   approval; do not ask for separate deletion approval. Build and recheck the
+   complete exact inventory internally, verify its receipt, and leave held, changed,
+   incomplete, out-of-scope, or failed artifacts pending.
    Use evidence_capture for configured host sources and pass its returned
    evidence fields unchanged to fact_record; it cannot accept arbitrary
    commands or paths.
-4. Keep SDE disposition, cleanup authorization, canonical persistence, and
-   artifact deletion as ordered durable steps. One explicit review action may
-   authorize deletion only for its complete exact inventory; expiry eligibility
-   never authorizes deletion. Store a distinct cleanup receipt and project it
-   before deleting. Keep unapproved or failed cleanup visibly pending; never equate a zero SDE
-   count with failed capture or health.
+4. Keep SDE disposition, canonical persistence, readback, and artifact deletion
+   as ordered durable steps. The explicit SDE approval authorizes automatic
+   deletion only after successful canonical readback confirms the approved
+   entry's artifact-inventory and dependency-map fingerprints match the
+   complete, rechecked candidate-scoped transient inventory; expiry eligibility never
+   authorizes deletion. Store a distinct cleanup receipt and project it before
+   deleting. Keep held, changed, incomplete, out-of-scope, or failed cleanup
+   visibly pending; never equate a zero SDE count with failed capture or health.
 """
 
 
@@ -257,6 +284,7 @@ def build_mcp_server(
     source_id: str,
     *,
     hermes_context: HermesContextOptions | None = None,
+    hermes_binding_enabled: bool | None = None,
     instructions: str = SERVER_INSTRUCTIONS,
 ) -> MCPServer:
     """Build tools with trusted caller/project captured outside tool arguments.
@@ -281,5 +309,9 @@ def build_mcp_server(
         if hermes_context
         else caller
     )
-    register_mcp_tools(server, api, registered_caller, project_id, source_id)
+    register_mcp_tools(
+        server, api, registered_caller, project_id, source_id,
+        hermes_binding_enabled=(hermes_context is not None if hermes_binding_enabled is None
+                                else hermes_binding_enabled),
+    )
     return server

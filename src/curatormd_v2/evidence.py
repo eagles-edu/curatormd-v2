@@ -535,13 +535,19 @@ class HumanObservationEvidenceAdapter(ReceiptEvidenceAdapter):
     max_validity_ceiling_seconds = 86_400
 
 
+class RegisteredEvidenceAdapter(EvidenceVerifier, EvidenceCaptureVerifier, Protocol):
+    """An evidence adapter that declares the kinds it handles."""
+
+    evidence_kinds: frozenset[str]
+
+
 class EvidenceAdapterRegistry:
     """Fixed host-created adapter map; evidence callers cannot register adapters."""
 
     # pylint: disable=too-few-public-methods  # Registry intentionally resolves one adapter per kind.
 
-    def __init__(self, adapters: tuple[ReceiptEvidenceAdapter, ...]) -> None:
-        by_kind: dict[str, ReceiptEvidenceAdapter] = {}
+    def __init__(self, adapters: tuple[RegisteredEvidenceAdapter, ...]) -> None:
+        by_kind: dict[str, RegisteredEvidenceAdapter] = {}
         for adapter in adapters:
             for kind in adapter.evidence_kinds:
                 if kind in by_kind:

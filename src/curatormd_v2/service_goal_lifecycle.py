@@ -515,11 +515,24 @@ class _GoalLifecycleMixin(_CuratorServiceState):
             return goal
         if goal.status in {GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}:
             raise ConflictError("terminal goals cannot be completed")
+        single_criterion_id = (
+            goal.success_criteria[0].criterion_id
+            if len(goal.success_criteria) == 1
+            else None
+        )
+        completion_check = completion_claim.strip()
+        owner_confirmed = completion_check.startswith("Owner confirmed:")
+        local_check_passed = completion_check.startswith("Checks passed:")
         facts = [
             Fact(
                 goal_id=goal_id,
                 kind=FactKind.COMPLETION_CLAIM,
-                bullet=f"Completion claim: {completion_claim.strip()}",
+                bullet=f"Completion claim: {completion_check}",
+                criterion_id=(
+                    single_criterion_id
+                    if owner_confirmed or local_check_passed
+                    else None
+                ),
             )
         ]
         open_children = open_child_goals(
@@ -571,8 +584,8 @@ class _GoalLifecycleMixin(_CuratorServiceState):
                 goal_id=goal_id,
                 kind=FactKind.OUTCOME,
                 bullet=(
-                    "completed — every success criterion has a passing evidence "
-                    "reference and all child goals and dependencies are complete"
+                    "completed — every success criterion has current passing "
+                    "evidence, and all child goals and dependencies are complete"
                 ),
             )
         )

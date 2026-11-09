@@ -1,6 +1,29 @@
 {
+  "toolbar.toolboxs": [
+    {
+      "name": "My Box",
+      "activate": true,
+      "view": "mars",
+      "layers": [
+        {
+          "name": "My Layer",
+          "icon": "person",
+          "tools": [
+            {
+              "name": "Open Extensions Folder",
+              "icon": "folder-library",
+              "actions": ["workbench.extensions.action.openExtensionsFolder"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.languageServer": "Pylance",
+  "[markdown]": {
+    "editor.wordWrap": "on"
+  },
   "cSpell.words": [
     "checksummed",
     "cutover",

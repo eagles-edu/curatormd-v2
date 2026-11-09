@@ -11,19 +11,28 @@ from task_state import (
     accepted_event_result,
     accepted_sde_result,
     has_summary_fact,
+    record_evidence_capture_state,
     goal_status_result,
     goal_report_matches,
     goal_id_from_input,
     record_fact_state,
     record_summary_fact,
     record_defer_request,
+    record_completed_goal,
     record_finish_request,
     record_goal_state,
+    record_ootask_goal,
     record_report_pending,
+    record_scoped_goal_status,
+    record_sde_proposal_state,
+    retire_ootask_goal,
     resolve_defer_request,
+    resolve_ootask_resume,
     resolve_finish_request,
     resolve_report_pending,
+    resolve_sde_candidate_readback,
     resolve_task_summary_readback,
+    task_scope_cue,
 )
 from user_prompt_submit import (
     MAX_INPUT_BYTES,
@@ -33,7 +42,7 @@ from user_prompt_submit import (
 
 
 _TOOL_NAME = re.compile(
-    r"^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess)$"
+    r"^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess|sde_review_detail|evidence_capture)$"
 )
 
 
@@ -59,8 +68,15 @@ def main() -> int:
             return 0
         _, project_id = configured
         tool = match.group(1)
+        if tool == "sde_review_detail":
+            resolve_sde_candidate_readback(event, project_id)
+            return 0
         goal_id = goal_id_from_input(event)
         if goal_id is None:
+            return 0
+
+        if tool == "evidence_capture":
+            record_evidence_capture_state(event, project_id, goal_id)
             return 0
 
         if tool in {"goal_start", "goal_activate"}:
@@ -72,11 +88,21 @@ def main() -> int:
                 if status != "active":
                     return 0
             record_goal_state(event, project_id, goal_id, True)
+            if tool == "goal_start" and task_scope_cue(event, project_id) == "ootask":
+                record_ootask_goal(event, project_id, goal_id)
+            if tool == "goal_activate":
+                resolve_ootask_resume(event, project_id, goal_id)
             record_report_pending(event, project_id, goal_id)
         elif tool == "goal_status":
             status = goal_status_result(event, goal_id)
             if status is not None:
-                record_goal_state(event, project_id, goal_id, status == "active")
+                record_goal_state(
+                    event, project_id, goal_id, status in {"active", "open"}
+                )
+                record_scoped_goal_status(event, project_id, goal_id)
+                if status == "complete":
+                    record_completed_goal(event, project_id, goal_id)
+                    retire_ootask_goal(project_id, goal_id)
                 resolve_report_pending(event, project_id, goal_id)
                 if status == "complete":
                     resolve_finish_request(event, project_id, goal_id, True)
@@ -102,7 +128,7 @@ def main() -> int:
             record_defer_request(event, project_id, goal_id)
             record_report_pending(event, project_id, goal_id)
         elif tool == "sde_assess" and accepted_sde_result(event, goal_id):
-            record_report_pending(event, project_id, goal_id)
+            record_sde_proposal_state(event, project_id, goal_id)
         return 0
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return 0

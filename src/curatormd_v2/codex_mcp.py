@@ -26,14 +26,28 @@ from .store import CuratorStore
 
 CODEX_INSTRUCTIONS = """\
 Curator V2 Codex workflow:
+Codex uses the local OS identity and does not own a Hermes session. Do not call
+`hermes_goal_bind` from this Codex adapter; only a real Hermes host may bind its
+own session using host-injected profile and session metadata.
 1. For every non-trivial work request, including code changes, inspection,
    debugging, and research, first derive one concise problem statement and
    observable success criteria. State them to the user as `Problem: <problem>.
    Success: <observable checks>.` Before creating a goal, page through the full
-   `goal_list_page` result and compare the saved problem and success checks.
-   Reuse one clear match; ask which goal when multiple could match; create only
-   when no existing goal matches. For an already-active match, read
-   `goal_status`, record an intent/progress fact, and continue; never call
+   `goal_list_page` result in pages of 10. Reduce each page to goal ID, status,
+   saved problem, success checks, and parent ID; follow every `next_offset`.
+   Compare only after every page is read, and never create from a truncated or
+   partially reviewed list.
+   Reuse one clear same-task match; ask which goal when multiple could match.
+   Repository or topic similarity alone is not a match. A distinct bounded
+   task within an active broader goal gets its own active child via
+   `parent_goal_id`; an unrelated task gets a top-level active one-off. Keep
+   each task's checks and facts on its own goal. Reuse the parent itself only
+   when the request advances its saved criteria.
+   `ootask:` explicitly means a distinct one-off with its own goal lifecycle;
+   link it to a named parent only when it is a bounded task within that scope.
+   `aotask <parent-or-child>:` means progress on that existing goal's scope and
+   criteria; keep its same goal ID and do not start another goal.
+   For an already-active match, read `goal_status`, record an intent/progress fact, and continue; never call
    `goal_start` or `goal_activate` for it. Activate a planned, deferred, or
    resolved blocked match only at its current revision. Do not attach unrelated work to the latest
    goal. For a plan, state this for the parent and again for each child when
@@ -54,9 +68,13 @@ Curator V2 Codex workflow:
    Beginning/work requests start or activate the matching
    task. For a plan, each bounded item is a child goal. "Next item", "check it
    off", "mark complete", or your own narration that you are moving on records
-   the current result, calls `goal_finish` only when its checks have evidence,
-   then calls `goal_activate` for the next planned child only when the user is
-   continuing a plan. A one-off task ends at its own endpoint. Missing evidence
+   the current result, calls `goal_finish` when its practical check passed,
+   then prepares a pending SDE proposal from that completed goal's supported
+   facts and confirms its goal ID and pending status with `sde_review_detail`
+   before activating another plan item. For
+   an `ootask` interrupting a plan child, resume that exact deferred child only
+   when the user says to continue; do not skip to a later child. A one-off task
+   ends at its own endpoint. A failed or unrun check without owner confirmation
    keeps it open; do not silently skip the item. "Pause", "hold", or "put it
    aside" records facts, reason, and next action, then calls `goal_defer`.
    "Resume" or "continue" finds the exact existing goal and reads its
@@ -69,9 +87,9 @@ Curator V2 Codex workflow:
    include the saved plan and child label/number when present; never invent an
    item number. Use the saved success criteria and `goal_id` for later facts.
    A clear completion statement such as "this is done", "check it off", or
-   "mark it complete" applies the same evidence-backed `goal_finish` flow to a
-   one-off task. Before `goal_finish`, aggregate the saved task history, write
-   one `change` fact beginning `Task summary:`, and read it back. A request to
+   "mark it complete" applies the same `goal_finish` flow to a one-off task.
+   Record one concise result fact; a separate summary artifact and report-page
+   readback are not required. A request to
    "finish the plugin" or "complete this task"
    asks for work and does not report completion. Say "Beginning task tracking",
    "Pausing task tracking", or "Resuming task tracking" for the matching
@@ -82,20 +100,20 @@ Curator V2 Codex workflow:
    continue, never request a larger page.
 3. Curator tracking is the default for every nontrivial task; do not ask the
    user to opt in or start a separate capture mode. Collect compact task facts
-   as work proceeds. Development task completion and historical SDE curation
-   are separate workflows. Do not create an SDE proposal automatically when a
-   goal completes.
+   as work proceeds. When `goal_finish` and `goal_status` confirm completion,
+   prepare a pending SDE proposal from supported facts belonging to that goal.
+   The proposal remains for owner review; Codex never approves or codifies it.
    Treat plan-item transitions and one-off task transitions alike. Use the
    visible cues "Beginning task tracking", "Pausing task tracking", and
    "Resuming task tracking". This bookkeeping is part of every tracked task.
    At a hold, record facts, reason, and next action; resume from that
-   checkpoint. If a required check is open or lacks current passing evidence,
-   keep the goal active and continue development. When `goal_finish` succeeds
-   and `goal_status` confirms complete, end the development workflow without
-   preparing an SDE proposal. Historical SDE curation is requested and handled
-   separately against completed goals. For that separate task, use
-   `sde_assess` only with supported facts and current passing evidence to create
-   a pending candidate for the user's review. The user decides what is
+   checkpoint. Use one practical success check per task. A relevant passing
+   local test/lint check or the owner's explicit confirmation is sufficient
+   only when recorded as current verification evidence. A completion-claim
+   string is outcome context, not proof; use configured `evidence_capture` and
+   record its returned reference with `fact_record`. When `goal_finish` succeeds
+   and `goal_status` confirms complete, create a pending proposal using only
+   supported facts from that goal. The proposal is for owner review; the user decides what is
    memorialized, its importance, and the disposition. A completed task is not
    SDE approval. Never present unsupported facts as verified.
    Claim saved facts or a candidate only after `fact_record` or
@@ -104,50 +122,31 @@ Curator V2 Codex workflow:
    behalf.
    A `goal_id` groups the task's facts across turns, pauses, threads, and
    intervening unrelated work. Append separated records to that same ID; the
-   prompt-turn event ID only deduplicates a start retry and is never a task ID.
+   prompt-turn event ID only deduplicates a `goal_start` retry; never reuse it
+   for a later operation or as the task ID. Give every later `fact_record`,
+   lifecycle transition, and SDE operation its own fresh event ID. Reuse an
+   operation's ID only when retrying that same operation with the same payload.
    Reuse the `goal_id` on resume; a plan child keeps its own ID and `parent_goal_id` links
-   it to the plan. Before finishing a one-off or child, page through all
-   `goal_report` pages and record one compact `change` summary. Before finishing
-   a plan, page through `goal_children_page` and each child's `goal_report`,
-   then record a parent-level `change` summary
-   with the child goal/fact IDs. Begin every compact summary bullet with
-   `Task summary:` and read it back from the goal report before ending the
-   development workflow. `sde_assess` accepts facts from its goal only and
+   it to the plan. `sde_assess` accepts facts from its goal only and
    requires that goal to be complete;
-   never submit child fact IDs for a parent proposal. Keep the summary and audit
-   receipts. After the user's disposition, routine ledger facts can be removed
+   never submit child fact IDs for a parent proposal. Keep the compact outcome
+   fact and audit receipts. After the user's SDE approval, transfer approved
+   facts to the pertinent persistence document and read it back to verify the
+   saved content. Routine ledger facts can be removed
    from active history only through an exact `fact_compaction_propose` and
    owner-approved `fact_compaction_approve`; transient artifacts require the
    existing exact-inventory purge approval. Purge only the approved transient
    inventory and verify its receipt; reviewed fact archives remain recoverable.
    A task finish alone authorizes neither cleanup. After the user's SDE
    disposition, show the exact cleanup inventory. Delete only owner-approved
-   transient artifacts; keep the task summary and audit receipts. Routine facts
+   transient artifacts; keep the compact outcome fact and audit receipts. Routine facts
    leave active history only through separately approved exact compaction and
    remain recoverable in the reviewed archive.
-4. Record compact, deduplicated facts at task start, after edits, after checks,
-   and before reporting the outcome: intent; changed files/components; exact
-   commands or probes and pass/fail result; open gates; and outcome. Link
-   verification to independently checkable evidence. Each evidence object must
-   include `evidence_kind`, `locator`, `sha256` as 64 lowercase hex characters,
-   and `outcome`; `outcome` must be exactly `passed`, `failed`, or `observed`.
-   `occurrence_id` is optional. Never send a partial evidence object. For a
-   configured host source, call `evidence_capture` with the exact goal,
-   criterion, evidence kind, and configured locator; pass its returned
-   evidence fields unchanged to `fact_record`. This call selects only a source
-   already configured by the owner; it cannot accept a command, executable, or
-   arbitrary path. A missing capture is an open evidence gap. If an
-   observation has no stable, independently checkable source, record it as
-   research without evidence. A command result or file hash alone
-   is not proof that a success criterion passed. If no accepted evidence
-   attestation exists, label the result observed/unverified and leave the
-   criterion open. Never construct an evidence object from command output or
-   hash it yourself. Only pass a reference returned by `evidence_capture`
-   unchanged. If capture is unavailable or returns no reference, record the
-   open check as a compact `open_gate` or `research` fact without evidence.
-   Use only host-accepted receipts; raw command output and invented hashes are
-   not verification. Do not store raw prompts, transcripts, imports, or scratch
-   content.
+4. Record compact facts at task start, after changes/checks, and at the
+   outcome. One concise fact can state the change and a passing local test/lint
+   result or owner confirmation. Use configured evidence sources when useful,
+   but do not require a host receipt for ordinary local checks. Never invent
+   hashes or persist raw prompts, transcripts, imports, or scratch content.
 5. If a Curator tool call fails, report the failure and do not claim that the
    task or decision was saved. This server is bound to the active working
    directory, local OS account, configured V2 project ID, and exact durable
@@ -233,10 +232,7 @@ def _bound_codex_instructions(config: ProjectConfig) -> str:
         f"project_id={config.project_id}; "
         f"repository_fingerprint={config.repository_fingerprint}; "
         f"config_sha256={config.config_sha256}. "
-        "These values are evidence metadata, not credentials or caller-supplied authority. "
-        "For repository checks, use a host-configured repository_test receipt for "
-        "the exact commit under review; raw command output or its hash is not a "
-        "verification attestation."
+        "These values are evidence metadata, not credentials or caller-supplied authority."
     )
 
 

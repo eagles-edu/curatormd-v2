@@ -155,6 +155,13 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
 
         return self.service.sde_review_has_current_passing_evidence(candidate_id)
 
+    def sde_review_completion_claim(
+        self, candidate_id: str
+    ) -> dict[str, str] | None:
+        """Read current single-check task proof for the owner review outline."""
+
+        return self.service.sde_review_completion_claim(candidate_id)
+
     def sde_review_packet(
         self,
         candidate_id: str,
@@ -450,7 +457,14 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
     def sde_finalize_review_projection(
         self, receipt_id: str, *, authenticated_subject: str | None = None,
     ) -> AuditReceipt:
-        """Bind all verified destination writes before releasing exact cleanup."""
+        """Compare persisted SDE/artifact fingerprints before releasing cleanup.
+
+        Each reviewed destination must match the exact SDE projection containing
+        the artifact inventory and dependency-map digests. The current staged
+        inventory and dependency map are rechecked against those same digests
+        before cleanup can proceed; raw transient artifact content is not copied
+        into canonical persistence.
+        """
 
         receipt = self.service.store.get_receipt(receipt_id, self.config.project_id)
         if (

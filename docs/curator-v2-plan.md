@@ -70,12 +70,12 @@ flowchart TB
   subgraph Decision["5. Decision and cleanup"]
     NSDE[Ordinary goal update\nretain compact facts only]
     SDE[Candidate SDE card\nselected bullets only]
-    SDEC{Human decides SDE disposition and approves purge?}
+    SDEC{Human decides SDE disposition}
     REC[Durable goal facts and\nSDE disposition receipt if applicable]
-    INV[Complete exact temporary\nartifact inventory]
-    CA{One review action authorizes\ncleanup of the exact inventory?}
-    CAR[Durable cleanup authorization receipt\nexact manifest and reviewer]
-    PURGE[Delete only artifacts in\nthe approved inventory]
+    INV[Internally build and recheck\ncomplete candidate inventory]
+    CA{Approved SDE and verified\ncanonical persistence?}
+    CAR[Durable cleanup authorization receipt\nbound to SDE decision and manifest]
+    PURGE[Automatically clear eligible\ncandidate-scoped transient artifacts]
     CREC[Per-artifact cleanup receipt\nsuccess or purge_pending]
     WAIT[Inventory incomplete or stale;\nno deletion]
   end
@@ -86,8 +86,8 @@ flowchart TB
   SDEC -->|Approve| REC
   SDEC -->|Reject| REC
   REC --> INV --> CA
-  CA -->|Same explicit review action| CAR --> PURGE --> CREC
-  CA -->|Incomplete or changed| WAIT
+  CA -->|Yes| CAR --> PURGE --> CREC
+  CA -->|Readback/inventory incomplete or changed| WAIT
   NSDE --> REC
 
   subgraph Views["6. Truthful status"]
@@ -144,14 +144,34 @@ flowchart TB
   never presented as verified. Task completion still requires its success
   checks, and approval for memorialization still requires current passing
   evidence. Only the owner decides importance and disposition.
+- Intake distinguishes progress on a saved task from a distinct one-off. Reuse
+  a goal only when the request advances its saved problem and criteria. A
+  distinct bounded task clearly within a broader active goal gets its own
+  active child linked by `parent_goal_id`, with separate criteria, facts, and
+  lifecycle; an unrelated task gets a top-level one-off. Repository or topic
+  similarity alone is not a match. A completed child may be assessed on its
+  own facts while its parent remains active.
+  The explicit `ootask` or `ootask:` prefix selects a distinct one-off with
+  its own lifecycle; link it to a parent only when it is a bounded task within
+  that scope. `aotask <parent-or-child>:` adds progress to that existing goal's
+  criteria under the same goal ID.
+  If an `ootask` interrupts an active plan child, checkpoint and defer that
+  exact child first. On one-off completion, create a pending SDE proposal from
+  the one-off's own supported facts; after confirming it is attached to that
+  completed goal, resume the exact deferred child when the user says to
+  continue. The one-off proposal and facts stay separate from the resumed child.
 - Every durable record is short bullets, separating observed facts from planned or unverified claims.
-- One explicit SDE approve/reject action also authorizes purge of the complete
-  exact artifact inventory displayed with the decision. Store a distinct
-  cleanup-authorization receipt for audit, and persist both receipts canonically
-  before deletion. Neither an incomplete inventory nor expiry eligibility
-  authorizes deletion. Purge only the approved inventory; report failed deletion
-  as `purge_pending` and never hide it behind green health. Missing or changed
-  inventory remains a fail-closed gate.
+- One SDE approval is the single owner decision and authorizes automatic
+  cleanup only after approved facts are written to pertinent persistence and
+  read back successfully, with an internal comparison confirming the saved
+  entry's artifact-inventory and dependency-map fingerprints match the
+  rechecked transient set. Build and recheck the complete exact
+  candidate-scoped transient inventory internally; do not ask the owner for a
+  second deletion approval or per-artifact choices. Store distinct SDE and
+  cleanup receipts before deletion. Held, changed, incomplete, out-of-scope,
+  or failed artifacts remain pending. Expiry eligibility alone never
+  authorizes deletion; report failures as `purge_pending` and never hide them
+  behind green health.
 
 ## Token and disk discipline
 
@@ -7442,10 +7462,10 @@ replaying the full session:
   authorization, canonical write/receipt state, artifact-inventory
   completeness, artifact-to-criterion dependencies and their retention or
   reacquisition consequences, and purge state as independent fields. One
-  explicit review action may decide SDE disposition and authorize cleanup
-  of the exact displayed inventory; retain distinct immutable receipts for
-  both. Persist canonical facts and both applicable receipts before
-  deletion. Leave unapproved cleanup visibly awaiting authorization and
+  SDE decision authorizes automatic cleanup only after canonical readback and
+  artifact/dependency fingerprint comparison;
+  retain distinct immutable receipts for both. Persist canonical facts and
+  both applicable receipts before deletion. Leave ineligible cleanup visibly pending and
   failed cleanup visibly `purge_pending`, with a safe retry owner/action.
   Cleanup success must not mark unfinished development complete.
 - **Keep the update efficient.** Emit a bounded bullet delta and current
@@ -11666,3 +11686,19 @@ was packaged and installed; reload and rendered confirmation remain open.
       not installed here. JavaScript syntax and whitespace checks pass. No
       unit or proof tests were run, and runtime, owner-review, and remaining
       plan acceptance gates stay open. Native hooks remain off.
+
+      Codex task lifecycle simplification (2026-11-05): use one practical
+      success check per ordinary task, adding more only for independent
+      outcomes. Correct intake still distinguishes a parent, child, or one-off;
+      natural language starts, pauses, resumes, and ends the matching goal.
+      Completion proof is a passing relevant local test/lint check or the
+      owner's explicit confirmation. At completion, create a pending SDE
+      proposal with its supporting facts and category/importance recommendation;
+      keep raw prompts and transcripts out of persistence. After owner approval,
+      transfer approved facts to the pertinent persistence document and read it
+      back to verify the transfer. The SDE decision authorizes automatic
+      candidate-scoped cleanup after readback confirms its artifact and
+      dependency fingerprints match the rechecked transient set; internally
+      recheck the complete
+      exact inventory and retain its receipt. This clarification does
+      not claim the full live Codex lifecycle or owner-controlled steps passed.

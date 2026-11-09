@@ -7,13 +7,11 @@ import sys
 from typing import cast
 
 from task_state import (
-    active_goal_ids,
-    has_summary_fact,
-    has_summary_ready,
     has_stop_followup,
     has_unconfirmed_defer,
     has_unconfirmed_finish,
-    has_unconfirmed_report,
+    has_unassessed_completion,
+    has_sde_readback_pending,
     prompt_cue,
     record_stop_followup,
 )
@@ -48,31 +46,30 @@ def _continuation_reason(
         if needs_status_readback:
             return (
                 "Curator V2 accepted a finish request but its result is unconfirmed. "
-                "Read `goal_status`; if it reports `complete`, report task completion "
-                "and end the development workflow without starting SDE curation."
+                "Read `goal_status`; if it reports `complete`, prepare a pending "
+                "SDE proposal from supported facts on that goal for owner review."
             )
         return (
             "Curator V2 accepted a hold request but its result is unconfirmed. "
             "Read `goal_status` and confirm `deferred` before ending this turn."
         )
-    if stage == "summary":
+    if stage == "sde":
         return (
-            "You reached the task endpoint, but it cannot be finished until its "
-            "history has been summarized. Read "
-            "every page of this goal's `goal_report`; for a plan, also page the "
-            "children and each child's report. Record one concise `change` fact "
-            "whose bullet begins `Task summary:` and cites the outcome plus the "
-            "supporting goal/fact IDs. Read the report page containing that saved "
-            "summary before calling `goal_finish`. After the user's SDE "
-            "decision, show the exact temporary-file cleanup inventory and purge "
-            "only what the user approves; preserve the summary and audit receipts."
+            "Curator V2 confirmed this goal complete. Before ending the turn, "
+            "use only supported facts from this completed goal to create a "
+            "pending `sde_assess` proposal for owner review. Show the supporting "
+            "facts and any category or importance suggestion as recommendations; "
+            "never approve, reject, or codify it. If the tool rejects the facts, "
+            "report the failure and leave the proposal gate open."
         )
-    if stage == "report":
+    if stage == "sde_readback":
         return (
-            "Curator accepted a task write, but its readback is missing. Before "
-            "ending this turn, call `goal_status` or `goal_report` for the "
-            "same goal and confirm its saved criteria and facts. If this is the "
-            "completion summary, confirm the report page contains `Task summary:`."
+            "Curator accepted the completed task's pending SDE proposal. Before "
+            "continuing, call `sde_review_detail` for the returned candidate ID "
+            "and confirm its goal ID and `pending_review` status. Present its "
+            "supporting facts and category/importance as recommendations only. "
+            "Keep the proposal pending; then resume the exact previously paused "
+            "plan item if the user asked to continue."
         )
 
     action = {
@@ -92,17 +89,13 @@ def _continuation_reason(
     }[cue]
     return (
         "Curator V2 transition detected. Before ending this turn, "
-        f"{action}. If checks remain open or lack current passing evidence, "
-        "keep the goal active and continue development. After `goal_finish` "
-        "succeeds and `goal_status` confirms complete, report task completion "
-        "and end the development workflow. Historical SDE curation is separate "
-        "and only happens when requested for a completed goal; approval still "
-        "requires current passing evidence. Use `evidence_capture` for "
-        "its returned fields unchanged to `fact_record`. The owner decides "
-        "what is recorded as "
-        "lasting knowledge, its importance, and its disposition. Do not claim a "
-        "Curator write unless its tool succeeds; if a required task check or evidence "
-        "is missing, report that clearly and leave the affected check open."
+        f"{action}. For a single practical check, use its passing local test/lint "
+        "result or explicit owner confirmation as proof; otherwise keep it open. "
+        "After `goal_finish` succeeds and `goal_status` confirms complete, create "
+        "a pending SDE proposal from supported facts on that goal. Keep it pending "
+        "for owner review. After approval, transfer approved facts to the pertinent "
+        "persistence document, read it back to verify, then perform only approved "
+        "artifact cleanup. Never claim a Curator write unless its tool succeeds."
     )
 
 
@@ -125,7 +118,8 @@ def main() -> int:
         _, project_id = configured
         needs_status_readback = has_unconfirmed_finish(event, project_id)
         needs_defer_readback = has_unconfirmed_defer(event, project_id)
-        needs_report_readback = has_unconfirmed_report(event, project_id)
+        needs_sde_proposal = has_unassessed_completion(event, project_id)
+        needs_sde_readback = has_sde_readback_pending(event, project_id)
         assistant_cue = _transition_cue(event.get("last_assistant_message"))
         saved_cue = prompt_cue(event, project_id)
         cue = (
@@ -135,18 +129,10 @@ def main() -> int:
         )
         if needs_status_readback or needs_defer_readback:
             stage = "status"
-        elif any(
-            has_summary_fact(event, project_id, goal_id)
-            for goal_id in active_goal_ids(event, project_id)
-        ) and needs_report_readback:
-            stage = "report"
-        elif cue == "end current task or item" and any(
-            not has_summary_ready(event, project_id, goal_id)
-            for goal_id in active_goal_ids(event, project_id)
-        ):
-            stage = "summary"
-        elif needs_report_readback:
-            stage = "report"
+        elif needs_sde_proposal:
+            stage = "sde"
+        elif needs_sde_readback:
+            stage = "sde_readback"
         elif cue in _ENDPOINT_CUES:
             stage = "lifecycle"
         else:

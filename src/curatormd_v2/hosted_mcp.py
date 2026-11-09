@@ -107,6 +107,9 @@ def build_local_profile_mcp(
     source_id: str | None = None,
     allow_write: bool = False,
     allow_review: bool = False,
+    allow_event_retry: bool = False,
+    allow_retention_hold_release: bool = False,
+    allow_purge_retry: bool = False,
     require_authenticated_subject: bool = False,
     evidence_verifier: EvidenceVerifier | None = None,
     evidence_config: str | Path | None = None,
@@ -154,6 +157,12 @@ def build_local_profile_mcp(
             actions.add(ProjectAction.WRITE)
         if allow_review:
             actions.add(ProjectAction.REVIEW)
+        if allow_event_retry:
+            actions.add(ProjectAction.EVENT_RETRY)
+        if allow_retention_hold_release:
+            actions.add(ProjectAction.RETENTION_HOLD_RELEASE)
+        if allow_purge_retry:
+            actions.add(ProjectAction.PURGE_RETRY)
         authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
             store,
             ProjectAuthorizationBinding.from_project_config(
@@ -172,6 +181,17 @@ def build_local_profile_mcp(
             caller, config.project_id, ProjectAction.REVIEW
         ):
             raise ValueError("requested project review grant is not active")
+        for allowed, action, label in (
+            (allow_event_retry, ProjectAction.EVENT_RETRY, "event retry"),
+            (
+                allow_retention_hold_release,
+                ProjectAction.RETENTION_HOLD_RELEASE,
+                "retention-hold release",
+            ),
+            (allow_purge_retry, ProjectAction.PURGE_RETRY, "purge retry"),
+        ):
+            if allowed and not authorizer.authorize(caller, config.project_id, action):
+                raise ValueError(f"requested project {label} grant is not active")
         api = AuthenticatedCuratorAPI(
             {
                 config.project_id: ProjectPlugin.bind(
@@ -230,6 +250,21 @@ def _parser() -> argparse.ArgumentParser:
         help="allow review tools only when this profile has an exact durable review grant",
     )
     parser.add_argument(
+        "--allow-event-retry",
+        action="store_true",
+        help="allow quarantined-event retry only with its exact durable action grant",
+    )
+    parser.add_argument(
+        "--allow-retention-hold-release",
+        action="store_true",
+        help="allow retention-hold release only with its exact durable action grant",
+    )
+    parser.add_argument(
+        "--allow-purge-retry",
+        action="store_true",
+        help="allow reviewed cleanup retry only with its exact durable action grant",
+    )
+    parser.add_argument(
         "--require-authenticated-subject",
         action="store_true",
         help="deny every Hermes MCP call without a host-authenticated human subject",
@@ -262,6 +297,9 @@ def main(argv: list[str] | None = None) -> int:
             source_id=args.source_id,
             allow_write=args.allow_write,
             allow_review=args.allow_review,
+            allow_event_retry=args.allow_event_retry,
+            allow_retention_hold_release=args.allow_retention_hold_release,
+            allow_purge_retry=args.allow_purge_retry,
             require_authenticated_subject=args.require_authenticated_subject,
             evidence_config=args.evidence_config,
         )

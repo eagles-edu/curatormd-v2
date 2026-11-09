@@ -40,6 +40,8 @@ _MCP_INSTALLER_MODULE = runpy.run_path(
     str(ROOT / "integrations" / "codex-plugin" / "bin" / "install_user_mcp.py")
 )
 _CONTEXT = _HOOK_MODULE["_context"]
+_TASK_SCOPE_CUE = _HOOK_MODULE["_task_scope_cue"]
+_TASK_SCOPE_GOAL_ID = _HOOK_MODULE["_task_scope_goal_id"]
 _PROTECT_PROMPT_PROCESS = _HOOK_MODULE["_protect_prompt_process"]
 
 
@@ -57,7 +59,12 @@ class CodexPluginHookTests(unittest.TestCase):
             "`goal_start.event_id`=",
             "Track nontrivial work",
             "“Finish the plugin” means work",
-            "reuse one clear match, ask if ambiguous, create only if none",
+            "Reuse one clear same-task goal; ask if ambiguous",
+            "repository or topic alone is not a match",
+            "separate active child via `parent_goal_id`",
+            "top-level active one-off",
+            "never append a distinct task to its parent",
+            "Reuse the parent only when the request advances its saved criteria",
             '`initial_status="active"`',
             "save intent",
             "Plans=parent+child",
@@ -67,18 +74,12 @@ class CodexPluginHookTests(unittest.TestCase):
             "separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent",
             "cues are hints",
             "advance only if continuing",
-            "Current revisions",
-            "At a claimed endpoint, read status",
-            "After `goal_finish` succeeds and `goal_status` confirms complete",
-            "do not automatically call `sde_assess`",
-            "Historical SDE curation is a separate task",
-            "approval needs current passing evidence",
-            "Never approve/reject/codify",
-            "Never approve/reject/codify",
-            "Use exact `evidence_capture` references",
-            "never invent",
-            "record `open_gate`/`research`",
-            "no prompts",
+            "At task end, save one compact result fact",
+            "passing relevant test/lint check or the owner's explicit confirmation",
+            "create its pending `sde_assess` proposal",
+            "Keep it pending for owner review",
+            "never approve/reject/codify",
+            "Never retain prompts",
             "Claim writes only after success",
         ):
             with self.subTest(phrase=phrase):
@@ -93,15 +94,46 @@ class CodexPluginHookTests(unittest.TestCase):
             with self.subTest(cue=cue):
                 context = _CONTEXT("p" * 128, "codex-turn-" + "a" * 32, cue)
                 self.assertLessEqual(len(context), limit)
-                self.assertIn("do not automatically call `sde_assess`", context)
-                self.assertIn("Historical SDE curation is a separate task", context)
+                self.assertIn("create its pending `sde_assess` proposal", context)
+                self.assertIn("Keep it pending for owner review", context)
                 if cue == "resume":
                     self.assertIn(
                         "`Resuming problem/task: <saved problem/title> [plan item X]. Open checks: <saved checks>.`",
                         context,
                     )
         endpoint_context = _CONTEXT("alpha", "codex-turn-test", "end current task or item")
-        self.assertIn("One-off ends here", endpoint_context)
+        self.assertIn("create its pending SDE proposal", endpoint_context)
+
+    def test_explicit_task_scope_prefixes_select_top_level_or_child_lifecycle(self) -> None:
+        """Keep owner prefixes visible and distinguish their goal relationships."""
+
+        self.assertEqual(_TASK_SCOPE_CUE("ootask: update the README"), "ootask")
+        self.assertEqual(
+            _TASK_SCOPE_CUE("ootask add hook activation instructions to the README"),
+            "ootask",
+        )
+        self.assertEqual(_TASK_SCOPE_CUE("  AOTASK parent-alpha: add the toolbox task"), "aotask")
+        self.assertIsNone(_TASK_SCOPE_GOAL_ID("ootask: update the README"))
+        self.assertEqual(
+            _TASK_SCOPE_GOAL_ID("  AOTASK parent-alpha: add the toolbox task"),
+            "parent-alpha",
+        )
+        self.assertIsNone(_TASK_SCOPE_CUE("please update the README"))
+        standalone = _CONTEXT("project", "codex-turn-standalone", scope_cue="ootask")
+        self.assertIn("distinct one-off", standalone)
+        self.assertIn("own criteria, facts, checks, and lifecycle", standalone)
+        self.assertIn("defer that exact item", standalone)
+        self.assertIn("reactivate the previously paused item", standalone)
+        self.assertIn("Never attach one-off facts", standalone)
+        addon = _CONTEXT("project", "codex-turn-addon", scope_cue="aotask")
+        self.assertIn("aotask <goal-id>:", addon)
+        self.assertIn("Do not create another goal", addon)
+        targeted_addon = _CONTEXT(
+            "project", "codex-turn-addon", scope_cue="aotask",
+            scope_goal_id="parent-alpha",
+        )
+        self.assertIn("goal_id=parent-alpha", targeted_addon)
+        self.assertIn("that same goal", targeted_addon)
 
     def test_plugin_bundles_the_mcp_server_whose_tools_have_approval_rules(self) -> None:
         """Bind approval policy to the actual plugin server name."""
@@ -189,7 +221,7 @@ class CodexPluginHookTests(unittest.TestCase):
         pre_handler = hooks["PreToolUse"][0]
         self.assertEqual(
             pre_handler["matcher"],
-            "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_finish|goal_defer))$",
+            "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_start|goal_activate|goal_finish|goal_defer))$",
         )
         self.assertIn("lifecycle_pre_tool.py", pre_handler["hooks"][0]["command"])
         self.assertIn("lifecycle_post_tool.py", hooks["PostToolUse"][0]["hooks"][0]["command"])
@@ -197,6 +229,7 @@ class CodexPluginHookTests(unittest.TestCase):
             "fact_record|sde_assess",
             hooks["PostToolUse"][0]["matcher"],
         )
+        self.assertIn("sde_review_detail", hooks["PostToolUse"][0]["matcher"])
         self.assertIn("goal_report", hooks["PostToolUse"][0]["matcher"])
         self.assertIn("lifecycle_stop.py", hooks["Stop"][0]["hooks"][0]["command"])
 
@@ -411,6 +444,252 @@ class CodexPluginHookTests(unittest.TestCase):
             self.assertEqual(recorded.returncode, 0, recorded.stderr)
             self.assertEqual(invoke(PRE_TOOL_HOOK, {"tool_name": "Bash"}).stdout, "")
 
+    def test_fact_record_is_blocked_after_goal_completion_readback(self) -> None:
+        """Avoid failed fact events when the agent continues after finishing a goal."""
+
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory) / "workspace"
+            workspace.mkdir()
+            (workspace / ".curatormd-v2.toml").write_text(
+                'project_id = "alpha"\n', encoding="utf-8"
+            )
+            state_root = Path(directory) / "plugin-data"
+            state_root.mkdir(mode=0o700)
+            env = os.environ | {"PLUGIN_DATA": str(state_root)}
+            base = {
+                "cwd": str(workspace),
+                "session_id": "completed-goal-session",
+                "turn_id": "completed-goal-turn",
+            }
+
+            def invoke(script: Path, event: dict[str, object]) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(script)],
+                    input=json.dumps(base | event),
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=3,
+                    env=env,
+                )
+
+            finish = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__goal_finish",
+                "tool_input": {"goal_id": "goal-completed"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"event_id":"finish-event","status":"processed"}',
+                }]},
+            })
+            self.assertEqual(finish.returncode, 0, finish.stderr)
+            status = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "goal-completed"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "goal": {"goal_id": "goal-completed", "status": "complete"},
+                    }),
+                }]},
+            })
+            self.assertEqual(status.returncode, 0, status.stderr)
+
+            blocked = invoke(PRE_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "goal-completed", "kind": "research"},
+            })
+            self.assertEqual(blocked.returncode, 0, blocked.stderr)
+            response = json.loads(blocked.stdout)
+            self.assertEqual(
+                response["hookSpecificOutput"]["permissionDecision"], "deny"
+            )
+            self.assertIn(
+                "Do not append facts to a terminal goal",
+                response["hookSpecificOutput"]["permissionDecisionReason"],
+            )
+
+            base["turn_id"] = "completed-goal-next-turn"
+            readback = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "goal-completed"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "goal": {"goal_id": "goal-completed", "status": "complete"},
+                    }),
+                }]},
+            })
+            self.assertEqual(readback.returncode, 0, readback.stderr)
+            next_turn_blocked = invoke(PRE_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "goal-completed", "kind": "intent"},
+            })
+            self.assertEqual(next_turn_blocked.returncode, 0, next_turn_blocked.stderr)
+            next_turn_response = json.loads(next_turn_blocked.stdout)
+            self.assertEqual(
+                next_turn_response["hookSpecificOutput"]["permissionDecision"],
+                "deny",
+            )
+            self.assertIn(
+                "confirm this exact goal is active",
+                next_turn_response["hookSpecificOutput"]["permissionDecisionReason"],
+            )
+
+    def test_verification_fact_requires_matching_configured_capture(self) -> None:
+        """Block hand-built evidence references before they become failed events."""
+
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory) / "workspace"
+            workspace.mkdir()
+            (workspace / ".curatormd-v2.toml").write_text(
+                'project_id = "alpha"\n', encoding="utf-8"
+            )
+            state_root = Path(directory) / "plugin-data"
+            state_root.mkdir(mode=0o700)
+            env = os.environ | {"PLUGIN_DATA": str(state_root)}
+            base = {
+                "cwd": str(workspace),
+                "session_id": "verification-session",
+                "turn_id": "verification-turn",
+            }
+
+            def invoke(script: Path, event: dict[str, object]) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(script)],
+                    input=json.dumps(base | event),
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=3,
+                    env=env,
+                )
+
+            status = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "goal-evidence"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "goal": {"goal_id": "goal-evidence", "status": "active"},
+                    }),
+                }]},
+            })
+            self.assertEqual(status.returncode, 0, status.stderr)
+
+            evidence = {
+                "evidence_kind": "repository_test",
+                "locator": "test-run:alpha",
+                "sha256": "a" * 64,
+                "outcome": "passed",
+                "occurrence_id": "occurrence-alpha",
+            }
+            fact_input = {
+                "goal_id": "goal-evidence",
+                "kind": "verification",
+                "criterion_id": "criterion-alpha",
+                "evidence": [evidence],
+            }
+            blocked = invoke(PRE_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": fact_input,
+            })
+            self.assertEqual(blocked.returncode, 0, blocked.stderr)
+            self.assertIn(
+                "must use a passing reference returned by",
+                json.loads(blocked.stdout)["hookSpecificOutput"]["permissionDecisionReason"],
+            )
+
+            captured = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__evidence_capture",
+                "tool_input": {
+                    "goal_id": "goal-evidence",
+                    "criterion_id": "criterion-alpha",
+                    "evidence_kind": evidence["evidence_kind"],
+                    "locator": evidence["locator"],
+                },
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": json.dumps(evidence),
+                }]},
+            })
+            self.assertEqual(captured.returncode, 0, captured.stderr)
+            self.assertEqual(invoke(PRE_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": fact_input,
+            }).stdout, "")
+
+            altered = fact_input | {"evidence": [evidence | {"sha256": "b" * 64}]}
+            altered_result = invoke(PRE_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": altered,
+            })
+            self.assertIn(
+                "must use a passing reference returned by",
+                json.loads(altered_result.stdout)["hookSpecificOutput"]["permissionDecisionReason"],
+            )
+
+            state_text = next((state_root / "task-state").glob("turn-*.json")).read_text(
+                encoding="utf-8"
+            )
+            self.assertNotIn(evidence["locator"], state_text)
+            self.assertNotIn(evidence["sha256"], state_text)
+
+    def test_open_goal_can_retry_finish_after_checkpoint_fact(self) -> None:
+        """Keep a still-open task eligible for its next finish attempt."""
+
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory) / "workspace"
+            workspace.mkdir()
+            (workspace / ".curatormd-v2.toml").write_text(
+                'project_id = "alpha"\n', encoding="utf-8"
+            )
+            state_root = Path(directory) / "plugin-data"
+            state_root.mkdir(mode=0o700)
+            env = os.environ | {"PLUGIN_DATA": str(state_root)}
+            base = {
+                "cwd": str(workspace),
+                "session_id": "open-goal-session",
+                "turn_id": "open-goal-turn",
+            }
+
+            def invoke(script: Path, event: dict[str, object]) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(script)],
+                    input=json.dumps(base | event),
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=3,
+                    env=env,
+                )
+
+            status = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "goal-open"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "goal": {"goal_id": "goal-open", "status": "open"},
+                        "facts": [{"bullet": "x" * (17 * 1024)}],
+                    }),
+                }]},
+            })
+            self.assertEqual(status.returncode, 0, status.stderr)
+            fact = invoke(POST_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "goal-open", "kind": "change"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(fact.returncode, 0, fact.stderr)
+
+            finish = invoke(PRE_TOOL_HOOK, {
+                "tool_name": "mcp__codex-intake__goal_finish",
+                "tool_input": {"goal_id": "goal-open"},
+            })
+
+            self.assertEqual(finish.stdout, "")
+
     def test_local_work_waits_for_a_server_confirmed_active_goal(self) -> None:
         """Block shell/edit tools until this turn has an active Curator goal."""
 
@@ -596,6 +875,8 @@ class CodexPluginHookTests(unittest.TestCase):
             self.assertEqual(json.loads(state_files[0].read_text()), {
                 "project_id": "alpha",
                 "active_goal_ids": [],
+                "completed_goal_ids": ["goal-alpha"],
+                "captured_evidence_fingerprints": [],
                 "fact_recorded_goal_ids": [],
                 "finish_requested_goal_ids": [],
                 "defer_requested_goal_ids": [],
@@ -604,6 +885,16 @@ class CodexPluginHookTests(unittest.TestCase):
                 "summary_invalidated_goal_ids": [],
                 "summary_ready_goal_ids": [],
                 "prompt_cues": [],
+                "task_scope_cues": [],
+                "task_scope_target_goal_ids": [],
+                "scope_valid_goal_ids": [],
+                "ootask_paused_goal_ids": [],
+                "ootask_goal_ids": [],
+                "ootask_sde_candidate_pairs": [],
+                "ootask_sde_reviewed_candidate_pairs": [],
+                "sde_proposal_goal_ids": [],
+                "sde_candidate_pairs": [],
+                "sde_reviewed_candidate_pairs": [],
                 "stop_prompted_stages": [],
             })
             serialized_state = state_files[0].read_text()
@@ -615,6 +906,231 @@ class CodexPluginHookTests(unittest.TestCase):
                 "private proposal text",
             ):
                 self.assertNotIn(private_value, serialized_state)
+
+    def test_explicit_scope_prefixes_guard_goal_start_and_addon_lifecycle(self) -> None:
+        """Keep one-offs distinct and route add-ons to an existing goal ID."""
+
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory) / "workspace"
+            workspace.mkdir()
+            state_root = Path(directory) / "plugin-data"
+            state_root.mkdir(mode=0o700)
+            Path(workspace, ".curatormd-v2.toml").write_text(
+                'project_id = "alpha"\n', encoding="utf-8"
+            )
+            environment = os.environ | {"PLUGIN_DATA": str(state_root)}
+            base: dict[str, object] = {
+                "cwd": str(workspace), "session_id": "scope-session",
+            }
+
+            def invoke(
+                script: Path, event: Mapping[str, object]
+            ) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, str(script)],
+                    input=json.dumps(dict(event)), capture_output=True, check=False,
+                    text=True, timeout=3, env=environment,
+                )
+
+            oneoff_turn = base | {"turn_id": "ootask-turn"}
+            prompt = invoke(HOOK, oneoff_turn | {
+                "prompt": "ootask add the repository README hook activation instructions",
+            })
+            self.assertEqual(prompt.returncode, 0, prompt.stderr)
+            oneoff_state = next(
+                state_text
+                for path in (state_root / "task-state").glob("turn-*.json")
+                if '"task_scope_cues":["ootask"]'
+                in (state_text := path.read_text(encoding="utf-8"))
+            )
+            self.assertNotIn(
+                "ootask add the repository README hook activation instructions",
+                oneoff_state,
+            )
+            oneoff_start = invoke(PRE_TOOL_HOOK, oneoff_turn | {
+                "tool_name": "mcp__codex-intake__goal_start",
+                "tool_input": {"goal_id": "oneoff-alpha", "initial_status": "active", "parent_goal_id": "parent-alpha"},
+            })
+            self.assertEqual(oneoff_start.stdout, "")
+            wrong_parent_status = invoke(POST_TOOL_HOOK, oneoff_turn | {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "parent-alpha"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"parent-alpha","status":"active",'
+                    '"parent_goal_id":null}}',
+                }]},
+            })
+            self.assertEqual(wrong_parent_status.returncode, 0, wrong_parent_status.stderr)
+            parent_fact = invoke(POST_TOOL_HOOK, oneoff_turn | {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "parent-alpha", "kind": "intent"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(parent_fact.returncode, 0, parent_fact.stderr)
+            self.assertNotEqual(
+                invoke(PRE_TOOL_HOOK, oneoff_turn | {"tool_name": "Bash"}).stdout,
+                "",
+            )
+            oneoff_started = invoke(POST_TOOL_HOOK, oneoff_turn | {
+                "tool_name": "mcp__codex-intake__goal_start",
+                "tool_input": {
+                    "goal_id": "oneoff-alpha", "initial_status": "active",
+                    "parent_goal_id": "parent-alpha",
+                },
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(oneoff_started.returncode, 0, oneoff_started.stderr)
+            oneoff_status = invoke(POST_TOOL_HOOK, oneoff_turn | {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "oneoff-alpha"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"oneoff-alpha","status":"active",'
+                    '"parent_goal_id":"parent-alpha"}}',
+                }]},
+            })
+            self.assertEqual(oneoff_status.returncode, 0, oneoff_status.stderr)
+            registry_state_path = next((state_root / "task-state").glob("ootasks-*.json"))
+            registry_state = registry_state_path.read_text(encoding="utf-8")
+            self.assertIn('"ootask_goal_ids":["oneoff-alpha"]', registry_state)
+            self.assertNotIn("parent-alpha", registry_state)
+            oneoff_fact = invoke(POST_TOOL_HOOK, oneoff_turn | {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "oneoff-alpha", "kind": "intent"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(oneoff_fact.returncode, 0, oneoff_fact.stderr)
+            self.assertEqual(
+                invoke(PRE_TOOL_HOOK, oneoff_turn | {"tool_name": "Bash"}).stdout,
+                "",
+            )
+            resumed_oneoff_turn = {
+                "cwd": str(workspace), "session_id": "new-session",
+                "turn_id": "resume-ootask-turn",
+            }
+            resumed_prompt = invoke(HOOK, resumed_oneoff_turn | {
+                "prompt": "ootask: continue the repository README task",
+            })
+            self.assertEqual(resumed_prompt.returncode, 0, resumed_prompt.stderr)
+            resumed_status = invoke(POST_TOOL_HOOK, resumed_oneoff_turn | {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "oneoff-alpha"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"oneoff-alpha","status":"active",'
+                    '"parent_goal_id":"parent-alpha"}}',
+                }]},
+            })
+            self.assertEqual(resumed_status.returncode, 0, resumed_status.stderr)
+            resumed_intent = invoke(POST_TOOL_HOOK, resumed_oneoff_turn | {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "oneoff-alpha", "kind": "intent"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(resumed_intent.returncode, 0, resumed_intent.stderr)
+            self.assertEqual(
+                invoke(PRE_TOOL_HOOK, resumed_oneoff_turn | {"tool_name": "Bash"}).stdout,
+                "",
+            )
+
+            addon_turn = base | {"turn_id": "aotask-turn"}
+            addon_prompt = invoke(HOOK, addon_turn | {
+                "prompt": "aotask parent-alpha: add a bounded toolbox task",
+            })
+            self.assertEqual(addon_prompt.returncode, 0, addon_prompt.stderr)
+            scope_state = next(
+                state_text
+                for scope_path in (state_root / "task-state").glob("turn-*.json")
+                if '"task_scope_target_goal_ids":["parent-alpha"]'
+                in (state_text := scope_path.read_text(encoding="utf-8"))
+            )
+            self.assertIn('"task_scope_target_goal_ids":["parent-alpha"]', scope_state)
+            self.assertNotIn("aotask parent-alpha: add a bounded toolbox task", scope_state)
+            addon_wrong = invoke(PRE_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__goal_start",
+                "tool_input": {"initial_status": "active", "parent_goal_id": "parent-alpha"},
+            })
+            self.assertEqual(
+                json.loads(addon_wrong.stdout)["hookSpecificOutput"]["permissionDecision"],
+                "deny",
+            )
+            mismatched_activation = invoke(PRE_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "addon-alpha"},
+            })
+            self.assertEqual(
+                json.loads(mismatched_activation.stdout)["hookSpecificOutput"][
+                    "permissionDecision"
+                ],
+                "deny",
+            )
+            wrong_addon_status = invoke(POST_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "addon-alpha"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"addon-alpha","status":"active",'
+                    '"parent_goal_id":"parent-alpha"}}',
+                }]},
+            })
+            self.assertEqual(wrong_addon_status.returncode, 0, wrong_addon_status.stderr)
+            self.assertNotEqual(
+                invoke(PRE_TOOL_HOOK, addon_turn | {"tool_name": "Bash"}).stdout,
+                "",
+            )
+            wrong_fact = invoke(POST_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "addon-alpha", "kind": "intent"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(wrong_fact.returncode, 0, wrong_fact.stderr)
+            self.assertNotEqual(
+                invoke(PRE_TOOL_HOOK, addon_turn | {"tool_name": "Bash"}).stdout,
+                "",
+            )
+            mismatched_finish = invoke(PRE_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__goal_finish",
+                "tool_input": {"goal_id": "addon-alpha"},
+            })
+            self.assertEqual(
+                json.loads(mismatched_finish.stdout)["hookSpecificOutput"][
+                    "permissionDecision"
+                ],
+                "deny",
+            )
+            addon_status = invoke(POST_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "parent-alpha"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"parent-alpha","status":"active",'
+                    '"parent_goal_id":null}}',
+                }]},
+            })
+            self.assertEqual(addon_status.returncode, 0, addon_status.stderr)
+            recorded = invoke(POST_TOOL_HOOK, addon_turn | {
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "parent-alpha", "kind": "intent"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text", "text": '{"status":"processed"}',
+                }]},
+            })
+            self.assertEqual(recorded.returncode, 0, recorded.stderr)
+            self.assertEqual(
+                invoke(PRE_TOOL_HOOK, addon_turn | {"tool_name": "Bash"}).stdout,
+                "",
+            )
 
     def test_stop_hook_completes_lifecycle_cues_before_ending_turn(self) -> None:
         """Require the matching lifecycle write after Codex states a transition."""
@@ -652,7 +1168,7 @@ class CodexPluginHookTests(unittest.TestCase):
             response = json.loads(next_item.stdout)
             self.assertEqual(response["decision"], "block")
             self.assertIn("finish it only if its checks pass", response["reason"])
-            self.assertIn("Historical SDE curation is separate", response["reason"])
+            self.assertIn("create a pending SDE proposal", response["reason"])
             self.assertTrue((state_root / "task-state").is_dir())
 
             negated = invoke("I will not mark this item complete yet.")
@@ -660,8 +1176,8 @@ class CodexPluginHookTests(unittest.TestCase):
             already_continuing = invoke("I am moving to the next item.", active=True)
             self.assertEqual(already_continuing.stdout, "")
 
-    def test_stop_hook_requires_matching_report_after_accepted_fact_write(self) -> None:
-        """Do not end a turn after a fact write until the same goal is read back."""
+    def test_stop_hook_does_not_require_report_readback_after_fact_write(self) -> None:
+        """A successful fact write does not require a redundant report read."""
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"
@@ -698,10 +1214,7 @@ class CodexPluginHookTests(unittest.TestCase):
             })
             self.assertEqual(fact.returncode, 0, fact.stderr)
             pending = invoke(STOP_HOOK, {})
-            self.assertEqual(json.loads(pending.stdout)["decision"], "block")
-            self.assertIn("readback is missing", json.loads(pending.stdout)["reason"])
-            self.assertIn("goal_status", json.loads(pending.stdout)["reason"])
-            self.assertIn("goal_report", json.loads(pending.stdout)["reason"])
+            self.assertEqual(pending.stdout, "")
 
             unrelated = invoke(POST_TOOL_HOOK, {
                 "tool_name": "mcp__codex-intake__goal_report",
@@ -791,8 +1304,8 @@ class CodexPluginHookTests(unittest.TestCase):
                 self.assertEqual(response["decision"], "block")
                 self.assertIn(expected_action, response["reason"])
 
-    def test_stop_hook_does_not_require_sde_after_goal_finish(self) -> None:
-        """Let development end without starting historical SDE curation."""
+    def test_stop_hook_requires_pending_sde_proposal_after_goal_finish(self) -> None:
+        """Require the completed goal's supported facts to reach owner review."""
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"
@@ -899,6 +1412,10 @@ class CodexPluginHookTests(unittest.TestCase):
                 env=environment,
             )
             self.assertEqual(status.returncode, 0, status.stderr)
+            scope_state = json.loads(
+                next((state_root / "task-state").glob("turn-*.json")).read_text()
+            )
+            self.assertEqual(scope_state["completed_goal_ids"], ["goal-sde"])
             result = subprocess.run(
                 [sys.executable, str(STOP_HOOK)],
                 input=json.dumps({
@@ -911,11 +1428,45 @@ class CodexPluginHookTests(unittest.TestCase):
                 timeout=3,
                 env=environment,
             )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("pending `sde_assess` proposal", json.loads(result.stdout)["reason"])
+            proposal = subprocess.run(
+                [sys.executable, str(POST_TOOL_HOOK)],
+                input=json.dumps({
+                    **base,
+                    "tool_name": "mcp__codex-intake__sde_assess",
+                    "tool_input": {"goal_id": "goal-sde", "fact_ids": ["summary-sde"]},
+                    "tool_response": {"isError": False, "content": [{
+                        "type": "text",
+                        "text": '{"goal_id":"goal-sde","candidate_id":"candidate-sde",'
+                        '"status":"pending_review"}',
+                    }]},
+                }),
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=3,
+                env=environment,
+            )
+            self.assertEqual(proposal.returncode, 0, proposal.stderr)
+            proposal_state = json.loads(
+                next((state_root / "task-state").glob("turn-*.json")).read_text()
+            )
+            self.assertEqual(proposal_state["sde_candidate_pairs"], ["goal-sde|candidate-sde"])
+            awaiting_detail = subprocess.run(
+                [sys.executable, str(STOP_HOOK)],
+                input=json.dumps({**base, "last_assistant_message": "The task is finished."}),
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=3,
+                env=environment,
+            )
+            self.assertEqual(awaiting_detail.returncode, 0, awaiting_detail.stderr)
+            self.assertIn("sde_review_detail", json.loads(awaiting_detail.stdout)["reason"])
 
-    def test_normal_request_finishes_without_automatic_sde_curation(self) -> None:
-        """Complete development without queuing or requiring an SDE proposal."""
+    def test_normal_request_requires_pending_sde_proposal_at_completion(self) -> None:
+        """Carry a completed normal task into its own pending owner-review proposal."""
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory) / "workspace"
@@ -929,7 +1480,7 @@ class CodexPluginHookTests(unittest.TestCase):
             base = {
                 "cwd": str(workspace),
                 "session_id": "session-full-lifecycle",
-                "turn_id": "turn-full-lifecycle",
+                "turn_id": "turn-lifecycle-complete",
             }
 
             def invoke(script: Path, event: Mapping[str, object]) -> dict[str, object]:
@@ -945,13 +1496,33 @@ class CodexPluginHookTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 return json.loads(result.stdout) if result.stdout else {}
 
-            prompt = "Please implement a small task and verify its success."
+            prompt = "ootask: implement a small task and verify its success."
             submitted = invoke(HOOK, {"prompt": prompt})
             hook_output = cast(dict[str, object], submitted["hookSpecificOutput"])
             context = cast(str, hook_output["additionalContext"])
             self.assertIn("TURN=BEGIN", context)
             self.assertIn("Track nontrivial work", context)
             self.assertIn("follow each item/one-off", context)
+            self.assertIn("defer that exact item", context)
+
+            invoke(POST_TOOL_HOOK, {
+                **base,
+                "tool_name": "mcp__codex-intake__goal_defer",
+                "tool_input": {"goal_id": "paused-plan-item"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"event_id":"defer-paused-child","status":"processed"}',
+                }]},
+            })
+            invoke(POST_TOOL_HOOK, {
+                **base,
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "paused-plan-item"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"paused-plan-item","status":"deferred"}}',
+                }]},
+            })
 
             for tool_name, tool_input, result_text in (
                 (
@@ -966,6 +1537,7 @@ class CodexPluginHookTests(unittest.TestCase):
                 ),
             ):
                 invoke(POST_TOOL_HOOK, {
+                    **base,
                     "tool_name": tool_name,
                     "tool_input": tool_input,
                     "tool_response": {"isError": False, "content": [{
@@ -973,9 +1545,22 @@ class CodexPluginHookTests(unittest.TestCase):
                     }]},
                 })
 
+            invoke(POST_TOOL_HOOK, {
+                **base,
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "goal-lifecycle"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"goal-lifecycle","status":"active",'
+                    '"parent_goal_id":"plan-alpha"}}',
+                }]},
+            })
+
             allowed = invoke(PRE_TOOL_HOOK, {"tool_name": "Bash"})
             self.assertEqual(allowed, {})
+            hold_turn = {"turn_id": "turn-lifecycle-hold"}
             invoke(POST_TOOL_HOOK, {
+                **hold_turn,
                 "tool_name": "mcp__codex-intake__goal_defer",
                 "tool_input": {"goal_id": "goal-lifecycle"},
                 "tool_response": {"isError": False, "content": [{
@@ -984,10 +1569,12 @@ class CodexPluginHookTests(unittest.TestCase):
                 }]},
             })
             hold_prompt = invoke(STOP_HOOK, {
+                **hold_turn,
                 "last_assistant_message": "Pausing task tracking.",
             })
             self.assertIn("goal_status", cast(str, hold_prompt["reason"]))
             invoke(POST_TOOL_HOOK, {
+                **hold_turn,
                 "tool_name": "mcp__codex-intake__goal_status",
                 "tool_input": {"goal_id": "goal-lifecycle"},
                 "tool_response": {"isError": False, "content": [{
@@ -1040,17 +1627,6 @@ class CodexPluginHookTests(unittest.TestCase):
             })
             self.assertEqual(allowed_after_resume, {})
             completion_turn = {"turn_id": "turn-lifecycle-complete"}
-            ending = invoke(HOOK, {
-                **completion_turn,
-                "prompt": "This task is complete.",
-            })
-            ending_context = cast(
-                str,
-                cast(dict[str, object], ending["hookSpecificOutput"])[
-                    "additionalContext"
-                ],
-            )
-            self.assertIn("TURN=END", ending_context)
             invoke(POST_TOOL_HOOK, {
                 **completion_turn,
                 "tool_name": "mcp__codex-intake__goal_status",
@@ -1111,9 +1687,194 @@ class CodexPluginHookTests(unittest.TestCase):
                     "text": '{"goal":{"goal_id":"goal-lifecycle","status":"complete"}}',
                 }]},
             })
-            self.assertEqual(invoke(STOP_HOOK, {**completion_turn, **stop_event}), {})
+            activation_before_proposal = invoke(PRE_TOOL_HOOK, {
+                **completion_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+            })
+            before_proposal_output = cast(
+                dict[str, object], activation_before_proposal["hookSpecificOutput"]
+            )
+            self.assertEqual(
+                before_proposal_output["permissionDecision"],
+                "deny",
+            )
+            self.assertIn(
+                "pending SDE proposal",
+                cast(str, before_proposal_output["permissionDecisionReason"]),
+            )
+            proposal_prompt = invoke(STOP_HOOK, {**completion_turn, **stop_event})
+            self.assertIn("pending `sde_assess` proposal", cast(str, proposal_prompt["reason"]))
+            proposal = invoke(POST_TOOL_HOOK, {
+                **completion_turn,
+                "tool_name": "mcp__codex-intake__sde_assess",
+                "tool_input": {"goal_id": "goal-lifecycle", "fact_ids": ["fact-lifecycle"]},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal_id":"goal-lifecycle","candidate_id":"candidate-lifecycle",'
+                    '"status":"pending_review"}',
+                }]},
+            })
+            self.assertEqual(proposal, {})
+            activation_before_detail_confirmation = invoke(PRE_TOOL_HOOK, {
+                **completion_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+            })
+            before_detail_output = cast(
+                dict[str, object],
+                activation_before_detail_confirmation["hookSpecificOutput"],
+            )
+            self.assertEqual(
+                before_detail_output["permissionDecision"],
+                "deny",
+            )
+            self.assertIn(
+                "attached to its goal",
+                cast(str, before_detail_output["permissionDecisionReason"]),
+            )
+            wrong_candidate_detail = invoke(POST_TOOL_HOOK, {
+                **completion_turn,
+                "tool_name": "mcp__codex-intake__sde_review_detail",
+                "tool_input": {"candidate_id": "other-candidate"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": "{\"candidate\":{\"candidate_id\":\"other-candidate\","
+                    "\"goal_id\":\"goal-lifecycle\",\"status\":\"pending_review\"}}",
+                }]},
+            })
+            self.assertEqual(wrong_candidate_detail, {})
+            early_resume_turn = {"turn_id": "turn-lifecycle-early-continue"}
+            invoke(HOOK, {
+                **early_resume_turn,
+                "prompt": "Continue the previously paused plan item.",
+            })
+            before_pending_sde_readback = invoke(PRE_TOOL_HOOK, {
+                **early_resume_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+            })
+            early_resume_reason = cast(
+                str,
+                cast(dict[str, object], before_pending_sde_readback[
+                    "hookSpecificOutput"
+                ])["permissionDecisionReason"],
+            )
+            self.assertIn("read back that exact pending candidate", early_resume_reason)
+            still_gated = invoke(PRE_TOOL_HOOK, {
+                **completion_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+            })
+            still_gated_output = cast(
+                dict[str, object], still_gated["hookSpecificOutput"]
+            )
+            self.assertEqual(still_gated_output["permissionDecision"], "deny")
+            proposal_detail = invoke(POST_TOOL_HOOK, {
+                **completion_turn,
+                "tool_name": "mcp__codex-intake__sde_review_detail",
+                "tool_input": {"candidate_id": "candidate-lifecycle"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": "{\"candidate\":{\"candidate_id\":\"candidate-lifecycle\","
+                    "\"goal_id\":\"goal-lifecycle\",\"status\":\"pending_review\"}}",
+                }]},
+            })
+            self.assertEqual(proposal_detail, {})
+            resume_turn = {"turn_id": "turn-lifecycle-continue"}
+            no_continue_prompt = invoke(PRE_TOOL_HOOK, {
+                **resume_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+            })
+            no_continue_output = cast(
+                dict[str, object], no_continue_prompt["hookSpecificOutput"]
+            )
+            self.assertEqual(no_continue_output["permissionDecision"], "deny")
+            self.assertIn(
+                "Wait for the user to say continue",
+                cast(str, no_continue_output["permissionDecisionReason"]),
+            )
+            continued = invoke(HOOK, {
+                **resume_turn,
+                "prompt": "Continue the previously paused plan item.",
+            })
+            continued_context = cast(
+                str,
+                cast(dict[str, object], continued["hookSpecificOutput"])[
+                    "additionalContext"
+                ],
+            )
+            self.assertIn("TURN=RESUME", continued_context)
+            wrong_child = invoke(PRE_TOOL_HOOK, {
+                **resume_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "later-plan-child"},
+            })
+            wrong_child_output = cast(
+                dict[str, object], wrong_child["hookSpecificOutput"]
+            )
+            self.assertEqual(wrong_child_output["permissionDecision"], "deny")
+            self.assertIn(
+                "exact item",
+                cast(str, wrong_child_output["permissionDecisionReason"]),
+            )
+            resume_paused_item = invoke(PRE_TOOL_HOOK, {
+                **resume_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+            })
+            self.assertEqual(resume_paused_item, {})
+            invoke(POST_TOOL_HOOK, {
+                **resume_turn,
+                "tool_name": "mcp__codex-intake__goal_activate",
+                "tool_input": {"goal_id": "paused-plan-item"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"event_id":"resume-paused-child","status":"processed"}',
+                }]},
+            })
+            invoke(POST_TOOL_HOOK, {
+                **resume_turn,
+                "tool_name": "mcp__codex-intake__goal_status",
+                "tool_input": {"goal_id": "paused-plan-item"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"goal":{"goal_id":"paused-plan-item","status":"active"}}',
+                }]},
+            })
+            invoke(POST_TOOL_HOOK, {
+                **resume_turn,
+                "tool_name": "mcp__codex-intake__fact_record",
+                "tool_input": {"goal_id": "paused-plan-item", "kind": "intent"},
+                "tool_response": {"isError": False, "content": [{
+                    "type": "text",
+                    "text": '{"event_id":"paused-child-resume-intent","status":"processed"}',
+                }]},
+            })
+            self.assertEqual(invoke(PRE_TOOL_HOOK, {
+                **resume_turn, "tool_name": "Bash",
+            }), {})
+            task_state = next(
+                json.loads(state_text)
+                for path in (state_root / "task-state").glob("turn-*.json")
+                if '"completed_goal_ids":["goal-lifecycle"]'
+                in (state_text := path.read_text(encoding="utf-8"))
+            )
+            self.assertEqual(task_state["completed_goal_ids"], ["goal-lifecycle"])
+            self.assertEqual(task_state["sde_proposal_goal_ids"], ["goal-lifecycle"])
+            self.assertEqual(task_state["ootask_paused_goal_ids"], [])
             state_files = list((state_root / "task-state").glob("turn-*.json"))
-            self.assertEqual(len(state_files), 3)
+            self.assertEqual(len(state_files), 5)
+            handoff_files = list((state_root / "task-state").glob("handoff-*.json"))
+            self.assertEqual(len(handoff_files), 1)
+            handoff_state = json.loads(handoff_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(handoff_state["ootask_paused_goal_ids"], [])
+            self.assertEqual(handoff_state["ootask_goal_ids"], [])
+            registry_files = list((state_root / "task-state").glob("ootasks-*.json"))
+            self.assertEqual(len(registry_files), 1)
+            registry_state = json.loads(registry_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(registry_state["ootask_goal_ids"], [])
             states = [
                 json.loads(path.read_text(encoding="utf-8"))
                 for path in state_files
@@ -1267,15 +2028,22 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertIn(f"repository_fingerprint={config.repository_fingerprint}", instructions)
         self.assertIn(f"config_sha256={config.config_sha256}", instructions)
         self.assertIn("server-enforced", instructions)
-        self.assertIn("host-configured repository_test receipt", instructions)
+        self.assertIn("do not require a host receipt for ordinary local checks", instructions)
+        self.assertNotIn("use a host-configured repository_test receipt", instructions)
+        self.assertIn("local test/lint check or the owner's explicit confirmation is sufficient", instructions)
 
     def test_intake_skill_tracks_normal_lifecycle_and_leaves_sde_decisions_to_user(self) -> None:
         """Ensure ordinary item language controls work and SDE decisions stay human."""
 
         skill = " ".join((ROOT / "integrations" / "codex-plugin" / "skills" / "curator-intake" / "SKILL.md").read_text(encoding="utf-8").split())
         for phrase in (
+            "Use `limit=10` and reduce each result to its `goal_id`, status, "
+            "saved problem, success checks, and parent ID before comparing candidates",
+            "never create from a truncated or partially reviewed list",
             "“moving to the next item”, “check this off”, “mark this complete”",
-            "call `goal_finish` only when all checks pass, then activate the next planned child",
+            "call `goal_finish` when it passes, then activate the next planned child",
+            "one practical success check",
+            "Do not require a separate summary fact or report-page readback",
             "“pause”, “hold”, “put it aside”, “not now”",
             "then calls `goal_defer`",
             "“resume”, “continue”, “back to this”",
@@ -1291,25 +2059,31 @@ class CodexPluginHookTests(unittest.TestCase):
             "`Resuming problem/task: <saved problem or title>. Open checks: <checks still open>.`",
             "never invent a plan number",
             "the existing `goal_id` is the continuity key",
+            "The prompt-turn event ID is only for retrying one `goal_start` event",
+            "never reuse it for a later operation or use it as the task ID",
+            "Give every later `fact_record`, lifecycle transition, and SDE operation its own fresh event ID",
             "its saved `parent_goal_id` groups it under the plan",
-            "each child’s `goal_report`",
-            "parent-level `change` summary",
-            "never submit child fact IDs in the parent’s SDE proposal",
-            "`fact_compaction_propose` followed by exact owner approval",
-            "task endpoint alone does not approve cleanup",
+            "`ootask:` to require a distinct one-off goal",
+            "`aotask <parent-or-child>:` to add progress",
+            "Build the completed task's proposal summary from its supported facts",
+            "never submit child fact IDs as a parent's SDE facts",
+            "Do not create or read back a separate `Task summary:` fact",
+            "After the owner approves an SDE, transfer only the approved facts",
+            "A task endpoint or pending proposal alone does not authorize cleanup",
+            "The SDE decision is the single owner approval",
+            "do not ask for a separate deletion approval",
             "Task evidence and lifecycle tracking are part of each tracked task",
             "do not ask the user to enable capture",
-            "Do not call `sde_assess` or create an SDE review candidate for active, deferred, blocked, or otherwise incomplete work",
-            "SDE curation is a separate task over historical work",
-            "Do not create an SDE proposal automatically",
-            "When historical curation is requested",
+            "Do not call `sde_assess` for active, deferred, blocked, or otherwise incomplete work",
+            "After `goal_finish` succeeds",
+            "For a child one-off, assess its",
             "read `goal_status` and pass its current lifecycle revision",
             "The user decides what is memorialized, its importance, and whether it is approved",
             "it never approves or codifies knowledge",
             "“Beginning task tracking.”",
             "“Pausing task tracking.”",
             "“Resuming task tracking.”",
-            "After `goal_finish` is confirmed: report task completion and end the",
+            "After `goal_finish` is confirmed: prepare a pending proposal",
             "Curator task tracking is the default workflow",
             "If Codex reports that the Curator MCP transport is closed",
             "reload the VS Code window (Codex host) or start a fresh Codex session",
@@ -1333,7 +2107,7 @@ class CodexPluginHookTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertLessEqual(len(prompt), 128)
         joined_prompts = " ".join(default_prompts)
-        for phrase in ("`Problem: ... Success: ...`", "Curator goal", "compact evidence facts", "completed goals", "never create proposals during active development", "before edits"):
+        for phrase in ("`Problem: ... Success: ...`", "Curator goal", "compact evidence facts", "After a goal completes", "pending SDE proposal", "before edits"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, joined_prompts)
 
@@ -1398,24 +2172,28 @@ class CodexPluginHookTests(unittest.TestCase):
             '"Pause", "hold", or "put it aside"',
             "calls `goal_defer`",
             '"Resume" or "continue"',
-            "calls `goal_activate`",
+            "prepares a pending SDE proposal from that completed goal's supported facts",
             'A request to "finish the plugin" or "complete this task" asks for work',
             "Curator tracking is the default for every nontrivial task",
             "do not ask the user to opt in or start a separate capture mode",
             '"Beginning task tracking"',
             '"Pausing task tracking"',
-            "Do not create an SDE proposal automatically when a goal completes",
-            "Historical SDE curation is requested and handled separately",
-            "If a required check is open or lacks current passing evidence",
-            "end the development workflow without preparing an SDE proposal",
-            "The user decides what is memorialized, its importance",
+            "prepare a pending SDE proposal from supported facts belonging to that goal",
+            "`ootask:` explicitly means a distinct one-off",
+            "`aotask <parent-or-child>:` means progress on that existing goal's scope",
+            "Use one practical success check per task",
+            "local test/lint check or the owner's explicit confirmation is sufficient",
+            "create a pending proposal using only supported facts from that goal",
+            "the user decides what is memorialized, its importance",
             "Never approve/reject or codify on the user's behalf",
             "Before `goal_finish`, `goal_defer`, or `goal_activate`, read `goal_status`",
-            "changed files/components",
-            "open gates",
-            "independently checkable evidence",
+            "test/lint result or owner confirmation",
             "1-16 facts per page",
+            "`goal_list_page` result in pages of 10",
+            "follow every `next_offset`",
             "hook-provided `codex-turn-*` prompt-turn event ID exactly",
+            "Give every later `fact_record`, lifecycle transition, and SDE operation its own fresh event ID",
+            "never reuse it for a later operation or as the task ID",
             "State them to the user as `Problem: <problem>. Success: <observable checks>.`",
             "For a plan, state this for the parent and again for each child",
             "For a one-off, state it once whether it is inside or outside a plan",
@@ -1423,10 +2201,8 @@ class CodexPluginHookTests(unittest.TestCase):
             "never call `goal_start` just because a turn or thread changed",
             "`Resuming problem/task: <saved problem or title>. Open checks: <checks still open>.`",
             "A `goal_id` groups the task's facts across turns, pauses, threads, and intervening unrelated work",
-            "page through `goal_children_page` and each child's `goal_report`",
-            "parent-level `change` summary",
             "exact `fact_compaction_propose` and owner-approved `fact_compaction_approve`",
-            "Do not store raw",
+            "Never save the raw prompt or chat transcript",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, instructions)

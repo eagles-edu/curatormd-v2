@@ -52,7 +52,7 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
         artifact_inventory_complete: bool,
         dependency_map_sha256: str,
         rationale: str | None = None,
-        review_draft_json: str | None = None,
+        review_draft_json: str = "",
         expected_review_binding_sha256: str | None = None,
         confirm_significance_five: bool = False,
     ) -> str:
@@ -71,7 +71,7 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
                     rationale=rationale,
                     review_draft=(
                         SDEReviewDraft.from_json(review_draft_json)
-                        if review_draft_json is not None
+                        if review_draft_json
                         else None
                     ),
                     expected_review_binding_sha256=expected_review_binding_sha256,

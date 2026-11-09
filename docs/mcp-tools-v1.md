@@ -83,8 +83,8 @@ and an exact durable `review` grant. For this local stdio launcher, review
 decisions are attributed to the kernel-derived non-setuid local UID and require
 that same identity on the request; the profile ID is not a human identity. The
 flag defaults off and does not create a grant. Purge retry, retention-hold
-release, and event retry remain separately scoped operations and are not
-enabled by either flag; there is no MCP tool parameter for selecting another
+release, and event retry remain separate scopes; their action-specific flags
+are documented below. There is no MCP tool parameter for selecting another
 caller or project. An absent/invalid
 repository config fails startup. The local event router and purge scheduler
 are not started by this entrypoint.
@@ -107,7 +107,11 @@ registration drift, suspension, missing grants, and revocation fail closed.
 `--allow-write` only permits the launcher to honor an existing write grant;
 it does not create a registration or grant. `--allow-review` follows the same
 rule for review operations and remains disabled unless explicitly selected in
-the operator-managed launcher configuration.
+the operator-managed launcher configuration. Quarantined-event retry,
+retention-hold release, and reviewed purge retry each have a separate
+`--allow-event-retry`, `--allow-retention-hold-release`, or
+`--allow-purge-retry` ceiling and require their matching durable action grant.
+These flags do not imply `write` or one another, and default off.
 
 Use the separate attended local operator command to provision this ledger. It
 is not exposed through MCP and requires an interactive TTY plus exact typed
@@ -240,7 +244,7 @@ it does not replace Curator's profile, project, or action authorization.
 | `goal_persist` | Requires project `review` authorization; project the goal to a configured canonical Markdown target and may release a previously reviewed purge gate. |
 | `goal_reconcile` | Requires project `read` authorization; compare one configured Markdown projection with its structured goal and return `synced`, `missing`, `divergent`, or `malformed` plus hashes. It never edits either store. |
 | `project_reconcile` | Requires project `read` authorization; scan one configured target once, return a page of per-goal comparisons and identify valid orphaned/malformed marker hashes plus unrecognized marker counts. The goal page is limited to 100 records and the marker inventory is bounded; incomplete scans are explicit. It never edits either store. |
-| `sde_assess` | Requires project `write` scope. Assess up to 32 unique selected facts from the same goal, with compact `impact` and `retrieval_value` descriptions. Routine materiality and missing verification do not suppress a proposal; any selected verification facts must be current and passing. Those descriptions do not verify impact. Only a pending review proposal is created; the owner decides its importance and disposition. Approval still requires current passing evidence. |
+| `sde_assess` | Requires project `write` scope. Assess up to 32 unique selected facts from the same completed goal, with compact `impact` and `retrieval_value` descriptions. Selected verification facts must have passed at completion. Those descriptions do not verify impact. Only a pending review proposal is created; the owner decides its importance and disposition. Approval requires recorded passing evidence from the completed task. |
 | `sde_review_queue` | List pending review packets. |
 | `sde_withdraw_candidates` | Requires project `review` scope and a separately authorized owner identity. Atomically clear 1–100 exact pending proposals for an alpha retest while retaining their source facts and one immutable withdrawal receipt per candidate. Withdrawal is neither approval nor rejection; exact retries are idempotent. |
 | `sde_review_detail` | Inspect one candidate's selected facts and evidence. |
@@ -264,6 +268,11 @@ it does not replace Curator's profile, project, or action authorization.
 | `project_health` | Read an authorized, content-free aggregate of local queue/review/purge/capacity/staging state and trusted timestamped host dependency probes. Reports the SQLite snapshot timestamp/completeness, the separate staging scan timestamp/completeness, and each host dependency's own status/time. These are not one atomic cross-source snapshot. Missing, malformed, or older-than-60-second probes are `unknown`; known backlog/failure is `degraded`; `healthy` requires complete fresh positive observations. |
 | `project_metrics` | Render a content-free Prometheus exposition snapshot for this authorized project, including explicit reviewer-feedback label counts; excludes user content, reviewer IDs/rationale, artifact paths, and global database/WAL sizes. It does not provide an HTTP scrape server, dashboards, alerts, or model/token usage. |
 | `event_quarantine_retry` | Retry one retained quarantined event; requires `event_retry` authorization and records the host-authenticated actor. |
+
+Review outlines use `evidence_basis: "passing_at_completion"` when recorded
+proof supports the completed task. The legacy `current_passing` status and
+`successful_completion_evidence_current` field remain for older clients;
+they describe review eligibility, not a current live service-health check.
 
 Tool outputs are compact JSON text. Input dictionaries are validated again by
 Curator's bounded domain/event models; MCP-generated JSON schemas are not the

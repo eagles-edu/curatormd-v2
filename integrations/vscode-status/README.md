@@ -8,8 +8,8 @@ when project health is healthy, and red when project health is degraded.
 Pending SDE approvals do not degrade project health. Each
 candidate has Accept, Reject, Withdraw, and Refresh evidence actions directly
 above its editable decision.
-Review uses VS Code prompts for destinations, artifact actions, rationale, and
-the final packet-bound confirmation; it does not open a terminal.
+Review uses VS Code for packet-bound confirmation; it does not open a
+terminal.
 Purple marks other review work in dashboard panels.
 The tooltip shows the installed extension version, health, the pending review
 count or its unavailable state, and a short explanation of the active color.
@@ -33,6 +33,26 @@ that a configured consumer project is required before starting the launcher.
 For configured consumer workspaces, health and the review queue are read when
 the extension activates and when the workspace folder changes, so the status
 bar does not wait for the dashboard to be opened.
+
+The dashboard's Health history chart restores up to 60 project health checks
+from VS Code global state. Its history key is scoped to the Curator project and
+mapped Hermes profile, and each check is timestamped. The open dashboard also
+requests a health check every minute. If VS Code cannot save global state, the
+chart keeps its current webview samples and labels persistence as unavailable;
+it does not claim those samples will survive closing the dashboard.
+
+Recovery Manager also keeps a bounded operational error log in VS Code global
+state. Entries are scoped to the Curator project and mapped Hermes profile,
+retain up to 100 records, count repeated observations, and remain visible as
+active or resolved after later complete reads. Each entry names the component,
+error category, safe summary, last-observed time, and a practical next step.
+The log records known health and queue read failures and event failure
+categories only when their project-bound metrics reconcile to the queue
+snapshot. It never stores exception text, event payloads, event identifiers,
+credentials, or project paths. If local storage cannot be read back, the
+dashboard reports the log as unavailable rather than showing a false empty
+state.
+
 The dashboard reads Hermes readiness and Curator queue counts independently.
 It gets readiness from Hermes and uses Curator's read-only
 `project_queue_snapshot` MCP tool for queue counts. Queue counts are accepted
@@ -58,7 +78,8 @@ directories and writes these local views with owner-only permissions.
 Each candidate includes a readable proposed SDE entry and a separate editable
 copy. The copy starts with a materiality-based significance recommendation;
 the owner may set any score from 0 to 5 for future compression, summarization,
-archiving, and culling decisions, and select multiple configured destinations.
+archiving, and culling decisions, and may edit configured destinations in the
+JSON. An empty destination list uses all configured documents on acceptance.
 A score of 5 requires extra confirmation. The proposal separates the plan task,
 evidence-checked work, difficulties, plan changes, lessons, and future utility;
 unsupported details are marked as not recorded.
@@ -70,11 +91,12 @@ the stale proposal. The owner must record fresh passing evidence for every
 criterion, finish the task, and assess a new proposal. A blocked Accept now
 points directly to this action. Existing facts and receipts remain; the action
 does not accept the proposal or open a terminal.
-VS Code collects any missing destinations, artifact actions, and rationale,
-then asks for a final confirmation bound to the current evidence, inventory, dependency
-map, and edited decision. Acceptance stays blocked until current passing
-evidence is available. The edited review and projection path still needs live
-runtime proof.
+An empty destination list defaults to all configured persistence documents;
+an edited list narrows the destinations. VS Code binds the decision to current
+evidence, inventory, dependency map, and the edited decision, then asks for
+final confirmation. Acceptance stays blocked until current passing evidence is
+available. The installed review and projection path requires a host reload
+before its runtime behavior can be checked.
 Review-document refresh pauses while the document has unsaved edits. Saved
 editable blocks for still-pending candidates are carried forward; changes to
 generated text, missing markers, and drafts for candidates no longer in the
@@ -143,7 +165,10 @@ profile bindings, Curator launcher, database path and database bindings,
 profile, review CLI, host evidence config, and evidence config bindings. It
 starts a local stdio MCP process for each request, pinned to the open
 repository's `.curatormd-v2.toml` project. Review actions request the existing
-project `review` grant; only a final confirmed decision requests write scope.
+project `review` grant; a final confirmed SDE decision requests write scope.
+Quarantined-event retry, retention-hold release, and reviewed cleanup retry
+request their own per-action scopes, never general write scope, and still
+require the matching durable project grant.
 The
 Python host derives the
 authorization subject from the kernel UID and checks the exact project read
@@ -159,6 +184,63 @@ column widths, and keep state labels intact while long values wrap. Narrow
 editor panels reduce outer padding and retain a usable state column. Neutral states use
 the editor theme's blue link color. Goal cards show the disposition, last-updated
 date and time in +07, and next action; generated operation IDs are omitted.
+
+## Recovery manager
+
+The dashboard retries the authorized health,
+queue, activity, and storage reads, and opens the pending review document in
+the editor. Its guidance maps stale evidence to **Refresh evidence**, paused
+feeds to one explicit recheck, `purge_pending` to receipt-backed maintenance,
+and database/Markdown disagreement to the owner-reviewed storage procedure.
+It does not approve SDEs, change grants, or switch databases. Cleanup retries
+can delete only artifacts covered by an already approved, canonically persisted
+receipt and its rechecked inventory.
+Unknown reads remain visible as unknown until a fresh valid observation arrives.
+**Rebuild local inbox and review views** reruns the authorized queue reads and
+recreates the count-only inbox JSON, proposal JSON, and pending review Markdown.
+The result reports each projection separately, so a failed inbox read does not
+hide a successful review-document refresh, and a failed review-queue read does
+not stop an independently successful inbox refresh. It preserves an unsaved or
+owner-edited review document and does not reset the SQLite ledger.
+After an SDE decision receipt is recorded, an incomplete or failed local view
+refresh gets one independent retry. The receipt and any projection/finalization
+gap remain explicit if that retry cannot confirm the current views.
+The **Inspect failed and quarantined events** control reads a bounded,
+project-bound inventory containing event IDs, states, source metadata, and
+payload digests only. Each quarantined event can be retried separately after a
+modal confirmation; the manager rereads the same event and checks its digest
+and source metadata before calling the audited retry tool. Failed events remain
+visible but cannot be manually retried through this control until Curator marks
+them quarantined. Event payloads are never displayed.
+The **Review eligible receipt page** control lists only processed receipts whose
+payloads have already been scrubbed. Archiving a page requires a reason and a
+modal confirmation, and the manager rechecks the exact inventory fingerprint
+and event IDs before writing the archive receipt. Failed, quarantined, active,
+and unknown events are never included. Archived receipts remain available for
+replay checks; archival does not promise physical SQLite file shrinkage.
+Opening pending review actions rereads the authoritative project queue and
+refreshes the local inbox and review projections before opening the Markdown
+document. If the queue read, projection write, or unsaved document prevents a
+verified refresh, the extension says so and preserves the current document.
+
+The **Inspect cleanup receipt** control reads one project-bound receipt without
+retrying cleanup or changing retention holds. It shows canonical persistence,
+cleanup authorization, bounded per-artifact states, retry timing, and Curator's
+next safe recovery action. A held artifact can expose **Release hold** only
+when the current receipt marks that exact path eligible; the action rereads the
+receipt, asks for a rationale, requires modal confirmation, and uses the
+dedicated project authorization. Curator may then resume cleanup for that
+artifact if its other gates pass. A denied or invalid read remains an error; an
+unreadable receipt is never shown as empty or complete. Use **Retry approved
+cleanup** separately when Curator confirms already-authorized cleanup work is
+eligible. That action requires modal confirmation and cannot approve a new
+deletion.
+Open it directly at any time from the Command Palette with **CuratorMD V2: Open
+Alpha Healing Toolbox**; the command opens the project dashboard, scrolls to
+the toolbox, and focuses **Retry recovery checks**.
+When no review candidate exists, it explains that a completed goal with
+current passing evidence must be submitted for a separate historical SDE
+assessment before a proposal can appear for owner review.
 
 Goal pages show their offset and total. Fact pages show the goal report's
 verified facts, recorded facts, unverified claims, open gates, and page total.
@@ -192,9 +274,12 @@ fixed, actionable error. It distinguishes a denied project read, a launcher
 that cannot start or exits, a timeout, and an invalid MCP response. It never
 displays backend exception text or process output.
 
-Storage displays only project logical byte/count totals, fact-capacity values,
-shared database/WAL file sizes, and the bounded staging scan. SQLite file sizes
-are global to the shared database and must not be attributed to this project.
+Storage displays project logical byte/count totals, fact-capacity values,
+shared database/WAL file sizes, the bounded staging scan, and available/used
+capacity for the workspace and SQLite filesystems. SQLite file sizes are global
+to the shared database and must not be attributed to this project. Filesystem
+capacity comes from the local host `statfs` probe; unavailable or invalid probes
+remain unknown, and volumes at or below 10% available space show a warning.
 The staging warning begins at 75% of the configured byte threshold; reaching or
 exceeding the threshold warns but does not block writes. Incomplete scans show
 their fixed error code and observed lower bound. Missing, malformed, or
@@ -209,6 +294,21 @@ as the Hermes profile while keeping health `unknown` if the Hermes CLI is old,
 unavailable, stale, malformed, or bound to another project. The editor never
 creates readiness values itself. The `profileId` setting remains routing
 context, not an identity or credential.
+
+The component table includes separate state rows for each of the seven Hermes
+dependencies, the Hermes profile probe, the Curator MCP queue read, the local
+inbox/review projections, and VS Code health-history storage. Projection
+refresh failures show as degraded; failed or unverified reads and unavailable
+history storage stay unknown instead of inheriting the project health color.
+Stale, degraded, or unknown rows expose a component action: run one confirmed
+event-routing pass, retry only approved cleanup, open review, or recheck the
+authorized health and queue feeds.
+The projection row includes **Rebuild local views**; its LED changes to healthy
+only when queue reads and every local projection are confirmed refreshed.
+**Reset saved graph history** requires modal confirmation and clears only the
+current project/profile's locally stored chart samples; it then requests a fresh
+health check. Curator records, receipts, evidence, and persistence documents are
+not part of that reset.
 
 The probe selects the profile mapped to Curator's returned project ID by setting
 `HERMES_HOME` to `~/.hermes/profiles/<mapped-profile-id>` and runs `mcp test`
@@ -241,6 +341,11 @@ VS Code requires a final modal confirmation before it records the receipt,
 projects approved destinations, and permits exact-inventory cleanup.
 The existing six-hour purge timer processes only already-approved cleanup
 receipts.
+
+When the queue is empty, the dashboard explains the next step: complete a
+tracked goal with current passing evidence, then request historical SDE
+assessment. The proposal appears as pending for the owner's decision; task
+completion alone does not create or approve it.
 
 Install locally by opening this directory in VS Code and selecting **Developer:
 Install Extension from Location...**. Reload the window, set the User settings,

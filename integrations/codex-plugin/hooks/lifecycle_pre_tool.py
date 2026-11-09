@@ -8,12 +8,21 @@ from typing import cast
 
 from task_state import (
     has_active_goal,
+    has_active_goal_id,
+    has_captured_verification_evidence,
     has_active_goal_with_fact,
+    has_completed_goal,
+    has_sde_readback_pending,
+    has_unassessed_completion,
     has_unconfirmed_defer,
     has_unconfirmed_finish,
     has_recorded_fact,
-    has_summary_ready,
+    has_scoped_goal_status,
     goal_id_from_input,
+    ootask_resume_state,
+    prompt_cue,
+    task_scope_cue,
+    task_scope_target_goal_id,
 )
 from user_prompt_submit import (
     MAX_INPUT_BYTES,
@@ -29,6 +38,18 @@ _ENDPOINT_TOOLS = {
     "mcp__codex-intake__goal_defer",
     "mcp__codex_intake__goal_defer",
 }
+_GOAL_START_TOOLS = {
+    "mcp__codex-intake__goal_start",
+    "mcp__codex_intake__goal_start",
+}
+_GOAL_ACTIVATE_TOOLS = {
+    "mcp__codex-intake__goal_activate",
+    "mcp__codex_intake__goal_activate",
+}
+_FACT_RECORD_TOOLS = {
+    "mcp__codex-intake__fact_record",
+    "mcp__codex_intake__fact_record",
+}
 
 
 def main() -> int:
@@ -43,13 +64,161 @@ def main() -> int:
             return 0
         event = cast(dict[str, object], decoded)
         tool_name = event.get("tool_name")
-        if tool_name not in _WORK_TOOLS and tool_name not in _ENDPOINT_TOOLS:
+        if (
+            tool_name not in _WORK_TOOLS
+            and tool_name not in _ENDPOINT_TOOLS
+            and tool_name not in _GOAL_START_TOOLS
+            and tool_name not in _GOAL_ACTIVATE_TOOLS
+            and tool_name not in _FACT_RECORD_TOOLS
+        ):
             return 0
         configured = _configured_project_root(event.get("cwd"))
         if configured is None:
             return 0
         _, project_id = configured
+        if tool_name in _GOAL_ACTIVATE_TOOLS:
+            activating_goal_id = goal_id_from_input(event)
+            paused_goal_ids, ootask_sde_read_back = ootask_resume_state(
+                event, project_id
+            )
+            if has_unassessed_completion(event, project_id):
+                reason = (
+                    "Curator V2 requires the completed task's pending SDE proposal "
+                    "before activating the next plan child. Use supported facts from "
+                    "that completed goal only; keep the proposal separate from the "
+                    "next child and leave disposition to the owner."
+                )
+            elif has_sde_readback_pending(event, project_id):
+                reason = (
+                    "Curator V2 requires confirmation that the completed task's "
+                    "pending SDE candidate is attached to its goal before activating "
+                    "another plan item. Call `sde_review_detail` for the returned "
+                    "candidate ID; then resume "
+                    "the exact previously paused item if the user is continuing."
+                )
+            elif paused_goal_ids:
+                if not ootask_sde_read_back:
+                    reason = (
+                        "This OOTASK interrupted a plan item. First prepare its "
+                        "pending SDE proposal from the one-off's supported facts, "
+                        "then read back that exact pending candidate."
+                    )
+                elif prompt_cue(event, project_id) not in {
+                    "resume", "next plan item",
+                }:
+                    reason = (
+                        "The one-off and its pending SDE are complete. Wait for the "
+                        "user to say continue before resuming the paused plan item."
+                    )
+                elif goal_id_from_input(event) not in paused_goal_ids:
+                    reason = (
+                        "This OOTASK interrupted a plan item. Resume the exact item "
+                        "that was deferred before the one-off; do not activate a later "
+                        "or unrelated child."
+                    )
+                else:
+                    return 0
+            else:
+                scope = task_scope_cue(event, project_id)
+                target_goal_id = task_scope_target_goal_id(event, project_id)
+                if scope == "aotask" and activating_goal_id != target_goal_id:
+                    reason = (
+                        "An `aotask <goal-id>:` request can only resume its named "
+                        "goal. Keep the add-on on that exact existing goal ID."
+                    )
+                elif scope is not None and (
+                    activating_goal_id is None
+                    or not has_scoped_goal_status(
+                        event, project_id, activating_goal_id
+                    )
+                ):
+                    reason = (
+                        "Read `goal_status` for the matching task first. The status "
+                        "must confirm the requested one-off or exact AOTASK goal "
+                        "before activation."
+                    )
+                else:
+                    return 0
+            sys.stdout.write(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }, separators=(",", ":")))
+            return 0
+        if tool_name in _GOAL_START_TOOLS:
+            scope = task_scope_cue(event, project_id)
+            if scope != "aotask":
+                return 0
+            reason = (
+                "The `aotask` prefix adds progress to an existing parent or child goal. "
+                "Read and use that goal's status and ID; do not create another goal."
+            )
+            sys.stdout.write(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }, separators=(",", ":")))
+            return 0
+        if tool_name in _FACT_RECORD_TOOLS:
+            fact_goal_id = goal_id_from_input(event)
+            if fact_goal_id is None:
+                return 0
+            if has_completed_goal(event, project_id, fact_goal_id):
+                reason = (
+                    "Curator V2 confirmed this goal complete. Do not append facts to a "
+                    "terminal goal; use its supported facts for the pending SDE review "
+                    "or start/continue a matching active task."
+                )
+            elif not has_active_goal_id(event, project_id, fact_goal_id):
+                reason = (
+                    "Read `goal_status` and confirm this exact goal is active before "
+                    "recording a fact; terminal and unresolved goals cannot accept "
+                    "new task facts."
+                )
+            elif not has_captured_verification_evidence(
+                event, project_id, fact_goal_id
+            ):
+                reason = (
+                    "A verification fact must use a passing reference returned by "
+                    "`evidence_capture` for this exact goal and criterion. Pass the "
+                    "captured fields unchanged; if no configured source is available, "
+                    "record the check as a change fact instead of inventing evidence."
+                )
+            else:
+                return 0
+            sys.stdout.write(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }, separators=(",", ":")))
+            return 0
         goal_id = goal_id_from_input(event) if tool_name in _ENDPOINT_TOOLS else None
+        if (
+            tool_name in _ENDPOINT_TOOLS
+            and task_scope_cue(event, project_id) is not None
+            and (
+                goal_id is None
+                or not has_scoped_goal_status(event, project_id, goal_id)
+            )
+        ):
+            reason = (
+                "This scoped task can write lifecycle changes only to the goal "
+                "whose status readback matches its OOTASK or exact AOTASK target."
+            )
+            sys.stdout.write(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }, separators=(",", ":")))
+            return 0
         if tool_name in _WORK_TOOLS and not has_active_goal(event, project_id):
             reason = (
                 "Curator V2 needs the matching task confirmed for this turn before local work. "
@@ -70,23 +239,19 @@ def main() -> int:
                 )
             elif has_active_goal_with_fact(event, project_id):
                 return 0
+            elif task_scope_cue(event, project_id) is not None:
+                scope = task_scope_cue(event, project_id)
+                relation = "top-level with no parent" if scope == "ootask" else "a child of the specified parent or child"
+                reason = (
+                    f"The `{scope}` task scope is not confirmed for an active goal. "
+                    f"Read goal_status and select a task that is {relation}; then "
+                    "record its intent and read it back before local work."
+                )
             else:
                 reason = (
                     "Curator V2 needs an accepted task fact before local work. "
                     "Record the task intent or current progress, then retry."
                 )
-        elif (
-            tool_name in {"mcp__codex-intake__goal_finish", "mcp__codex_intake__goal_finish"}
-            and goal_id is not None
-            and has_active_goal(event, project_id)
-            and not has_summary_ready(event, project_id, goal_id)
-        ):
-            reason = (
-                "Curator V2 needs the complete task history summarized before finish. "
-                "Read every goal report page and linked plan-child report, save a "
-                "`change` fact beginning `Task summary:`, read that summary back, "
-                "then retry goal_finish."
-            )
         elif (
             goal_id is not None
             and has_active_goal(event, project_id)

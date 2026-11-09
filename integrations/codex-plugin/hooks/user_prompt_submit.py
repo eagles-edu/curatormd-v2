@@ -13,16 +13,22 @@ import tomllib
 from pathlib import Path
 from typing import Any, cast
 
-from task_state import record_prompt_cue
+from task_state import record_prompt_cue, record_task_scope
 
 
 CONFIG_NAME = ".curatormd-v2.toml"
 MAX_INPUT_BYTES = 64 * 1024
 _PR_SET_DUMPABLE = 4
+_GOAL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+_TASK_SCOPE_CUE_PREFIX = re.compile(r"\s*(ootask|aotask)\b", re.IGNORECASE)
+_AOTASK_TARGET_PREFIX = re.compile(
+    r"\s*aotask\s+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\s*:",
+    re.IGNORECASE,
+)
 
 _HOLD_CUES = re.compile(
-    r"\b(?:pause|paused|pausing|hold|holding|held|defer|deferred|shelve|shelved|park|parking|"
-    r"suspend|suspended|postpone|postponed)\b"
+    r"\b(?:pause|pausing|hold|holding|defer|shelve|park|parking|"
+    r"suspend|postpone)\b"
     r"|\b(?:put|set)\b.{0,32}\b(?:aside|on hold)\b"
     r"|\b(?:leave|leaving|park|parking)\b.{0,32}\b(?:for now|here|aside)\b"
     r"|\b(?:come back to|return to|pick up)\b.{0,32}\b(?:later|tomorrow|next time)\b"
@@ -168,6 +174,27 @@ def _transition_cue(prompt: object) -> str:
     return "ordinary work or progress"
 
 
+def _task_scope_cue(prompt: object) -> str | None:
+    """Recognize explicit task-scope prefixes without retaining their text."""
+
+    if not isinstance(prompt, str):
+        return None
+    match = _TASK_SCOPE_CUE_PREFIX.match(prompt[:MAX_INPUT_BYTES])
+    return match.group(1).casefold() if match else None
+
+
+def _task_scope_goal_id(prompt: object) -> str | None:
+    """Return only the explicitly named opaque goal ID for an AOTASK."""
+
+    if not isinstance(prompt, str):
+        return None
+    match = _AOTASK_TARGET_PREFIX.match(prompt[:MAX_INPUT_BYTES])
+    if match is None:
+        return None
+    goal_id = match.group(1)
+    return goal_id if goal_id is not None and _GOAL_ID.fullmatch(goal_id) else None
+
+
 def _protect_prompt_process() -> bool:
     """Disable core dumps and restrict files before reading prompt input."""
 
@@ -225,21 +252,35 @@ def _context(
     _project_id: str,
     source_event_id: str | None,
     cue: str = "ordinary work or progress",
+    scope_cue: str | None = None,
+    scope_goal_id: str | None = None,
 ) -> str:
     transition = {
         "hold": "TURN=HOLD: save checkpoint; read status; call goal_defer.",
         "resume": "TURN=RESUME: page all goals; match saved problem/checks; read goal_status. If already active, do NOT call goal_start or goal_activate: save intent/progress with fact_record, then continue. Activate only a planned/deferred/blocked goal using its current revision. Say `Resuming problem/task: <saved problem/title> [plan item X]. Open checks: <saved checks>.` Append facts to that goal ID.",
-        "next plan item": "TURN=NEXT: verify/finish; activate next child only if continuing.",
-        "end current task or item": "TURN=END: summarize all goal/child pages before finish; then SDE and approved cleanup. One-off ends here.",
+        "next plan item": "TURN=NEXT: verify and finish the current task; after complete, prepare its own pending SDE proposal and confirm its goal/status with sde_review_detail; only then activate the next child if the user is continuing.",
+        "end current task or item": "TURN=END: record the task result and passing test/lint check (or the owner's confirmation), finish the goal, then create its pending SDE proposal. For an interrupting OOTASK, resume the exact previously paused plan item only if the user says continue.",
         "begin task": "TURN=BEGIN: Problem/Success; read goals and match saved checks. For an already-active match, read goal_status then save intent with fact_record; never goal_start/goal_activate it. Activate a planned/deferred/blocked match with current revision; call goal_start only if no match exists. Plan=parent+child; reuse retry.",
         "ordinary work": "",
         "ordinary work or progress": "",
     }[cue]
+    scope = {
+        "ootask": "SCOPE=OOTASK: create or resume a distinct one-off with its own criteria, facts, checks, and lifecycle. Reuse only an exact matching goal previously started as an OOTASK; never attach this work to the broader goal itself. If it interrupts an active plan item, first checkpoint and defer that exact item; keep the one-off's facts and pending SDE proposal separate. After Curator confirms the pending candidate's goal ID and status with sde_review_detail, reactivate the previously paused item only when the user says to continue. Use parent_goal_id only when this distinct one-off is explicitly within a broader goal.",
+        "aotask": (
+            f"SCOPE=AOTASK goal_id={scope_goal_id}: add progress to that exact "
+            "existing parent or child goal and its saved criteria; read its status "
+            "and record facts on that same goal. Do not create or activate a "
+            "different goal."
+            if scope_goal_id
+            else "SCOPE=AOTASK: name the existing goal as `aotask <goal-id>:`; "
+            "read and update that same goal only. Do not create another goal."
+        ),
+    }.get(scope_cue, "")
     return f"""Curator V2; `goal_start.event_id`={source_event_id or 'unavailable'} (retry).
 {transition}
-Interpret full request; cues are hints. “Finish the plugin” means work. Before creating a goal, page through all goals and match saved problem plus checks; reuse one clear match, ask if ambiguous, create only if none. For immediate work, create a new goal with `initial_status="active"`. For an already-active match, read `goal_status`, record intent with `fact_record`, and continue; never call `goal_start` or `goal_activate` for it. Activate a planned/deferred/blocked match with its current revision. Do not attach unrelated work to the latest goal. Track nontrivial work before edits; save intent. Plans=parent+child; follow each item/one-off; advance only if continuing. Say `Problem: <problem>. Success: <observable checks>.` Retry/resume reuse same goal and wording; separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent.
-At a claimed endpoint, read status; aggregate every page for the goal and linked children, save one `Task summary:` fact, and read it back. Finish only with passing checks. If checks remain open, keep the goal active and continue development. After `goal_finish` succeeds and `goal_status` confirms complete, end the development workflow; do not automatically call `sde_assess`. Historical SDE curation is a separate task over completed goals, and approval needs current passing evidence. Then show exact cleanup inventory; delete only approved temporary artifacts, and keep the summary and audit receipts. Fact compaction needs its own exact approval. Never approve/reject/codify.
-Current revisions; compact facts, no prompts. Use exact `evidence_capture` references; never invent. Without capture, record `open_gate`/`research`. Claim writes only after success."""
+{scope}
+Interpret full request; cues are hints. “Finish the plugin” means work. Track nontrivial work before edits; save intent. Before work, page all goals and match saved problem/checks; repository or topic alone is not a match. Reuse one clear same-task goal; ask if ambiguous. A distinct bounded task within an active broader goal gets a separate active child via `parent_goal_id`; an unrelated task gets a top-level active one-off. Keep its checks/facts/lifecycle on that goal; never append a distinct task to its parent. Reuse the parent only when the request advances its saved criteria. For a new task use `initial_status="active"`; same-task active: read status and record intent, no start/activate. Plans=parent+child; follow each item/one-off; advance only if continuing. Say `Problem: <problem>. Success: <observable checks>.` Retry/resume reuse same goal and wording; separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent.
+At task end, save one compact result fact and use a passing relevant test/lint check or the owner's explicit confirmation as the completion evidence. Read status and finish the goal; then create its pending `sde_assess` proposal from supported facts on that goal. Keep it pending for owner review; never approve/reject/codify. For an interrupting OOTASK, resume the exact previously paused plan item only if the user says continue. Never attach one-off facts to that item or proposal. Never retain prompts. Use configured `evidence_capture` when available; do not invent evidence references. Claim writes only after success."""
 
 
 def main() -> int:
@@ -260,10 +301,15 @@ def main() -> int:
         source_event_id = _source_event_id(event.get("turn_id"))
         cue = _transition_cue(event.get("prompt"))
         record_prompt_cue(event, project_id, cue)
+        scope_cue = _task_scope_cue(event.get("prompt"))
+        scope_goal_id = _task_scope_goal_id(event.get("prompt"))
+        record_task_scope(event, project_id, scope_cue, scope_goal_id)
         response = {
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
-                "additionalContext": _context(project_id, source_event_id, cue),
+                "additionalContext": _context(
+                    project_id, source_event_id, cue, scope_cue, scope_goal_id
+                ),
             }
         }
         sys.stdout.write(json.dumps(response, separators=(",", ":")))

@@ -80,12 +80,14 @@ class _McpToolRegistrar:
         caller: AuthenticatedCaller,
         project_id: str,
         source_id: str,
+        hermes_binding_enabled: bool,
     ) -> None:
         self.server = server
         self.api = api
         self.caller = caller
         self.project_id = project_id
         self.source_id = source_id
+        self.hermes_binding_enabled = hermes_binding_enabled
 
     def safe_tool(self, *args: Any, **kwargs: Any) -> Any:
         """Register a tool behind the shared sanitized exception boundary."""
@@ -153,6 +155,18 @@ def _register_status_tools(registrar: _McpToolRegistrar) -> None:
         """Read project backlog, queue lag, and active/expired claim totals."""
 
         return json_result(api.event_queue_status(caller, project_id))
+
+    @_read_tool()
+    def event_terminal_inventory(
+        limit: Annotated[int, Field(ge=1, le=100)] = 100,
+        after_event_id: str | None = None,
+    ) -> str:
+        """Read one bounded page of content-free failed/quarantined event identifiers."""
+
+        inventory = api.terminal_event_inventory(
+            caller, project_id, limit=limit, after_event_id=after_event_id
+        )
+        return json_result({"project_id": project_id, **asdict(inventory)})
 
     @_safe_tool(
         annotations=ToolAnnotations(
@@ -310,6 +324,8 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
     @_safe_tool()
     def hermes_goal_bind(goal_id: str, ctx: MCPContext) -> str:
         """Validate an active goal for the host-owned current Hermes session binding."""
+        if not registrar.hermes_binding_enabled:
+            raise PermissionError("Hermes session binding is unavailable on this host")
         metadata = ctx.request_context.meta
         profile_id = metadata.get("hermes/profile_id") if isinstance(metadata, dict) else None
         session_id = metadata.get("hermes/session_id") if isinstance(metadata, dict) else None
@@ -350,6 +366,8 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         source_id: str | None = None,
     ) -> str:
         """Translate one exact host-outbox event for the active session goal."""
+        if not registrar.hermes_binding_enabled:
+            raise PermissionError("Hermes lifecycle events are unavailable on this host")
         profile_id, session_id = require_durable_hermes_context(
             ctx.request_context.meta,
             caller.profile_id or caller.subject_id,
@@ -433,7 +451,7 @@ def _register_goal_lifecycle_tools(registrar: _McpToolRegistrar) -> None:
         expected_lifecycle_revision: int,
         source_sequence: int | None = None,
     ) -> str:
-        """Evaluate a completion claim against criteria, children, and evidence."""
+        """Finish only after current criterion evidence, children, and dependencies pass."""
 
         return _process(
             _event(
@@ -748,10 +766,10 @@ def _register_goal_lists_tools(registrar: _McpToolRegistrar) -> None:
     @_read_tool()
     def goal_list_page(
         offset: int = 0,
-        limit: int = 50,
+        limit: int = 10,
         statuses: list[str] | None = None,
     ) -> str:
-        """List compact goal cards with total count and a next-page offset."""
+        """List up to 10 compact goal cards with a total and next-page offset."""
 
         parsed_statuses = tuple(GoalStatus(status) for status in statuses or [])
         return json_result(
@@ -963,13 +981,15 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
     def sde_review_outline(candidate_id: str) -> str:
         """Read bounded, selected fact text for one authorized SDE proposal.
 
-        A fact's presence here does not establish current verification or task
-        completion. The completion time is shown only when selected passing
-        evidence is currently valid; legacy values remain unknown.
+        The completion time is shown only when selected evidence passed at
+        completion. The historical evidence need not still be a live probe.
         """
 
         detail = api.sde_review_detail(caller, project_id, candidate_id)
         evidence_current = api.sde_review_has_current_passing_evidence(
+            caller, project_id, candidate_id
+        )
+        completion_claim = api.sde_review_completion_claim(
             caller, project_id, candidate_id
         )
         return json_result(
@@ -991,7 +1011,12 @@ def _register_review_records_tools(registrar: _McpToolRegistrar) -> None:
                     if detail.goal.completed_at is not None and evidence_current
                     else None
                 ),
+                # Keep the legacy field for existing extension versions. Its
+                # review meaning is a passing attestation at completion.
                 "successful_completion_evidence_current": evidence_current,
+                "successful_completion_evidence_recorded": evidence_current,
+                "evidence_basis": "passing_at_completion" if evidence_current else None,
+                "completion_claim": completion_claim,
                 "persistence_documents": api.sde_review_documents(
                     caller, project_id
                 ),
@@ -1086,10 +1111,14 @@ def register_mcp_tools(
     caller: AuthenticatedCaller,
     project_id: str,
     source_id: str,
+    *,
+    hermes_binding_enabled: bool = False,
 ) -> None:
     """Register every project-bound tool on the already-configured server."""
 
-    registrar = _McpToolRegistrar(server, api, caller, project_id, source_id)
+    registrar = _McpToolRegistrar(
+        server, api, caller, project_id, source_id, hermes_binding_enabled
+    )
     _register_status_tools(registrar)
     _register_goal_intake_tools(registrar)
     _register_goal_lifecycle_tools(registrar)

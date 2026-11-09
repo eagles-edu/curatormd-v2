@@ -76,11 +76,21 @@ class HermesBindingTests(McpServerTestSupport):
                 api = AuthenticatedCuratorAPI(
                     {"mcp-project": plugin}, AllowProject(), InMemoryTokenBucket()
                 )
-                server = build_mcp_server(api, caller, "mcp-project", "mcp-bind-test")
+                server = build_mcp_server(
+                    api, caller, "mcp-project", "mcp-bind-test", hermes_binding_enabled=True
+                )
+                codex_server = build_mcp_server(api, caller, "mcp-project", "codex-local")
 
                 async def exercise() -> None:
                     async with Client(server, raise_exceptions=True) as client:
                         await self._assert_initial_hermes_goal_binding(client)
+                        async with Client(codex_server, raise_exceptions=True) as codex_client:
+                            forged = await codex_client.call_tool(
+                                "hermes_goal_bind", {"goal_id": "bind-goal"},
+                                meta={"hermes/profile_id": "host-subject",
+                                      "hermes/session_id": "session-1"},
+                            )
+                            self.assertTrue(forged.is_error)
                         first = await self._accept_first_hermes_event(client)
                         await self._assert_exact_hermes_replay(client, first)
                         self._reenroll_mcp_binding(store)

@@ -52,6 +52,20 @@ of bounded stdout, and `passed`. The configured verifier reruns the exact probe
 and accepts the reference only when the digest still matches; raw probe output
 is not returned or persisted.
 
+To retain the existing `probe` while adding other fixed checks, add a `probes`
+array whose entries use the same fields as `probe`. A project may configure at
+most 16 probes in total. Probe IDs and adapter IDs must be distinct; callers
+select one using its exact `service-probe:<probe_id>` locator. Existing files
+with a single `probe` retain their behavior.
+
+An additional probe may set `cache_directory`, `cache_validity_seconds`, and
+`cache_integrity_files` when its check must run before a fenced ledger write.
+The directory must already be private to the local account. Capture runs the
+configured command and writes a bounded receipt for the exact project, goal,
+and criterion; attestation reads that receipt without rerunning the command.
+The receipt expires within 60 seconds and is rejected if a listed source file
+changes. Existing probes without a cache continue to rerun on verification.
+
 Add a browser proof to the same file, or configure it by itself:
 
 ```json

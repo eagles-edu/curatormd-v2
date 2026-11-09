@@ -4,14 +4,23 @@ The Codex plugin turns ordinary requests into Curator V2 task intake. In a
 workspace with `.curatormd-v2.toml`, type the request normally. Codex states the
 problem and checkable success criteria, saves an active one-off goal, then
 starts implementation. A request for a plan creates planned parent and child
-goals. The plugin does not add a command-palette action or save raw prompt text.
+goals. A distinct bounded task within an active broader goal gets its own
+active child goal and lifecycle; an unrelated task gets a top-level one-off.
+
+Prefix with `ootask` or `ootask:` to force a distinct one-off with its own
+lifecycle, top-level unless it is a bounded task under a named parent or child.
+Use `aotask <parent-or-child>:` to add progress to that existing goal and its
+saved criteria. Repository or topic similarity alone never makes two tasks the
+same goal. The plugin does not add a command-palette action or save raw prompt
+text.
 
 The Codex plugin supplies the intake skill and its own local MCP connection.
 The connection uses the active Codex workspace to select the configured V2
 project. Read and lifecycle tool approval depends on the effective server's
 Codex configuration; review and cleanup decisions remain unavailable to the
-task tracker. It tracks compact task facts. Historical SDE curation is a
-separate workflow over completed goals.
+task tracker. It tracks compact task facts and prepares a pending owner-review
+proposal from supported facts after each goal completes. Reviewing historical
+completed goals is a separate workflow.
 Use the read-only `evidence_capture` tool for owner-configured host checks, then
 pass its returned reference unchanged to `fact_record`. It cannot accept
 arbitrary commands or paths; no separate capture mode is required.
@@ -32,9 +41,9 @@ recognizes common begin, hold, resume, next-item, and end wording for the
 current turn, keeps only that normalized cue in private turn state, and injects
 the matching action cue. Phrase matches are hints: Codex must follow the
 meaning of the full request and conversation even when wording is new. Users
-do not need to learn a command vocabulary. The stop hook uses the saved user cue even when Codex's final
-message omits the transition. A pre-tool guard requires a Curator-
-confirmed active goal and a saved intent/progress fact before shell commands
+do not need to learn a command vocabulary. The stop hook uses the saved user cue
+even when Codex's final message omits the transition. A pre-tool guard requires
+a Curator-confirmed active goal and a saved intent/progress fact before shell commands
 or edits in a configured project. It also requires a saved checkpoint fact
 before `goal_finish` or `goal_defer`. After a finish request, Codex must read
 `goal_status`; only a confirmed `complete` state closes the development task.
@@ -52,20 +61,22 @@ start/progress/hold transition.
 It ignores explicitly negated cues. The hooks inspect bounded text in memory
 only; they do not save or repeat prompts or responses. They do nothing in
 workspaces without `.curatormd-v2.toml`.
-SDE curation is a separate historical workflow, requested after development
-completes. If any success check remains open or lacks current passing evidence,
-Codex keeps the goal active and records the gap and next action; it does not
-create a pending SDE candidate. When `goal_finish` succeeds and `goal_status`
-confirms `complete`, the development
-workflow ends. When historical curation is requested later, Codex calls
-`sde_assess` to prepare a proposal from supported task facts. It never assesses
-an active or reopened goal.
-It presents the facts and any suggested category or importance as
-recommendations. You decide what is memorialized, its importance, and its
-disposition. Curator does not approve, reject, or codify for you. A standalone
-task ends at its own endpoint; a next child is activated only when the active
-task is a plan item and work is continuing. Tracking is
+If any success check remains open or lacks current passing evidence, Codex keeps
+the goal active and records the gap and next action. When `goal_finish` succeeds
+and `goal_status` confirms `complete`, Codex calls `sde_assess` with supported
+facts attached to that completed goal and leaves the proposal pending for your
+review. It never assesses an active or reopened goal. It presents the facts and
+any suggested category or importance as recommendations. You decide what is
+memorialized, its importance, and its disposition. Curator does not approve,
+reject, or codify for you. A standalone task ends at its own endpoint; activate
+the next child only when the active task is a plan item and work is continuing.
+Tracking is
 the default task workflow; no separate opt-in capture action is required.
+When an `ootask` interrupts a plan child, Codex defers that child, completes the
+one-off as a separate goal, creates its pending SDE proposal from that goal's
+facts, confirms the candidate's goal ID and `pending_review` status with
+`sde_review_detail`, presents its facts for your decision, then resumes the same
+deferred child when you say to continue. It does not skip to a later child.
 Beginning, pausing, and resuming work also get short cues that report the
 matching lifecycle action.
 
@@ -92,10 +103,8 @@ keeps the summary and audit receipts. Routine facts leave active history only
 after you approve the exact `fact_compaction_propose` inventory; the reviewed
 archive remains recoverable. Finishing a task alone does not approve cleanup.
 
-After installing or updating, review and trust the current Curator V2 hook
-definitions in `/hooks`, then start a fresh thread. Codex skips changed hooks
-until their current definitions are trusted. Desktop plugin installation uses
-the bundled hooks; Codex CLI uses the native user-hook installer below.
+Desktop plugin installation uses the bundled hooks; Codex CLI uses the native
+user-hook installer below.
 
 The plugin's `mcp.json` declares `codex-intake`. A shared Codex app server can
 start that bundled entry in the plugin cache, which does not identify the active
@@ -152,17 +161,32 @@ trusting work-blocking hooks. For Codex CLI, install the native hooks with:
 python3 integrations/codex-plugin/bin/install_user_hook.py
 ```
 
-This adds or updates only Curator V2's four hook handlers in `~/.codex/hooks.json`,
-preserves unrelated handlers, and stores bounded turn markers in the private
-`~/.codex/curator-v2-data` directory. It does not store submitted prompts or
-responses. For CLI hook review, use the packaged Codex CLI. Install it with
-`npm install --global @openai/codex@latest` if `codex` is unavailable; the
-VS Code extension's bundled executable may not be a complete standalone CLI.
-Start Codex in the intended workspace, review and trust the four Curator V2
-hooks in `/hooks`, then start a fresh thread. Plugin installation and hook
-trust are separate; Codex records trust only after you review the current
-definitions.
-Each workspace must have its own `.curatormd-v2.toml` and matching exact project
-grant in the ledger. The server binds only the active workspace's config; it
-does not create a project or grant access. Keep the marketplace and Codex user
-config separate from consumer repositories.
+This adds or updates only Curator V2's four hook handlers in
+`~/.codex/hooks.json`, preserves unrelated handlers, and stores bounded turn
+markers in the private `~/.codex/curator-v2-data` directory. It does not store
+submitted prompts or responses.
+
+## Activate Codex CLI hooks
+
+After installation or a hook update, activate the current definitions in the
+Codex CLI:
+
+1. From the intended workspace, confirm that the `codex-intake` MCP server is
+   available with `codex mcp list`.
+2. Start `codex` in that workspace and enter `/hooks`.
+3. Review and trust the four Curator V2 handlers: `UserPromptSubmit`,
+   `PreToolUse`, `PostToolUse`, and `Stop`. If Codex marks a handler as
+   modified, it skips that definition until you review and trust the current
+   version. Plugin installation does not trust native CLI hooks for you.
+4. Start a fresh thread in the same workspace. Send an ordinary nontrivial
+   request and confirm Curator records an active goal and intent before local
+   commands or edits are allowed.
+
+Use the packaged Codex CLI for hook review. Install it with
+`npm install --global @openai/codex@latest` if `codex` is unavailable; the VS
+Code extension's bundled executable may not be a complete standalone CLI.
+
+Each workspace must have its own `.curatormd-v2.toml` and matching exact
+project grant in the ledger. The server binds only the active workspace's
+config; it does not create a project or grant access. Keep the marketplace and
+Codex user config separate from consumer repositories.

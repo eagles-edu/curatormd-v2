@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from typing import cast
 
 from git_test_support import create_git_commit_range
@@ -21,7 +24,9 @@ from curatormd_v2.local_evidence_config import (
     load_local_service_probe_verifier,
 )
 from curatormd_v2 import BrowserProofEvidenceAdapter, EvidenceAdapterRegistry
+from curatormd_v2.evidence import EvidenceVerificationContext
 from curatormd_v2.hosted_mcp import validate_host_evidence_config_path
+from curatormd_v2.service_evidence import CachedLocalServiceProbeResolver
 
 
 class LocalEvidenceConfigTests(unittest.TestCase):
@@ -52,6 +57,71 @@ class LocalEvidenceConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(type(verifier).__name__, "ServiceProbeEvidenceAdapter")
+
+    def test_multiple_service_probes_are_selected_by_exact_locator(self) -> None:
+        original = cast(dict[str, object], self.value["probe"])
+        second = dict(original)
+        second.update({"probe_id": "dashboard", "adapter_id": "dashboard-adapter",
+                       "command": [sys.executable, "-c", "print('dashboard-ready')"]})
+        self.value["probes"] = [second]
+        self._write()
+        verifier = load_local_evidence_verifier(
+            self.path, project_id="vhost-manager-alpha"
+        )
+        context = EvidenceVerificationContext(
+            project_id="vhost-manager-alpha", goal_id="goal-1", criterion_id="check-1",
+            now=datetime.now(UTC),
+        )
+        capture = getattr(verifier, "capture")
+        old_id = cast(str, original["probe_id"])
+        old = capture("service_probe", f"service-probe:{old_id}", context)
+        first = capture("service_probe", "service-probe:dashboard", context)
+        second_result = capture("service_probe", "service-probe:dashboard", context)
+        self.assertIsNotNone(old)
+        self.assertIsNotNone(first)
+        self.assertEqual(first, second_result)
+        self.assertIsNotNone(verifier.attest(first, context))
+        self.assertIsNone(capture("service_probe", "service-probe:unknown", context))
+
+    def test_duplicate_service_probe_locator_is_rejected(self) -> None:
+        self.value["probes"] = [dict(cast(dict[str, object], self.value["probe"]))]
+        self._write()
+        with self.assertRaisesRegex(ValueError, "duplicate service probes"):
+            load_local_evidence_verifier(self.path, project_id="vhost-manager-alpha")
+
+    def test_cached_probe_receipt_is_bound_and_expires_without_rerunning(self) -> None:
+        cache = self.root / "receipts"
+        cache.mkdir(mode=0o700)
+        probe = cast(dict[str, object], self.value["probe"])
+        source = self.root / "proof.js"
+        source.write_text("verified source", encoding="utf-8")
+        probe.update({"cache_directory": str(cache), "cache_validity_seconds": 60,
+                      "cache_integrity_files": [str(source)]})
+        self._write()
+        verifier = load_local_evidence_verifier(
+            self.path, project_id="vhost-manager-alpha"
+        )
+        now = datetime.now(UTC)
+        context = EvidenceVerificationContext(
+            project_id="vhost-manager-alpha", goal_id="goal-1", criterion_id="check-1", now=now,
+        )
+        with patch.object(
+            CachedLocalServiceProbeResolver, "_run_probe", return_value="a" * 64
+        ) as run:
+            reference = getattr(verifier, "capture")(
+                "service_probe", f"service-probe:{probe['probe_id']}", context
+            )
+            self.assertIsNotNone(reference)
+            self.assertIsNotNone(
+                verifier.attest(reference, replace(context, now=now + timedelta(seconds=1)))
+            )
+            self.assertIsNone(verifier.attest(reference, replace(context, goal_id="other")))
+            self.assertIsNone(
+                verifier.attest(reference, replace(context, now=now + timedelta(seconds=61)))
+            )
+            run.assert_called_once()
+            source.write_text("changed source", encoding="utf-8")
+            self.assertIsNone(verifier.attest(reference, context))
 
     def test_rejects_credentials_in_child_process_arguments(self) -> None:
         marker = "alpha-process-secret-731"

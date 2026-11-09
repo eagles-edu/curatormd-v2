@@ -30,6 +30,9 @@ const {
   McpStdioClient,
   dashboardHtml,
   defaultReviewCommand,
+  defaultRouterCommand,
+  parseRouterPassResult,
+  runEventRouterPass,
   parseHermesHealthProbe,
   parseCuratorQueueSnapshot,
   readHermesHealthProbe,
@@ -50,8 +53,19 @@ const {
   summarizeEventFailureCategories,
   summarizeOperationalAlerts,
   summarizeOperationalQueues,
+  healthComponentRows,
+  dashboardComponentRows,
+  healthHistoryStatus,
+  updatePersistentHealthHistory,
+  hostFilesystemRows,
+  parsePurgeReceiptInspection,
+  parseTerminalEventInventory,
+  parseEventCompactionProposal,
   queueMetricRows,
   queuePanelState,
+  registerDashboardReloader,
+  reloadOpenDashboards,
+  refreshReviewConsumers,
   showDashboard,
   statusColorMeaning,
   updateStatusBarHealth,
@@ -59,7 +73,10 @@ const {
   reviewDocumentActions,
   launchDocumentReview,
   validateReviewQueue,
+  readReviewOutlines,
   writePendingReviewDocument,
+  writeWorkspaceQueueViewsDetailed,
+  workspaceQueueViewsConfirmResolved,
   writeWorkspaceQueueViews,
   notifyTransportClosed,
 } = require('./extension');
@@ -421,6 +438,425 @@ test('Curator queue snapshot is project-bound and independent from host readines
   assert.equal(queueMetricRows(partial, 'alpha').find((row) => row.label === 'Events failed').value, 'unknown');
 });
 
+test('cleanup receipt inspection validates and bounds a project receipt summary', () => {
+  const receipt = {
+    receipt_id: 'receipt-123',
+    purge_status: 'purge_pending',
+    canonical_persisted: true,
+    cleanup_authorized: true,
+    cleanup_canonical_persisted: true,
+  };
+  const targets = Array.from({ length: 101 }, (_, index) => ({
+    artifact: { path: `goal-1/cue-${index}.txt`, sha256: 'a'.repeat(64) },
+    status: index === 0 ? 'held' : 'purged',
+    outcome: index === 0 ? 'held' : 'deleted',
+    attempts: index,
+    error: index === 0 ? 'retention_hold' : null,
+    next_attempt_in_seconds: null,
+    safe_recovery_action: index === 0 ? 'release_artifact_hold' : 'none',
+    approval_stale: false,
+  }));
+  const result = parsePurgeReceiptInspection(JSON.stringify([receipt, targets]), 'receipt-123');
+  assert.equal(result.purgeStatus, 'purge_pending');
+  assert.equal(result.targetCount, 101);
+  assert.equal(result.targets.length, 100);
+  assert.equal(result.omittedTargetCount, 1);
+  assert.equal(result.targets[0].nextAction, 'release_artifact_hold');
+  assert.equal(Object.hasOwn(result.targets[0], 'sha256'), false);
+  assert.throws(
+    () => parsePurgeReceiptInspection([receipt, targets], 'another-receipt'),
+    (error) => error.code === 'invalid-response',
+  );
+  assert.throws(
+    () => parsePurgeReceiptInspection([receipt, [{ ...targets[0], status: 'unknown' }]], 'receipt-123'),
+    (error) => error.code === 'invalid-response',
+  );
+});
+
+test('terminal event inventory is project-bound, bounded, and content-free', () => {
+  const inventory = {
+    project_id: 'alpha',
+    count_after_cursor: 1,
+    complete: true,
+    next_after_event_id: null,
+    events: [{
+      event_id: 'evt-quarantine-1',
+      status: 'quarantined',
+      payload_sha256: 'b'.repeat(64),
+      source_id: 'producer-1',
+      source_sequence: 4,
+    }],
+  };
+  const result = parseTerminalEventInventory(inventory, 'alpha');
+  assert.deepEqual(result.events[0], {
+    eventId: 'evt-quarantine-1',
+    status: 'quarantined',
+    payloadSha256: 'b'.repeat(64),
+    sourceId: 'producer-1',
+    sourceSequence: 4,
+  });
+  assert.equal(Object.hasOwn(result.events[0], 'payload'), false);
+  assert.throws(
+    () => parseTerminalEventInventory(inventory, 'another-project'),
+    (error) => error.code === 'invalid-response',
+  );
+  const sanitized = parseTerminalEventInventory({
+    ...inventory, events: [{ ...inventory.events[0], payload: 'must-not-be-present' }],
+  }, 'alpha');
+  assert.equal(Object.hasOwn(sanitized.events[0], 'payload'), false);
+  assert.throws(
+    () => parseTerminalEventInventory({ ...inventory, complete: false }, 'alpha'),
+    (error) => error.code === 'invalid-response',
+  );
+});
+
+test('event archive proposal validates the project, page, manifest, and payload-free rows', () => {
+  const proposal = {
+    project_id: 'alpha', eligible_count: 1, offset: 0, limit: 50,
+    manifest_sha256: 'c'.repeat(64),
+    items: [{
+      project_id: 'alpha', event_id: 'evt-processed-1', event_type: 'goal.started',
+      payload_sha256: 'd'.repeat(64), idempotency_sha256: null,
+      received_at: '2026-11-07T10:00:00Z', processed_at: '2026-11-07T10:00:01Z',
+      source_id: 'producer-1', source_sequence: 9, attempts: 1,
+      retry_audit_count: 0, terminal_disposition_count: 0,
+      consumer_drain_reference_count: 0,
+    }],
+  };
+  const result = parseEventCompactionProposal(proposal, 'alpha', 0, 50);
+  assert.equal(result.eligibleCount, 1);
+  assert.equal(result.items[0].eventId, 'evt-processed-1');
+  assert.equal(Object.hasOwn(result.items[0], 'payload'), false);
+  assert.throws(
+    () => parseEventCompactionProposal(proposal, 'other-project', 0, 50),
+    (error) => error.code === 'invalid-response',
+  );
+  assert.throws(
+    () => parseEventCompactionProposal({ ...proposal, offset: 50 }, 'alpha', 0, 50),
+    (error) => error.code === 'invalid-response',
+  );
+  assert.throws(
+    () => parseEventCompactionProposal({
+      ...proposal, items: [{ ...proposal.items[0], attempts: -1 }],
+    }, 'alpha', 0, 50),
+    (error) => error.code === 'invalid-response',
+  );
+});
+
+test('health component rows expose every dependency and preserve stale or unknown states', () => {
+  const health = healthyHermesProbe().health;
+  const healthyRows = healthComponentRows(health, 'alpha');
+  assert.equal(healthyRows.length, 7);
+  assert.ok(healthyRows.every((row) => row.state === 'healthy'));
+  assert.equal(healthyRows[0].label, 'event router');
+
+  health.dependencies[1].status = 'degraded';
+  const degradedRows = healthComponentRows(health, 'alpha');
+  assert.equal(degradedRows[1].state, 'degraded');
+
+  health.dependencies[1].observed_at = new Date(Date.now() - 70000).toISOString();
+  health.dependencies[1].age_seconds = 70;
+  const staleRows = healthComponentRows(health, 'alpha');
+  assert.equal(staleRows[1].state, 'unknown');
+  assert.equal(staleRows[1].stateLabel, 'Stale');
+
+  assert.ok(healthComponentRows(null, 'alpha').every((row) => row.state === 'unknown'));
+});
+
+test('dashboard component LEDs include local reads, projections, and history storage', () => {
+  const health = healthyHermesProbe('alpha').health;
+  const rows = dashboardComponentRows({
+    health,
+    projectId: 'alpha',
+    queueSnapshot: { project_id: 'alpha' },
+    workspaceViewsUpdated: false,
+    healthHistoryPersisted: false,
+  });
+  assert.equal(rows.length, 11);
+  assert.ok(rows.slice(0, 7).every((row) => row.state === 'healthy'));
+  assert.equal(rows[7].label, 'Hermes profile probe');
+  assert.equal(rows[7].state, 'healthy');
+  assert.equal(rows[8].label, 'Curator MCP queue read');
+  assert.equal(rows[8].state, 'healthy');
+  assert.equal(rows[9].label, 'Inbox and review projections');
+  assert.equal(rows[9].state, 'degraded');
+  assert.equal(rows[9].action, 'refreshQueueViews');
+  assert.equal(rows[10].label, 'Health history storage');
+  assert.equal(rows[10].state, 'unknown');
+
+  const unavailable = dashboardComponentRows({
+    health: null,
+    projectId: 'alpha',
+    healthProbeError: 'hermes-probe-timeout',
+    queueProbeError: 'curator-queue-read',
+  });
+  assert.ok(unavailable.slice(7).every((row) => row.state === 'unknown'));
+  assert.match(unavailable[7].value, /timed out/);
+  assert.match(unavailable[8].value, /could not read project queue counts/);
+});
+
+test('host filesystem rows report available space and fail closed on invalid probes', () => {
+  const calls = [];
+  const rows = hostFilesystemRows('/workspace', '/data/curator.sqlite', (target) => {
+    calls.push(target);
+    if (target === '/data/curator.sqlite') throw new Error('database file is not present');
+    return target === '/workspace'
+      ? { bsize: 4096, blocks: 1000, bfree: 300, bavail: 250 }
+      : { bsize: 4096, blocks: 1000, bfree: 80, bavail: 50 };
+  });
+  assert.deepEqual(calls, ['/workspace', '/data/curator.sqlite', '/data']);
+  assert.equal(rows[0].label, 'Workspace filesystem');
+  assert.equal(rows[0].state, 'healthy');
+  assert.match(rows[0].value, /1000\.0 KiB available \/ 3\.9 MiB total/);
+  assert.equal(rows[1].label, 'SQLite filesystem');
+  assert.equal(rows[1].state, 'warning');
+  assert.match(rows[1].stateLabel, /10% threshold/);
+  assert.ok(hostFilesystemRows('relative', '/data/db', () => null)
+    .every((row) => row.state === 'unknown'));
+  assert.ok(hostFilesystemRows('/workspace', '/data/db', () => ({
+    bsize: Number.MAX_SAFE_INTEGER, blocks: 2, bfree: 1, bavail: 1,
+  })).every((row) => row.state === 'unknown'));
+});
+
+test('dashboard records a project-bound health trend with a fixed 60-check limit', () => {
+  class Element {
+    constructor() { this.children = []; this.attributes = {}; this.listeners = {}; this.textContent = ''; }
+    addEventListener(type, listener) { this.listeners[type] = listener; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    appendChild(child) { this.children.push(child); }
+    replaceChildren(...children) { this.children = children; }
+  }
+  const elements = new Map();
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, new Element());
+      return elements.get(id);
+    },
+    createElement() { return new Element(); },
+  };
+  let receiveMessage;
+  let monitorCallback;
+  let monitorInterval;
+  let savedState = null;
+  const window = {
+    addEventListener(type, listener) {
+      if (type === 'message') receiveMessage = listener;
+    },
+    setInterval(callback, interval) {
+      monitorCallback = callback;
+      monitorInterval = interval;
+      return 1;
+    },
+    clearInterval() {},
+  };
+  const postedMessages = [];
+  const html = dashboardHtml({ cspSource: 'vscode-webview:' });
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  vm.runInNewContext(script, {
+    document,
+    window,
+    acquireVsCodeApi: () => ({
+      postMessage: (message) => postedMessages.push(message),
+      getState: () => savedState,
+      setState: (state) => { savedState = state; },
+    }),
+  });
+
+  const firstTime = Date.now() - 65000;
+  for (let index = 0; index < 65; index++) {
+    const status = index % 2 ? 'degraded' : 'healthy';
+    receiveMessage({ data: {
+      type: 'healthSnapshot',
+      projectId: 'alpha',
+      health: { project_id: 'alpha', status, gate_codes: [] },
+      healthCheckedAt: new Date(firstTime + index * 1000).toISOString(),
+      healthComponentRows: [],
+    } });
+  }
+  assert.equal(elements.get('healthHistoryChart').children.length, 60);
+  assert.equal(elements.get('healthHistoryChart').children[59].attributes['data-state'], 'healthy');
+  assert.match(elements.get('healthHistorySummary').textContent, /^60 checks/);
+  assert.equal(savedState.projectId, 'alpha');
+  assert.equal(savedState.healthHistory.length, 60);
+  assert.equal(savedState.healthHistory[0].observed_at, new Date(firstTime + 5000).toISOString());
+  assert.equal(monitorInterval, 60000);
+  elements.get('refresh').disabled = false;
+  monitorCallback();
+  assert.equal(postedMessages.at(-1).type, 'refreshHealth');
+
+  receiveMessage({ data: {
+    type: 'healthSnapshot', projectId: 'beta',
+    health: { project_id: 'beta', status: 'unknown', gate_codes: [] },
+    healthCheckedAt: new Date(firstTime + 66000).toISOString(),
+    healthComponentRows: [],
+  } });
+  assert.equal(elements.get('healthHistoryChart').children.length, 1);
+  assert.equal(elements.get('healthHistoryChart').children[0].attributes['data-state'], 'unknown');
+  assert.equal(savedState.projectId, 'beta');
+});
+
+test('health history persists a bounded project and Hermes-profile scoped series', async () => {
+  const values = new Map();
+  const store = {
+    get: (key, fallback) => values.has(key) ? values.get(key) : fallback,
+    update: async (key, value) => { values.set(key, value); },
+  };
+  let result;
+  const start = Date.now() - 70000;
+  for (let index = 0; index < 65; index += 1) {
+    result = await updatePersistentHealthHistory(
+      store,
+      'alpha',
+      'alpha-hermes',
+      index % 2 ? 'degraded' : 'healthy',
+      new Date(start + index * 1000).toISOString(),
+    );
+  }
+  assert.equal(result.persisted, true);
+  assert.match(result.scope, /^[a-f0-9]{64}$/);
+  assert.equal(result.samples.length, 60);
+  assert.equal(result.samples[0].observed_at, new Date(start + 5000).toISOString());
+  assert.equal(result.samples.at(-1).observed_at, new Date(start + 64000).toISOString());
+
+  const otherProfile = await updatePersistentHealthHistory(
+    store, 'alpha', 'other-hermes', 'unknown', new Date(start + 65000).toISOString(),
+  );
+  assert.equal(otherProfile.persisted, true);
+  assert.notEqual(otherProfile.scope, result.scope);
+  assert.equal(otherProfile.samples.length, 1);
+
+  const failed = await updatePersistentHealthHistory({
+    get: () => [],
+    update: async () => { throw new Error('private persistence detail'); },
+  }, 'alpha', 'alpha-hermes', 'healthy', new Date().toISOString());
+  assert.equal(failed.persisted, false);
+  assert.equal(failed.scope, result.scope);
+  assert.deepEqual(failed.samples, []);
+
+  const unreadable = await updatePersistentHealthHistory({
+    get: () => [],
+    update: async () => {},
+  }, 'alpha', 'alpha-hermes', 'healthy', new Date().toISOString());
+  assert.equal(unreadable.persisted, false);
+  assert.equal(unreadable.scope, result.scope);
+});
+
+test('dashboard restores persistent health history returned by the host', () => {
+  class Element {
+    constructor() { this.children = []; this.attributes = {}; this.textContent = ''; }
+    addEventListener() {}
+    setAttribute(name, value) { this.attributes[name] = value; }
+    appendChild(child) { this.children.push(child); }
+    replaceChildren(...children) { this.children = children; }
+  }
+  const elements = new Map();
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, new Element());
+      return elements.get(id);
+    },
+    createElement() { return new Element(); },
+  };
+  let receiveMessage;
+  let savedState = null;
+  const window = { addEventListener(type, listener) {
+    if (type === 'message') receiveMessage = listener;
+  } };
+  const html = dashboardHtml({ cspSource: 'vscode-webview:' });
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  vm.runInNewContext(script, {
+    document,
+    window,
+    acquireVsCodeApi: () => ({
+      postMessage() {},
+      getState: () => savedState,
+      setState: (state) => { savedState = state; },
+    }),
+  });
+  const samples = [
+    { observed_at: '2026-11-08T01:00:00.000Z', status: 'healthy' },
+    { observed_at: '2026-11-08T01:01:00.000Z', status: 'degraded' },
+  ];
+  receiveMessage({ data: {
+    type: 'healthSnapshot',
+    projectId: 'alpha',
+    health: { project_id: 'alpha', status: 'degraded', gate_codes: ['disk_low'] },
+    healthCheckedAt: samples[1].observed_at,
+    healthHistory: samples,
+    healthHistoryPersisted: true,
+    healthHistoryScope: 'a'.repeat(64),
+    healthComponentRows: [],
+  } });
+  assert.equal(elements.get('healthHistoryChart').children.length, 2);
+  assert.match(elements.get('healthHistorySummary').textContent, /^2 checks/);
+  assert.match(elements.get('healthHistoryRetention').textContent, /Saved by VS Code/);
+  assert.equal(savedState.healthHistoryScope, 'a'.repeat(64));
+  assert.equal(savedState.healthHistory.length, 2);
+});
+
+test('projection health LED runs local rebuild and reflects its verified result', () => {
+  class Element {
+    constructor() { this.children = []; this.attributes = {}; this.listeners = {}; this.textContent = ''; }
+    addEventListener(type, listener) { this.listeners[type] = listener; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    appendChild(child) { this.children.push(child); }
+    replaceChildren(...children) { this.children = children; }
+  }
+  const elements = new Map();
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, new Element());
+      return elements.get(id);
+    },
+    createElement() { return new Element(); },
+  };
+  let receiveMessage;
+  const postedMessages = [];
+  const window = { addEventListener(type, listener) {
+    if (type === 'message') receiveMessage = listener;
+  } };
+  const html = dashboardHtml({ cspSource: 'vscode-webview:' });
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  vm.runInNewContext(script, {
+    document,
+    window,
+    acquireVsCodeApi: () => ({ postMessage: (message) => postedMessages.push(message) }),
+  });
+  receiveMessage({ data: {
+    type: 'healthSnapshot',
+    projectId: 'alpha',
+    health: { project_id: 'alpha', status: 'healthy', gate_codes: [] },
+    healthCheckedAt: new Date().toISOString(),
+    healthComponentRows: dashboardComponentRows({
+      health: { project_id: 'alpha', status: 'healthy', gate_codes: [] },
+      projectId: 'alpha',
+      queueSnapshot: { project_id: 'alpha' },
+      workspaceViewsUpdated: false,
+    }),
+  } });
+  const projectionRow = elements.get('healthRows').children
+    .find((row) => row.children[0].textContent === 'Inbox and review projections');
+  const rebuild = projectionRow.children[1].children[0];
+  rebuild.listeners.click();
+  assert.equal(postedMessages.at(-1).type, 'refreshQueueViews');
+  assert.equal(elements.get('refreshQueueViews').disabled, true);
+
+  receiveMessage({ data: {
+    type: 'queueViewsRefreshResult',
+    status: {
+      allUpdated: true,
+      reviewQueueUpdated: true,
+      reviewDocumentUpdated: true,
+      inboxUpdated: true,
+      reviewEditorOpen: false,
+    },
+  } });
+  assert.equal(projectionRow.attributes['data-state'], 'healthy');
+  assert.equal(projectionRow.children[1].textContent, 'Both local views refreshed');
+  assert.equal(projectionRow.children[2].textContent, 'healthy');
+  assert.equal(elements.get('refreshQueueViews').disabled, false);
+});
+
 test('project feeds keep queue data when Hermes readiness fails', async () => {
   const feeds = await readProjectFeeds({
     client: { callTool: async () => JSON.stringify(healthyCuratorQueueSnapshot()) },
@@ -515,7 +951,7 @@ test('project feed reads coalesce overlapping refreshes', async () => {
   assert.equal(result.healthProbeError, null);
 });
 
-test('three identical automatic feed failures pause until a manual refresh', async () => {
+test('repeated automatic feed failures cool down and recover automatically', async () => {
   let queueCalls = 0;
   let hermesCalls = 0;
   let failQueue = true;
@@ -549,7 +985,14 @@ test('three identical automatic feed failures pause until a manual refresh', asy
   assert.equal(queueCalls, 3);
   assert.equal(hermesCalls, 4);
   failQueue = false;
-  const recovered = await readProjectFeeds({ ...options, trigger: 'manual' });
+  const originalNow = Date.now;
+  let recovered;
+  try {
+    Date.now = () => originalNow() + 61000;
+    recovered = await readProjectFeeds(options);
+  } finally {
+    Date.now = originalNow;
+  }
   assert.equal(recovered.queueProbeError, null);
   assert.equal(recovered.queueLastFailureCode, null);
   assert.equal(recovered.queueAutoPaused, false);
@@ -609,15 +1052,16 @@ test('closed Curator transport shows one recovery modal with an explicit reload 
   }
 });
 
-test('MCP tool failures do not label rejected writes as denied reads', async () => {
-  const child = new FakeMcpProcess(undefined, false, 'fact_record');
+test('MCP tool failures expose the rejected operation and safe reason code', async () => {
+  const child = new FakeMcpProcess(undefined, false, 'sde_review_packet');
   const client = new McpStdioClient('fixture', [], '/tmp', 'fixture-profile', () => child);
   try {
     await client.initialize();
-    await assert.rejects(client.callTool('fact_record', { fact_id: 'fact-1' }), (error) => {
+    await assert.rejects(client.callTool('sde_review_packet', { candidate_id: 'candidate-1' }), (error) => {
       assert.equal(error.code, 'mcp-tool-error');
-      assert.match(error.message, /rejected the requested operation/);
+      assert.match(error.message, /rejected sde_review_packet \(forbidden\)/);
       assert.equal(error.reasonCode, 'forbidden');
+      assert.equal(error.toolName, 'sde_review_packet');
       assert.doesNotMatch(error.message, /permission denied/);
       assert.doesNotMatch(error.message, /caller is not allowed/);
       return true;
@@ -629,6 +1073,9 @@ test('MCP tool failures do not label rejected writes as denied reads', async () 
 
 test('dashboard renders bounded pages as text and never joins prior pages', () => {
   const html = dashboardHtml({ cspSource: 'vscode-webview:' });
+  const healingToolboxHtml = dashboardHtml(
+    { cspSource: 'vscode-webview:' }, false, true,
+  );
   assert.match(html, /default-src 'none'/);
   assert.match(html, /Facts .* of /);
   assert.match(html, /previous page was cleared/);
@@ -637,10 +1084,25 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.match(html, /function requestGoals\(offset, manualRefresh = false\)/);
   assert.match(html, /api\.postMessage\(\{ type: 'loadGoals', offset, manualRefresh \}\)/);
   assert.match(html, /addEventListener\('click', \(\) => requestGoals\(0, true\)\)/);
-  assert.match(html, /requestGoals\(0, true\);\s*if \(false\)/);
+  assert.match(html, /requestGoals\(0, true\);/);
+  assert.match(html, /window\.setInterval/);
+  assert.match(html, /}, 60000\);/);
   assert.match(html, /reportRevision\.slice\(0, 12\)/);
   assert.match(html, /report\.textContent = message\.report/);
   assert.match(html, /Pending SDE review/);
+  assert.match(html, /CuratorMD V2 Recovery Manager/);
+  assert.match(html, /complete a tracked goal with current passing evidence, then request historical SDE assessment/);
+  assert.match(html, /No pending SDE candidates\. Complete a tracked goal with current passing evidence/);
+  assert.match(html, /failed read stays unknown/);
+  assert.match(html, /choose <em>Refresh evidence<\/em> above the editable decision/);
+  assert.match(html, /Retry recovery checks/);
+  assert.match(html, /Rebuild local inbox and review views/);
+  assert.match(html, /status\.reviewQueueUpdated/);
+  assert.match(html, /status\.inboxUpdated/);
+  assert.match(html, /Open pending review actions/);
+  assert.match(html, /api\.postMessage\(\{ type: 'openPendingReview' \}\)/);
+  assert.match(healingToolboxHtml, /recoveryToolbox'\)\.scrollIntoView\(\)/);
+  assert.match(healingToolboxHtml, /retryRecoveryReads'\)\.focus\(\)/);
   assert.ok(html.indexOf('id="reviewsSection"') < html.indexOf('id="goalControls"'));
   assert.match(html, /<details class="dashboard" open>/);
   assert.match(html, /class="dashboard-grid"/);
@@ -685,6 +1147,629 @@ test('dashboard renders bounded pages as text and never joins prior pages', () =
   assert.match(html, /paragraph\.textContent = fields\.filter\(Boolean\)\.join/);
   assert.doesNotMatch(html, /report\.innerHTML/);
   assert.doesNotMatch(html, /reviews\.innerHTML/);
+});
+
+test('recovery toolbox retries diagnostics and routes to attended review without a terminal', () => {
+  class Element {
+    constructor() {
+      this.textContent = '';
+      this.disabled = false;
+      this.hidden = false;
+      this.children = [];
+      this.listeners = {};
+      this.attributes = {};
+      this.dataset = {};
+    }
+
+    addEventListener(type, listener) { this.listeners[type] = listener; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    appendChild(child) { this.children.push(child); }
+    replaceChildren(...children) { this.children = children; }
+  }
+
+  const elements = new Map();
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, new Element());
+      return elements.get(id);
+    },
+    createElement() { return new Element(); },
+  };
+  let receiveWindowMessage;
+  const window = {
+    addEventListener(type, listener) {
+      if (type === 'message') receiveWindowMessage = listener;
+    },
+  };
+  const messages = [];
+  const html = dashboardHtml({ cspSource: 'vscode-webview:' });
+  const script = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  vm.runInNewContext(script, {
+    document,
+    window,
+    acquireVsCodeApi: () => ({ postMessage: (message) => messages.push(message) }),
+  });
+
+  assert.equal(JSON.stringify(messages[0]), JSON.stringify({
+    type: 'loadGoals', offset: 0, manualRefresh: true,
+  }));
+  elements.get('retryRecoveryReads').listeners.click();
+  assert.equal(JSON.stringify(messages[1]), JSON.stringify({
+    type: 'loadGoals', offset: 0, manualRefresh: true,
+  }));
+  elements.get('runEventRouter').listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'runEventRouter'))), {
+    type: 'runEventRouter',
+  });
+  receiveWindowMessage({ data: {
+    type: 'eventRouterResult', success: true, ran: false,
+    summary: 'No eligible events are queued.',
+  } });
+  assert.equal(elements.get('eventRouterStatus').textContent, 'No eligible events are queued.');
+  elements.get('inspectTerminalEvents').listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'inspectTerminalEvents'))), {
+    type: 'inspectTerminalEvents',
+  });
+  elements.get('openReviewActions').listeners.click();
+  assert.equal(JSON.stringify(messages.find((message) => message.type === 'openPendingReview')),
+    JSON.stringify({ type: 'openPendingReview' }));
+  elements.get('retryPendingPurges').listeners.click();
+  assert.equal(JSON.stringify(messages.find((message) => message.type === 'retryPendingPurges')),
+    JSON.stringify({ type: 'retryPendingPurges' }));
+  document.getElementById('purgeReceiptId').value = 'receipt-123';
+  elements.get('inspectPurgeReceipt').listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'inspectPurgeReceipt'))), {
+    type: 'inspectPurgeReceipt', receiptId: 'receipt-123',
+  });
+  receiveWindowMessage({ data: {
+    type: 'terminalEventInventory', afterEventId: null,
+    inventory: {
+      projectId: 'alpha', countAfterCursor: 1, complete: true,
+      nextAfterEventId: null,
+      events: [{ eventId: 'evt-quarantine-1', status: 'quarantined',
+        payloadSha256: 'b'.repeat(64), sourceId: 'producer-1', sourceSequence: 4 }],
+    },
+  } });
+  const eventRow = elements.get('terminalEventInventory').children[0].children[1].children[0];
+  assert.equal(eventRow.children[0].textContent, 'evt-quarantine-1');
+  assert.equal(eventRow.children[1].textContent, 'quarantined');
+  assert.equal(eventRow.children[5].children[0].textContent, 'Retry…');
+  eventRow.children[5].children[0].listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'retryQuarantinedEvent'))), {
+    type: 'retryQuarantinedEvent', eventId: 'evt-quarantine-1',
+    payloadSha256: 'b'.repeat(64), afterEventId: null,
+  });
+  elements.get('inspectEventArchive').listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'inspectEventArchive'))), {
+    type: 'inspectEventArchive', offset: 0,
+  });
+  receiveWindowMessage({ data: {
+    type: 'eventArchiveProposal',
+    proposal: {
+      projectId: 'alpha', eligibleCount: 1, offset: 0, limit: 50,
+      manifestSha256: 'c'.repeat(64),
+      items: [{ eventId: 'evt-processed-1', eventType: 'goal.started',
+        payloadSha256: 'd'.repeat(64), receivedAt: '2026-11-07T10:00:00Z',
+        processedAt: '2026-11-07T10:00:01Z', sourceId: 'producer-1',
+        sourceSequence: 9, attempts: 1, retryAuditCount: 0,
+        terminalDispositionCount: 0, consumerDrainReferenceCount: 0 }],
+    },
+  } });
+  const archiveTarget = elements.get('eventArchiveProposal');
+  assert.match(elements.get('eventArchiveStatus').textContent, /Eligible processed receipts 1–1 of 1/);
+  archiveTarget.children[1].listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'archiveEventReceiptPage'))), {
+    type: 'archiveEventReceiptPage', offset: 0, manifestSha256: 'c'.repeat(64),
+    eventIds: ['evt-processed-1'],
+  });
+  receiveWindowMessage({ data: {
+    type: 'purgeReceiptInspection',
+    summary: {
+      receiptId: 'receipt-123', purgeStatus: 'purge_pending',
+      canonicalPersisted: true, cleanupAuthorized: true,
+      cleanupCanonicalPersisted: true, targetCount: 1,
+      targets: [{ path: 'goal-1/cue.bin', status: 'held', outcome: 'held', attempts: 2,
+        nextAttemptInSeconds: null, nextAction: 'release_artifact_hold',
+        approvalStale: false, error: 'retention_hold' }],
+      omittedTargetCount: 0,
+    },
+  } });
+  assert.match(elements.get('purgeReceiptStatus').textContent, /receipt-123 · purge_pending/);
+  assert.equal(elements.get('purgeReceiptTargets').children[0].children[1].children[0].children[0].textContent, 'goal-1/cue.bin');
+  assert.match(elements.get('purgeReceiptTargets').children[0].children[1].children[0].children[5].textContent, /release_artifact_hold.*retention_hold/);
+  elements.get('purgeReceiptTargets').children[0].children[1].children[0].children[6].children[0]
+    .listeners.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(messages.find((message) => message.type === 'releaseArtifactHold'))), {
+    type: 'releaseArtifactHold', receiptId: 'receipt-123', artifactPath: 'goal-1/cue.bin',
+  });
+  assert.match(html, /already approved and canonically persisted/);
+  assert.match(html, /Inspect cleanup receipt/);
+  assert.match(html, /cannot approve a new deletion/);
+  assert.equal(typeof receiveWindowMessage, 'function');
+});
+
+test('cleanup retry requires attended confirmation and its exact project authorization scope', async () => {
+  const messages = [];
+  const launched = [];
+  let receiveMessage;
+  let confirmationText;
+  let confirmationOptions;
+  const previousWorkspace = vscodeMock.workspace;
+  const previousWindow = vscodeMock.window;
+  const previousViewColumn = vscodeMock.ViewColumn;
+  const receiptStatus = {
+    receipt_id: 'receipt-abc', purge_status: 'purge_pending',
+    canonical_persisted: true, cleanup_authorized: true,
+    cleanup_canonical_persisted: true,
+  };
+  const userSettings = {
+    databasePath: '/tmp/curator.sqlite3',
+    profileId: 'fixture-profile',
+    hermesProfileBindings: { alpha: 'fixture-profile' },
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: '/tmp/project' } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showWarningMessage: async (message, options, choice) => {
+      confirmationText = message;
+      confirmationOptions = options;
+      return choice;
+    },
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => messages.push(message),
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+  try {
+    await showDashboard((command, args) => {
+      if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, true, new Set(), null, null,
+        {
+          retry_pending_purges: [],
+          artifact_purge_status: [receiptStatus, [{
+            artifact: { path: 'goal-1/cue.bin', sha256: 'b'.repeat(64) },
+            status: 'held', outcome: 'held', attempts: 2,
+            error: 'retention_hold', next_attempt_in_seconds: null,
+            safe_recovery_action: 'release_artifact_hold', approval_stale: false,
+          }]],
+        },
+      );
+      launched.push({ args, child });
+      return child;
+    });
+    await receiveMessage({ type: 'loadGoals', offset: 0 });
+    await receiveMessage({ type: 'inspectPurgeReceipt', receiptId: 'receipt-abc' });
+    assert.equal(launched.length, 2);
+    assert.ok(!launched[1].args.includes('--allow-write'));
+    assert.ok(launched[1].child.requests.some((request) => request.params?.name === 'artifact_purge_status'));
+    assert.equal(messages.at(-1).type, 'purgeReceiptInspection');
+    assert.equal(messages.at(-1).summary.targets[0].nextAction, 'release_artifact_hold');
+    await receiveMessage({ type: 'retryPendingPurges' });
+    assert.ok(confirmationText.includes('project alpha'));
+    assert.ok(confirmationText.includes('cannot approve any new deletion'));
+    assert.deepEqual(confirmationOptions, { modal: true });
+    assert.equal(launched.length, 3);
+    assert.ok(launched[2].args.includes('--allow-purge-retry'));
+    assert.ok(launched[2].child.requests.some((request) => request.params?.name === 'retry_pending_purges'));
+    assert.deepEqual(messages.at(-1), {
+      type: 'purgeRetryResult',
+      success: true,
+      summary: 'No already-authorized due cleanup work was pending.',
+    });
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+    vscodeMock.window = previousWindow;
+    vscodeMock.ViewColumn = previousViewColumn;
+  }
+});
+
+test('quarantined event retry rechecks one exact candidate under attended confirmation', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-event-retry-'));
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  const previousWorkspace = vscodeMock.workspace;
+  const previousWindow = vscodeMock.window;
+  const previousViewColumn = vscodeMock.ViewColumn;
+  const messages = [];
+  const launched = [];
+  let receiveMessage;
+  let confirmationText = '';
+  let confirmationOptions;
+  const payloadSha256 = 'd'.repeat(64);
+  const inventory = {
+    project_id: 'alpha', count_after_cursor: 1, complete: true,
+    next_after_event_id: null,
+    events: [{ event_id: 'evt-quarantined-1', status: 'quarantined',
+      payload_sha256: payloadSha256, source_id: 'producer-1', source_sequence: 7 }],
+  };
+  const userSettings = {
+    databasePath: path.join(projectRoot, 'curator.sqlite3'),
+    profileId: 'fixture-profile',
+    hermesProfileBindings: { alpha: 'fixture-profile' },
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showWarningMessage: async (message, options, choice) => {
+      confirmationText = message;
+      confirmationOptions = options;
+      return choice;
+    },
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => messages.push(message),
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+  try {
+    await showDashboard((command, args) => {
+      if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, true, new Set(), null, null,
+        {
+          event_terminal_inventory: inventory,
+          event_quarantine_retry: {
+            project_id: 'alpha', event_id: 'evt-quarantined-1', status: 'failed',
+          },
+        },
+      );
+      launched.push({ args, child });
+      return child;
+    });
+    await receiveMessage({ type: 'loadGoals', offset: 0 });
+    await receiveMessage({
+      type: 'retryQuarantinedEvent', eventId: 'evt-quarantined-1',
+      payloadSha256, afterEventId: null,
+    });
+    assert.equal(launched.length, 4);
+    assert.ok(!launched[1].args.includes('--allow-write'));
+    assert.ok(launched[1].child.requests.some(
+      (request) => request.params?.name === 'event_terminal_inventory',
+    ));
+    assert.match(confirmationText, /evt-quarantined-1/);
+    assert.deepEqual(confirmationOptions, { modal: true, detail: confirmationOptions.detail });
+    assert.match(confirmationOptions.detail, /Project: alpha/);
+    assert.match(confirmationOptions.detail, /Payload SHA-256/);
+    assert.ok(launched[2].args.includes('--allow-event-retry'));
+    assert.ok(launched[2].child.requests.some(
+      (request) => request.params?.name === 'event_terminal_inventory',
+    ));
+    const retry = launched[2].child.requests.find(
+      (request) => request.params?.name === 'event_quarantine_retry',
+    );
+    assert.deepEqual(retry.params.arguments, { event_id: 'evt-quarantined-1' });
+    assert.ok(launched[3].child.requests.some(
+      (request) => request.params?.name === 'event_terminal_inventory',
+    ));
+    assert.ok(messages.some((message) => message.type === 'terminalEventRetryResult'
+      && message.success === true));
+    const inventoryMessage = messages.find((message) => message.type === 'terminalEventInventory');
+    assert.equal(inventoryMessage.inventory.events[0].status, 'quarantined');
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+    vscodeMock.window = previousWindow;
+    vscodeMock.ViewColumn = previousViewColumn;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('processed receipt archival rechecks an exact page and requires attended rationale', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-event-archive-'));
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  const previousWorkspace = vscodeMock.workspace;
+  const previousWindow = vscodeMock.window;
+  const previousViewColumn = vscodeMock.ViewColumn;
+  const messages = [];
+  const launched = [];
+  let receiveMessage;
+  let confirmation = '';
+  let confirmationOptions;
+  let rationalePrompt;
+  const proposal = {
+    project_id: 'alpha', eligible_count: 1, offset: 0, limit: 50,
+    manifest_sha256: 'c'.repeat(64),
+    items: [{
+      project_id: 'alpha', event_id: 'evt-processed-1', event_type: 'goal.started',
+      payload_sha256: 'd'.repeat(64), idempotency_sha256: null,
+      received_at: '2026-11-07T10:00:00Z', processed_at: '2026-11-07T10:00:01Z',
+      source_id: 'producer-1', source_sequence: 9, attempts: 1,
+      retry_audit_count: 0, terminal_disposition_count: 0,
+      consumer_drain_reference_count: 0,
+    }],
+  };
+  const userSettings = {
+    databasePath: path.join(projectRoot, 'curator.sqlite3'),
+    profileId: 'fixture-profile',
+    hermesProfileBindings: { alpha: 'fixture-profile' },
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showInputBox: async (options) => {
+      rationalePrompt = options;
+      return 'Archive confirmed processed receipts after retention review.';
+    },
+    showWarningMessage: async (message, options, choice) => {
+      confirmation = message;
+      confirmationOptions = options;
+      return choice;
+    },
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => messages.push(message),
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+  try {
+    await showDashboard((command, args) => {
+      if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, true, new Set(), null, null,
+        {
+          event_receipt_compaction_propose: proposal,
+          event_receipt_compaction_archive: (arguments_) => ({
+            archive_id: arguments_.archive_id,
+            project_id: 'alpha', reviewer_id: 'reviewer-1',
+            inventory_sha256: arguments_.inventory_sha256,
+            offset: arguments_.offset, event_ids: arguments_.event_ids,
+            approval_reason: arguments_.approval_reason,
+            archived_at: '2026-11-07T10:01:00Z',
+          }),
+        },
+      );
+      launched.push({ args, child });
+      return child;
+    });
+    await receiveMessage({ type: 'loadGoals', offset: 0 });
+    await receiveMessage({
+      type: 'archiveEventReceiptPage', offset: 0,
+      manifestSha256: proposal.manifest_sha256,
+      eventIds: ['evt-processed-1'],
+    });
+    assert.equal(launched.length, 4);
+    assert.ok(!launched[1].args.includes('--allow-write'));
+    assert.ok(launched[2].args.includes('--allow-write'));
+    assert.equal(rationalePrompt.title, 'Reason for archiving processed event receipts');
+    assert.match(confirmation, /1 processed event receipt/);
+    assert.deepEqual(confirmationOptions, { modal: true, detail: confirmationOptions.detail });
+    assert.match(confirmationOptions.detail, /Inventory SHA-256/);
+    assert.match(confirmationOptions.detail, /payload-free/);
+    assert.match(confirmationOptions.detail, /Failed, quarantined, active, and unknown events are not eligible/);
+    const writeCalls = launched[2].child.requests;
+    assert.ok(writeCalls.some((request) => request.params?.name === 'event_receipt_compaction_propose'));
+    const archive = writeCalls.find((request) => request.params?.name === 'event_receipt_compaction_archive');
+    assert.ok(archive);
+    assert.deepEqual(archive.params.arguments.event_ids, ['evt-processed-1']);
+    assert.equal(archive.params.arguments.inventory_sha256, proposal.manifest_sha256);
+    assert.equal(archive.params.arguments.offset, 0);
+    assert.equal(archive.params.arguments.approval_reason,
+      'Archive confirmed processed receipts after retention review.');
+    assert.equal(messages.find((message) => message.type === 'eventArchiveResult').success, true);
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+    vscodeMock.window = previousWindow;
+    vscodeMock.ViewColumn = previousViewColumn;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('held artifact recovery rechecks and confirms one receipt-scoped hold release', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-hold-release-'));
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  const previousWorkspace = vscodeMock.workspace;
+  const previousWindow = vscodeMock.window;
+  const previousViewColumn = vscodeMock.ViewColumn;
+  const messages = [];
+  const launched = [];
+  let receiveMessage;
+  let releaseCalled = false;
+  let inputOptions;
+  let confirmation;
+  const userSettings = {
+    databasePath: path.join(projectRoot, 'curator.sqlite3'),
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+  };
+  const heldTarget = {
+    artifact: { path: 'goal-1/held.bin', sha256: 'c'.repeat(64) },
+    status: 'held', outcome: 'held', attempts: 1, error: 'retention_hold',
+    next_attempt_in_seconds: null, safe_recovery_action: 'release_artifact_hold',
+    approval_stale: false,
+  };
+  const readyTarget = {
+    ...heldTarget, status: 'pending', outcome: null, error: null,
+    safe_recovery_action: 'retry_pending_purges',
+  };
+  const receipt = {
+    receipt_id: 'receipt-held', purge_status: 'purge_pending',
+    canonical_persisted: true, cleanup_authorized: true,
+    cleanup_canonical_persisted: true,
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showInputBox: async (options) => { inputOptions = options; return 'Owner confirmed no retention need.'; },
+    showWarningMessage: async (...args) => { confirmation = args; return 'Release this hold and retry'; },
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => messages.push(message),
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+  try {
+    await showDashboard((command, args) => {
+      if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, true, new Set(), null, null,
+        {
+          artifact_purge_status: () => [receipt, [releaseCalled ? readyTarget : heldTarget]],
+          release_artifact_hold: ({ receipt_id }) => {
+            releaseCalled = true;
+            return { receipt_id, purge_status: 'purge_pending' };
+          },
+        },
+      );
+      launched.push({ args, child });
+      return child;
+    });
+    await receiveMessage({ type: 'loadGoals', offset: 0 });
+    await receiveMessage({
+      type: 'releaseArtifactHold', receiptId: 'receipt-held', artifactPath: 'goal-1/held.bin',
+    });
+    assert.equal(inputOptions.title, 'Release one cleanup hold');
+    assert.match(confirmation[0], /goal-1\/held\.bin/);
+    assert.deepEqual(confirmation[1], { modal: true, detail: confirmation[1].detail });
+    assert.match(confirmation[1].detail, /Project: alpha/);
+    assert.match(confirmation[1].detail, /only this receipt/);
+    assert.equal(launched.length, 3);
+    assert.ok(!launched[1].args.includes('--allow-write'));
+    assert.ok(launched[2].args.includes('--allow-retention-hold-release'));
+    assert.ok(launched[2].child.requests.some((request) => request.params?.name === 'release_artifact_hold'));
+    assert.equal(messages.at(-1).type, 'purgeReceiptHoldResult');
+    assert.equal(messages.at(-1).success, true);
+    assert.match(messages.at(-1).summary, /current receipt state is purge_pending/);
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+    vscodeMock.window = previousWindow;
+    vscodeMock.ViewColumn = previousViewColumn;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('dashboard refreshes the authoritative queue before opening the pending review document', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-recovery-toolbox-'));
+  const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  fs.mkdirSync(path.dirname(reviewPath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [{
+    candidate: {
+      candidate_id: 'accepted-candidate', goal_id: 'goal-1', status: 'pending_review',
+      materiality: 'decision', rationale: 'Keep the accepted decision in the local queue until refreshed.',
+    },
+    goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Refresh the accepted review.' },
+  }], new Map()), true);
+
+  const previousWorkspace = vscodeMock.workspace;
+  const previousWindow = vscodeMock.window;
+  const previousViewColumn = vscodeMock.ViewColumn;
+  const previousUri = vscodeMock.Uri;
+  let receiveMessage;
+  let openedPath;
+  let shownDocument;
+  const launched = [];
+  const warnings = [];
+  const userSettings = {
+    databasePath: path.join(projectRoot, 'curator.sqlite3'),
+    profileId: 'fixture-profile',
+    serverCommand: 'fixture-mcp',
+    hermesCommand: 'fixture-hermes',
+    evidenceConfig: '',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    textDocuments: [],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+    openTextDocument: async (uri) => {
+      openedPath = uri.fsPath;
+      return { uri, getText: () => fs.readFileSync(uri.fsPath, 'utf8') };
+    },
+  };
+  vscodeMock.window = {
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: () => {},
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose: () => {},
+    }),
+    showTextDocument: async (document) => { shownDocument = document; },
+    showWarningMessage: async (message) => { warnings.push(message); },
+    showErrorMessage: assert.fail,
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.Uri = { file: (fsPath) => ({ fsPath }) };
+
+  try {
+    await showDashboard((command, args) => {
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, true, new Set(), null, null,
+        { sde_review_outline: {
+          project_id: 'alpha', candidate_id: 'accepted-candidate', status: 'accepted',
+        } },
+      );
+      launched.push({ command, args, child });
+      return child;
+    });
+    await receiveMessage({ type: 'openPendingReview' });
+    assert.equal(openedPath, reviewPath);
+    assert.equal(shownDocument.uri.fsPath, reviewPath);
+    assert.equal(launched.length, 1);
+    assert.ok(launched[0].args.includes('--allow-review'));
+    assert.ok(launched[0].child.requests.some((request) => request.params?.name === 'sde_review_queue_cards'));
+    assert.ok(launched[0].child.requests.some((request) => request.params?.name === 'event_queue_status'));
+    assert.doesNotMatch(fs.readFileSync(reviewPath, 'utf8'), /accepted-candidate/);
+    assert.match(fs.readFileSync(reviewPath, 'utf8'), /No pending candidates\./);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(projectRoot, '.curatormd-v2', 'inbox', 'status.json'), 'utf8')).project_id, 'alpha');
+    assert.deepEqual(warnings, []);
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+    vscodeMock.window = previousWindow;
+    vscodeMock.ViewColumn = previousViewColumn;
+    vscodeMock.Uri = previousUri;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
 });
 
 test('dashboard reopens only a completed goal after attended confirmation and uses a write-scoped launcher', async () => {
@@ -773,7 +1858,8 @@ test('status item follows Git Graph and uses project-bound health colors', async
     },
   };
   const subscriptions = [];
-  activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } });
+  activate({ subscriptions: { push: (...values) => subscriptions.push(...values) } },
+    () => new FakeMcpProcess('a'.repeat(64), false, null, null, true));
 
   assert.equal(items.length, 1);
   assert.equal(items[0].alignment, vscodeMock.StatusBarAlignment.Left);
@@ -782,9 +1868,12 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.equal(items[0].color.id, 'textLink.foreground');
   assertTooltipIncludesCurrentVersion(items[0]);
   assert.match(items[0].tooltip, /Blue means no health read has been attempted/);
+  assert.match(items[0].tooltip, /Command Palette: CuratorMD V2: Open Recovery Manager/);
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
-  assert.equal(commands.length, 2);
-  assert.equal(subscriptions.length, 4);
+  assert.equal(commands[1].name, 'curatormdV2.openHealingToolbox');
+  assert.equal(extensionManifest.contributes.commands[1].title, 'CuratorMD V2: Open Recovery Manager');
+  assert.equal(commands.length, 3);
+  assert.equal(subscriptions.length, 5);
 
   assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
   assert.equal(items[0].color, '#73d216');
@@ -918,7 +2007,8 @@ test('status item follows Git Graph and uses project-bound health colors', async
       return { uri };
     };
     vscodeMock.window.showTextDocument = async (document) => { shownDocument = document; };
-    await commands[1].handler();
+    vscodeMock.window.showWarningMessage = assert.fail;
+    await commands[2].handler();
     assert.equal(openedPath, pendingReview);
     assert.equal(shownDocument.uri.fsPath, pendingReview);
   } finally {
@@ -1357,10 +2447,165 @@ test('review CLI defaults beside the configured MCP launcher', () => {
   assert.equal(defaultReviewCommand('curatormd-v2-mcp'), 'curatormd-v2-review');
 });
 
-test('the extension exposes the dashboard without a palette task-creation command', () => {
+test('router command defaults beside MCP and accepts only a bounded single-project result', async () => {
+  assert.equal(
+    defaultRouterCommand('/opt/curator tools/bin/curatormd-v2-mcp'),
+    '/opt/curator tools/bin/curatormd-v2-router',
+  );
+  assert.equal(defaultRouterCommand('curatormd-v2-mcp'), 'curatormd-v2-router');
+  const wire = JSON.stringify({
+    attempted: 3, claim_lost: 0, failed: 1, processed: 2, project_count: 1,
+    pending: 1, quarantined: 0, claimed: 0, expired_claims: 0,
+  });
+  assert.deepEqual(parseRouterPassResult(wire, 1), {
+    exitCode: 1, attempted: 3, claimLost: 0, failed: 1, processed: 2,
+    pending: 1, quarantined: 0, claimed: 0, expiredClaims: 0,
+  });
+  assert.throws(() => parseRouterPassResult(wire, 2), (error) => error.code === 'router-result-invalid');
+  assert.throws(() => parseRouterPassResult(JSON.stringify({
+    ...JSON.parse(wire), project_count: 2,
+  }), 0), (error) => error.code === 'router-result-invalid');
+
+  let invocation;
+  const result = await runEventRouterPass(
+    '/opt/curator tools/bin/curatormd-v2-router', '/workspace/project',
+    '/data/project.sqlite3', (command, args, options) => {
+      invocation = { command, args, options };
+      const child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = () => { child.emit('close', null); };
+      setImmediate(() => {
+        child.stdout.end(wire);
+        child.emit('close', 1, null);
+      });
+      return child;
+    }, 25,
+  );
+  assert.deepEqual(invocation, {
+    command: '/opt/curator tools/bin/curatormd-v2-router',
+    args: [
+      '--database', '/data/project.sqlite3', '--project-root', '/workspace/project',
+      '--batch-limit', '25', '--route-events',
+    ],
+    options: {
+      cwd: '/workspace/project', shell: false, windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  });
+  assert.equal(result.processed, 2);
+});
+
+test('one-shot routing is scoped to the configured project and requires attended confirmation', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-router-pass-'));
+  fs.writeFileSync(path.join(projectRoot, '.curatormd-v2.toml'), 'project_id = "alpha"\n');
+  const previousWorkspace = vscodeMock.workspace;
+  const previousWindow = vscodeMock.window;
+  const previousViewColumn = vscodeMock.ViewColumn;
+  const messages = [];
+  const launched = [];
+  let receiveMessage;
+  let confirmation = '';
+  let confirmationOptions;
+  let routerInvocation;
+  const databasePath = path.join(projectRoot, 'curator.sqlite3');
+  const serverCommand = path.join(projectRoot, 'venv', 'bin', 'curatormd-v2-mcp');
+  const userSettings = {
+    databasePath,
+    profileId: 'fixture-profile',
+    hermesProfileBindings: { alpha: 'fixture-profile' },
+    serverCommand,
+    hermesCommand: 'fixture-hermes',
+  };
+  vscodeMock.workspace = {
+    workspaceFolders: [{ uri: { fsPath: projectRoot } }],
+    getConfiguration: () => ({
+      get: (key, fallback) => userSettings[key] || fallback,
+      inspect: () => ({ globalValue: true }),
+    }),
+  };
+  vscodeMock.ViewColumn = { One: 1 };
+  vscodeMock.window = {
+    showWarningMessage: async (text, options, choice) => {
+      confirmation = text;
+      confirmationOptions = options;
+      return choice;
+    },
+    showErrorMessage: assert.fail,
+    createWebviewPanel: () => ({
+      webview: {
+        cspSource: 'vscode-webview:',
+        postMessage: (message) => messages.push(message),
+        onDidReceiveMessage: (handler) => { receiveMessage = handler; },
+      },
+      onDidDispose() {},
+    }),
+  };
+  const queue = {
+    received_count: 2, failed_count: 1, quarantined_count: 3,
+    claimed_count: 4, expired_claim_count: 1,
+  };
+  try {
+    await showDashboard((command, args, options) => {
+      if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
+      if (command === path.join(projectRoot, 'venv', 'bin', 'curatormd-v2-router')) {
+        routerInvocation = { command, args, options };
+        const child = new EventEmitter();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.kill = () => { child.emit('close', null); };
+        setImmediate(() => {
+          child.stdout.end(JSON.stringify({
+            attempted: 3, claim_lost: 0, failed: 1, processed: 2, project_count: 1,
+            pending: 1, quarantined: 3, claimed: 1, expired_claims: 1,
+          }));
+          child.emit('close', 1, null);
+        });
+        return child;
+      }
+      const child = new FakeMcpProcess(
+        'a'.repeat(64), false, null, null, true, new Set(), null, null,
+        { event_queue_status: queue },
+      );
+      launched.push({ command, args, options, child });
+      return child;
+    });
+    await receiveMessage({ type: 'loadGoals', offset: 0 });
+    await receiveMessage({ type: 'runEventRouter' });
+    assert.ok(confirmation.includes('project alpha'));
+    assert.deepEqual(confirmationOptions, { modal: true, detail: confirmationOptions.detail });
+    assert.match(confirmationOptions.detail, /2 received, 1 failed, 3 quarantined/);
+    assert.match(confirmationOptions.detail, /their recorded goal and fact updates/);
+    assert.ok(routerInvocation);
+    assert.deepEqual(routerInvocation.args, [
+      '--database', databasePath,
+      '--project-root', projectRoot,
+      '--batch-limit', '100',
+      '--route-events',
+    ]);
+    assert.equal(routerInvocation.options.shell, false);
+    const result = messages.find((message) => message.type === 'eventRouterResult');
+    assert.equal(result.success, true);
+    assert.equal(result.ran, true);
+    assert.match(result.summary, /processed 2, failed 1/);
+    assert.match(result.summary, /Queue work remains; health stays gated/);
+    assert.ok(launched.some(({ child }) => child.requests.some(
+      (request) => request.params?.name === 'event_queue_status',
+    )));
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+    vscodeMock.window = previousWindow;
+    vscodeMock.ViewColumn = previousViewColumn;
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('the extension exposes dashboard and healing commands without palette task creation', () => {
   assert.deepEqual(extensionManifest.contributes.commands.map((command) => command.command), [
     'curatormdV2.openDashboard',
+    'curatormdV2.openHealingToolbox',
   ]);
+  assert.equal(extensionManifest.contributes.commands[1].title, 'CuratorMD V2: Open Recovery Manager');
 });
 
 test('review queue rejects malformed and cross-project candidates instead of showing zero', () => {
@@ -1704,6 +2949,7 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
     next_offset: null,
   },
   health: { project_id: 'alpha', status: 'healthy', gate_codes: [] },
+  healthComponentRows: healthComponentRows(healthyHermesProbe('alpha').health, 'alpha'),
   activity: {
     project_id: 'alpha', event_receipt_count: 3, processed_event_count: 2,
     received_event_count: 1, failed_event_count: 0, quarantined_event_count: 0,
@@ -1717,7 +2963,10 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   queueState: queuePanelState(dashboardQueueSnapshot, 'alpha'),
   queueCheckedAt: dashboardQueueSnapshot.observed_at,
   healthCheckedAt: new Date().toISOString(),
-  storage: storageSnapshot } });
+  storage: storageSnapshot,
+  hostFilesystemRows: hostFilesystemRows('/workspace', '/data/curator.sqlite', () => ({
+    bsize: 4096, blocks: 1000, bfree: 900, bavail: 800,
+  })) } });
   const goalCard = elements.get('goals').children[0];
   assert.equal(goalCard.children[0].textContent, 'Vhost Manager SSL renewal completed (exit code 0)');
   assert.equal(goalCard.children[1].children[0].textContent, 'Disposition: active');
@@ -1726,6 +2975,9 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   assert.match(elements.get('health').textContent, /^Project health: healthy · no open gates\. Checked .* \+07$/);
   assert.equal(elements.get('healthPanel').attributes['data-state'], 'healthy');
   assert.equal(elements.get('healthRows').children[0].children[1].textContent, 'healthy');
+  assert.equal(elements.get('healthRows').children.length, 10);
+  assert.equal(elements.get('healthRows').children[3].children[0].textContent, 'event router');
+  assert.match(elements.get('healthRows').children[3].children[1].textContent, /^healthy · checked /);
   assert.equal(elements.get('activity').textContent, 'Retained activity: 3 receipts · 1 goal · 2 facts.');
   assert.equal(elements.get('activityRows').children.length, 9);
   assert.equal(elements.get('activityRows').children[0].children[0].textContent, 'SDE candidates');
@@ -1736,9 +2988,20 @@ test('dashboard clears previously rendered data when a fresh read is denied', ()
   assert.equal(elements.get('queueRows').children.length, 9);
   assert.equal(elements.get('queueRows').children[0].children[1].textContent, '1');
   assert.equal(elements.get('queueRows').children[0].children[2].attributes['data-state'], 'review');
-  assert.equal(elements.get('storage').textContent, 'SQLite 9.0 KiB · staging 128 B');
-  assert.equal(elements.get('storageRows').children.length, 9);
+  assert.match(elements.get('storage').textContent, /^SQLite 9\.0 KiB · staging 128 B · workspace free Used /);
+  assert.equal(elements.get('storageRows').children.length, 11);
   assert.equal(elements.get('storageRows').children[6].children[1].textContent, '9.0 KiB / 250.0 MiB');
+  assert.equal(elements.get('storageRows').children[9].children[0].textContent, 'Workspace filesystem');
+  assert.equal(elements.get('storageRows').children[9].children[2].attributes['data-state'], 'healthy');
+  receiveWindowMessage({ data: { type: 'goals', page: {
+    project_id: 'alpha', total: 1, offset: 0, goals: [], next_offset: null,
+  }, storage: storageSnapshot, hostFilesystemRows: hostFilesystemRows(
+    '/workspace', '/data/curator.sqlite', () => ({
+      bsize: 4096, blocks: 1000, bfree: 80, bavail: 50,
+    }),
+  ) } });
+  assert.equal(elements.get('storageRows').children[9].children[2].attributes['data-state'], 'warning');
+  assert.equal(elements.get('storagePanel').attributes['data-state'], 'warning');
   receiveWindowMessage({ data: { type: 'goals', page: {
     total: 1, offset: 0, goals: [], next_offset: null, project_id: 'alpha',
   }, health: null, healthProbeFailure: 'Hermes health read failed.',
@@ -2127,6 +3390,85 @@ test('project workspace exposes inbox, SDE proposals, and side-buffer without co
     assert.equal(proposalAfter.mtimeNs, proposalBefore.mtimeNs);
     assert.deepEqual(fs.readFileSync(inboxPath), inboxBytesBefore);
     assert.deepEqual(fs.readFileSync(proposalPath), proposalBytesBefore);
+
+    const reviewOnly = writeWorkspaceQueueViewsDetailed(projectRoot, 'alpha', null, {
+      project_id: 'alpha',
+      candidates: [{
+        candidate: {
+          candidate_id: 'candidate-2', goal_id: 'goal-2', status: 'pending_review',
+          materiality: 'decision', rationale: 'Refresh the review projection independently.',
+        },
+        goal: {
+          goal_id: 'goal-2', project_id: 'alpha', problem: 'Review projection recovery',
+        },
+      }],
+    }, new Map(), new Set(['candidate-1']));
+    assert.deepEqual(reviewOnly, {
+      reviewQueueUpdated: true,
+      reviewDocumentUpdated: true,
+      inboxUpdated: false,
+      allUpdated: false,
+    });
+    assert.match(fs.readFileSync(
+      path.join(projectRoot, '.curatormd-v2/sde-proposals/pending-review.md'), 'utf8',
+    ), /Review projection recovery/);
+    const staleInbox = JSON.parse(fs.readFileSync(inboxPath, 'utf8'));
+    staleInbox.generated_at = new Date(Date.now() - (10 * 60 * 1000)).toISOString();
+    fs.writeFileSync(inboxPath, JSON.stringify(staleInbox));
+    assert.deepEqual(
+      workspaceQueueViewsConfirmResolved(projectRoot, 'alpha', 'candidate-1'),
+      {
+        reviewDocumentResolved: true,
+        reviewQueueResolved: true,
+        inboxFresh: false,
+        allResolved: false,
+      },
+    );
+    const oldInboxTimestamp = Date.parse(staleInbox.generated_at);
+    const refreshedStaleProjections = writeWorkspaceQueueViewsDetailed(
+      projectRoot,
+      'alpha',
+      {
+        received_count: 2,
+        failed_count: 1,
+        quarantined_count: 0,
+        oldest_pending_received_at: '2026-10-30T10:00:00+07:00',
+        oldest_pending_age_seconds: 60,
+        claimed_count: 1,
+        expired_claim_count: 0,
+      },
+      {
+        project_id: 'alpha',
+        candidates: [{
+          candidate: {
+            candidate_id: 'candidate-2', goal_id: 'goal-2', status: 'pending_review',
+            materiality: 'decision', rationale: 'Refresh the review projection independently.',
+          },
+          goal: {
+            goal_id: 'goal-2', project_id: 'alpha', problem: 'Review projection recovery',
+          },
+        }],
+      },
+      new Map(),
+      new Set(['candidate-1']),
+    );
+    assert.deepEqual(refreshedStaleProjections, {
+      reviewQueueUpdated: true,
+      reviewDocumentUpdated: true,
+      inboxUpdated: true,
+      allUpdated: true,
+    });
+    const refreshedInbox = JSON.parse(fs.readFileSync(inboxPath, 'utf8'));
+    assert.ok(Date.parse(refreshedInbox.generated_at) > oldInboxTimestamp);
+    assert.deepEqual(
+      workspaceQueueViewsConfirmResolved(projectRoot, 'alpha', 'candidate-1'),
+      {
+        reviewDocumentResolved: true,
+        reviewQueueResolved: true,
+        inboxFresh: true,
+        allResolved: true,
+      },
+    );
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
@@ -2145,7 +3487,88 @@ test('project workspace initialization refuses symlinked state areas', () => {
   }
 });
 
-test('pending SDE Accept uses VS Code, binds the edited packet, and never opens a terminal', async () => {
+test('pending review keeps completion claims separate from verified successful work', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-completion-'));
+  const projectId = 'alpha';
+  const candidateId = 'candidate-completion-42';
+  const candidate = {
+    candidate_id: candidateId,
+    goal_id: 'goal-completion-42',
+    status: 'pending_review',
+    materiality: 'verified_lesson',
+    rationale: 'Retain the completed task result for owner review.',
+  };
+  const claim = {
+    fact_id: 'completion-fact-42',
+    criterion_id: 'works',
+    bullet: 'Completion claim: Checks passed: `npm test` passed.',
+  };
+  const outline = {
+    project_id: projectId,
+    candidate_id: candidateId,
+    goal_id: candidate.goal_id,
+    status: 'pending_review',
+    goal_status: 'complete',
+    evidence_status: 'current_passing',
+    successful_completion_evidence_current: true,
+    completion_claim: claim,
+    supporting_facts: [{
+      fact_id: 'change-fact-42',
+      kind: 'change',
+      bullet: 'The tested change is ready for review.',
+    }],
+  };
+  const review = {
+    candidate,
+    goal: {
+      goal_id: candidate.goal_id,
+      project_id: projectId,
+      problem: 'Render local completion proof in the pending review document.',
+    },
+  };
+  try {
+    initializeWorkspaceAreas(projectRoot);
+    assert.equal(writePendingReviewDocument(
+      projectRoot, projectId, [review], new Map([[candidateId, outline]]),
+    ), true);
+    const reviewPath = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    const documentText = fs.readFileSync(reviewPath, 'utf8');
+    assert.match(documentText, /- Completed successfully:\n  - No recorded passing verification supports a successful-completion claim\./);
+    assert.doesNotMatch(documentText, /- Completed successfully:\n  - Completion claim: Checks passed:/);
+    const jsonFences = [...documentText.matchAll(/```json\n([\s\S]*?)\n```/g)];
+    assert.equal(jsonFences.length, 2);
+    assert.equal(jsonFences[0][1], jsonFences[1][1]);
+    assert.deepEqual(JSON.parse(jsonFences[0][1]).completed, []);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('completed SDE review refresh reloads the open dashboard for its project', async () => {
+  const previousWorkspace = vscodeMock.workspace;
+  const projectRoot = '/tmp/curator-review-dashboard-refresh';
+  const messages = [];
+  let disposeDashboard;
+  try {
+    vscodeMock.workspace = { workspaceFolders: [] };
+    registerDashboardReloader(projectRoot, async () => {
+      messages.push({ type: 'reloadGoals' });
+    }, { onDidDispose: (dispose) => { disposeDashboard = dispose; } });
+
+    await refreshReviewConsumers(projectRoot);
+    assert.deepEqual(messages, [{ type: 'reloadGoals' }]);
+
+    disposeDashboard();
+    await refreshReviewConsumers(projectRoot);
+    assert.deepEqual(messages, [{ type: 'reloadGoals' }]);
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
+  }
+});
+
+test('pending SDE Accept clears its review document and refreshes dashboard after finalization', async () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-flow-'));
   const projectId = 'alpha';
   const candidateId = 'candidate-42';
@@ -2167,15 +3590,41 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
     persistence_documents: [target],
     supporting_facts: [],
   };
+  const remainingCandidate = {
+    candidate_id: 'candidate-remaining-43',
+    goal_id: 'goal-remaining-43',
+    status: 'pending_review',
+    materiality: 'routine',
+    rationale: 'Keep the other pending proposal available for review.',
+  };
+  const remainingOutline = {
+    project_id: projectId,
+    candidate_id: remainingCandidate.candidate_id,
+    goal_id: remainingCandidate.goal_id,
+    status: 'pending_review',
+    evidence_status: 'current_passing',
+    successful_completion_evidence_current: true,
+    persistence_documents: [target],
+    supporting_facts: [],
+  };
+  const artifact = {
+    path: 'goal-42/scratch/review-cue.bin',
+    sha256: 'e'.repeat(64),
+    device_id: 12,
+    inode_id: 34,
+    occurrence_id: 'occurrence-42',
+    retention_hold: null,
+    reacquisition_action: 'not_recorded',
+  };
   const packet = {
     detail: { candidate },
     artifact_inventory: {
       usage: { inventory_complete: true },
       manifest_sha256: 'a'.repeat(64),
-      artifacts: [],
+      artifacts: [artifact],
     },
     dependency_map_sha256: 'b'.repeat(64),
-    artifact_dependencies: [],
+    artifact_dependencies: [{ artifact, evidence_dependencies: [] }],
   };
   const binding = { sha256: 'c'.repeat(64), binding: {} };
   const reviewResponses = {
@@ -2201,6 +3650,8 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
   const information = [];
   const errors = [];
   const terminalCalls = [];
+  const quickPickCalls = [];
+  let reviewRefreshCompleted = false;
   const settings = {
     databasePath: '/tmp/curator.sqlite3',
     profileId: 'fixture-profile',
@@ -2216,31 +3667,35 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
     assert.equal(writePendingReviewDocument(projectRoot, projectId, [{
       candidate,
       goal: { goal_id: candidate.goal_id, project_id: projectId, problem: 'Smoke goal' },
-    }], new Map([[candidateId, outline]])), true);
+    }, {
+      candidate: remainingCandidate,
+      goal: {
+        goal_id: remainingCandidate.goal_id,
+        project_id: projectId,
+        problem: 'Keep the remaining proposal in the queue.',
+      },
+    }], new Map([[candidateId, outline], [remainingCandidate.candidate_id, remainingOutline]])), true);
     let documentText = fs.readFileSync(reviewPath, 'utf8');
+    let documentDirty = false;
     const document = {
       uri: { fsPath: reviewPath },
-      isDirty: false,
+      get isDirty() { return documentDirty; },
       get lineCount() { return documentText.split('\n').length; },
       lineAt: (line) => ({ text: documentText.split('\n')[line] }),
       getText: () => documentText,
       positionAt: (offset) => ({ offset }),
-      edit: async (callback) => {
-        let edit;
-        callback({ replace: (range, replacement) => { edit = { range, replacement }; } });
-        if (!edit) return false;
-        documentText = documentText.slice(0, edit.range.start.offset)
-          + edit.replacement + documentText.slice(edit.range.end.offset);
-        return true;
-      },
       save: async () => {
         fs.writeFileSync(reviewPath, documentText, 'utf8');
+        documentDirty = false;
         return true;
       },
     };
     vscodeMock.Uri = { file: (fsPath) => ({ fsPath }) };
     vscodeMock.Range = class Range {
       constructor(start, end) { this.start = start; this.end = end; }
+    };
+    vscodeMock.WorkspaceEdit = class WorkspaceEdit {
+      replace(uri, range, replacement) { this.change = { uri, range, replacement }; }
     };
     vscodeMock.CodeLens = class CodeLens {
       constructor(range, command) { this.range = range; this.command = command; }
@@ -2249,6 +3704,13 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
       workspaceFolders: [{ uri: { fsPath: projectRoot } }],
       textDocuments: [document],
       openTextDocument: async () => document,
+      applyEdit: async (edit) => {
+        assert.equal(edit.change.uri.fsPath, reviewPath);
+        documentText = documentText.slice(0, edit.change.range.start.offset)
+          + edit.change.replacement + documentText.slice(edit.change.range.end.offset);
+        documentDirty = true;
+        return true;
+      },
       getConfiguration: () => ({
         get: (key, fallback) => settings[key] ?? fallback,
         inspect: () => ({ globalValue: true }),
@@ -2256,9 +3718,10 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
     };
     vscodeMock.window = {
       showTextDocument: async () => ({ document }),
-      showQuickPick: async (items, options) => options.canPickMany
-        ? items : items[0],
-      showInputBox: async () => 'Reviewed and verified for retention.',
+      showQuickPick: async (items, options) => {
+        quickPickCalls.push({ items, options });
+        return options.canPickMany ? items : items[0];
+      },
       showWarningMessage: async (message, options, confirmation) => {
         warnings.push({ message, options, confirmation });
         return confirmation;
@@ -2275,26 +3738,71 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
       (line) => line.endsWith('Editable decision'),
     );
     const lenses = reviewDocumentActions(document);
-    assert.equal(lenses.length, 4);
+    const selectedLenses = lenses.filter((lens) => lens.command.arguments[0] === candidateId);
+    assert.equal(selectedLenses.length, 4);
     assert.ok(actionLine < headingLine);
-    assert.deepEqual(lenses.map((lens) => lens.command.title), ['Accept', 'Reject', 'Withdraw', 'Refresh evidence']);
+    assert.deepEqual(selectedLenses.map((lens) => lens.command.title), ['Accept', 'Reject', 'Withdraw', 'Refresh evidence']);
 
     await launchDocumentReview(candidateId, 'approve', (command, args) => {
       launchArgs.push({ command, args });
+      const isFinalReviewProcess = children.length === 3;
+      const processResponses = isFinalReviewProcess ? {
+        ...reviewResponses,
+        sde_review_outline: ({ candidate_id: requestedCandidateId }) => (
+          requestedCandidateId === candidateId
+            ? { ...outline, status: 'approved' } : remainingOutline
+        ),
+        sde_review_queue_cards: {
+          project_id: projectId,
+          candidates: [{
+            candidate: remainingCandidate,
+            goal: {
+              goal_id: remainingCandidate.goal_id,
+              project_id: projectId,
+              problem: 'Keep the remaining proposal in the queue.',
+            },
+          }],
+        },
+        event_queue_status: {
+          received_count: 0,
+          failed_count: 2,
+          quarantined_count: 0,
+          claimed_count: 0,
+          expired_claim_count: 0,
+          oldest_pending_age_seconds: null,
+          oldest_pending_received_at: null,
+        },
+      } : reviewResponses;
       const child = new FakeMcpProcess(
-        'a'.repeat(64), false, null, null, false, new Set(), null, null, reviewResponses,
+        'a'.repeat(64), false, null, null, false, new Set(), null, null, processResponses,
       );
       children.push(child);
       return child;
+    }, async (refreshedRoot) => {
+      assert.equal(refreshedRoot, projectRoot);
+      reviewRefreshCompleted = true;
     });
 
     assert.equal(errors.length, 0);
     assert.deepEqual(terminalCalls, []);
     assert.equal(warnings.length, 1);
     assert.match(warnings[0].message, /Accept SDE candidate-42/);
-    assert.match(warnings[0].options.detail, /Review binding SHA-256/);
+    assert.match(warnings[0].options.detail, /verified; eligible transient artifacts then clear automatically/);
+    assert.doesNotMatch(warnings[0].options.detail, /cleanup approval|Inventory SHA-256|Dependency map SHA-256/);
+    assert.equal(quickPickCalls.length, 0, 'acceptance does not open a selection palette');
     assert.equal(information.length, 1);
     assert.match(information[0], /accepted and receipt receipt-42 finalized/);
+    assert.equal(reviewRefreshCompleted, true);
+    assert.match(documentText, /candidate-remaining-43/);
+    assert.doesNotMatch(documentText, /candidate-42/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending.json',
+    ), 'utf8')).candidates.map(({ candidate: pending }) => pending.candidate_id), [
+      'candidate-remaining-43',
+    ]);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(
+      projectRoot, '.curatormd-v2', 'inbox', 'status.json',
+    ), 'utf8')).failed_count, 2, 'successful review refresh preserves independent failed receipts');
     assert.equal(children.length, 4);
     assert.ok(launchArgs.slice(0, 3).every(({ args }) => args.includes('--allow-review')
       && !args.includes('--allow-write')));
@@ -2304,11 +3812,43 @@ test('pending SDE Accept uses VS Code, binds the edited packet, and never opens 
       (request) => request.params?.name === 'sde_confirm',
     );
     assert.ok(confirm);
+    assert.equal(confirm.params.arguments.decision, 'approved');
     assert.equal(confirm.params.arguments.expected_review_binding_sha256, binding.sha256);
     assert.deepEqual(
       JSON.parse(confirm.params.arguments.review_draft_json).documents,
       [target],
     );
+    assert.deepEqual(confirm.params.arguments.artifacts, [{
+      path: artifact.path,
+      sha256: artifact.sha256,
+      device_id: artifact.device_id,
+      inode_id: artifact.inode_id,
+      occurrence_id: artifact.occurrence_id,
+      reacquisition_action: 'not_required',
+    }]);
+    assert.ok(children[3].requests.some(
+      (request) => request.params?.name === 'sde_finalize_review_projection',
+    ));
+    assert.ok(children[2].requests.some(
+      (request) => request.params?.name === 'sde_prepare_review_binding'
+        && request.params.arguments.decision === 'approved',
+    ));
+    assert.ok(children[3].requests.some(
+      (request) => request.params?.name === 'sde_prepare_review_binding'
+        && request.params.arguments.decision === 'approved',
+    ));
+    assert.ok(children[3].requests.some(
+      (request) => request.params?.name === 'artifact_purge_status',
+    ));
+    assert.ok(children[3].requests.some(
+      (request) => request.params?.name === 'sde_review_queue_cards',
+    ));
+    assert.ok(children[3].requests.some(
+      (request) => request.params?.name === 'event_queue_status',
+    ));
+    assert.ok(children.every((child) => child.requests.every(
+      (request) => request.params?.name !== 'artifact_cleanup_approve',
+    )));
   } finally {
     vscodeMock.workspace = priorWorkspace;
     vscodeMock.window = priorWindow;
@@ -2671,7 +4211,7 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
   }
 });
 
-test('withdrawn proposals leave the pending document when their editable copies are untouched', () => {
+test('resolved proposals leave the pending document only after terminal status is confirmed', () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-withdrawn-review-'));
   const review = {
     candidate: {
@@ -2690,12 +4230,119 @@ test('withdrawn proposals leave the pending document when their editable copies 
     );
     assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
     const original = fs.readFileSync(destination, 'utf8');
-    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', []), true);
+    assert.equal(writePendingReviewDocument(
+      projectRoot, 'alpha', [], new Map(), new Set(['candidate-withdrawn']),
+    ), true);
     const refreshed = fs.readFileSync(destination, 'utf8');
     assert.match(refreshed, /No pending candidates\./);
     assert.doesNotMatch(refreshed, /candidate-withdrawn/);
     assert.notEqual(original, refreshed);
   } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending review checksum tolerates and preserves extra trailing blank lines', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-trailing-lines-'));
+  const reviewPath = path.join(
+    projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+  );
+  try {
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', []), true);
+    const generated = fs.readFileSync(reviewPath, 'utf8');
+    const edited = `${generated}${'\n'.repeat(37)}`;
+    fs.writeFileSync(reviewPath, edited, 'utf8');
+
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', []), true);
+    assert.equal(fs.readFileSync(reviewPath, 'utf8'), edited);
+    assert.equal(
+      workspaceQueueViewsConfirmResolved(projectRoot, 'alpha', 'candidate-removed')
+        .reviewDocumentResolved,
+      true,
+    );
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('queue refresh preserves unsaved review edits and reports the Markdown view as stale', async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-accepted-review-'));
+  const reviewPath = path.join(
+    projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+  );
+  const review = {
+    candidate: {
+      candidate_id: 'candidate-accepted', goal_id: 'goal-accepted',
+      status: 'pending_review', materiality: 'routine',
+      rationale: 'Record the accepted owner decision.',
+    },
+    goal: {
+      goal_id: 'goal-accepted', project_id: 'alpha',
+      problem: 'Test removal of a canonically accepted SDE proposal.',
+    },
+  };
+  const previousWorkspace = vscodeMock.workspace;
+  try {
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const original = fs.readFileSync(reviewPath, 'utf8');
+    const draftStart = original.indexOf('<!-- curator-v2-decision:candidate-accepted:start -->');
+    const draftEnd = original.indexOf('<!-- curator-v2-decision:candidate-accepted:end -->');
+    const editableDraft = original.slice(draftStart, draftEnd)
+      .replace('"significance": 1', '"significance": 4')
+      .replace('"documents": []', '"documents": [\n    "persistence/HISTORY.md"\n  ]');
+    const edited = original.slice(0, draftStart) + editableDraft + original.slice(draftEnd);
+    assert.notEqual(edited, original);
+    let saved = false;
+    const openDocument = {
+      uri: { fsPath: reviewPath },
+      isDirty: true,
+      getText: () => edited,
+      async save() {
+        saved = true;
+        fs.writeFileSync(reviewPath, edited, 'utf8');
+        openDocument.isDirty = false;
+        return true;
+      },
+    };
+    vscodeMock.workspace = { textDocuments: [openDocument] };
+    const statusReads = [];
+    const { outlines, resolvedCandidateIds } = await readReviewOutlines({
+      callTool: async (name, args) => {
+        statusReads.push({ name, candidateId: args.candidate_id });
+        return JSON.stringify({
+          project_id: 'alpha', candidate_id: args.candidate_id, status: 'approved',
+        });
+      },
+    }, { project_id: 'alpha', candidates: [] }, 'alpha', projectRoot);
+
+    assert.deepEqual(statusReads, [{
+      name: 'sde_review_outline', candidateId: 'candidate-accepted',
+    }]);
+    assert.equal(outlines.size, 0);
+    assert.deepEqual([...resolvedCandidateIds], ['candidate-accepted']);
+    assert.equal(saved, false);
+    assert.equal(openDocument.isDirty, true);
+    assert.equal(openDocument.getText(), edited);
+    assert.equal(writeWorkspaceQueueViews(projectRoot, 'alpha', {
+      received_count: 0,
+      failed_count: 0,
+      quarantined_count: 0,
+      claimed_count: 0,
+      expired_claim_count: 0,
+      oldest_pending_age_seconds: null,
+      oldest_pending_received_at: null,
+    }, { project_id: 'alpha', candidates: [] }, outlines, resolvedCandidateIds), false);
+
+    const refreshed = fs.readFileSync(reviewPath, 'utf8');
+    assert.equal(refreshed, original);
+    assert.match(openDocument.getText(), /"significance": 4/);
+    assert.match(refreshed, /candidate-accepted/);
+    const pending = JSON.parse(fs.readFileSync(path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending.json',
+    ), 'utf8'));
+    assert.deepEqual(pending.candidates, []);
+  } finally {
+    vscodeMock.workspace = previousWorkspace;
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
 });

@@ -393,7 +393,9 @@ class HermesHookAdapterTests(unittest.TestCase):
                 api = AuthenticatedCuratorAPI(
                     {"project-a": plugin}, _OnlyProject(), InMemoryTokenBucket()
                 )
-                server = build_mcp_server(api, caller, "project-a", "hermes-e2e")
+                server = build_mcp_server(
+                    api, caller, "project-a", "hermes-e2e", hermes_binding_enabled=True
+                )
                 profile = "host-subject"
                 session_id = "session-e2e"
 

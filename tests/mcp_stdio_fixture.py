@@ -50,6 +50,7 @@ def main() -> None:
             AuthenticatedCaller("stdio-test-subject"),
             "stdio-project",
             "stdio-test-stream",
+            hermes_binding_enabled=True,
         )
         server.run()
     finally:

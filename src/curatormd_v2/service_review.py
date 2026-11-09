@@ -12,10 +12,11 @@ from contextlib import (
     nullcontext,
 )
 from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import json
 
-from .domain_enums import GoalStatus
+from .domain_enums import EvidenceOutcome, GoalStatus
 from .models import (
     AuditReceipt,
     Fact,
@@ -115,11 +116,11 @@ class _ReviewMixin(_GoalReadMixin):
         reopen_cutoff = self._evidence_epoch_cutoff(
             self.store.list_facts(request.goal_id, self.project_id)
         )
-        if not self._selected_verifications_are_current(
+        if not self._selected_verifications_were_passing(
             goal, selected, reopen_cutoff
         ):
             raise EvidenceGateError(
-                "selected verification facts must have current passing evidence"
+                "selected verification facts must have passing completion evidence"
             )
         candidate = SDECandidate(
             goal_id=request.goal_id,
@@ -136,7 +137,7 @@ class _ReviewMixin(_GoalReadMixin):
             )
         return stored_candidate
 
-    def _selected_verifications_are_current(
+    def _selected_verifications_were_passing(
         self,
         goal: GoalCard,
         facts: tuple[Fact, ...],
@@ -144,16 +145,82 @@ class _ReviewMixin(_GoalReadMixin):
         *,
         require_verification: bool = False,
     ) -> bool:
-        """Validate any selected proof against the completed goal."""
+        """Validate recorded proof at completion without expiring historical work."""
 
         verification_facts = tuple(
             fact for fact in facts if fact.kind is FactKind.VERIFICATION
         )
         return (bool(verification_facts) or not require_verification) and all(
             (reopen_cutoff is None or fact.created_at > reopen_cutoff)
-            and self._fact_is_currently_verified(goal, fact)
+            and self._fact_passed_at_completion(goal, fact)
             for fact in verification_facts
         )
+
+    def _fact_passed_at_completion(self, goal: GoalCard, fact: Fact) -> bool:
+        """Check the saved host attestation and its original completion window."""
+
+        if not goal.completed_at or not fact.criterion_id or not fact.evidence:
+            return False
+        if len(fact.evidence) != len(fact.verification_attestations):
+            return False
+        try:
+            completed = datetime.fromisoformat(goal.completed_at)
+            if completed.tzinfo is None:
+                return False
+            return all(
+                ref.outcome is EvidenceOutcome.PASSED
+                and att.evidence_kind == ref.evidence_kind
+                and att.evidence_sha256 == ref.sha256
+                and att.occurrence_id == ref.occurrence_id
+                and att.project_id == self.project_id
+                and att.goal_id == goal.goal_id
+                and att.criterion_id == fact.criterion_id
+                and datetime.fromisoformat(att.verified_at) <= completed
+                < datetime.fromisoformat(att.valid_until)
+                for ref, att in zip(fact.evidence, fact.verification_attestations, strict=True)
+            )
+        except (TypeError, ValueError):
+            return False
+
+    def _current_single_check_completion_claim(
+        self, goal: GoalCard, reopen_cutoff: str | None
+    ) -> Fact | None:
+        """Return a recorded claim for context, never as verification evidence."""
+
+        if goal.status is not GoalStatus.COMPLETE or len(goal.success_criteria) != 1:
+            return None
+        criterion_id = goal.success_criteria[0].criterion_id
+        for fact in reversed(self.store.list_facts(goal.goal_id, self.project_id)):
+            if (
+                fact.kind is FactKind.COMPLETION_CLAIM
+                and fact.criterion_id == criterion_id
+                and (reopen_cutoff is None or fact.created_at > reopen_cutoff)
+                and fact.bullet.startswith((
+                    "Completion claim: Checks passed:",
+                    "Completion claim: Owner confirmed:",
+                ))
+            ):
+                return fact
+        return None
+
+    def sde_review_completion_claim(
+        self, candidate_id: str
+    ) -> dict[str, str] | None:
+        """Expose the recorded completion claim as context, separate from proof."""
+
+        candidate = self.store.get_sde_candidate(candidate_id, self.project_id)
+        goal = self.store.get_goal(candidate.goal_id, self.project_id)
+        reopen_cutoff = self._evidence_epoch_cutoff(
+            self.store.list_facts(goal.goal_id, self.project_id)
+        )
+        fact = self._current_single_check_completion_claim(goal, reopen_cutoff)
+        if fact is None or fact.criterion_id is None:
+            return None
+        return {
+            "fact_id": fact.fact_id,
+            "criterion_id": fact.criterion_id,
+            "bullet": fact.bullet,
+        }
 
     def sde_review_queue(self, limit: int = 100) -> tuple[SDEReviewDetail, ...]:
         """Return pending review packets without exposing other projects."""
@@ -176,7 +243,7 @@ class _ReviewMixin(_GoalReadMixin):
     def sde_review_evidence_state(
         self, candidate_id: str, *, require_passing: bool
     ) -> str:
-        """Recheck selected evidence and fingerprint its current goal epoch.
+        """Check recorded completion evidence and fingerprint the goal epoch.
 
         The digest is an observation, not an approval or a reservation. The
         caller must repeat the check before committing the human decision.
@@ -191,7 +258,7 @@ class _ReviewMixin(_GoalReadMixin):
         )
         current = (
             goal.status is GoalStatus.COMPLETE
-            and self._selected_verifications_are_current(
+            and self._selected_verifications_were_passing(
                 goal, facts, cutoff, require_verification=True
             )
         )
@@ -209,7 +276,7 @@ class _ReviewMixin(_GoalReadMixin):
             raise ConflictError("SDE evidence changed while preparing review")
         if require_passing and not current:
             raise EvidenceGateError(
-                "approval requires a completed goal and current passing evidence"
+                "approval requires a completed goal and passing task proof"
             )
         canonical = json.dumps(
             {
@@ -241,7 +308,7 @@ class _ReviewMixin(_GoalReadMixin):
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def sde_review_has_current_passing_evidence(self, candidate_id: str) -> bool:
-        """Report whether the candidate's selected verification remains current."""
+        """Report whether selected verification passed at task completion."""
 
         try:
             self.sde_review_evidence_state(candidate_id, require_passing=True)
@@ -363,7 +430,7 @@ class _ReviewMixin(_GoalReadMixin):
             goal = self.store.get_goal(candidate.goal_id, self.project_id)
             if goal.status is not GoalStatus.COMPLETE:
                 raise EvidenceGateError(
-                    "approval requires a completed goal and current passing evidence"
+                    "approval requires a completed goal and passing task proof"
                 )
             facts = tuple(
                 self.store.get_fact(fact_id, self.project_id)
@@ -376,11 +443,11 @@ class _ReviewMixin(_GoalReadMixin):
             evidence_epoch_cutoff = self._evidence_epoch_cutoff(
                 self.store.list_facts(candidate.goal_id, self.project_id)
             )
-            if not self._selected_verifications_are_current(
+            if not self._selected_verifications_were_passing(
                 goal, facts, evidence_epoch_cutoff, require_verification=True
             ):
                 raise EvidenceGateError(
-                    "approval requires selected verification evidence that is current"
+                    "approval requires selected verification that passed at completion"
                 )
         facts_sha256 = self.store.facts_digest(candidate.fact_ids, self.project_id)
         if validated_binding is not None:

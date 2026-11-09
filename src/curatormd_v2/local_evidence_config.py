@@ -13,9 +13,11 @@ from .browser_evidence import LocalBrowserProofResolver, LocalBrowserProofSpec
 from .content_safety import validate_safe_text
 from .evidence import (
     BrowserProofEvidenceAdapter,
+    EvidenceAttestation,
     EvidenceAdapterPolicy,
     EvidenceAdapterRegistry,
     ReceiptEvidenceAdapter,
+    RegisteredEvidenceAdapter,
     EvidenceSourceResolver,
     EvidenceVerificationContext,
     EvidenceVerifier,
@@ -34,7 +36,11 @@ from .git_evidence import (
 )
 from .models import EvidenceOutcome, EvidenceRef
 from .private_file_security import require_private_regular_file
-from .service_evidence import LocalServiceProbeResolver, LocalServiceProbeSpec
+from .service_evidence import (
+    CachedLocalServiceProbeResolver,
+    LocalServiceProbeResolver,
+    LocalServiceProbeSpec,
+)
 from .validation import is_exact_int
 
 MAX_LOCAL_EVIDENCE_CONFIG_BYTES = 16 * 1024
@@ -51,6 +57,29 @@ class _RepositoryDiffAdapter(ReceiptEvidenceAdapter):
     # pylint: disable=too-few-public-methods  # Selects the repository-diff evidence kind.
 
     evidence_kinds = frozenset({"repository_diff"})
+
+
+class _ServiceProbeRegistry:
+    """Route each host-configured service probe by its exact locator."""
+
+    evidence_kinds = frozenset({"service_probe"})
+
+    def __init__(self, adapters: dict[str, ServiceProbeEvidenceAdapter]) -> None:
+        self._adapters = adapters
+
+    def capture(
+        self, evidence_kind: str, locator: str, context: EvidenceVerificationContext
+    ) -> EvidenceRef | None:
+        """Capture only from the adapter bound to this exact locator."""
+        adapter = self._adapters.get(locator)
+        return adapter.capture(evidence_kind, locator, context) if adapter else None
+
+    def attest(
+        self, evidence: EvidenceRef, context: EvidenceVerificationContext
+    ) -> EvidenceAttestation | None:
+        """Reverify only through the adapter bound to the reference locator."""
+        adapter = self._adapters.get(evidence.locator)
+        return adapter.attest(evidence, context) if adapter else None
 
 
 class _RepositoryTestAdapter(ReceiptEvidenceAdapter):
@@ -143,6 +172,25 @@ def _safe_command_arguments(values: tuple[str, ...]) -> tuple[str, ...]:
     return values
 
 
+def _parse_probe_cache(probe: dict[str, object]) -> tuple[Path | None, int, tuple[Path, ...]]:
+    """Read optional bounded receipt-cache settings for one fixed probe."""
+
+    validity = probe.get("cache_validity_seconds", 60)
+    if not is_exact_int(validity):
+        raise ValueError("host evidence config limits must be exact integers")
+    raw_directory = probe.get("cache_directory")
+    directory = (
+        Path(_required_text(raw_directory, "cache_directory", max_chars=4096))
+        if raw_directory is not None else None
+    )
+    raw_files = probe.get("cache_integrity_files")
+    files = (
+        tuple(Path(item) for item in _required_string_array(raw_files, "cache_integrity_files"))
+        if raw_files is not None else ()
+    )
+    return directory, validity, files
+
+
 def _parse_probe(
     probe: dict[str, object], project_id: str
 ) -> tuple[str, LocalServiceProbeSpec]:
@@ -155,11 +203,11 @@ def _parse_probe(
         "command",
         "working_directory",
     }
-    optional = {"max_output_bytes", "timeout_seconds"}
+    optional = {"max_output_bytes", "timeout_seconds", "cache_directory", "cache_validity_seconds",
+                "cache_integrity_files"}
     if not required.issubset(probe) or not set(probe).issubset(required | optional):
         raise ValueError("host evidence config probe fields are invalid")
     adapter_id = _required_text(probe["adapter_id"], "adapter_id")
-    probe_id = _required_text(probe["probe_id"], "probe_id")
     source_subject = _required_text(probe["source_subject"], "source_subject")
     if not source_subject.startswith("local-probe:") or len(
         source_subject
@@ -180,18 +228,22 @@ def _parse_probe(
         raise ValueError("host evidence config working directory must be absolute")
     max_output_bytes = probe.get("max_output_bytes", 64 * 1024)
     timeout_seconds = probe.get("timeout_seconds", 30)
+    cache_options = _parse_probe_cache(probe)
     if not is_exact_int(max_output_bytes) or not is_exact_int(timeout_seconds):
         raise ValueError("host evidence config limits must be exact integers")
     return (
         adapter_id,
         LocalServiceProbeSpec(
             project_id=project_id,
-            probe_id=probe_id,
+            probe_id=_required_text(probe["probe_id"], "probe_id"),
             source_subject=source_subject,
             command=command,
             working_directory=working_directory,
             max_output_bytes=max_output_bytes,
             timeout_seconds=timeout_seconds,
+            cache_directory=cache_options[0],
+            cache_validity_seconds=cache_options[1],
+            cache_integrity_files=cache_options[2],
         ),
     )
 
@@ -374,6 +426,7 @@ def _parse_document(
     config = cast(dict[str, object], document)
     source_fields = {
         "probe",
+        "probes",
         "browser_proof",
         "repository_diff",
         "repository_test",
@@ -403,12 +456,15 @@ def _service_adapter(
     return ServiceProbeEvidenceAdapter(
         adapter_id=adapter_id,
         scope_id=spec.scope_id,
-        resolver=LocalServiceProbeResolver(spec),
+        resolver=(CachedLocalServiceProbeResolver(spec) if spec.cache_directory
+                  else LocalServiceProbeResolver(spec)),
         policy=EvidenceAdapterPolicy(
             allowed_projects={project_id},
             allowed_subjects={spec.source_subject},
-            max_observation_age_seconds=spec.timeout_seconds,
-            max_validity_seconds=spec.timeout_seconds,
+            max_observation_age_seconds=(spec.cache_validity_seconds if spec.cache_directory
+                                         else spec.timeout_seconds),
+            max_validity_seconds=(spec.cache_validity_seconds if spec.cache_directory
+                                  else spec.timeout_seconds),
             max_revocation_age_seconds=60,
         ),
     )
@@ -638,6 +694,39 @@ def capture_local_human_observation_reference(
     )
 
 
+def _configured_service_probes(
+    config: dict[str, object], project_id: str
+) -> RegisteredEvidenceAdapter | None:
+    """Build one service adapter or a locator-routed set of adapters."""
+    configured_probes: list[object] = []
+    if "probe" in config:
+        configured_probes.append(config["probe"])
+    if "probes" in config:
+        extra_probes = config["probes"]
+        if not isinstance(extra_probes, list):
+            raise ValueError("host evidence config probes must contain 1-16 entries")
+        extra_entries = cast(list[object], extra_probes)
+        if not 1 <= len(extra_entries) <= 16:
+            raise ValueError("host evidence config probes must contain 1-16 entries")
+        configured_probes.extend(extra_entries)
+    if len(configured_probes) > 16:
+        raise ValueError("host evidence config contains too many probes")
+    probe_adapters: dict[str, ServiceProbeEvidenceAdapter] = {}
+    adapter_ids: set[str] = set()
+    for raw_probe in configured_probes:
+        if not isinstance(raw_probe, dict):
+            raise ValueError("host evidence config probe is invalid")
+        adapter_id, spec = _parse_probe(cast(dict[str, object], raw_probe), project_id)
+        locator = f"service-probe:{spec.probe_id}"
+        if locator in probe_adapters or adapter_id in adapter_ids:
+            raise ValueError("host evidence config has duplicate service probes")
+        probe_adapters[locator] = _service_adapter(adapter_id, project_id, spec)
+        adapter_ids.add(adapter_id)
+    if len(probe_adapters) == 1:
+        return next(iter(probe_adapters.values()))
+    return _ServiceProbeRegistry(probe_adapters) if probe_adapters else None
+
+
 def load_local_evidence_verifier(
     path: str | Path,
     *,
@@ -647,12 +736,10 @@ def load_local_evidence_verifier(
 
     data = _read_owner_only_file(Path(path).expanduser())
     config = _parse_document(data, project_id, None)
-    adapters: list[ReceiptEvidenceAdapter] = []
-    if "probe" in config:
-        adapter_id, spec = _parse_probe(
-            cast(dict[str, object], config["probe"]), project_id
-        )
-        adapters.append(_service_adapter(adapter_id, project_id, spec))
+    adapters: list[RegisteredEvidenceAdapter] = []
+    probes = _configured_service_probes(config, project_id)
+    if probes is not None:
+        adapters.append(probes)
     if "browser_proof" in config:
         adapter_id, spec = _parse_browser_config(data, project_id)
         adapters.append(_browser_adapter(adapter_id, project_id, spec))

@@ -363,11 +363,12 @@ class McpServerTestSupport(unittest.TestCase):
         """Check safety guidance exposed alongside the MCP SDE tools."""
         for required_guidance in (
             "observable success checks",
-            "record deduplicated compact fact bullets",
-            "healthy readiness are not proof",
+            "Record compact facts at task start",
+            "passing relevant test/lint check or the owner's explicit confirmation",
             "verified checks separately from open checks",
             "Store a distinct cleanup receipt and project it",
-            "unapproved or failed cleanup visibly pending",
+            "The SDE decision is the single owner approval",
+            "held, changed, incomplete, out-of-scope, or failed cleanup visibly pending",
         ):
             self.assertIn(required_guidance, instructions)
 
@@ -385,7 +386,10 @@ class McpServerTests(McpServerTestSupport):
             "one parent goal and bounded child tasks",
             "problem and observable success checks",
             "State them briefly to the user, then save before implementation",
-            "reuse only an exact problem-and-criteria match",
+            "reuse only an exact problem-and-criteria match for the same task",
+            "planned status only when they ask for a plan",
+            "Owner UX approval is not a prerequisite for coding",
+            "Track UX review separately after the behavior is usable and repeatable",
             "For a plan, keep its parent and child tasks planned",
             "do not claim the task is tracked or bound",
             "call goal_defer",
@@ -393,12 +397,14 @@ class McpServerTests(McpServerTestSupport):
             "call goal_finish",
             "For a plan, activate the next child only after the current child finishes",
             "Read goal_status before each lifecycle call",
-            "prepare a pending proposal from supported task facts, even when routine or not yet verified",
-            "approval still requires current passing evidence",
-            "The user decides what is memorialized, its importance",
+            "prepare a pending proposal from that task's supported facts",
+            "passing relevant local test/lint result or explicit owner confirmation",
+            "read it back to verify the saved content",
+            "the owner decides the SDE disposition",
             "Use evidence_capture for configured host sources",
         ):
             self.assertIn(guidance, guidance_text)
+        self.assertNotIn("acceptance is still needed", guidance_text)
 
     def test_mcp_identity_subject_is_request_scoped_and_required(self) -> None:
         """Bind the host subject to one request and deny calls without it."""
@@ -598,12 +604,38 @@ class McpServerTests(McpServerTestSupport):
                             "host_cleanup_reconcile",
                         }.isdisjoint(tool_names)
                     )
+                    self.assertIn("event_terminal_inventory", tool_names)
+                    terminal_inventory_tool = next(
+                        tool for tool in tool_result.tools
+                        if tool.name == "event_terminal_inventory"
+                    )
+                    self.assertEqual(
+                        terminal_inventory_tool.input_schema["properties"]["limit"]["default"],
+                        100,
+                    )
+                    self.assertNotIn(
+                        "project_id",
+                        terminal_inventory_tool.input_schema["properties"],
+                    )
+                    terminal_inventory = await self._call_mcp_json(
+                        client, "event_terminal_inventory", {"limit": 1}
+                    )
+                    self.assertEqual(terminal_inventory["project_id"], "stdio-project")
+                    self.assertEqual(terminal_inventory["events"], [])
+                    self.assertTrue(terminal_inventory["complete"])
                     goal_start_tool = next(
                         tool for tool in tool_result.tools if tool.name == "goal_start"
                     )
                     self.assertNotIn("project_id", goal_start_tool.input_schema["properties"])
                     self.assertNotIn("caller", goal_start_tool.input_schema["properties"])
                     self.assertIn("active", goal_start_tool.input_schema["properties"]["initial_status"]["description"])
+                    goal_list_tool = next(
+                        tool for tool in tool_result.tools if tool.name == "goal_list_page"
+                    )
+                    self.assertEqual(
+                        goal_list_tool.input_schema["properties"]["limit"]["default"],
+                        10,
+                    )
                     sde_tool = next(
                         tool for tool in tool_result.tools if tool.name == "sde_assess"
                     )
