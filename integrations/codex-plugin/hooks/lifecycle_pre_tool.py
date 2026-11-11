@@ -50,6 +50,11 @@ _FACT_RECORD_TOOLS = {
     "mcp__codex-intake__fact_record",
     "mcp__codex_intake__fact_record",
 }
+_ASIDE_WRITE_TOOLS = {
+    f"mcp__{server}__{tool}"
+    for server in ("codex-intake", "codex_intake")
+    for tool in ("sde_assess", "sde_record_user_report")
+}
 
 
 def main() -> int:
@@ -70,12 +75,26 @@ def main() -> int:
             and tool_name not in _GOAL_START_TOOLS
             and tool_name not in _GOAL_ACTIVATE_TOOLS
             and tool_name not in _FACT_RECORD_TOOLS
+            and tool_name not in _ASIDE_WRITE_TOOLS
         ):
             return 0
         configured = _configured_project_root(event.get("cwd"))
         if configured is None:
             return 0
         _, project_id = configured
+        if task_scope_cue(event, project_id) == "aatask":
+            if tool_name in _WORK_TOOLS:
+                return 0
+            sys.stdout.write(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "An aatask is unrelated to this project and does not change its Curator task records.",
+                }
+            }, separators=(",", ":")))
+            return 0
+        if tool_name in _ASIDE_WRITE_TOOLS:
+            return 0
         if tool_name in _GOAL_ACTIVATE_TOOLS:
             activating_goal_id = goal_id_from_input(event)
             paused_goal_ids, ootask_sde_read_back = ootask_resume_state(

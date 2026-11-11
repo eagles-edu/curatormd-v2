@@ -210,7 +210,13 @@ class ProjectPluginConfigAndIntakeTests(ProjectPluginTestSupport):
             config.checklist_path("implementation"),
             self.root / "docs/implementation-checklist.md",
         )
-        self.assertEqual(len(config.persistence_targets), 2)
+        self.assertEqual(
+            config.persistence_targets,
+            tuple(
+                self.root / "persistence" / name
+                for name in ("HISTORY.md", "LESSONS-LEARNED.md", "SOP.md", "AGENTS.md")
+            ),
+        )
         self.assertEqual(config.staging_root, self.stage)
 
     def test_project_staging_budgets_are_optional_bounded_integers(self) -> None:

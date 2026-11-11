@@ -812,6 +812,7 @@ class SDEConfirmationRequest:
     review_draft: SDEReviewDraft | None = None
     expected_review_binding_sha256: str | None = None
     confirm_significance_five: bool = False
+    evidence_override_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

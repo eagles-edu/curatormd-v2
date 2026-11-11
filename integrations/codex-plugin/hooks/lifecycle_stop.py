@@ -13,6 +13,7 @@ from task_state import (
     has_unassessed_completion,
     has_sde_readback_pending,
     prompt_cue,
+    task_scope_cue,
     record_stop_followup,
 )
 from user_prompt_submit import (
@@ -89,8 +90,8 @@ def _continuation_reason(
     }[cue]
     return (
         "Curator V2 transition detected. Before ending this turn, "
-        f"{action}. For a single practical check, use its passing local test/lint "
-        "result or explicit owner confirmation as proof; otherwise keep it open. "
+        f"{action}. Record the observed result and any available checks; missing "
+        "automated evidence does not block completion. Ask for guidance if unsure. "
         "After `goal_finish` succeeds and `goal_status` confirms complete, create "
         "a pending SDE proposal from supported facts on that goal. Keep it pending "
         "for owner review. After approval, transfer approved facts to the pertinent "
@@ -116,6 +117,8 @@ def main() -> int:
         if configured is None:
             return 0
         _, project_id = configured
+        if task_scope_cue(event, project_id) == "aatask":
+            return 0
         needs_status_readback = has_unconfirmed_finish(event, project_id)
         needs_defer_readback = has_unconfirmed_defer(event, project_id)
         needs_sde_proposal = has_unassessed_completion(event, project_id)

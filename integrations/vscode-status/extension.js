@@ -28,6 +28,23 @@ const STATUS_COLOR_MEANINGS = Object.freeze({
 const STATUS_READ_FAILURES = Object.freeze({
   'launcher-start': 'Curator did not start; check the Curator launcher in VS Code User settings.',
   'launcher-exit': 'Curator MCP transport closed. Save your work, then reload the VS Code window (Codex host) or start a fresh Codex session. Do not re-enroll the project or recreate its grants.',
+  'project-config-stale': 'This project config changed after registration. Run the attended curatormd-v2-access update for this project, then refresh. Do not re-enroll the project or recreate its grants.',
+  'project-repository-mismatch': 'The selected workspace does not match this project registration. Check the workspace and database binding; do not re-enroll automatically.',
+  'project-registration-missing': 'This database has no registration for the configured project. Check the database binding before using attended project registration.',
+  'project-registration-inactive': 'This project registration is inactive. Review its access state before attempting recovery.',
+  'consumer-binding-missing': 'This project has no consumer binding in the selected database. Check the database binding and lifecycle records.',
+  'consumer-binding-inactive': 'This project consumer binding is inactive. Review its access state before attempting recovery.',
+  'project-database-bindings-unavailable': 'The owner-only Codex project database map is missing or invalid. Check ~/.config/curatormd-v2/database-bindings.json and its file permissions.',
+  'project-database-binding-missing': 'No database is mapped for this exact project ID. Add its owner-managed database binding; Curator will not use another project database.',
+  'project-database-file-invalid': 'The mapped project database is missing, shared, or not an owner-controlled regular file.',
+  'project-read-grant-missing': 'This local identity has no active project read grant. Review the configured project access grant.',
+  'project-write-grant-missing': 'This local identity has no active project write grant for the requested operation.',
+  'project-review-grant-missing': 'This local identity has no active project review grant for the requested operation.',
+  'project-event-retry-grant-missing': 'This local identity has no active event-retry grant for the requested operation.',
+  'project-retention-hold-grant-missing': 'This local identity has no active retention-hold grant for the requested operation.',
+  'project-purge-retry-grant-missing': 'This local identity has no active purge-retry grant for the requested operation.',
+  'project-binding-changed': 'The project binding changed while Curator was starting. Refresh and retry against the current project state.',
+  'launcher-runtime': 'Curator could not initialize its local runtime. Check the database, project config, and launcher installation.',
   'read-denied': 'Curator denied the project read; check its local project access grant.',
   'mcp-tool-error': 'Curator rejected the request; check the project grant and request details.',
   'mcp-request': 'Curator could not complete the project read; refresh to try again.',
@@ -63,6 +80,18 @@ const MCP_ERROR_MESSAGES = Object.freeze({
   internal_error: 'Curator could not complete the request; check the local installation.',
 });
 const MCP_ERROR_CODES = new Set(Object.keys(MCP_ERROR_MESSAGES));
+const STARTUP_ERROR_CODES = new Set([
+  'project-config-stale', 'project-repository-mismatch',
+  'project-registration-missing', 'project-registration-inactive',
+  'consumer-binding-missing', 'consumer-binding-inactive', 'project-read-grant-missing',
+  'project-database-bindings-unavailable', 'project-database-binding-missing',
+  'project-database-file-invalid',
+  'project-write-grant-missing', 'project-review-grant-missing',
+  'project-event-retry-grant-missing', 'project-retention-hold-grant-missing',
+  'project-purge-retry-grant-missing',
+  'project-binding-changed', 'runtime',
+]);
+const MAX_STARTUP_DIAGNOSTIC_BYTES = 1024;
 const TRANSPORT_CLOSED_MESSAGE = 'Curator MCP transport closed. Save your work, then reload the VS Code window (Codex host) or start a fresh Codex session. Do not re-enroll the project or recreate its grants.';
 const HEALTH_GATE_LABELS = Object.freeze({
   event_backlog: 'Events are waiting to be processed.',
@@ -246,6 +275,15 @@ function statusReadFailure(error) {
     && Object.prototype.hasOwnProperty.call(STATUS_READ_FAILURES, error.code)
     ? STATUS_READ_FAILURES[error.code]
     : fallback;
+}
+
+function startupFailureCode(stderr) {
+  const text = Buffer.isBuffer(stderr) ? stderr.toString('utf8') : stderr;
+  if (typeof text !== 'string') return null;
+  const match = text.match(/(?:^|\n)CURATOR_STARTUP_ERROR=([a-z-]+)(?:\r?\n|$)/);
+  return match && STARTUP_ERROR_CODES.has(match[1])
+    ? (match[1] === 'runtime' ? 'launcher-runtime' : match[1])
+    : null;
 }
 
 async function notifyTransportClosed(error) {
@@ -449,37 +487,27 @@ function writePendingReviewDocument(
     previousDrafts = new Map([...parts.drafts].filter(([id]) => currentIds.has(id)));
   } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
   const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~\-]/g, '\\$&');
-  const pushWrapped = (text, firstPrefix = '', continuationPrefix = '') => {
-    const words = text.trim().split(/\s+/);
-    let line = firstPrefix;
-    for (const word of words) {
-      const separator = line === firstPrefix || line === continuationPrefix ? '' : ' ';
-      if (line.length + separator.length + word.length > 78 && line !== firstPrefix) {
-        lines.push(line);
-        line = `${continuationPrefix}${word}`;
-      } else {
-        line += `${separator}${word}`;
-      }
-    }
-    if (line !== firstPrefix) lines.push(line);
+  const pushParagraph = (text, firstPrefix = '') => {
+    const paragraph = text.trim().replace(/\s+/g, ' ');
+    if (paragraph) lines.push(`${firstPrefix}${paragraph}`);
   };
-  const pushField = (label, value) => pushWrapped(`${label}: ${value}`, '- ', '  ');
+  const pushField = (label, value) => pushParagraph(`${label}: ${value}`, '- ');
   const pushFacts = (facts, fallback) => {
     if (facts.length === 0) {
-      pushWrapped(fallback, '  - ', '    ');
+      pushParagraph(fallback, '  - ');
       return;
     }
-    for (const fact of facts) pushWrapped(safe(fact.bullet), '  - ', '    ');
+    for (const fact of facts) pushParagraph(safe(fact.bullet), '  - ');
   };
   const lines = [
     '# Pending SDE reviews', '',
   ];
-  pushWrapped(`Project: ${safe(projectId)}`);
+  pushParagraph(`Project: ${safe(projectId)}`);
   lines.push('');
-  pushWrapped('Review each proposal and its editable JSON copy. Accept and Reject open the attended reviewer. Withdraw clears a proposal while retaining its source facts and receipt. Refresh evidence reopens the source task for a new proof pass, then withdraws the stale proposal; it does not accept or delete facts.');
+  pushParagraph('Review each proposal and its editable JSON copy. Accept and Reject open the attended reviewer. Withdraw clears a proposal while retaining its source facts and receipt. Refresh evidence reopens the source task for a new proof pass, then withdraws the stale proposal; it does not accept or delete facts.');
   lines.push('');
   if (reviews.length === REVIEW_QUEUE_SIZE) {
-    pushWrapped('Only the first 100 candidates are shown.');
+    pushParagraph('Only the first 100 candidates are shown.');
     lines.push('');
   }
   if (reviews.length === 0) {
@@ -582,9 +610,9 @@ function writePendingReviewDocument(
       && outline.persistence_documents.length <= 16
       && outline.persistence_documents.every((document) => typeof document === 'string'
         && document.length <= 512 && !document.startsWith('/') && !document.includes('\\'))) {
-      for (const document of outline.persistence_documents) pushWrapped(`\`${safe(document)}\``, '  - ', '    ');
+      for (const document of outline.persistence_documents) pushParagraph(`\`${safe(document)}\``, '  - ');
     } else {
-      pushWrapped('Choose one or more configured persistence documents in the editable copy.', '  - ', '    ');
+      pushParagraph('Choose one or more configured persistence documents in the editable copy.', '  - ');
     }
 
     lines.push('', `### ${candidateNumber}. Task and outcomes`, '');
@@ -595,7 +623,7 @@ function writePendingReviewDocument(
         verificationFacts.length > 0 ? verificationFacts : [completionClaim],
         'No successful work is recorded.',
       );
-      pushWrapped('The attended reviewer checks the current evidence before acceptance.', '  - ', '    ');
+      pushParagraph('The attended reviewer checks the current evidence before acceptance.', '  - ');
     } else {
       pushFacts([], 'No recorded passing verification supports a successful-completion claim.');
       if (taskSummaries.length > 0) {
@@ -603,7 +631,7 @@ function writePendingReviewDocument(
         pushFacts(taskSummaries, 'No task summary is recorded.');
       }
       for (const fact of verificationFacts) {
-        pushWrapped(`Recorded verification, not current proof: ${safe(fact.bullet)}`, '  - ', '    ');
+        pushParagraph(`Recorded verification, not current proof: ${safe(fact.bullet)}`, '  - ');
       }
     }
     lines.push('- Difficulties encountered:');
@@ -617,11 +645,10 @@ function writePendingReviewDocument(
     if (changeFacts.length > 0) {
       lines.push('- Other recorded work:');
       pushFacts(changeFacts.slice(0, 8), 'No change facts are available.');
-      if (changeFacts.length > 8) pushWrapped('Additional change facts are available in the attended review.', '  - ', '    ');
+      if (changeFacts.length > 8) pushParagraph('Additional change facts are available in the attended review.', '  - ');
     }
     lines.push('', `<!-- curator-v2-actions: ${candidate.candidate_id} -->`);
     lines.push(`### ${candidateNumber}. Editable decision`, '');
-    pushWrapped('Edit this JSON copy to change the significance rating or persistence destinations. If documents is empty, Accept uses all configured destinations. Accept and Reject open the attended review in VS Code. Withdraw retains task facts and receipts. Refresh evidence reopens the source task; fresh proof and a new proposal are required. These actions do not open a terminal.');
     lines.push('',
       `<!-- curator-v2-decision:${candidate.candidate_id}:start -->`,
       draftBlock,
@@ -1157,11 +1184,11 @@ function readConfiguredProjectId(projectRoot) {
 
 function resolveDatabasePath(projectId, databaseBindings, fallbackPath) {
   if (typeof projectId !== 'string' || !PROJECT_ID_PATTERN.test(projectId)) return null;
-  let selected = fallbackPath;
-  if (databaseBindings && typeof databaseBindings === 'object'
-    && Object.prototype.hasOwnProperty.call(databaseBindings, projectId)) {
-    selected = databaseBindings[projectId];
-  }
+  const bindings = databaseBindings === undefined ? {} : databaseBindings;
+  if (!bindings || typeof bindings !== 'object' || Array.isArray(bindings)) return null;
+  const selected = Object.keys(bindings).length === 0
+    ? fallbackPath
+    : (Object.prototype.hasOwnProperty.call(bindings, projectId) ? bindings[projectId] : null);
   return typeof selected === 'string' && selected.trim() === selected
     && selected.length > 0 && path.isAbsolute(selected) ? selected : null;
 }
@@ -1494,6 +1521,11 @@ function readProjectFeeds({
 }
 
 function dashboardErrorMessage(error) {
+  if (error && typeof error.code === 'string'
+    && (STARTUP_ERROR_CODES.has(error.code) || error.code === 'launcher-runtime')
+    && Object.prototype.hasOwnProperty.call(STATUS_READ_FAILURES, error.code)) {
+    return STATUS_READ_FAILURES[error.code];
+  }
   switch (error && error.code) {
     case 'status-project-invalid':
       return 'This workspace has an invalid .curatormd-v2.toml project ID. Correct the project file before opening Curator.';
@@ -2387,7 +2419,7 @@ class McpStdioClient {
   constructor(command, args, cwd, profileId, spawnProcess = spawn) {
     this.child = spawnProcess(command, args, {
       cwd,
-      stdio: ['pipe', 'pipe', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
     this.nextId = 1;
@@ -2395,18 +2427,37 @@ class McpStdioClient {
     this.sessionId = randomBytes(16).toString('hex');
     this.pending = new Map();
     this.buffer = '';
+    this.startupStderr = Buffer.alloc(0);
     this.closed = false;
+    this.exitHandled = false;
     this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', (chunk) => this._receive(chunk));
+    if (this.child.stderr) {
+      this.child.stderr.on('data', (chunk) => {
+        const received = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
+        const remaining = MAX_STARTUP_DIAGNOSTIC_BYTES - this.startupStderr.length;
+        if (remaining > 0) {
+          this.startupStderr = Buffer.concat([
+            this.startupStderr,
+            received.subarray(0, remaining),
+          ]);
+        }
+      });
+    }
     this.child.on('error', () => this._failAll(curatorError(
       'launcher-start', 'Curator MCP process could not start.',
     )));
-    this.child.on('exit', () => {
+    const handleExit = () => {
+      if (this.exitHandled) return;
+      this.exitHandled = true;
       this.closed = true;
-      this._failAll(curatorError(
-        'launcher-exit', 'Curator MCP process exited before replying.',
-      ));
-    });
+      const startupCode = startupFailureCode(this.startupStderr);
+      this._failAll(startupCode
+        ? curatorError(startupCode, 'Curator MCP startup was rejected.')
+        : curatorError('launcher-exit', 'Curator MCP process exited before replying.'));
+    };
+    if (this.child.stderr) this.child.once('close', handleExit);
+    else this.child.once('exit', handleExit);
   }
 
   async initialize() {
@@ -2536,6 +2587,60 @@ class McpStdioClient {
   }
 }
 
+function joinMarkdownParagraphLines(text) {
+  const lines = text.split(/\r?\n/);
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const output = [];
+  let fence = null;
+  let structuredBlock = false;
+  let previousProse = false;
+  for (const line of lines) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence) {
+      output.push(line);
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      previousProse = false;
+      continue;
+    }
+    if (!line.trim()) structuredBlock = false;
+    else if (/^ {0,3}(?:>|[-+*]\s|\d+[.)]\s|<(?:!--|[A-Za-z/!?]))/.test(line)) structuredBlock = true;
+    if (structuredBlock) {
+      output.push(line);
+      previousProse = false;
+      continue;
+    }
+    if (marker) {
+      fence = marker[1];
+      output.push(line);
+      previousProse = false;
+      continue;
+    }
+    const structural = !line.trim() || /^(?:\s{4}|\t| {0,3}(?:#{1,6}(?:\s|$)|\[[^\]]+\]:|\||<|(?:[-=*]\s*){3,}$))/.test(line)
+      || line.includes('|');
+    const hardBreak = /(?: {2,}|\\)$/.test(line);
+    if (!structural && previousProse) {
+      output[output.length - 1] += ` ${line.trim()}`;
+    } else {
+      output.push(line);
+    }
+    previousProse = !structural && !hardBreak;
+  }
+  return output.join(eol);
+}
+
+async function joinActiveMarkdownParagraphLines() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== 'markdown') {
+    void vscode.window.showInformationMessage('Open a Markdown document to join wrapped paragraph lines.');
+    return;
+  }
+  const document = editor.document;
+  const text = document.getText();
+  const joined = joinMarkdownParagraphLines(text);
+  if (text === joined) return;
+  await editor.edit((edit) => edit.replace(new vscode.Range(document.positionAt(0), document.positionAt(text.length)), joined));
+}
+
 function activate(context, spawnProcess = spawn) {
   healthHistoryStore = context?.globalState || null;
   // Git Graph uses Left priority 1; Left priority 0 places CuratorMD immediately after it.
@@ -2562,7 +2667,10 @@ function activate(context, spawnProcess = spawn) {
     'curatormdV2.openPendingReview',
     () => openPendingReviewDocument(spawnProcess),
   );
-  context.subscriptions.push(statusItem, openDashboard, openHealingToolbox, openPendingReview);
+  const joinMarkdown = vscode.commands.registerCommand(
+    'curatormdV2.joinMarkdownParagraphLines', joinActiveMarkdownParagraphLines,
+  );
+  context.subscriptions.push(statusItem, openDashboard, openHealingToolbox, openPendingReview, joinMarkdown);
   if (vscode.languages && typeof vscode.languages.registerCodeLensProvider === 'function') {
     context.subscriptions.push(vscode.commands.registerCommand(
       'curatormdV2.reviewDocumentCandidate',
@@ -2835,7 +2943,7 @@ async function launchDocumentReview(
         `Reopen “${outline.problem}” and withdraw stale proposal ${candidateId}?`,
         {
           modal: true,
-          detail: 'The source task becomes active and needs fresh passing evidence for every criterion. Existing facts and receipts remain. No evidence is fabricated and no terminal is opened. Finish the task and assess a new proposal after the checks pass.',
+          detail: 'The source task becomes active. Existing facts and receipts remain, and earlier verification is kept as historical evidence. Record the new outcome and any available checks; no terminal is opened.',
         },
         'Reopen task and withdraw proposal',
         'Cancel',
@@ -2902,13 +3010,6 @@ async function launchDocumentReview(
       return;
     }
 
-    if (selectedDecision === 'approve' && outline.evidence_status !== 'current_passing') {
-      vscode.window.showWarningMessage(
-        'Curator cannot accept this proposal because passing completion evidence is missing. Click Refresh evidence above Editable decision to reopen the source task, add passing evidence, finish it, and assess a new proposal; this proposal can still be rejected or withdrawn.',
-      );
-      return;
-    }
-
     if (selectedDecision === 'withdraw') {
       const rationale = await vscode.window.showInputBox({
         title: 'Curator V2 withdrawal rationale',
@@ -2963,10 +3064,6 @@ async function launchDocumentReview(
         || packet.detail?.candidate?.status !== 'pending_review') {
         throw new Error('The candidate is no longer pending in this project. Refresh the review document.');
       }
-      if (!packet.artifact_inventory?.usage?.inventory_complete
-        || typeof packet.artifact_inventory.manifest_sha256 !== 'string') {
-        throw new Error('The current artifact inventory is incomplete; no decision was recorded.');
-      }
       return { outline, packet };
     }, { spawnProcess });
 
@@ -3012,17 +3109,20 @@ async function launchDocumentReview(
     const rationale = selectedDecision === 'approve'
       ? `Owner approved the SDE entry for ${draft.documents.join(', ')}.`
       : 'Owner rejected the pending SDE proposal.';
+    const evidenceOverrideReason = null;
     const reviewDecision = reviewDecisionValue(selectedDecision);
-    const selectedArtifacts = artifactsForAutomaticCleanup(initial.packet);
+    const inventoryComplete = initial.packet.artifact_inventory?.usage?.inventory_complete === true
+      && typeof initial.packet.artifact_inventory.manifest_sha256 === 'string';
+    const selectedArtifacts = inventoryComplete ? artifactsForAutomaticCleanup(initial.packet) : [];
     const reviewed = await withReviewClient(projectRoot, async (client, projectId) => {
       const packet = JSON.parse(await client.callTool('sde_review_packet', {
         candidate_id: candidateId,
-        review_artifacts: selectedArtifacts,
+        ...(inventoryComplete ? { review_artifacts: selectedArtifacts } : {}),
       }));
       if (packet.detail?.candidate?.candidate_id !== candidateId
         || packet.detail?.candidate?.status !== 'pending_review'
         || packet.artifact_inventory?.manifest_sha256 !== initial.packet.artifact_inventory.manifest_sha256
-        || !packet.artifact_inventory?.usage?.inventory_complete) {
+        || (packet.artifact_inventory?.usage?.inventory_complete === true) !== inventoryComplete) {
         throw new Error('The review packet changed. Refresh it and start again; no decision was recorded.');
       }
       const reviewDraftJson = JSON.stringify(draft);
@@ -3030,11 +3130,12 @@ async function launchDocumentReview(
         candidate_id: candidateId,
         decision: reviewDecision,
         artifacts: selectedArtifacts,
-        artifact_inventory_complete: true,
-        dependency_map_sha256: packet.dependency_map_sha256,
+        artifact_inventory_complete: inventoryComplete,
+        dependency_map_sha256: inventoryComplete ? packet.dependency_map_sha256 : '0'.repeat(64),
         rationale,
         review_draft_json: reviewDraftJson,
         confirm_significance_five: selectedDecision === 'approve' && draft.significance === 5,
+        evidence_override_reason: evidenceOverrideReason,
       }));
       if (typeof binding.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(binding.sha256)) {
         throw new Error('Curator did not return a valid review binding.');
@@ -3055,7 +3156,11 @@ async function launchDocumentReview(
         modal: true,
         detail: [
           `Significance: ${draft.significance}/5`,
-          'Approval records this SDE decision. Accepted facts are written to the selected documents and verified; eligible transient artifacts then clear automatically. Retention holds and changed files stay visible for follow-up.',
+          initial.outline.evidence_status !== 'current_passing'
+            ? 'Automated evidence is missing or stale; review the recorded facts before deciding.' : '',
+          inventoryComplete
+            ? 'Approval records this SDE decision. Accepted facts are written to the selected documents and verified; eligible transient artifacts then clear automatically. Retention holds and changed files stay visible for follow-up.'
+            : 'The inventory is incomplete. The decision will be saved; cleanup remains pending and no artifacts are authorized for deletion.',
           destinationSummary,
         ].filter(Boolean).join('\n'),
       },
@@ -3071,11 +3176,12 @@ async function launchDocumentReview(
       if (projectId !== reviewed.projectId) throw new Error('Project binding changed; no decision was recorded.');
       const currentPacket = JSON.parse(await client.callTool('sde_review_packet', {
         candidate_id: candidateId,
-        review_artifacts: selectedArtifacts,
+        ...(inventoryComplete ? { review_artifacts: selectedArtifacts } : {}),
       }));
       if (currentPacket.artifact_inventory?.manifest_sha256
         !== reviewed.packet.artifact_inventory.manifest_sha256
-        || currentPacket.dependency_map_sha256 !== reviewed.packet.dependency_map_sha256
+        || (inventoryComplete && currentPacket.dependency_map_sha256 !== reviewed.packet.dependency_map_sha256)
+        || (currentPacket.artifact_inventory?.usage?.inventory_complete === true) !== inventoryComplete
         || currentPacket.detail?.candidate?.status !== 'pending_review') {
         throw new Error('The review packet changed after confirmation. Refresh it and try again.');
       }
@@ -3083,11 +3189,12 @@ async function launchDocumentReview(
         candidate_id: candidateId,
         decision: reviewDecision,
         artifacts: selectedArtifacts,
-        artifact_inventory_complete: true,
-        dependency_map_sha256: currentPacket.dependency_map_sha256,
+        artifact_inventory_complete: inventoryComplete,
+        dependency_map_sha256: inventoryComplete ? currentPacket.dependency_map_sha256 : '0'.repeat(64),
         rationale,
         review_draft_json: reviewed.reviewDraftJson,
         confirm_significance_five: selectedDecision === 'approve' && draft.significance === 5,
+        evidence_override_reason: evidenceOverrideReason,
       }));
       if (currentBinding.sha256 !== reviewed.binding.sha256) {
         throw new Error('The review binding changed after confirmation. Refresh it and try again.');
@@ -3096,12 +3203,13 @@ async function launchDocumentReview(
         candidate_id: candidateId,
         decision: reviewDecision,
         artifacts: selectedArtifacts,
-        artifact_inventory_complete: true,
-        dependency_map_sha256: currentPacket.dependency_map_sha256,
+        artifact_inventory_complete: inventoryComplete,
+        dependency_map_sha256: inventoryComplete ? currentPacket.dependency_map_sha256 : '0'.repeat(64),
         rationale,
         review_draft_json: reviewed.reviewDraftJson,
         expected_review_binding_sha256: currentBinding.sha256,
         confirm_significance_five: selectedDecision === 'approve' && draft.significance === 5,
+        evidence_override_reason: evidenceOverrideReason,
       }));
       if (typeof receipt.receipt_id !== 'string' || !receipt.receipt_id) {
         throw new Error('Curator did not return a decision receipt.');
@@ -3542,6 +3650,7 @@ async function showDashboard(
     { enableScripts: true, localResourceRoots: [] },
   );
   panel.webview.html = dashboardHtml(panel.webview, focusReviews, focusRecovery);
+  let panelDisposed = false;
   let goalIds = new Set();
   let candidateIds = new Set();
   let projectId = null;
@@ -4662,14 +4771,17 @@ async function showDashboard(
       reportPages.clear();
       projectId = null;
       updateStatusBarHealth(null, null);
-      panel.webview.postMessage({
-        type: 'error',
-        message: dashboardErrorMessage(error),
-      });
+      if (!panelDisposed) {
+        panel.webview.postMessage({
+          type: 'error',
+          message: dashboardErrorMessage(error),
+        });
+      }
     }
   });
 
   panel.onDidDispose(() => {
+    panelDisposed = true;
     if (settingsChangeListener && typeof settingsChangeListener.dispose === 'function') {
       settingsChangeListener.dispose();
     }
@@ -6132,7 +6244,7 @@ function dashboardHtml(webview, focusReviews = false, focusRecovery = false) {
             document.getElementById('selected').textContent = reopenedGoal.problem;
             document.getElementById('reopenGoal').hidden = true;
             document.getElementById('actionStatus').textContent =
-              'Task reopened. Prior facts remain in history; current criteria need fresh evidence.';
+              'Task reopened. Prior facts remain in history; earlier verification is historical.';
             requestReport(0);
           } else {
             document.getElementById('actionStatus').textContent =
@@ -6399,6 +6511,7 @@ function validateReviewQueue(value, projectId) {
 
 module.exports = {
   activate,
+  joinMarkdownParagraphLines,
   deactivate,
   McpStdioClient,
   dashboardHtml,

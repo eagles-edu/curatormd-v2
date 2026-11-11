@@ -67,22 +67,29 @@ the behavior being changed. Run the relevant checks and test the behavior
 against its stated purpose. Include performance checks when performance is a
 stated requirement or an observable part of that purpose.
 
+Curator is a record-keeping aid. Record a task as completed when its requested
+result is observed, including when the owner sees the result and moves on.
+Do not require a separate proof packet, automated test, or follow-up owner
+instruction solely to record completion or prepare an SDE proposal. Record
+available evidence accurately and keep unverified claims labeled as such. If
+the result or the owner's intent is genuinely uncertain, ask for guidance.
+Suggest potentially useful SDEs for human review; the owner decides what is
+persisted. Do not invent evidence or approve an SDE on the owner's behalf.
+
 For behavior that must be safe to repeat, test retries and repeated user
 actions. The same logical operation should reach the intended result without
 creating duplicate records, repeating destructive effects, or losing accepted
 user edits. Test both the successful path and the failure or recovery path that
 the specification requires.
 
-For code changes, a passing relevant test or lint check is enough evidence for
-the task. If the owner says they ran the check or confirms the behavior works,
-record that confirmation and use it as the evidence. Keep the check open only
-when it failed, was not run, or the owner identified a concrete gap. Record the
-check and result in one compact fact; do not require a host receipt, a separate
-summary artifact, or report-page readbacks for ordinary task completion.
+For code changes, run checks appropriate to the change and record actual
+results. Report failed or unrun checks accurately, without treating the absence
+of a proof receipt as a block on a completed task or proposed SDE. If the
+outcome is uncertain, ask the owner for guidance. Record results compactly.
 
 ## Close engineering separately from UX review
 
-Close the engineering item when its practical check passes. Record
+Close the engineering item when the requested result is observed. Record
 any remaining UX review as a separate owner decision with its own status. Do
 not leave finished implementation marked active solely because an owner has
 not yet reviewed the interface.
@@ -111,6 +118,15 @@ it is not authorization to begin coding and is not a substitute for the task's
 engineering criteria. Codex prepares the pending proposal at the specified
 task endpoint from that task's supported facts. The owner decides its
 importance and disposition.
+
+Evidence is optional for proposing or approving an SDE; the owner reviews the
+recorded facts and their evidence labels before deciding. An approved entry
+should proceed to persistence and readback; any cleanup still uses the approved
+candidate's exact, rechecked inventory.
+When the inventory is incomplete, the owner may save the decision without
+authorizing cleanup; the receipt remains `purge_pending`. If an approved
+artifact changes afterward, retain the approved entry and leave cleanup pending
+until the recorded inventory can be rechecked.
 
 Cleanup, publication, deployment, and other actions with their own explicit
 authorization requirements retain those requirements. A review gate for one

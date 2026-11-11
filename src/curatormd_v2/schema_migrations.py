@@ -26,9 +26,10 @@ from .schema_migration_steps_v2_v20 import (
     migrate_staging_artifact_age_v19,
     migrate_expiry_purge_receipts_v20,
 )
+from .schema_migration_steps_v48 import migrate_codex_session_turns_v48
 
 
-SQLITE_SCHEMA_VERSION = 47
+SQLITE_SCHEMA_VERSION = 48
 
 
 def migrate_cleanup_authorizations_v21(connection: sqlite3.Connection) -> None:
@@ -978,6 +979,7 @@ _MIGRATION_STEPS: tuple[Callable[[sqlite3.Connection], None], ...] = (
     migrate_goal_lifecycle_timestamps_v45,
     migrate_sde_review_target_table_v46,
     migrate_sde_candidate_withdrawals_v47,
+    migrate_codex_session_turns_v48,
 )
 
 

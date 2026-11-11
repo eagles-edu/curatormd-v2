@@ -22,8 +22,17 @@ The user manager runs the service as the same Unix account that owns the
 config, database, and staging tree. Do not share one instance file across
 projects.
 
-Install the unit templates under `~/.config/systemd/user/`, reload the user
-manager, then enable only the named project's timer:
+Install the unit templates under `~/.config/systemd/user/` and copy
+`deploy/systemd/user/maintenance-runtime.py` to
+`~/.config/curatormd-v2/maintenance-runtime.py`. Configure the fallback as
+the trusted runtime used by the project's Curator server. At each service
+start, the selector reads the database schema without changing it and uses
+the primary runtime if compatible, or the fallback if the primary is too old
+or unavailable. If neither is compatible, the service fails without running
+cleanup. This does not install or upgrade runtimes; maintain the server runtime
+through its normal update process.
+
+Reload the user manager, then enable only the named project's timer:
 
 ```sh
 systemctl --user daemon-reload

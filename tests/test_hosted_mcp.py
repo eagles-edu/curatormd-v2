@@ -9,6 +9,7 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,7 @@ from curatormd_v2 import (
     hosted_mcp,
 )
 from curatormd_v2.hosted_mcp import LocalProfileMCP, build_local_profile_mcp
+from curatormd_v2.project_access import ProjectBindingStartupError
 from curatormd_v2.service import _PreparedEvent  # pyright: ignore[reportPrivateUsage]
 from curatormd_v2.mcp_server import safe_tool_handler
 
@@ -388,15 +390,14 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
                 )
             finally:
                 store.close()
-            with self.assertRaisesRegex(
-                ValueError, "requested project review grant is not active"
-            ):
+            with self.assertRaises(ProjectBindingStartupError) as raised:
                 build_local_profile_mcp(
                     project_root=root,
                     database=database,
                     profile_id="read-only-profile",
                     allow_review=True,
                 )
+            self.assertEqual(raised.exception.code, "project-review-grant-missing")
 
     def test_review_grant_uses_local_uid_for_attended_mcp_review_tools(self) -> None:
         """The opted-in VS Code stdio route can review as its local OS owner."""
@@ -719,12 +720,13 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
             root = Path(temporary) / "consumer"
             self._project(root)
             database = Path(temporary) / "global.sqlite3"
-            with self.assertRaisesRegex(ValueError, "registration fingerprint"):
+            with self.assertRaises(ProjectBindingStartupError) as raised:
                 build_local_profile_mcp(
                     project_root=root,
                     database=database,
                     profile_id="gptmd-coding",
                 )
+            self.assertEqual(raised.exception.code, "project-registration-missing")
 
             self._provision(root, database, "gptmd-coding")
             runtime = build_local_profile_mcp(
@@ -819,12 +821,39 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
                 changed.replace('project_id = "bound-project"', 'project_id = "changed-project"')
             )
             (root / ".curatormd-v2.toml").chmod(0o600)
-            with self.assertRaisesRegex(ValueError, "registration fingerprint"):
+            with self.assertRaises(ProjectBindingStartupError) as raised:
                 build_local_profile_mcp(
                     project_root=root,
                     database=database,
                     profile_id="gptmd-coding",
                 )
+            self.assertEqual(raised.exception.code, "project-registration-missing")
+
+    def test_launcher_distinguishes_binding_failures_from_missing_grants(self) -> None:
+        cases = (
+            ("project-config-stale", "UPDATE project_registry SET config_sha256 = '" + "0" * 64 + "'"),
+            ("project-repository-mismatch", "UPDATE project_registry SET repository_fingerprint = '" + "1" * 64 + "'"),
+            ("consumer-binding-missing", "DELETE FROM consumer_bindings"),
+            ("consumer-binding-inactive", "UPDATE consumer_bindings SET status = 'deregistration_pending'"),
+            ("project-read-grant-missing", None),
+        )
+        for expected, mutation in cases:
+            with self.subTest(code=expected), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "consumer"
+                self._project(root)
+                database = Path(temporary) / "global.sqlite3"
+                self._provision(root, database, "gptmd-coding")
+                with sqlite3.connect(database) as connection:
+                    connection.execute("DELETE FROM project_grants")
+                    if mutation is not None:
+                        connection.execute(mutation)
+                with self.assertRaises(ProjectBindingStartupError) as raised:
+                    build_local_profile_mcp(
+                        project_root=root,
+                        database=database,
+                        profile_id="gptmd-coding",
+                    )
+                self.assertEqual(raised.exception.code, expected)
 
     def test_inflight_write_finishes_before_project_suspend_cutover(self) -> None:
         """Serialize an already admitted durable write before a status change."""
@@ -987,7 +1016,7 @@ class HostedMcpTests(HostedMcpFixtures, unittest.TestCase):
                     exit_code = hosted_mcp.main(arguments)
 
                 self.assertEqual(exit_code, 2)
-                self.assertIn("startup failed", stderr.getvalue())
+                self.assertIn("CURATOR_STARTUP_ERROR=runtime", stderr.getvalue())
                 self.assertNotIn("private raw payload marker", stderr.getvalue())
                 self.assertNotIn("private-database.sqlite3", stderr.getvalue())
                 self.assertNotIn("private SQL fragment", stderr.getvalue())

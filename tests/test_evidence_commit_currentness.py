@@ -105,7 +105,7 @@ class EvidenceCommitCurrentnessTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(failure, [])
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].status, GoalStatus.OPEN)
+        self.assertEqual(result[0].status, GoalStatus.COMPLETE)
 
     def test_event_finish_does_not_use_an_expired_pretransaction_attestation(self) -> None:
         goal, service, verifier = self._service_fixture()
@@ -155,7 +155,7 @@ class EvidenceCommitCurrentnessTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].status.value, "processed")
         self.assertEqual(
-            service.goal_status(goal.goal_id).goal.status, GoalStatus.OPEN
+            service.goal_status(goal.goal_id).goal.status, GoalStatus.COMPLETE
         )
 
     def _service_fixture(

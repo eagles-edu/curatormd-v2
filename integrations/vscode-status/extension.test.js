@@ -27,6 +27,7 @@ Module._load = function load(request, parent, isMain) {
   return originalLoad.call(this, request, parent, isMain);
 };
 const {
+  joinMarkdownParagraphLines,
   McpStdioClient,
   dashboardHtml,
   defaultReviewCommand,
@@ -80,6 +81,16 @@ const {
   writeWorkspaceQueueViews,
   notifyTransportClosed,
 } = require('./extension');
+
+test('joins wrapped Markdown prose and preserves structural and hard breaks', () => {
+  const source = '# Heading\n\nFirst wrapped\nline here.\n\nHard break  \nnext line\n\n```json\n{\n  "a": 1\n}\n```\n\n- item\n- item two\n\n| a | b |\n| - | - |\n';
+  const expected = '# Heading\n\nFirst wrapped line here.\n\nHard break  \nnext line\n\n```json\n{\n  "a": 1\n}\n```\n\n- item\n- item two\n\n| a | b |\n| - | - |\n';
+  assert.equal(joinMarkdownParagraphLines(source), expected);
+  assert.equal(joinMarkdownParagraphLines(expected), expected);
+  assert.equal(joinMarkdownParagraphLines('one\r\ntwo\r\n'), 'one two\r\n');
+  const protectedBlocks = '```md\n- item\ncontinued\n```\n\n<div>\nkeep\nlines\n</div>\n\nAfter\nwords\n';
+  assert.equal(joinMarkdownParagraphLines(protectedBlocks), '```md\n- item\ncontinued\n```\n\n<div>\nkeep\nlines\n</div>\n\nAfter words\n');
+});
 Module._load = originalLoad;
 
 function healthyCuratorQueueSnapshot(projectId = 'alpha', overrides = {}) {
@@ -1012,6 +1023,40 @@ test('MCP stdio dashboard client initializes and reads a tool result', async () 
   client.close();
 });
 
+test('startup binding failures reach the dashboard without transport recovery', async () => {
+  const cases = [
+    ['project-config-stale', /project config changed after registration/],
+    ['consumer-binding-inactive', /consumer binding is inactive/],
+    ['project-read-grant-missing', /no active project read grant/],
+  ];
+  for (const [code, message] of cases) {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.stdin = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+        setImmediate(() => {
+          child.emit('exit', 2);
+          child.stderr.write(`private detail\nCURATOR_STARTUP_ERROR=${code}\n`);
+          child.stderr.end();
+          child.emit('close', 2);
+        });
+      },
+    });
+    const client = new McpStdioClient('fixture', [], '/tmp', 'fixture-profile', () => child);
+    let startupError;
+    await assert.rejects(client.initialize(), (error) => {
+      startupError = error;
+      assert.equal(error.code, code);
+      assert.match(dashboardErrorMessage(error), message);
+      assert.doesNotMatch(dashboardErrorMessage(error), /private detail|transport closed/);
+      return true;
+    });
+    assert.equal(await notifyTransportClosed(startupError), false);
+  }
+});
+
 test('closed Curator transport shows one recovery modal with an explicit reload action', async () => {
   const previousWindow = vscodeMock.window;
   const previousCommands = vscodeMock.commands;
@@ -1872,8 +1917,8 @@ test('status item follows Git Graph and uses project-bound health colors', async
   assert.equal(commands[0].name, 'curatormdV2.openDashboard');
   assert.equal(commands[1].name, 'curatormdV2.openHealingToolbox');
   assert.equal(extensionManifest.contributes.commands[1].title, 'CuratorMD V2: Open Recovery Manager');
-  assert.equal(commands.length, 3);
-  assert.equal(subscriptions.length, 5);
+  assert.equal(commands.length, 4);
+  assert.equal(subscriptions.length, 6);
 
   assert.equal(updateStatusBarHealth({ project_id: 'alpha', status: 'healthy' }, 'alpha', []), 'healthy');
   assert.equal(items[0].color, '#73d216');
@@ -2342,7 +2387,10 @@ test('workspace project IDs select exact database bindings and fail closed on in
     beta: '/state/beta.sqlite3',
   };
   assert.equal(resolveDatabasePath('alpha', bindings, '/state/default.sqlite3'), '/state/alpha.sqlite3');
-  assert.equal(resolveDatabasePath('missing', bindings, '/state/default.sqlite3'), '/state/default.sqlite3');
+  assert.equal(resolveDatabasePath('missing', bindings, '/state/default.sqlite3'), null);
+  assert.equal(resolveDatabasePath('alpha', {}, '/state/default.sqlite3'), '/state/default.sqlite3');
+  assert.equal(resolveDatabasePath('alpha', null, '/state/default.sqlite3'), null);
+  assert.equal(resolveDatabasePath('alpha', [], '/state/default.sqlite3'), null);
   assert.equal(resolveDatabasePath('alpha', { alpha: 'relative.sqlite3' }, '/state/default.sqlite3'), null);
   assert.equal(resolveDatabasePath('alpha', { alpha: null }, '/state/default.sqlite3'), null);
   assert.equal(resolveDatabasePath('../alpha', bindings, '/state/default.sqlite3'), null);
@@ -2604,6 +2652,7 @@ test('the extension exposes dashboard and healing commands without palette task 
   assert.deepEqual(extensionManifest.contributes.commands.map((command) => command.command), [
     'curatormdV2.openDashboard',
     'curatormdV2.openHealingToolbox',
+    'curatormdV2.joinMarkdownParagraphLines',
   ]);
   assert.equal(extensionManifest.contributes.commands[1].title, 'CuratorMD V2: Open Recovery Manager');
 });
@@ -2633,6 +2682,8 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   const reviewErrors = [];
   let receiveMessage;
   let disposePanel;
+  let panelDisposed = false;
+  let failNextSpawn = false;
   let processCount = 0;
   const processes = [];
   const userSettings = {
@@ -2663,16 +2714,28 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
     createWebviewPanel: () => ({
       webview: {
         cspSource: 'vscode-webview:',
-        postMessage: (message) => { messages.push(message); },
+        postMessage: (message) => {
+          if (panelDisposed) throw new Error('Webview is disposed');
+          messages.push(message);
+        },
         onDidReceiveMessage: (handler) => { receiveMessage = handler; },
       },
-      onDidDispose: (handler) => { disposePanel = handler; },
+      onDidDispose: (handler) => {
+        disposePanel = () => {
+          panelDisposed = true;
+          handler();
+        };
+      },
     }),
   };
 
   const launchArguments = [];
   await showDashboard((command, args) => {
     if (command === 'fixture-hermes') return new FakeHermesProcess(healthyHermesProbe());
+    if (failNextSpawn) {
+      failNextSpawn = false;
+      throw new Error('fixture process failed after the dashboard closed');
+    }
     launchArguments.push(args);
     const current = processCount++;
     const child = new FakeMcpProcess(
@@ -2733,6 +2796,8 @@ test('dashboard opens a panel, reads goal and report pages, and clears on dispos
   await receiveMessage({ type: 'openReview', candidateId: 'candidate-1' });
   assert.equal(terminalCalls.length, 0, 'a denied read clears cached review authority');
   disposePanel();
+  failNextSpawn = true;
+  await assert.doesNotReject(() => receiveMessage({ type: 'loadGoals', offset: 0 }));
 });
 
 test('dashboard uses the exact database binding and stops when its project ID differs', async () => {
@@ -3568,7 +3633,7 @@ test('completed SDE review refresh reloads the open dashboard for its project', 
   }
 });
 
-test('pending SDE Accept clears its review document and refreshes dashboard after finalization', async () => {
+for (const inventoryComplete of [true, false]) test(`pending SDE Accept allows missing evidence with inventory complete=${inventoryComplete}`, async () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-flow-'));
   const projectId = 'alpha';
   const candidateId = 'candidate-42';
@@ -3585,8 +3650,8 @@ test('pending SDE Accept clears its review document and refreshes dashboard afte
     candidate_id: candidateId,
     goal_id: candidate.goal_id,
     status: 'pending_review',
-    evidence_status: 'current_passing',
-    successful_completion_evidence_current: true,
+    evidence_status: 'not_current_or_missing',
+    successful_completion_evidence_current: false,
     persistence_documents: [target],
     supporting_facts: [],
   };
@@ -3619,8 +3684,8 @@ test('pending SDE Accept clears its review document and refreshes dashboard afte
   const packet = {
     detail: { candidate },
     artifact_inventory: {
-      usage: { inventory_complete: true },
-      manifest_sha256: 'a'.repeat(64),
+      usage: { inventory_complete: inventoryComplete },
+      manifest_sha256: inventoryComplete ? 'a'.repeat(64) : null,
       artifacts: [artifact],
     },
     dependency_map_sha256: 'b'.repeat(64),
@@ -3634,8 +3699,8 @@ test('pending SDE Accept clears its review document and refreshes dashboard afte
     sde_confirm: { receipt_id: 'receipt-42' },
     sde_project_review_target: 'written',
     sde_review_projection_status: [[target, 'd'.repeat(64), '2026-11-04T00:00:00+00:00']],
-    sde_finalize_review_projection: { receipt_id: 'receipt-42', purge_status: 'complete' },
-    artifact_purge_status: [{ receipt_id: 'receipt-42', purge_status: 'complete' }, []],
+    sde_finalize_review_projection: { receipt_id: 'receipt-42', purge_status: inventoryComplete ? 'complete' : 'purge_pending' },
+    artifact_purge_status: [{ receipt_id: 'receipt-42', purge_status: inventoryComplete ? 'complete' : 'purge_pending' }, []],
   };
   const projectFile = path.join(projectRoot, '.curatormd-v2.toml');
   fs.writeFileSync(projectFile, 'project_id = "alpha"\n');
@@ -3785,13 +3850,17 @@ test('pending SDE Accept clears its review document and refreshes dashboard afte
 
     assert.equal(errors.length, 0);
     assert.deepEqual(terminalCalls, []);
-    assert.equal(warnings.length, 1);
+    assert.equal(warnings.length, inventoryComplete ? 1 : 2);
     assert.match(warnings[0].message, /Accept SDE candidate-42/);
-    assert.match(warnings[0].options.detail, /verified; eligible transient artifacts then clear automatically/);
+    assert.match(warnings[0].options.detail, /Automated evidence is missing or stale/);
+    assert.match(warnings[0].options.detail, inventoryComplete
+      ? /verified; eligible transient artifacts then clear automatically/
+      : /inventory is incomplete.*cleanup remains pending/);
     assert.doesNotMatch(warnings[0].options.detail, /cleanup approval|Inventory SHA-256|Dependency map SHA-256/);
     assert.equal(quickPickCalls.length, 0, 'acceptance does not open a selection palette');
-    assert.equal(information.length, 1);
-    assert.match(information[0], /accepted and receipt receipt-42 finalized/);
+    assert.equal(information.length, inventoryComplete ? 1 : 0);
+    if (inventoryComplete) assert.match(information[0], /accepted and receipt receipt-42 finalized/);
+    else assert.match(warnings[1].message, /cleanup status is purge_pending/);
     assert.equal(reviewRefreshCompleted, true);
     assert.match(documentText, /candidate-remaining-43/);
     assert.doesNotMatch(documentText, /candidate-42/);
@@ -3813,19 +3882,22 @@ test('pending SDE Accept clears its review document and refreshes dashboard afte
     );
     assert.ok(confirm);
     assert.equal(confirm.params.arguments.decision, 'approved');
+    assert.equal(confirm.params.arguments.artifact_inventory_complete, inventoryComplete);
+    if (!inventoryComplete) assert.equal(confirm.params.arguments.dependency_map_sha256, '0'.repeat(64));
+    assert.equal(confirm.params.arguments.evidence_override_reason, null);
     assert.equal(confirm.params.arguments.expected_review_binding_sha256, binding.sha256);
     assert.deepEqual(
       JSON.parse(confirm.params.arguments.review_draft_json).documents,
       [target],
     );
-    assert.deepEqual(confirm.params.arguments.artifacts, [{
+    assert.deepEqual(confirm.params.arguments.artifacts, inventoryComplete ? [{
       path: artifact.path,
       sha256: artifact.sha256,
       device_id: artifact.device_id,
       inode_id: artifact.inode_id,
       occurrence_id: artifact.occurrence_id,
       reacquisition_action: 'not_required',
-    }]);
+    }] : []);
     assert.ok(children[3].requests.some(
       (request) => request.params?.name === 'sde_finalize_review_projection',
     ));
@@ -3917,7 +3989,8 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
       goal: { goal_id: candidate.goal_id, project_id: projectId, problem: 'Smoke goal' },
     }], new Map([[candidateId, outline]])), true);
     const documentText = fs.readFileSync(reviewPath, 'utf8');
-    assert.match(documentText, /Refresh evidence reopens the source task/);
+    assert.doesNotMatch(documentText, /Edit this JSON copy to change the significance rating/);
+    assert.doesNotMatch(documentText, /These actions do not open a terminal/);
     const document = {
       uri: { fsPath: reviewPath },
       isDirty: false,
@@ -3964,26 +4037,20 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
       children.push(child);
       return child;
     };
-    await launchDocumentReview(candidateId, 'approve', spawnReviewProcess);
-    assert.match(warnings[0].message, /Click Refresh evidence above Editable decision/);
-    assert.ok(children[0].requests.every(
-      (request) => !['sde_review_packet', 'sde_confirm'].includes(request.params?.name),
-    ));
     await launchDocumentReview(candidateId, 'withdraw', spawnReviewProcess);
 
     assert.deepEqual(errors, []);
     assert.deepEqual(terminalCalls, []);
-    assert.equal(warnings.length, 2);
-    assert.match(warnings[1].message, /Withdraw SDE proposal candidate-withdraw-42/);
-    assert.match(warnings[1].options.detail, /task facts and evidence remain unchanged/);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0].message, /Withdraw SDE proposal candidate-withdraw-42/);
+    assert.match(warnings[0].options.detail, /task facts and evidence remain unchanged/);
     assert.match(information[0], /source facts retained.*withdrawal-42/);
-    assert.equal(children.length, 3);
+    assert.equal(children.length, 2);
     assert.ok(launchArgs[0].args.includes('--allow-review'));
-    assert.ok(launchArgs.slice(0, 2).every(({ args }) => !args.includes('--allow-write')));
+    assert.ok(!launchArgs[0].args.includes('--allow-write'));
     assert.ok(launchArgs[1].args.includes('--allow-review'));
-    assert.ok(launchArgs[2].args.includes('--allow-review'));
-    assert.ok(launchArgs[2].args.includes('--allow-write'));
-    const withdrawalCall = children[2].requests.find(
+    assert.ok(launchArgs[1].args.includes('--allow-write'));
+    const withdrawalCall = children[1].requests.find(
       (request) => request.params?.name === 'sde_withdraw_candidates',
     );
     assert.ok(withdrawalCall);
@@ -4107,7 +4174,7 @@ test('Refresh evidence reopens the source task and withdraws the stale proposal 
     assert.deepEqual(terminalCalls, []);
     assert.equal(warnings.length, 1);
     assert.match(warnings[0].message, /Reopen/);
-    assert.match(warnings[0].options.detail, /fresh passing evidence for every criterion/);
+    assert.match(warnings[0].options.detail, /earlier verification is kept as historical evidence/);
     assert.match(information[0], /task reopened and stale proposal withdrawn/i);
     assert.equal(children.length, 3);
     assert.ok(launchArgs.every(({ args }) => args.includes('--allow-review')));
@@ -4237,6 +4304,33 @@ test('resolved proposals leave the pending document only after terminal status i
     assert.match(refreshed, /No pending candidates\./);
     assert.doesNotMatch(refreshed, /candidate-withdrawn/);
     assert.notEqual(original, refreshed);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending review keeps generated prose contiguous across refresh and preserves decisions', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-prose-'));
+  const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  const rationale = 'A long proposal rationale should remain one contiguous source line so that the editor can wrap it responsively to the available width.';
+  const review = {
+    candidate: { candidate_id: 'candidate-prose', goal_id: 'goal-prose', status: 'pending_review', materiality: 'routine', rationale },
+    goal: { goal_id: 'goal-prose', project_id: 'alpha', problem: 'Keep prose responsive.' },
+  };
+  try {
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const original = fs.readFileSync(reviewPath, 'utf8');
+    assert.ok(original.includes(`- Proposal rationale: ${rationale}\n`));
+    const marker = '<!-- curator-v2-decision:candidate-prose:start -->';
+    const start = original.indexOf(marker) + marker.length;
+    const edited = original.slice(0, start) + original.slice(start)
+      .replace('"documents": []', '"documents": ["persistence/HISTORY.md"]');
+    assert.notEqual(edited, original);
+    fs.writeFileSync(reviewPath, edited);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const refreshed = fs.readFileSync(reviewPath, 'utf8');
+    assert.ok(refreshed.includes(`- Proposal rationale: ${rationale}\n`));
+    assert.ok(refreshed.includes('"documents": ["persistence/HISTORY.md"]'));
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

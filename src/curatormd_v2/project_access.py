@@ -143,6 +143,75 @@ class ProjectAuthorizationBinding:
         )
 
 
+class ProjectBindingStartupError(RuntimeError):
+    """Safe diagnostic code for a local launcher binding that cannot start."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+def _require_current_project_binding(
+    store: CuratorStore, config: ProjectConfig
+) -> None:
+    """Classify registration, fingerprints, and consumer lifecycle state."""
+    try:
+        registration = store.get_project_registration(config.project_id)
+    except NotFoundError:
+        raise ProjectBindingStartupError("project-registration-missing") from None
+    if registration.status != "active":
+        raise ProjectBindingStartupError("project-registration-inactive")
+    if registration.repository_fingerprint != config.repository_fingerprint:
+        raise ProjectBindingStartupError("project-repository-mismatch")
+    if (
+        registration.config_sha256 != config.config_sha256
+        or registration.backend_api_version != config.backend_api_version
+    ):
+        raise ProjectBindingStartupError("project-config-stale")
+
+    try:
+        consumer_binding = store.get_consumer_binding(config.project_id)
+    except NotFoundError:
+        raise ProjectBindingStartupError("consumer-binding-missing") from None
+    if consumer_binding.status != "active":
+        raise ProjectBindingStartupError("consumer-binding-inactive")
+
+
+def require_active_project_read(
+    store: CuratorStore,
+    config: ProjectConfig,
+    caller: AuthenticatedCaller,
+) -> None:
+    """Distinguish stale config, inactive binding, and missing read grant."""
+
+    _require_current_project_binding(store, config)
+    if not store.has_project_grant(
+        caller.subject_id, config.project_id, ProjectAction.READ.value
+    ):
+        # The grant query also requires active registration and binding. Recheck
+        # lifecycle state so a concurrent transition is not reported as a
+        # missing grant.
+        _require_current_project_binding(store, config)
+        raise ProjectBindingStartupError("project-read-grant-missing")
+
+
+def require_active_project_action(
+    store: CuratorStore,
+    config: ProjectConfig,
+    caller: AuthenticatedCaller,
+    action: ProjectAction,
+    missing_grant_code: str,
+) -> None:
+    """Require read access and a second exact action without masking lifecycle."""
+
+    require_active_project_read(store, config, caller)
+    if store.has_project_grant(caller.subject_id, config.project_id, action.value):
+        return
+    # Revalidate read and binding state before reporting an action-grant gap.
+    require_active_project_read(store, config, caller)
+    raise ProjectBindingStartupError(missing_grant_code)
+
+
 @dataclass(frozen=True, slots=True)
 class ConsumerDrainAuthorizationRequest:
     """Exact event inventory and lifetime presented for a supervised drain."""

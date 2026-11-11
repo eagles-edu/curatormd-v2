@@ -129,11 +129,12 @@ replaces the old view, so pages from separate report reads are never combined.
 
 Configure these **User** settings in VS Code:
 
-- `curatormdV2.databasePath`: absolute path to the Curator V2 SQLite database.
+- `curatormdV2.databasePath`: absolute path to the Curator V2 SQLite database
+  for a host with no project database map configured.
 - `curatormdV2.databaseBindings`: optional owner-managed object mapping exact
-  Curator project IDs to absolute SQLite paths. A matching project entry takes
-  priority over `databasePath`, so different workspaces can use separate
-  ledgers. For example,
+  Curator project IDs to absolute SQLite paths. When this map is nonempty, each
+  project requires an exact entry; a missing entry does not use `databasePath`.
+  This lets different workspaces use separate ledgers. For example,
   `{"curatormd-v2-dev-alpha":"/home/eaglesvn/.local/share/curatormd-v2-alpha/global.sqlite3"}`.
   The extension reads the project ID from the workspace's `.curatormd-v2.toml`
   before starting Curator and rejects a database response bound to another ID.

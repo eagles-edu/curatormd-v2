@@ -14,8 +14,10 @@ Steward belongs to the Hermes Core account, not CuratorMD.
   about material project decisions, resolve routine engineering choices, and
   keep independent work moving.
 - Record compact typed goal facts for intent, changes, checks, open gaps, and
-  outcome. A passing local test/lint result or the owner's explicit confirmation
-  is evidence; a bare completion claim is not.
+  outcome. Complete a task when its result is observed; missing automated
+  evidence does not block completion or an SDE proposal. Label claims and
+  verification honestly, ask the owner when unsure, and leave SDE disposition
+  and persistence to human review.
 - Persist compact, deduplicated bullet facts. Do not retain raw chats,
   transcripts, imports, cues, or scratch artifacts as canonical knowledge.
 - Keep proposed SDEs reviewable and separate from ordinary goal progress.
@@ -54,6 +56,11 @@ Steward belongs to the Hermes Core account, not CuratorMD.
   branch is clean and up to date with its remote. Preserve changes that are
   outside the authorized scope and report any state that cannot be safely
   reconciled.
+- Work reported problems through diagnosis, repair, and an observable success
+  check. A failed or forbidden path is evidence for finding the supported
+  recovery route, not a reason to stop while authorized work remains. Finish
+  active work before switching to an unrelated request unless the new request
+  changes its scope or supplies information needed to proceed.
 
 ## Markdown documents
 

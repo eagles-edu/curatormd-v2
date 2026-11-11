@@ -13,10 +13,14 @@ from .evidence import EvidenceVerifier
 from .process_privacy import protect_process_data
 from .mcp_server import RequestHostReadiness, build_mcp_server
 from .hosted_mcp import validate_host_evidence_config_path
+from .host_database_bindings import resolve_project_database
 from .local_evidence_config import load_local_evidence_verifier
 from .project_access import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
+    ProjectBindingStartupError,
     ProjectAuthorizationBinding,
+    require_active_project_action,
+    require_active_project_read,
 )
 from .project_config import CONFIG_FILENAME, ProjectConfig
 from .project_plugin import ProjectPlugin
@@ -45,6 +49,8 @@ own session using host-injected profile and session metadata.
    when the request advances its saved criteria.
    `ootask:` explicitly means a distinct one-off with its own goal lifecycle;
    link it to a named parent only when it is a bounded task within that scope.
+   `aatask:` is an aside unrelated to this repository and must not create or
+   change this project's goals, facts, lifecycle, or SDEs; preserve existing work.
    `aotask <parent-or-child>:` means progress on that existing goal's scope and
    criteria; keep its same goal ID and do not start another goal.
    For an already-active match, read `goal_status`, record an intent/progress fact, and continue; never call
@@ -56,8 +62,8 @@ own session using host-injected profile and session metadata.
    and resumes reuse the same goal and wording; do not create duplicate goals
    or repeat a kickoff unless correcting it or the user asks. When no matching
    goal exists, create a one-off goal with `initial_status="active"` before
-   analysis, commands, or edits. Do not create goals for simple
-   factual or formatting questions. If the user asks for a
+   analysis, commands, or edits. Formatting work is a task even when quick;
+   a simple factual question need not create a goal. If the user asks for a
    plan, create a planned parent goal with bounded planned child tasks. For a
    new task, use the hook-provided `codex-turn-*` prompt-turn event ID exactly
    as `goal_start.event_id`; reuse it only when retrying that same turn. Never
@@ -74,8 +80,9 @@ own session using host-injected profile and session metadata.
    before activating another plan item. For
    an `ootask` interrupting a plan child, resume that exact deferred child only
    when the user says to continue; do not skip to a later child. A one-off task
-   ends at its own endpoint. A failed or unrun check without owner confirmation
-   keeps it open; do not silently skip the item. "Pause", "hold", or "put it
+   ends at its own endpoint. An observed result or the owner moving on can
+   indicate completion; missing automated evidence does not block it. If the
+   outcome is uncertain, ask for guidance. "Pause", "hold", or "put it
    aside" records facts, reason, and next action, then calls `goal_defer`.
    "Resume" or "continue" finds the exact existing goal and reads its
    `goal_status`; never call `goal_start` just because a turn or thread changed.
@@ -108,16 +115,20 @@ own session using host-injected profile and session metadata.
    "Resuming task tracking". This bookkeeping is part of every tracked task.
    At a hold, record facts, reason, and next action; resume from that
    checkpoint. Use one practical success check per task. A relevant passing
-   local test/lint check or the owner's explicit confirmation is sufficient
-   only when recorded as current verification evidence. A completion-claim
-   string is outcome context, not proof; use configured `evidence_capture` and
-   record its returned reference with `fact_record`. When `goal_finish` succeeds
+   result, local check, or owner confirmation can be recorded as an outcome.
+   Use `evidence_capture` when useful, but never require it for completion or
+   a proposal. Keep unverified claims distinct from verified evidence. When `goal_finish` succeeds
    and `goal_status` confirms complete, create a pending proposal using only
    supported facts from that goal. The proposal is for owner review; the user decides what is
    memorialized, its importance, and the disposition. A completed task is not
    SDE approval. Never present unsupported facts as verified.
-   Claim saved facts or a candidate only after `fact_record` or
-   `sde_assess` succeeds and a matching `goal_status`/`goal_report` confirms
+   For an explicitly relayed SDE, use `sde_record_user_report` on the active
+   goal with a concise normalized report and a fresh operation ID. It records
+   a `user_report` fact and creates a pending proposal without an artifact
+   packet; it does not complete the goal or approve the candidate. Read it back
+   with `sde_review_detail` and leave it pending.
+   Claim saved facts or a candidate only after `fact_record`, `sde_assess`, or
+   `sde_record_user_report` succeeds and a matching `goal_status`/`goal_report` confirms
    it is attached to that goal. Never approve/reject or codify on the user's
    behalf.
    A `goal_id` groups the task's facts across turns, pauses, threads, and
@@ -128,7 +139,7 @@ own session using host-injected profile and session metadata.
    operation's ID only when retrying that same operation with the same payload.
    Reuse the `goal_id` on resume; a plan child keeps its own ID and `parent_goal_id` links
    it to the plan. `sde_assess` accepts facts from its goal only and
-   requires that goal to be complete;
+   can propose facts from active or completed goals;
    never submit child fact IDs for a parent proposal. Keep the compact outcome
    fact and audit receipts. After the user's SDE approval, transfer approved
    facts to the pertinent persistence document and read it back to verify the
@@ -159,7 +170,17 @@ def _parser() -> argparse.ArgumentParser:
         prog="curatormd-v2-codex-mcp",
         description="Run a local Curator V2 server for the active Codex workspace.",
     )
-    parser.add_argument("--database", required=True, type=Path)
+    database_route = parser.add_mutually_exclusive_group(required=True)
+    database_route.add_argument(
+        "--database",
+        type=Path,
+        help="explicit database for this workspace (single-project route)",
+    )
+    database_route.add_argument(
+        "--database-bindings",
+        type=Path,
+        help="owner-only host map from exact project IDs to database paths",
+    )
     parser.add_argument("--project-root", type=Path)
     parser.add_argument(
         "--evidence-config",
@@ -167,6 +188,11 @@ def _parser() -> argparse.ArgumentParser:
         help="owner-only host evidence config outside the repository",
     )
     parser.add_argument("--allow-write", action="store_true")
+    parser.add_argument(
+        "--allow-purge-retry",
+        action="store_true",
+        help="allow only retries covered by an exact durable purge-retry grant",
+    )
     return parser
 
 
@@ -251,13 +277,18 @@ def main(argv: list[str] | None = None) -> int:
         if args is None:
             return 2
         root = _workspace_root(args.project_root)
-        database = args.database.expanduser()
-        if not database.is_absolute():
-            raise ValueError("database path must be absolute")
         if os.getuid() != os.geteuid():
             raise ValueError("set-user-ID execution cannot establish local identity")
 
         config = ProjectConfig.load(root)
+        if args.database_bindings is not None:
+            database = resolve_project_database(
+                config.project_id, args.database_bindings
+            )
+        else:
+            database = args.database.expanduser()
+            if not database.is_absolute():
+                raise ValueError("database path must be absolute")
         evidence_verifier = _load_evidence_verifier(
             args.evidence_config, config.project_root, config.project_id
         )
@@ -266,9 +297,12 @@ def main(argv: list[str] | None = None) -> int:
             caller = AuthenticatedCaller(
                 f"local-uid:{os.geteuid()}", profile_id="codex-local"
             )
+            require_active_project_read(store, config, caller)
             actions = {ProjectAction.READ}
             if args.allow_write:
                 actions.add(ProjectAction.WRITE)
+            if args.allow_purge_retry:
+                actions.add(ProjectAction.PURGE_RETRY)
             authorizer = FingerprintBoundSQLiteProjectGrantAuthorizer(
                 store,
                 ProjectAuthorizationBinding.from_project_config(
@@ -276,11 +310,46 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             )
             if not authorizer.authorize(caller, config.project_id, ProjectAction.READ):
-                raise PermissionError("local account lacks an active project read grant")
-            if args.allow_write and not authorizer.authorize(
-                caller, config.project_id, ProjectAction.WRITE
-            ):
-                raise PermissionError("local account lacks an active project write grant")
+                require_active_project_read(store, config, caller)
+                raise ProjectBindingStartupError("project-binding-changed")
+            if args.allow_write:
+                require_active_project_action(
+                    store,
+                    config,
+                    caller,
+                    ProjectAction.WRITE,
+                    "project-write-grant-missing",
+                )
+                if not authorizer.authorize(
+                    caller, config.project_id, ProjectAction.WRITE
+                ):
+                    require_active_project_action(
+                        store,
+                        config,
+                        caller,
+                        ProjectAction.WRITE,
+                        "project-write-grant-missing",
+                    )
+                    raise ProjectBindingStartupError("project-binding-changed")
+            if args.allow_purge_retry:
+                require_active_project_action(
+                    store,
+                    config,
+                    caller,
+                    ProjectAction.PURGE_RETRY,
+                    "project-purge-retry-grant-missing",
+                )
+                if not authorizer.authorize(
+                    caller, config.project_id, ProjectAction.PURGE_RETRY
+                ):
+                    require_active_project_action(
+                        store,
+                        config,
+                        caller,
+                        ProjectAction.PURGE_RETRY,
+                        "project-purge-retry-grant-missing",
+                    )
+                    raise ProjectBindingStartupError("project-binding-changed")
             api = AuthenticatedCuratorAPI(
                 {
                     config.project_id: ProjectPlugin.bind(
@@ -302,9 +371,12 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             store.close()
         return 0
+    except ProjectBindingStartupError as exc:
+        print(f"CURATOR_STARTUP_ERROR={exc.code}", file=sys.stderr)
+        return 2
     except Exception:  # pylint: disable=broad-exception-caught
         print(
-            "Curator V2 Codex server could not bind the active workspace.",
+            "CURATOR_STARTUP_ERROR=runtime",
             file=sys.stderr,
         )
         return 2

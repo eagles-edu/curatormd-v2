@@ -416,6 +416,51 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         )
 
     @_safe_tool()
+    def hermes_codex_turn_event(
+        event_type: str,
+        turn_id: str,
+        event_id: str,
+        occurred_at: str,
+        ctx: MCPContext,
+        outcome: str | None = None,
+    ) -> str:
+        """Record content-free Codex app-server turn start/end telemetry."""
+        if not registrar.hermes_binding_enabled:
+            raise PermissionError("Hermes Codex telemetry is unavailable on this host")
+        profile_id, session_id = require_durable_hermes_context(
+            ctx.request_context.meta,
+            caller.profile_id or caller.subject_id,
+        )
+        return json_result(
+            api.record_hermes_codex_turn_event(
+                caller, project_id, profile_id, session_id, turn_id,
+                event_id, event_type, occurred_at, outcome,
+            )
+        )
+
+    @_safe_tool()
+    def hermes_codex_turn_goal_link(
+        turn_id: str,
+        goal_id: str,
+        event_id: str,
+        source_tool: str,
+        ctx: MCPContext,
+    ) -> str:
+        """Link a successful Curator task call to its active Codex turn."""
+        if not registrar.hermes_binding_enabled:
+            raise PermissionError("Hermes Codex telemetry is unavailable on this host")
+        profile_id, session_id = require_durable_hermes_context(
+            ctx.request_context.meta,
+            caller.profile_id or caller.subject_id,
+        )
+        return json_result(
+            api.link_hermes_codex_turn_goal(
+                caller, project_id, profile_id, session_id, turn_id,
+                goal_id, event_id, source_tool,
+            )
+        )
+
+    @_safe_tool()
     def fact_record(
         event_id: str,
         goal_id: str,
@@ -922,6 +967,20 @@ def _register_review_discovery_tools(registrar: _McpToolRegistrar) -> None:
             ),
         )
         return json_result(candidate)
+
+    @_safe_tool()
+    def sde_record_user_report(
+        goal_id: str,
+        report: str,
+        event_id: str,
+    ) -> str:
+        """Create a pending SDE from the owner's concise verbal report alone."""
+
+        return json_result(
+            api.sde_record_user_report(
+                caller, project_id, goal_id, report, event_id
+            )
+        )
 
     @_safe_tool(
         annotations=ToolAnnotations(

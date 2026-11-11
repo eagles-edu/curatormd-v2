@@ -21,6 +21,7 @@ from cli_test_support import access_cli_args
 from curatormd_v2 import ProjectAction
 from curatormd_v2.access_cli import main
 from curatormd_v2.project_config import ProjectConfig
+from curatormd_v2.project_access import ProjectBindingStartupError
 
 
 class _InteractiveInput(StringIO):
@@ -185,6 +186,58 @@ class AccessCliTests(unittest.TestCase):
                 json.loads(output)["receipt"]["disposition"], "terminal_authorized"
             )
 
+    def test_unsequenced_disposition_keeps_active_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            self._project(root)
+            database = Path(temporary) / "curator.sqlite3"
+            registered, _, errors = self._run(
+                "register", root, database, "REGISTER cli-project",
+                rationale="Approve active-binding disposition CLI fixture",
+            )
+            self.assertEqual(registered, 0, errors)
+            digest = "b" * 64
+            connection = sqlite3.connect(database)
+            connection.execute(
+                """INSERT INTO event_inbox
+                   (project_id,event_id,event_type,payload_sha256,payload_bytes,
+                    payload_json,status,received_at,source_id,source_sequence)
+                   VALUES ('cli-project','unsequenced-cli-event','goal.activated',
+                           ?,2,'{}','failed','2026-10-23T00:00:00Z','codex-local',NULL)""",
+                (digest,),
+            )
+            connection.commit()
+            connection.close()
+            phrase = (
+                "DISPOSE EVENT cli-project unsequenced-cli-event AT BINDING "
+                f"REVISION 1 SOURCE EPOCH 1 TRANSITION cli-unsequenced-terminal "
+                f"PAYLOAD {digest}"
+            )
+            disposed, output, errors = self._run(
+                "dispose_event", root, database, phrase,
+                "--expected-revision", "1",
+                "--transition-id", "cli-unsequenced-terminal",
+                "--expected-source-epoch", "1",
+                "--event-id", "unsequenced-cli-event",
+                "--payload-sha256", digest,
+                rationale="Owner approves exact unsequenced event disposition",
+            )
+            self.assertEqual(disposed, 0, errors)
+            result = json.loads(output)
+            self.assertEqual(result["receipt"]["status"], "processed")
+            with sqlite3.connect(database) as connection:
+                binding = connection.execute(
+                    "SELECT status, revision FROM consumer_bindings "
+                    "WHERE project_id='cli-project'"
+                ).fetchone()
+                event = connection.execute(
+                    "SELECT status, payload_json FROM event_inbox "
+                    "WHERE project_id='cli-project' AND event_id=?",
+                    ("unsequenced-cli-event",),
+                ).fetchone()
+            self.assertEqual(binding, ("active", 1))
+            self.assertEqual(event, ("processed", None))
+
     def _register_grants_and_verify_launcher(self, root: Path, database: Path) -> None:
         """Register one isolated project, grant exact access, and verify launch."""
         subject_id = f"local-uid:{os.geteuid()}"
@@ -283,12 +336,13 @@ class AccessCliTests(unittest.TestCase):
             "cli-suspend-1",
             rationale="Suspend access during the lifecycle regression",
         )
-        with self.assertRaisesRegex(ValueError, "registration fingerprint"):
+        with self.assertRaises(ProjectBindingStartupError) as raised:
             build_test_profile_mcp(
                 project_root=root,
                 database=database,
                 allow_write=True,
             )
+        self.assertEqual(raised.exception.code, "project-registration-inactive")
         self._assert_stale_reactivation_denied(root, database)
         self._reactivate_with_exact_review(root, database)
         self._run_success(

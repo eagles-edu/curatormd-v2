@@ -60,6 +60,14 @@ def goal_bullet_projection(snapshot: GoalSnapshot) -> GoalBulletProjection:
     ]
     bullets.extend(_criterion_bullets(snapshot.criteria))
     bullets.extend(_fact_bullet(fact, verified_fact_ids) for fact in snapshot.facts)
+    if snapshot.goal.status not in {GoalStatus.COMPLETE, GoalStatus.CANCELLED, GoalStatus.SUPERSEDED}:
+        cutoff = max((fact.created_at for fact in snapshot.facts
+                      if fact.kind in {FactKind.REOPENED, FactKind.CRITERIA_AMENDED}), default="")
+        open_criteria = {item.criterion_id for item in snapshot.criteria if item.status is CriterionStatus.OPEN}
+        bullets.extend(GoalBullet(GoalBulletCategory.OPEN, fact.bullet, criterion_id=fact.criterion_id)
+                       for fact in snapshot.facts
+                       if fact.kind is FactKind.OPEN_GATE and fact.criterion_id in open_criteria
+                       and fact.created_at > cutoff)
     bullets.extend(_goal_state_bullets(snapshot.goal))
     bullets.extend(_pending_review_bullets(snapshot))
     bullets.extend(_pending_purge_bullets(snapshot))
@@ -85,7 +93,7 @@ def _criterion_bullets(criteria: tuple[CriterionProgress, ...]) -> list[GoalBull
         bullets.append(
             GoalBullet(
                 GoalBulletCategory.CRITERION,
-                f"{criterion.criterion_id}: {criterion.status.value} — "
+                f"{criterion.criterion_id}: {'verified' if criterion.status is CriterionStatus.VERIFIED else 'unverified'} — "
                 f"{criterion.description}",
                 criterion_id=criterion.criterion_id,
             )
@@ -93,8 +101,8 @@ def _criterion_bullets(criteria: tuple[CriterionProgress, ...]) -> list[GoalBull
         if criterion.status is CriterionStatus.OPEN:
             bullets.append(
                 GoalBullet(
-                    GoalBulletCategory.OPEN,
-                    "Required criterion remains unverified: "
+                    GoalBulletCategory.UNVERIFIED,
+                    "No independent verification recorded for criterion: "
                     f"{criterion.criterion_id} — {criterion.description}",
                     criterion_id=criterion.criterion_id,
                 )
@@ -294,16 +302,9 @@ def _inline(value: str, limit: int = 2000) -> str:
 
 
 def _criterion_lines(
-    snapshot: GoalSnapshot, intake: GoalReportContext | None
+    snapshot: GoalSnapshot, _intake: GoalReportContext | None
 ) -> list[str]:
-    """Render each criterion with its proof or explicit open-gate context."""
-
-    goal = snapshot.goal
-    criterion_open_gates = {
-        fact.criterion_id: fact.bullet
-        for fact in snapshot.facts
-        if fact.kind is FactKind.OPEN_GATE and fact.criterion_id is not None
-    }
+    """Render independent verification separately from task completion."""
     lines: list[str] = []
     for criterion in snapshot.criteria:
         marker = "x" if criterion.status.value == "verified" else " "
@@ -317,32 +318,10 @@ def _criterion_lines(
         )
         status_line = (
             f"- [{marker}] `{_inline(criterion.criterion_id, 128)}` — "
-            f"{criterion.status.value}: {_inline(criterion.description)}{proof}"
+            f"{'verified' if criterion.status is CriterionStatus.VERIFIED else 'unverified'}: {_inline(criterion.description)}{proof}"
         )
         if criterion.status.value != "verified":
-            blocker = criterion_open_gates.get(
-                criterion.criterion_id,
-                "No current passing verification fact is linked to this criterion",
-            )
-            owner = (
-                _inline(intake.owner or "unassigned", 128)
-                if intake is not None
-                else "unassigned"
-            )
-            goal_next_action = (
-                _inline(goal.next_action, 500)
-                if goal.next_action is not None
-                else "not recorded"
-            )
-            suggested_action = (
-                "Verify criterion `"
-                f"{_inline(criterion.criterion_id, 128)}` against its stated acceptance condition"
-            )
-            status_line += (
-                f"; blocker: {_inline(blocker, 500)}; owner: {owner}; "
-                f"suggested next action: {suggested_action}; "
-                f"goal next action: {goal_next_action}"
-            )
+            status_line += "; no current independent verification recorded"
         lines.append(status_line)
     return lines
 
@@ -428,12 +407,7 @@ def _status_todos(snapshot: GoalSnapshot) -> list[str]:
     """Return TODOs implied directly by this goal's own lifecycle state."""
 
     goal = snapshot.goal
-    todos = [
-        f"Verify criterion `{_inline(item.criterion_id, 128)}`: "
-        f"{_inline(item.description)}"
-        for item in snapshot.criteria
-        if item.status.value != "verified"
-    ]
+    todos: list[str] = []
     if goal.status in {GoalStatus.PLANNED, GoalStatus.ACTIVE} and goal.next_action is None:
         todos.append("Record a concrete next action for this goal")
     if goal.status in {GoalStatus.OPEN, GoalStatus.BLOCKED, GoalStatus.DEFERRED}:
@@ -445,7 +419,7 @@ def _status_todos(snapshot: GoalSnapshot) -> list[str]:
         item.status.value == "verified" for item in snapshot.criteria
     ):
         todos.append(
-            "Submit an evidence-backed finish evaluation using "
+            "Record completion when the requested work is done using "
             f"lifecycle revision `{goal.lifecycle_revision}`"
         )
     return todos

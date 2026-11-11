@@ -146,6 +146,53 @@ class McpSdeWorkflowTests(McpServerTestSupport):
             finally:
                 workflow.store.close()
 
+    def test_mcp_records_user_report_as_pending_sde_without_evidence_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workflow = self._create_mcp_sde_workflow(Path(temporary))
+            goal = workflow.plugin.service.goal_start(
+                "Record an owner-relayed SDE",
+                (SuccessCriterion("recorded", "The reported SDE is available for review"),),
+            )
+            server = self._mcp_sde_server(workflow)
+
+            async def exercise() -> tuple[dict[str, Any], dict[str, Any]]:
+                async with Client(server, raise_exceptions=True) as client:
+                    tools = await client.list_tools()
+                    self.assertIn("sde_record_user_report", [tool.name for tool in tools.tools])
+                    candidate = await self._call_mcp_json(
+                        client,
+                        "sde_record_user_report",
+                        {
+                            "goal_id": goal.goal_id,
+                            "report": "Owner reports that verbal SDEs should be recordable without an artifact packet.",
+                            "event_id": "verbal-sde-report-event-1",
+                        },
+                    )
+                    retry = await self._call_mcp_json(
+                        client,
+                        "sde_record_user_report",
+                        {
+                            "goal_id": goal.goal_id,
+                            "report": "Owner reports that verbal SDEs should be recordable without an artifact packet.",
+                            "event_id": "verbal-sde-report-event-1",
+                        },
+                    )
+                    detail = await self._call_mcp_json(
+                        client, "sde_review_detail", {"candidate_id": candidate["candidate_id"]}
+                    )
+                    self.assertEqual(retry["candidate_id"], candidate["candidate_id"])
+                    return candidate, detail
+
+            try:
+                candidate, detail = asyncio.run(exercise())
+                self.assertEqual(candidate["status"], "pending_review")
+                self.assertEqual(candidate["goal_id"], goal.goal_id)
+                self.assertEqual(detail["facts"][0]["kind"], "user_report")
+                self.assertEqual(detail["facts"][0]["evidence"], [])
+                self.assertEqual(detail["candidate"]["status"], "pending_review")
+            finally:
+                workflow.store.close()
+
     def _create_mcp_sde_workflow(self, temporary: Path) -> _McpSdeWorkflow:
         """Build isolated consumer paths, store, plugin, and staged artifacts."""
         root = temporary / "consumer"

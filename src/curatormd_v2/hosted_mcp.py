@@ -31,7 +31,10 @@ from .local_review_authorizer import LocalUIDReviewAuthorizer
 from .mcp_server import HermesContextOptions, RequestHostReadiness, build_mcp_server
 from .project_access import (
     FingerprintBoundSQLiteProjectGrantAuthorizer,
+    ProjectBindingStartupError,
     ProjectAuthorizationBinding,
+    require_active_project_action,
+    require_active_project_read,
 )
 from .project_config import ProjectConfig
 from .project_plugin import ProjectPlugin
@@ -152,6 +155,7 @@ def build_local_profile_mcp(
     store = CuratorStore(database_path)
     try:
         caller = AuthenticatedCaller(_local_account_subject(), profile_id=profile_id)
+        require_active_project_read(store, config, caller)
         actions = {ProjectAction.READ}
         if allow_write:
             actions.add(ProjectAction.WRITE)
@@ -170,28 +174,45 @@ def build_local_profile_mcp(
             ),
         )
         if not authorizer.authorize(caller, config.project_id, ProjectAction.READ):
-            raise ValueError(
-                "project registration fingerprint or read grant is not active"
-            )
-        if allow_write and not authorizer.authorize(
-            caller, config.project_id, ProjectAction.WRITE
+            require_active_project_read(store, config, caller)
+            raise ProjectBindingStartupError("project-binding-changed")
+        for allowed, action, error_code in (
+            (allow_write, ProjectAction.WRITE, "project-write-grant-missing"),
+            (allow_review, ProjectAction.REVIEW, "project-review-grant-missing"),
         ):
-            raise ValueError("requested project write grant is not active")
-        if allow_review and not authorizer.authorize(
-            caller, config.project_id, ProjectAction.REVIEW
-        ):
-            raise ValueError("requested project review grant is not active")
-        for allowed, action, label in (
-            (allow_event_retry, ProjectAction.EVENT_RETRY, "event retry"),
+            if not allowed:
+                continue
+            require_active_project_action(store, config, caller, action, error_code)
+            if not authorizer.authorize(caller, config.project_id, action):
+                require_active_project_action(
+                    store, config, caller, action, error_code
+                )
+                raise ProjectBindingStartupError("project-binding-changed")
+        for allowed, action, error_code in (
+            (
+                allow_event_retry,
+                ProjectAction.EVENT_RETRY,
+                "project-event-retry-grant-missing",
+            ),
             (
                 allow_retention_hold_release,
                 ProjectAction.RETENTION_HOLD_RELEASE,
-                "retention-hold release",
+                "project-retention-hold-grant-missing",
             ),
-            (allow_purge_retry, ProjectAction.PURGE_RETRY, "purge retry"),
+            (
+                allow_purge_retry,
+                ProjectAction.PURGE_RETRY,
+                "project-purge-retry-grant-missing",
+            ),
         ):
-            if allowed and not authorizer.authorize(caller, config.project_id, action):
-                raise ValueError(f"requested project {label} grant is not active")
+            if not allowed:
+                continue
+            require_active_project_action(store, config, caller, action, error_code)
+            if not authorizer.authorize(caller, config.project_id, action):
+                require_active_project_action(
+                    store, config, caller, action, error_code
+                )
+                raise ProjectBindingStartupError("project-binding-changed")
         api = AuthenticatedCuratorAPI(
             {
                 config.project_id: ProjectPlugin.bind(
@@ -303,9 +324,12 @@ def main(argv: list[str] | None = None) -> int:
             require_authenticated_subject=args.require_authenticated_subject,
             evidence_config=args.evidence_config,
         )
+    except ProjectBindingStartupError as exc:
+        print(f"CURATOR_STARTUP_ERROR={exc.code}", file=sys.stderr)
+        return 2
     except Exception:  # pylint: disable=broad-exception-caught  # Keep startup errors private.
         print(
-            "Curator V2 MCP startup failed (configuration or runtime error).",
+            "CURATOR_STARTUP_ERROR=runtime",
             file=sys.stderr,
         )
         return 2

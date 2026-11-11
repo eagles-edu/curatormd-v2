@@ -352,20 +352,9 @@ class GoalLifecycleTests(LifecycleTestSupport):
             parent_goal_id=parent.goal_id,
         )
         self.service.goal_cancel(child.goal_id, "Probe is no longer required")
-        still_open = self.service.goal_finish(parent.goal_id, "Claimed complete")
-        self.assertEqual(still_open.status, GoalStatus.OPEN)
-        self.assertIn("Release is ready", still_open.next_action or "")
-        self.service.goal_fact(
-            parent.goal_id,
-            FactKind.VERIFICATION,
-            "Release readiness verified independently",
-            criterion_id="release",
-            evidence=(self.proof("parent-release"),),
-        )
-        self.assertEqual(
-            self.service.goal_finish(parent.goal_id, "Release is ready").status,
-            GoalStatus.COMPLETE,
-        )
+        completed = self.service.goal_finish(parent.goal_id, "Claimed complete")
+        self.assertEqual(completed.status, GoalStatus.COMPLETE)
+        self.assertEqual(self.service.goal_status(parent.goal_id).criteria[0].status, CriterionStatus.OPEN)
 
     def test_supersession_requires_active_same_project_replacement(self) -> None:
         replacement = self.service.goal_start(
@@ -425,9 +414,11 @@ class GoalLifecycleTests(LifecycleTestSupport):
                 )
 
                 if replacement_status is GoalStatus.OPEN:
-                    replacement = self.service.goal_finish(
-                        replacement.goal_id, "Claim incomplete replacement"
-                    )
+                    replacement = self.store.transition_goal(GoalTransitionRequest(
+                        goal_id=replacement.goal_id, status=GoalStatus.OPEN,
+                        next_action="Continue work", facts=(), expected_lifecycle_revision=replacement.lifecycle_revision,
+                        project_id=self.service.project_id,
+                    ))
                 elif replacement_status is GoalStatus.BLOCKED:
                     replacement = self.service.goal_block(
                         replacement.goal_id, "Waiting on dependency", "Resolve dependency"
@@ -512,11 +503,7 @@ class GoalLifecycleTests(LifecycleTestSupport):
                         expected_status = {
                             "activate": GoalStatus.ACTIVE,
                             "change_fact": source_status,
-                            "finish": (
-                                GoalStatus.COMPLETE
-                                if source_status is GoalStatus.COMPLETE
-                                else GoalStatus.OPEN
-                            ),
+                            "finish": GoalStatus.COMPLETE,
                             "block": GoalStatus.BLOCKED,
                             "defer": GoalStatus.DEFERRED,
                             "amend": source_status,

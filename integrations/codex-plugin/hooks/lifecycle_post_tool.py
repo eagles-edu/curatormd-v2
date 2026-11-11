@@ -42,7 +42,7 @@ from user_prompt_submit import (
 
 
 _TOOL_NAME = re.compile(
-    r"^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess|sde_review_detail|evidence_capture)$"
+    r"^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess|sde_record_user_report|sde_review_detail|evidence_capture)$"
 )
 
 
@@ -127,8 +127,13 @@ def main() -> int:
         elif tool == "goal_defer" and accepted_event_result(event):
             record_defer_request(event, project_id, goal_id)
             record_report_pending(event, project_id, goal_id)
-        elif tool == "sde_assess" and accepted_sde_result(event, goal_id):
-            record_sde_proposal_state(event, project_id, goal_id)
+        elif tool in {"sde_assess", "sde_record_user_report"} and accepted_sde_result(event, goal_id):
+            record_sde_proposal_state(
+                event,
+                project_id,
+                goal_id,
+                allow_active=tool == "sde_record_user_report",
+            )
         return 0
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return 0

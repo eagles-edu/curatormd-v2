@@ -20,4 +20,9 @@ root = ".curatormd-v2/side-buffer"
 max_project_bytes = 262144000
 
 [persistence]
-targets = ["persistence/HISTORY.md", "persistence/LESSONS-LEARNED.md"]
+targets = [
+  "persistence/HISTORY.md",
+  "persistence/LESSONS-LEARNED.md",
+  "persistence/SOP.md",
+  "persistence/AGENTS.md",
+]

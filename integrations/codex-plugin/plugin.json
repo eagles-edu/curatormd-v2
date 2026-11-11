@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "curator-v2",
-  "version": "0.1.68",
+  "version": "0.1.70",
   "description": "Natural Codex task intake and lifecycle tracking for Curator V2.",
   "extensions": {
     "com.openai": {
@@ -15,7 +15,7 @@
         "category": "Developer tools",
         "capabilities": ["Read", "Write"],
         "defaultPrompt": [
-          "Say `Problem: ... Success: ...`; use a Curator goal for every non-trivial task before edits.",
+          "Say `Problem: ... Success: ...`; use a Curator goal before edits for project work. `aatask:` is an untracked aside.",
           "After checks, save compact evidence facts; read the goal back after writes. Leave unsupported checks open.",
           "After a goal completes, prepare a pending SDE proposal from its supported facts; never decide or apply the owner's disposition."
         ]

@@ -25,11 +25,69 @@ from curatormd_v2 import (
     SQLiteProjectGrantAuthorizer,
     TerminalEventDispositionRequest,
 )
-from curatormd_v2.events import EventEnvelope, GoalActivityObserved
+from curatormd_v2.events import EventEnvelope, GoalActivated, GoalActivityObserved
 from curatormd_v2.models import FactKind
 
 class ConsumerBindingLifecycleTests(ProjectAccessTestCase):
     """Consumer binding lifecycle and retirement tests."""
+
+    def test_unsequenced_failed_event_can_be_disposed_without_fencing_binding(self) -> None:
+        """A reviewed local one-off failure has no source cursor to protect."""
+        self._register()
+        event = EventEnvelope(
+            "unsequenced-failure",
+            self.project_id,
+            GoalActivated("goal-a", "already open", 3),
+            source_id="codex-local",
+        )
+        received, _created = self.store.ingest_event(event)
+        self.store.mark_event_failed(self.project_id, event.event_id, "ConflictError")
+        self._allow_admin(ProjectAdministrationAction.DISPOSE_EVENT)
+
+        receipt, disposition = self.manager.terminally_dispose_event(
+            self.operator,
+            TerminalEventDispositionRequest(
+                project_id=self.project_id,
+                event_id=event.event_id,
+                transition_id="dispose-unsequenced-failure",
+                rationale="Owner reviewed this exact unsequenced failed event",
+                expected_binding_revision=1,
+                expected_source_epoch=1,
+                expected_payload_sha256=received.payload_sha256,
+            ),
+        )
+
+        self.assertEqual(receipt.status.value, "processed")
+        self.assertEqual(disposition.payload_sha256, received.payload_sha256)
+        self.assertEqual(self.store.get_consumer_binding(self.project_id).status, "active")
+        self.assertEqual(self.store.get_consumer_binding(self.project_id).revision, 1)
+
+        sequenced = EventEnvelope(
+            "sequenced-failure",
+            self.project_id,
+            GoalActivityObserved(
+                "goal-a", "activity-b", FactKind.CHANGE, "ordered activity"
+            ),
+            source_id="codex-local",
+            source_sequence=1,
+        )
+        ordered_receipt, _created = self.store.ingest_event(sequenced)
+        self.store.mark_event_failed(
+            self.project_id, sequenced.event_id, "ConflictError"
+        )
+        with self.assertRaisesRegex(ConflictError, "not fenced"):
+            self.manager.terminally_dispose_event(
+                self.operator,
+                TerminalEventDispositionRequest(
+                    project_id=self.project_id,
+                    event_id=sequenced.event_id,
+                    transition_id="dispose-sequenced-failure",
+                    rationale="Owner reviewed this exact sequenced failed event",
+                    expected_binding_revision=1,
+                    expected_source_epoch=1,
+                    expected_payload_sha256=ordered_receipt.payload_sha256,
+                ),
+            )
 
     def test_consumer_binding_deregistration_is_separate_and_fences_old_grants(self) -> None:
         self._register()

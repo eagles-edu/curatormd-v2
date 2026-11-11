@@ -84,6 +84,7 @@ class HermesBindingTests(McpServerTestSupport):
                 async def exercise() -> None:
                     async with Client(server, raise_exceptions=True) as client:
                         await self._assert_initial_hermes_goal_binding(client)
+                        await self._assert_session_turn_telemetry(client)
                         async with Client(codex_server, raise_exceptions=True) as codex_client:
                             forged = await codex_client.call_tool(
                                 "hermes_goal_bind", {"goal_id": "bind-goal"},
@@ -162,6 +163,46 @@ class HermesBindingTests(McpServerTestSupport):
         payload = json.loads(valid.content[0].text)
         self.assertEqual(payload["binding"], "validated")
         self.assertEqual(payload["goal_id"], "bind-goal")
+
+    async def _assert_session_turn_telemetry(self, client: Client) -> None:
+        """Ingest a turn pair and a separate link under trusted profile metadata."""
+        tools = {tool.name for tool in (await client.list_tools()).tools}
+        self.assertTrue({
+            "hermes_codex_turn_event", "hermes_codex_turn_goal_link",
+        }.issubset(tools))
+        metadata = {
+            "hermes/profile_id": "host-subject",
+            "hermes/session_id": "session-1",
+            "hermes/durable_event": True,
+        }
+        start = await client.call_tool(
+            "hermes_codex_turn_event",
+            {
+                "event_type": "start", "turn_id": "codex-turn-1",
+                "event_id": "codex-turn-start", "occurred_at": "2026-11-11T00:00:00Z",
+            },
+            meta=cast(RequestParamsMeta, metadata),
+        )
+        self.assertFalse(start.is_error)
+        link = await client.call_tool(
+            "hermes_codex_turn_goal_link",
+            {
+                "turn_id": "codex-turn-1", "goal_id": "bind-goal",
+                "event_id": "codex-turn-link", "source_tool": "goal_activate",
+            },
+            meta=cast(RequestParamsMeta, metadata),
+        )
+        self.assertFalse(link.is_error)
+        end = await client.call_tool(
+            "hermes_codex_turn_event",
+            {
+                "event_type": "end", "turn_id": "codex-turn-1",
+                "event_id": "codex-turn-end", "occurred_at": "2026-11-11T00:00:01Z",
+                "outcome": "completed",
+            },
+            meta=cast(RequestParamsMeta, metadata),
+        )
+        self.assertFalse(end.is_error)
 
     async def _accept_first_hermes_event(
         self, client: Client

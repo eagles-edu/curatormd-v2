@@ -10,7 +10,9 @@ active child goal and lifecycle; an unrelated task gets a top-level one-off.
 Prefix with `ootask` or `ootask:` to force a distinct one-off with its own
 lifecycle, top-level unless it is a bounded task under a named parent or child.
 Use `aotask <parent-or-child>:` to add progress to that existing goal and its
-saved criteria. Repository or topic similarity alone never makes two tasks the
+saved criteria. Use `aatask:` for an aside unrelated to the repository; it
+does not create or update project goals, facts, or SDEs. Resume any existing
+task only when asked. Repository or topic similarity alone never makes two tasks the
 same goal. The plugin does not add a command-palette action or save raw prompt
 text.
 
@@ -70,6 +72,12 @@ any suggested category or importance as recommendations. You decide what is
 memorialized, its importance, and its disposition. Curator does not approve,
 reject, or codify for you. A standalone task ends at its own endpoint; activate
 the next child only when the active task is a plan item and work is continuing.
+
+When you explicitly ask Curator to record a verbally relayed SDE, Codex uses
+`sde_record_user_report` on the current active goal with a concise normalized
+report. Curator stores a `user_report` fact and creates a pending candidate
+without requiring an artifact or evidence packet. Codex reads it back with
+`sde_review_detail`; this does not complete the task or approve the candidate.
 Tracking is
 the default task workflow; no separate opt-in capture action is required.
 When an `ootask` interrupts a plan child, Codex defers that child, completes the
@@ -106,13 +114,59 @@ archive remains recoverable. Finishing a task alone does not approve cleanup.
 Desktop plugin installation uses the bundled hooks; Codex CLI uses the native
 user-hook installer below.
 
-The plugin's `mcp.json` declares `codex-intake`. A shared Codex app server can
-start that bundled entry in the plugin cache, which does not identify the active
-workspace. The user-level registration below uses the same server name without
-a fixed working directory; Codex gives it precedence and starts it in the
-thread's working directory. The server finds that workspace's
-`.curatormd-v2.toml` and enforces its repository/config fingerprints and exact
-project grant. A thread without a valid binding fails closed.
+The plugin's `mcp.json` declares `codex-intake` and uses an owner-managed host
+map to select a database by exact project ID. The user-level registration below
+uses the same server name without a fixed working directory; Codex gives it
+precedence and starts it in the thread's working directory. The server finds
+that workspace's `.curatormd-v2.toml`, selects only its exact database entry,
+then enforces its repository/config fingerprints and project grants. A missing
+map entry fails closed; it never falls back to another project's database.
+
+The Codex route enables the separate `--allow-purge-retry` ceiling so its
+attended recovery action can retry cleanup. This flag does not grant access:
+the active local UID must also hold the exact project's durable `purge_retry`
+grant, and Curator still retries only already-reviewed, canonically persisted
+cleanup manifests. The grant is separate from `read`, `write`, and `review`.
+
+Create `~/.config/curatormd-v2/database-bindings.json` outside the consumer
+repositories and restrict it to the owner (`chmod 600`). Its exact schema is:
+
+```json
+{
+  "schema_version": 1,
+  "projects": {
+    "curatormd-v2-dev-alpha": "/absolute/path/to/curator/global.sqlite3",
+    "example-project": "/absolute/path/to/example/global.sqlite3"
+  }
+}
+```
+
+Use the same exact project-to-database mappings as the host's other Curator
+integrations. The map and every database must be owner-controlled and private.
+The installer refuses to register the per-project route when the map file is
+missing or not private. The legacy `--database` option remains available for an
+explicit single-project server.
+
+Use the host map as the source of truth for VS Code User settings. From this
+checkout, run the coordinator with the project's Python environment:
+
+```sh
+.venv/bin/python -m curatormd_v2.bindings_coordinator
+.venv/bin/python -m curatormd_v2.bindings_coordinator --apply
+```
+
+The first command only checks for drift and exits with status 1 when the two
+maps differ. The second adds missing entries to `curatormdV2.databaseBindings`.
+The default settings path is for Linux and must already exist. Save the VS Code
+User settings buffer first and avoid editing settings until the command finishes.
+The coordinator preserves other settings and their comments and rejects a file
+changed before its final replacement check or an invalid map. Its replacement
+is not atomic with respect to other writers, so an edit made after that check
+can be overwritten. It does not touch project registrations or grants. If an
+existing VS Code entry differs or has no map entry, review it before allowing
+replacement and removal with `--apply --replace-conflicts`. Comments inside
+the binding object require a manual edit. Use `--map` and `--settings` for
+other host paths. The coordinator exits with status 2 on an error.
 
 The server selects `~/.config/curatormd-v2/<project-id>-evidence.json` for the
 active project when that owner-managed file exists. An explicit
@@ -149,6 +203,9 @@ python3 integrations/codex-plugin/bin/install_user_mcp.py
 ```
 
 It refuses to replace a different user registration named `codex-intake`.
+By default, it registers the per-project database map described above; set
+`CURATOR_V2_DATABASE` only when intentionally installing an explicit
+single-database server.
 The user-level registration has its own tool approval settings: plugin-scoped
 settings do not automatically configure that registration. Review the effective
 `mcp_servers.codex-intake` settings and copy any intended individual tool rules

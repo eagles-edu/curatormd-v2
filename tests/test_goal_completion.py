@@ -19,8 +19,25 @@ from curatormd_v2.service import SDEAssessmentRequest
 class GoalCompletionTests(LifecycleTestSupport):
     """Cover goalcompletion invariants."""
 
+    def test_missing_evidence_does_not_block_finish_or_proposal(self) -> None:
+        """A result can be recorded without manufacturing verification."""
+        goal = self.service.goal_start(
+            "Join prose lines", (SuccessCriterion("done", "Prose is joined"),)
+        )
+        change, _ = self.service.goal_fact(goal.goal_id, FactKind.CHANGE, "Joined the prose lines.")
+        completed = self.service.goal_finish(goal.goal_id, "Observed: prose lines are joined")
+        self.assertEqual(completed.status, GoalStatus.COMPLETE)
+        snapshot = self.service.goal_status(goal.goal_id)
+        self.assertEqual(snapshot.criteria[0].status.value, "open")
+        self.assertFalse(snapshot.criteria[0].verification_fact_ids)
+        candidate = self.service.sde_assess(SDEAssessmentRequest(
+            goal.goal_id, Materiality.IMPLEMENTATION, "Potentially useful editor behavior",
+            (change.fact_id,), "Prose is joined", "Find the prose formatting change",
+        ))
+        self.assertEqual(candidate.status.value, "pending_review")
+
     def test_single_check_completes_from_local_test_result(self) -> None:
-        """A passing local test is enough for an ordinary one-check task."""
+        """An attested local test supports completion and safe retries."""
 
         goal = self.service.goal_start(
             "Fix a small task",
@@ -31,10 +48,11 @@ class GoalCompletionTests(LifecycleTestSupport):
             FactKind.CHANGE,
             "The change passed `uv run pytest tests/test_small.py`.",
         )
-        completed = self.service.goal_finish(
-            goal.goal_id,
-            "Checks passed: `uv run pytest tests/test_small.py` passed.",
+        verification, _ = self.service.goal_fact(
+            goal.goal_id, FactKind.VERIFICATION, "The local check passed.",
+            criterion_id="works", evidence=(self.proof("small-check"),),
         )
+        completed = self.service.goal_finish(goal.goal_id, "Checks passed: local test.")
 
         self.assertEqual(completed.status, GoalStatus.COMPLETE)
         snapshot = self.service.goal_status(goal.goal_id)
@@ -45,33 +63,38 @@ class GoalCompletionTests(LifecycleTestSupport):
                 goal.goal_id,
                 Materiality.IMPLEMENTATION,
                 "The checked task is ready for owner review.",
-                (result_fact.fact_id,),
+                (result_fact.fact_id, verification.fact_id),
                 "The simple task completed after its check passed.",
                 "Retrieve the task outcome and its check result.",
             )
         )
         self.assertEqual(candidate.status.value, "pending_review")
+        fact_count = len(self.store.list_facts(goal.goal_id))
+        self.assertEqual(self.service.goal_finish(goal.goal_id, "Checks passed: local test."), completed)
+        self.assertEqual(len(self.store.list_facts(goal.goal_id)), fact_count)
 
     def test_single_check_completes_from_owner_confirmation(self) -> None:
-        """An explicit owner confirmation is sufficient task evidence."""
+        """An owner confirmation completes the task without invented proof."""
 
         goal = self.service.goal_start(
             "Confirm a small task",
             (SuccessCriterion("works", "The change works"),),
         )
-        completed = self.service.goal_finish(
+        opened = self.service.goal_finish(
             goal.goal_id,
             "Owner confirmed: it works and lints cleanly.",
         )
+        self.assertEqual(opened.status, GoalStatus.COMPLETE)
+        completed = self.service.goal_finish(goal.goal_id, "Owner confirmed: it works.")
 
         self.assertEqual(completed.status, GoalStatus.COMPLETE)
         self.assertEqual(
             self.service.goal_status(goal.goal_id).criteria[0].status.value,
-            "verified",
+            "open",
         )
 
-    def test_single_check_does_not_complete_from_generic_claim(self) -> None:
-        """A generic completion claim still leaves the check open."""
+    def test_completion_claim_does_not_invent_verification(self) -> None:
+        """Record completion while leaving evidence status truthful."""
 
         goal = self.service.goal_start(
             "Finish a small task",
@@ -80,7 +103,7 @@ class GoalCompletionTests(LifecycleTestSupport):
 
         opened = self.service.goal_finish(goal.goal_id, "Claimed complete")
 
-        self.assertEqual(opened.status, GoalStatus.OPEN)
+        self.assertEqual(opened.status, GoalStatus.COMPLETE)
         self.assertEqual(
             self.service.goal_status(goal.goal_id).criteria[0].status.value,
             "open",
@@ -148,9 +171,9 @@ class GoalCompletionTests(LifecycleTestSupport):
         open_goal = self.service.goal_start(
             "Another task", (SuccessCriterion("next", "next thing passes"),)
         )
-        self.service.goal_finish(open_goal.goal_id, "Claimed complete")
+        self.service.goal_defer(open_goal.goal_id, "Waiting", "Resume")
         completed = self.service.goal_list((GoalStatus.COMPLETE,))
-        opened = self.service.goal_list((GoalStatus.OPEN,))
+        opened = self.service.goal_list((GoalStatus.DEFERRED,))
         self.assertEqual([item.goal.goal_id for item in completed], [self.goal.goal_id])
         self.assertEqual([item.goal.goal_id for item in opened], [open_goal.goal_id])
 

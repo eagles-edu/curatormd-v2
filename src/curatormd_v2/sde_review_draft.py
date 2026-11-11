@@ -229,6 +229,7 @@ class SDEReviewBinding:
     inventory_sha256: str
     dependency_map_sha256: str
     draft_sha256: str
+    evidence_override_reason: str = ""
 
     @classmethod
     def from_json(cls, raw: str) -> SDEReviewBinding:
@@ -251,8 +252,9 @@ class SDEReviewBinding:
         if not isinstance(value, dict):
             raise ValueError("SDE binding has missing or unknown fields")
         fields = cast(dict[str, object], value)
-        if set(fields) != set(names):
+        if set(fields) not in (set(names), set(names) - {"evidence_override_reason"}):
             raise ValueError("SDE binding has missing or unknown fields")
+        fields.setdefault("evidence_override_reason", "")
         if not all(isinstance(fields[name], str) for name in names):
             raise ValueError("SDE binding fields must be text")
         def text(name: str) -> str:
@@ -271,6 +273,7 @@ class SDEReviewBinding:
             inventory_sha256=text("inventory_sha256"),
             dependency_map_sha256=text("dependency_map_sha256"),
             draft_sha256=text("draft_sha256"),
+            evidence_override_reason=text("evidence_override_reason"),
         )
 
     def __post_init__(self) -> None:
@@ -287,6 +290,10 @@ class SDEReviewBinding:
         if type(self.reviewer_id) is not str or not REVIEWER_ID_RE.fullmatch(self.reviewer_id):
             raise ValueError("SDE binding requires a bounded reviewer ID")
         validate_safe_text(self.review_rationale, "sde_review_binding.review_rationale")
+        if self.evidence_override_reason:
+            validate_safe_text(self.evidence_override_reason, "sde_review_binding.evidence_override_reason")
+            if not self.evidence_override_reason.strip() or len(self.evidence_override_reason) > 1000 or "\n" in self.evidence_override_reason or "\r" in self.evidence_override_reason:
+                raise ValueError("SDE override reason must be bounded single-line text")
         if not self.review_rationale.strip() or "\n" in self.review_rationale or "\r" in self.review_rationale:
             raise ValueError("SDE review rationale must be non-empty single-line text")
         if len(self.review_rationale) > 1000:
@@ -311,6 +318,7 @@ class SDEReviewBinding:
     def canonical_bytes(self) -> bytes:
         """Return deterministic bytes suitable for receipt storage."""
 
-        return json.dumps(
-            asdict(self), ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
+        value = asdict(self)
+        if not self.evidence_override_reason:
+            del value["evidence_override_reason"]
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

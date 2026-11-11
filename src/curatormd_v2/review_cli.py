@@ -343,18 +343,21 @@ def _review_edited(
 
     draft = _saved_review_draft(config, arguments.candidate_id)
     packet = api.sde_review_packet(caller, config.project_id, arguments.candidate_id)
-    if not packet.artifact_inventory.usage.inventory_complete or packet.artifact_inventory.manifest_sha256 is None:
-        streams.errors.write("Refusing SDE review because the artifact inventory is incomplete.\n")
-        return False
+    inventory_complete = (
+        packet.artifact_inventory.usage.inventory_complete
+        and packet.artifact_inventory.manifest_sha256 is not None
+    )
+    if not inventory_complete:
+        streams.errors.write("Artifact inventory is incomplete; the decision can be saved and cleanup will remain pending.\n")
     _write_json(streams.output, {"review_packet": asdict(packet), "edited_entry": asdict(draft)})
     decision = _read_review_decision(streams, getattr(arguments, "decision_hint", None))
     if decision is None:
         return False
-    selected_artifacts = _select_review_artifacts(packet, streams)
+    selected_artifacts = _select_review_artifacts(packet, streams) if inventory_complete else ()
     if selected_artifacts is None:
         return False
     selected_packet = api.sde_review_packet(
-        caller, config.project_id, arguments.candidate_id, selected_artifacts
+        caller, config.project_id, arguments.candidate_id, selected_artifacts if inventory_complete else None
     )
     streams.errors.write("Review rationale (one line): ")
     streams.errors.flush()
@@ -362,20 +365,27 @@ def _review_edited(
     if not rationale.strip() or len(rationale) > 1000 or "\n" in rationale or "\r" in rationale:
         streams.errors.write("SDE review cancelled; rationale must be 1-1000 characters.\n")
         return False
+    override_reason = None
+    if decision is ReviewDecision.APPROVED and not api.sde_review_has_current_passing_evidence(
+        caller, config.project_id, arguments.candidate_id
+    ):
+        override_reason = "Owner approved the reviewed entry despite missing or stale automated evidence."
+        streams.errors.write("Automated evidence is missing or stale; confirming approval records your override.\n")
     request = SDEConfirmationRequest(
         candidate_id=arguments.candidate_id,
         decision=decision,
         artifacts=selected_artifacts,
-        artifact_inventory_complete=True,
-        dependency_map_sha256=selected_packet.dependency_map_sha256,
+        artifact_inventory_complete=inventory_complete,
+        dependency_map_sha256=selected_packet.dependency_map_sha256 if inventory_complete else "0" * 64,
         rationale=rationale,
         review_draft=draft,
+        evidence_override_reason=override_reason,
     )
     binding = api.prepare_sde_review_binding(caller, config.project_id, request)
     phrase = _confirmation_phrase(
         decision, arguments.candidate_id,
-        packet.artifact_inventory.manifest_sha256,
-        selected_packet.dependency_map_sha256,
+        packet.artifact_inventory.manifest_sha256 or "0" * 64,
+        request.dependency_map_sha256 or "0" * 64,
     ) + f" BINDING {binding.sha256()}"
     _write_json(streams.output, {
         "decision_packet": asdict(selected_packet),

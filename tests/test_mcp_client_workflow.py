@@ -297,11 +297,12 @@ class McpClientWorkflowTests(McpServerTestSupport):
             initial_report_content.text,
         )
         incomplete = await client.call_tool(
-            "goal_finish",
+            "goal_defer",
             {
                 "event_id": "mcp-event-2",
                 "goal_id": "mcp-goal-1",
-                "completion_claim": "The task is complete",
+                "reason": "Work is paused",
+                "next_action": "Resume the evidence check",
                 "expected_lifecycle_revision": 1,
                 "source_sequence": 2,
             },
@@ -313,7 +314,7 @@ class McpClientWorkflowTests(McpServerTestSupport):
         open_content = open_status.content[0]
         assert isinstance(open_content, TextContent)
         open_value = json.loads(open_content.text)
-        self.assertEqual(open_value["goal"]["status"], "open")
+        self.assertEqual(open_value["goal"]["status"], "deferred")
         self.assertEqual(open_value["goal"]["lifecycle_revision"], 2)
         self.assertEqual(
             open_value["criteria"][0]["status"], "open"
@@ -341,19 +342,17 @@ class McpClientWorkflowTests(McpServerTestSupport):
         self.assertFalse(open_report_result.is_error)
         open_report_content = open_report_result.content[0]
         assert isinstance(open_report_content, TextContent)
-        self.assertIn("- Outcome: `open`", open_report_content.text)
-        self.assertIn("Outcome: open", open_report_content.text)
+        self.assertIn("- Outcome: `deferred`", open_report_content.text)
         self.assertIn("## Success criteria", open_report_content.text)
         self.assertIn("- Project: `mcp-project`", open_report_content.text)
         self.assertIn("- Initial state: `active`", open_report_content.text)
         self.assertIn("- Source event: `mcp-event-1`", open_report_content.text)
         self.assertIn(
-            "- Next action: Verify unmet success criteria: "
-            "MCP evidence is accepted",
+            "- Next action: Resume the evidence check",
             open_report_content.text,
         )
         self.assertIn("## Open TODOs", open_report_content.text)
-        self.assertIn("Unverified claims or checks", open_report_content.text)
+        self.assertIn("no current independent verification recorded", open_report_content.text)
 
     async def _complete_mcp_goal(self, client: Client) -> None:
         """Verify a current evidence fact allows the goal to complete."""

@@ -917,7 +917,57 @@ class _APIStorageMethods(_APIGoalMethods):
         ).retry_expiry_purge(receipt_id)
 
 
-class _APIReviewPurgeMethods(_APIStorageMethods):
+class _APICodexTurnMethods(_APIStorageMethods):
+    @_project_effect_fenced(ProjectAction.WRITE)
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def record_hermes_codex_turn_event(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        profile_id: str,
+        session_id: str,
+        turn_id: str,
+        event_id: str,
+        event_type: str,
+        occurred_at: str,
+        outcome: str | None = None,
+    ) -> dict[str, object]:
+        """Record content-free turn boundaries for an authorized Hermes profile."""
+
+        if caller.profile_id != profile_id:
+            raise PermissionError("Hermes telemetry profile does not match the caller")
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.WRITE
+        ).service.store.record_hermes_codex_turn_event(
+            project_id, profile_id, session_id, turn_id, event_id,
+            event_type, occurred_at, outcome,
+        )
+
+    @_project_effect_fenced(ProjectAction.WRITE)
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def link_hermes_codex_turn_goal(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        profile_id: str,
+        session_id: str,
+        turn_id: str,
+        goal_id: str,
+        event_id: str,
+        source_tool: str,
+    ) -> dict[str, object]:
+        """Link a task to a turn after a successful Curator intake call."""
+
+        if caller.profile_id != profile_id:
+            raise PermissionError("Hermes telemetry profile does not match the caller")
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.WRITE
+        ).service.store.link_hermes_codex_turn_goal(
+            project_id, profile_id, session_id, turn_id,
+            goal_id, event_id, source_tool,
+        )
+
+class _APIReviewPurgeMethods(_APICodexTurnMethods):
     def sde_review_queue(
         self, caller: AuthenticatedCaller, project_id: str, limit: int = 100
     ) -> tuple[SDEReviewDetail, ...]:
@@ -938,6 +988,20 @@ class _APIReviewPurgeMethods(_APIStorageMethods):
         return self._authorized_plugin(
             caller, project_id, ProjectAction.WRITE
         ).sde_assess(request)
+
+    def sde_record_user_report(
+        self,
+        caller: AuthenticatedCaller,
+        project_id: str,
+        goal_id: str,
+        report: str,
+        event_id: str,
+    ) -> SDECandidate:
+        """Record a compact authenticated user report as a pending SDE."""
+
+        return self._authorized_plugin(
+            caller, project_id, ProjectAction.WRITE
+        ).service.sde_record_user_report(goal_id, report, event_id)
 
     def sde_review_detail(
         self, caller: AuthenticatedCaller, project_id: str, candidate_id: str

@@ -22,6 +22,7 @@ from curatormd_v2 import (
 )
 from curatormd_v2.schema_migrations import (
     apply_schema_migrations,
+    migrate_codex_session_turns_v48,
     migrate_sde_candidate_withdrawals_v47,
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
@@ -30,6 +31,28 @@ from curatormd_v2.schema_migrations import (
 
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
+
+    def test_v48_adds_content_free_turn_and_link_receipts(self) -> None:
+        """Keep session observations separate from project task lifecycle records."""
+
+        connection = sqlite3.connect(":memory:")
+        try:
+            migrate_codex_session_turns_v48(connection)
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            self.assertTrue({
+                "hermes_codex_turns", "hermes_codex_turn_links",
+                "hermes_codex_telemetry_receipts",
+            }.issubset(tables))
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0], 48
+            )
+        finally:
+            connection.close()
 
     def test_v47_adds_candidate_withdrawal_audit_table(self) -> None:
         """Version 47 stores withdrawals separately from SDE dispositions."""

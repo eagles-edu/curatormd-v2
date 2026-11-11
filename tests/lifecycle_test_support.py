@@ -21,6 +21,7 @@ from curatormd_v2 import (
     FactKind,
     GoalCard,
     GoalStatus,
+    GoalTransitionRequest,
     SuccessCriterion,
 )
 from curatormd_v2.events import GoalCriteriaAmended
@@ -158,7 +159,11 @@ class LifecycleTestSupport(unittest.TestCase):
             ),
         )
         if status is GoalStatus.OPEN:
-            goal = self.service.goal_finish(goal.goal_id, "Claim incomplete work")
+            goal = self.store.transition_goal(GoalTransitionRequest(
+                goal_id=goal.goal_id, status=GoalStatus.OPEN,
+                next_action="Continue work", facts=(), expected_lifecycle_revision=goal.lifecycle_revision,
+                project_id=self.service.project_id,
+            ))
         elif status is GoalStatus.BLOCKED:
             goal = self.service.goal_block(goal.goal_id, "Dependency", "Resolve dependency")
         elif status is GoalStatus.DEFERRED:

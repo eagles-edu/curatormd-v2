@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from threading import Barrier
 from typing import NoReturn
 from unittest.mock import patch
 
@@ -37,6 +39,7 @@ from curatormd_v2 import (
     AuthenticatedCaller,
     ConflictError,
     EvidenceAttestation,
+    EvidenceOutcome,
     EvidenceRef,
     EvidenceVerificationContext,
     SDECandidate,
@@ -47,8 +50,126 @@ from curatormd_v2.sde_review_draft import SDEReviewBinding, SDEReviewDraft
 class ApiReviewWorkflowTests(_ApiTestSupport):
     """Exercise apireviewworkflow behavior."""
 
+    def test_unattested_result_can_be_proposed_and_owner_approved(self) -> None:
+        """Keep missing proof visible without blocking recording or owner review."""
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost())
+        api = self._api_with_healthy_dependencies(plugin, AllowProject({
+            ("hermes-user-1", "project-a", ProjectAction.READ),
+            ("hermes-user-1", "project-a", ProjectAction.WRITE),
+            ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+        }))
+        goal = plugin.service.goal_start("Remove prose wrapping", (SuccessCriterion("done", "Prose lines are joined"),))
+        change, _ = plugin.service.goal_fact(goal.goal_id, FactKind.CHANGE, "Joined the prose lines.")
+        candidate = api.sde_assess(self.caller, "project-a", SDEAssessmentRequest(
+            goal.goal_id, Materiality.IMPLEMENTATION, "Useful editor change",
+            (change.fact_id,), "Paragraphs can be joined", "Find the editor change",
+        ))
+        self.assertEqual(candidate.status.value, "pending_review")
+        completed = plugin.service.goal_finish(goal.goal_id, "Observed: prose lines are joined")
+        self.assertEqual(completed.status.value, "complete")
+        self.assertEqual(plugin.service.goal_status(goal.goal_id).criteria[0].status.value, "open")
+        self.assertFalse(plugin.service.sde_review_has_current_passing_evidence(candidate.candidate_id))
+        draft = SDEReviewDraft(title="Join prose", significance=3,
+            documents=("persistence/HISTORY.md",), problem="Wrapped prose",
+            completed=("Joined prose",), difficulties=(), plan_changes=(), lessons=(),
+            future_utility="Readable paragraphs")
+        request = SDEConfirmationRequest(candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED, artifacts=(), artifact_inventory_complete=False,
+            dependency_map_sha256="0" * 64, rationale="Owner approved", review_draft=draft)
+        binding = api.prepare_sde_review_binding(self.caller, "project-a", request)
+        receipt = api.sde_confirm(self.caller, "project-a", replace(request, expected_review_binding_sha256=binding.sha256()))
+        self.assertEqual(receipt.decision, ReviewDecision.APPROVED)
+        self.assertFalse(receipt.cleanup_authorized)
+
+    def test_changed_artifact_does_not_block_persistence_or_authorize_purge(self) -> None:
+        plugin = ProjectPlugin.bind(ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost())
+        verified = self._create_verified_goal(plugin, "Retain reviewed work", "Change made", "Check passed")
+        staged = plugin.stage_artifact(verified.goal_id, "scratch", "changed", BytesIO(b"before"))
+        api = self._api_with_healthy_dependencies(plugin, AllowProject({
+            ("hermes-user-1", "project-a", ProjectAction.READ),
+            ("hermes-user-1", "project-a", ProjectAction.WRITE),
+            ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+        }))
+        candidate = api.sde_assess(self.caller, "project-a", SDEAssessmentRequest(
+            verified.goal_id, Materiality.IMPLEMENTATION, "Retain change",
+            (verified.change_fact_id, verified.verification_fact_id), "Useful change", "Useful later",
+        ))
+        initial = api.sde_review_packet(self.caller, "project-a", candidate.candidate_id)
+        artifacts = tuple(replace(item, reacquisition_action=ReacquisitionAction.NOT_REQUIRED)
+                          for item in initial.artifact_inventory.artifacts)
+        packet = api.sde_review_packet(self.caller, "project-a", candidate.candidate_id, artifacts)
+        draft = SDEReviewDraft(title="Reviewed change", significance=3,
+            documents=("persistence/HISTORY.md",), problem="Review the change",
+            completed=("Change made",), difficulties=(), plan_changes=(), lessons=(), future_utility="Useful later")
+        request = SDEConfirmationRequest(candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED, artifacts=artifacts, artifact_inventory_complete=True,
+            dependency_map_sha256=packet.dependency_map_sha256, rationale="Owner approved", review_draft=draft)
+        binding = api.prepare_sde_review_binding(self.caller, "project-a", request)
+        receipt = api.sde_confirm(self.caller, "project-a", replace(request, expected_review_binding_sha256=binding.sha256()))
+        Path(staged.path).write_bytes(b"changed after review")
+        for prepare in (True, False):
+            api.sde_project_review_target(self.caller, "project-a", receipt.receipt_id,
+                                          "persistence/HISTORY.md", prepare_only=prepare)
+        pending = api.sde_finalize_review_projection(self.caller, "project-a", receipt.receipt_id)
+        self.assertTrue(pending.canonical_persisted)
+        self.assertEqual(pending.purge_status.value, "purge_pending")
+        self.assertEqual(Path(staged.path).read_bytes(), b"changed after review")
+        cleanup = self.store.cleanup_authorization(receipt.receipt_id, "project-a")
+        assert cleanup is not None
+        self.assertFalse(cleanup.canonical_persisted)
+        retry = api.sde_finalize_review_projection(self.caller, "project-a", receipt.receipt_id)
+        self.assertEqual(retry.receipt_id, pending.receipt_id)
+        self.assertEqual(retry.purge_status.value, "purge_pending")
+
+    def test_owner_evidence_override_persists_and_replays(self) -> None:
+        plugin = ProjectPlugin.bind(
+            ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
+        )
+        verified = self._create_verified_goal(plugin, "Review override", "Change made", "Check passed")
+        staged = plugin.stage_artifact(verified.goal_id, "scratch", "held-for-inventory", BytesIO(b"keep"))
+        api = self._api_with_healthy_dependencies(plugin, AllowProject({
+            ("hermes-user-1", "project-a", ProjectAction.READ),
+            ("hermes-user-1", "project-a", ProjectAction.WRITE),
+            ("hermes-user-1", "project-a", ProjectAction.REVIEW),
+        }))
+        candidate = api.sde_assess(self.caller, "project-a", SDEAssessmentRequest(
+            verified.goal_id, Materiality.IMPLEMENTATION, "Retain useful change",
+            (verified.change_fact_id, verified.verification_fact_id), "Useful change", "Useful later",
+        ))
+        goal = plugin.service.goal_status(verified.goal_id).goal
+        plugin.service.goal_reopen(verified.goal_id, "Continue work", "Check again", expected_lifecycle_revision=goal.lifecycle_revision)
+        draft = SDEReviewDraft(title="Reviewed change", significance=3,
+            documents=("persistence/HISTORY.md",), problem="Review the change",
+            completed=("Change made",), difficulties=(), plan_changes=(), lessons=(),
+            future_utility="Useful later")
+        request = SDEConfirmationRequest(candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED, artifacts=(),
+            artifact_inventory_complete=False, dependency_map_sha256="0" * 64,
+            rationale="Owner approved", review_draft=draft)
+        self.assertIsNotNone(api.prepare_sde_review_binding(self.caller, "project-a", request))
+        request = replace(request, evidence_override_reason="Owner reviewed despite missing evidence")
+        binding = api.prepare_sde_review_binding(self.caller, "project-a", request)
+        self.assertEqual(SDEReviewBinding.from_json(binding.canonical_bytes().decode()), binding)
+        request = replace(request, expected_review_binding_sha256=binding.sha256())
+        with self.assertRaises(ConflictError):
+            api.sde_confirm(self.caller, "project-a", replace(request, evidence_override_reason="Different reason"))
+        receipt = api.sde_confirm(self.caller, "project-a", request)
+        self.assertFalse(receipt.cleanup_authorized)
+        self.assertEqual(api.sde_confirm(self.caller, "project-a", request).receipt_id, receipt.receipt_id)
+        for prepare in (True, False):
+            api.sde_project_review_target(self.caller, "project-a", receipt.receipt_id,
+                                          "persistence/HISTORY.md", prepare_only=prepare)
+        saved = (self.root / "persistence/HISTORY.md").read_text()
+        self.assertIn("Owner reviewed despite missing evidence", saved)
+        self.assertIn("Cleanup inventory: incomplete; no artifacts authorized for deletion.", saved)
+        result = api.sde_finalize_review_projection(self.caller, "project-a", receipt.receipt_id)
+        self.assertTrue(result.canonical_persisted)
+        self.assertFalse(result.cleanup_authorized)
+        self.assertEqual(result.purge_status.value, "purge_pending")
+        self.assertTrue(Path(staged.path).exists())
+
     def test_single_check_completion_proof_is_enough_for_sde_approval(self) -> None:
-        """Use the accepted local check claim without a host evidence adapter."""
+        """Use the recorded attestation for an ordinary local check."""
 
         plugin = ProjectPlugin.bind(
             ProjectConfig.load(self.root), self.store, TestVerifier(), ReviewHost()
@@ -59,6 +180,11 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
         )
         changed, _ = plugin.service.goal_fact(
             goal.goal_id, FactKind.CHANGE, "Implemented the requested small change"
+        )
+        verified, _ = plugin.service.goal_fact(
+            goal.goal_id, FactKind.VERIFICATION, "The local check passed.",
+            criterion_id="works",
+            evidence=(EvidenceRef("unit-test", "test-proof:verified", "0" * 64, EvidenceOutcome.PASSED),),
         )
         plugin.service.goal_finish(
             goal.goal_id, "Checks passed: `uv run pytest tests/test_small.py` passed."
@@ -78,7 +204,7 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
                 goal.goal_id,
                 Materiality.IMPLEMENTATION,
                 "The checked result may be useful to retain",
-                (changed.fact_id,),
+                (changed.fact_id, verified.fact_id),
                 "The scoped task passed its local check",
                 "Find the implementation and its check when maintaining this area",
             ),
@@ -91,21 +217,41 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
                 candidate.candidate_id, require_passing=True
             )
         )
-        receipt = api.sde_confirm(
-            self.caller,
-            "project-a",
-            SDEConfirmationRequest(
-                candidate_id=candidate.candidate_id,
-                decision=ReviewDecision.APPROVED,
-                artifacts=packet.artifact_inventory.artifacts,
-                artifact_inventory_complete=packet.artifact_inventory.usage.inventory_complete,
-                dependency_map_sha256=packet.dependency_map_sha256,
-                rationale="Owner approved the supported task facts",
-            ),
+        request = SDEConfirmationRequest(
+            candidate_id=candidate.candidate_id,
+            decision=ReviewDecision.APPROVED,
+            artifacts=packet.artifact_inventory.artifacts,
+            artifact_inventory_complete=packet.artifact_inventory.usage.inventory_complete,
+            dependency_map_sha256=packet.dependency_map_sha256,
+            rationale="Owner approved the supported task facts",
         )
+        start = Barrier(2)
+
+        def confirm() -> AuditReceipt:
+            start.wait(timeout=10)
+            return api.sde_confirm(self.caller, "project-a", request)
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            first = workers.submit(confirm)
+            second = workers.submit(confirm)
+            receipt = first.result(timeout=15)
+            concurrent_retry = second.result(timeout=15)
+        replayed = api.sde_confirm(self.caller, "project-a", request)
 
         self.assertEqual(receipt.decision, ReviewDecision.APPROVED)
         self.assertTrue(receipt.artifact_inventory_complete)
+        self.assertEqual(concurrent_retry.receipt_id, receipt.receipt_id)
+        self.assertEqual(replayed.receipt_id, receipt.receipt_id)
+        with self.assertRaises(ConflictError):
+            api.sde_confirm(
+                self.caller, "project-a", replace(request, rationale="Changed after approval")
+            )
+        with self.store.transaction() as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM audit_receipts WHERE candidate_id = ?",
+                (candidate.candidate_id,),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
 
     def test_one_sde_approval_persists_verifies_then_clears_eligible_artifacts(self) -> None:
         """One SDE decision authorizes cleanup after canonical readback, without a second approval."""
@@ -868,29 +1014,9 @@ class ApiReviewWorkflowTests(_ApiTestSupport):
             "Rerun the scoped verification before completing the task",
             expected_lifecycle_revision=completed_goal.lifecycle_revision,
         )
-        with self.assertRaisesRegex(EvidenceGateError, "completed goal"):
-            api.sde_confirm(self.caller, "project-a", request)
-
         verifier.current = False
-        with self.assertRaisesRegex(EvidenceGateError, "current|passing task proof"):
-            api.sde_confirm(self.caller, "project-a", request)
-        self.assertIsNone(
-            self.store.receipt_for_candidate(candidate.candidate_id, "project-a")
-        )
-
-        rejected = api.sde_confirm(
-            self.caller,
-            "project-a",
-            SDEConfirmationRequest(
-                candidate_id=candidate.candidate_id,
-                decision=ReviewDecision.REJECTED,
-                artifacts=request.artifacts,
-                artifact_inventory_complete=request.artifact_inventory_complete,
-                dependency_map_sha256=request.dependency_map_sha256,
-                rationale="Reject because its supporting proof is stale",
-            ),
-        )
-        self.assertEqual(rejected.decision, ReviewDecision.REJECTED)
+        approved = api.sde_confirm(self.caller, "project-a", request)
+        self.assertEqual(approved.decision, ReviewDecision.APPROVED)
 
     def test_sde_assessment_requires_write_scope_and_verified_goal_facts(self) -> None:
         plugin = ProjectPlugin.bind(

@@ -6,9 +6,10 @@
       "command": "python3",
       "args": [
         "${PLUGIN_ROOT}/bin/launch-curator-mcp.py",
-        "--database",
-        "~/.local/share/curatormd-v2-alpha/global.sqlite3",
-        "--allow-write"
+        "--database-bindings",
+        "~/.config/curatormd-v2/database-bindings.json",
+        "--allow-write",
+        "--allow-purge-retry"
       ]
     }
   }

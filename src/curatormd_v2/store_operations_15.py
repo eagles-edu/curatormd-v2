@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 from .store_support_01 import (
     ConflictError,
@@ -21,6 +22,184 @@ from .store_operations_14 import StoreOperations5
 
 class StoreOperations6(StoreOperations5):
     """Append-only withdrawal receipts and queue removal for alpha recovery."""
+
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    def record_hermes_codex_turn_event(
+        self,
+        project_id: str,
+        profile_id: str,
+        session_id: str,
+        turn_id: str,
+        event_id: str,
+        event_type: str,
+        occurred_at: str,
+        outcome: str | None = None,
+    ) -> dict[str, object]:
+        """Persist one bounded turn boundary with a replay-stable receipt."""
+
+        values = (project_id, profile_id, session_id, turn_id, event_id)
+        for value, name in zip(
+            values, ("project_id", "profile_id", "session_id", "turn_id", "event_id")
+        ):
+            self._validate_access_identity(value, name)
+        if event_type not in {"start", "end"}:
+            raise ValueError("event_type must be start or end")
+        if not 1 <= len(occurred_at) <= 64:
+            raise ValueError("occurred_at must be a bounded timestamp")
+        if "\n" in occurred_at or "\r" in occurred_at:
+            raise ValueError("occurred_at must be a single line")
+        validate_safe_text(occurred_at, "codex_turn.occurred_at")
+        if event_type == "end" and outcome not in {
+            "completed", "interrupted", "failed", "unknown"
+        }:
+            raise ValueError("end outcome is unsupported")
+        if event_type == "start" and outcome is not None:
+            raise ValueError("start events cannot include an outcome")
+        payload = {
+            "project_id": project_id, "profile_id": profile_id,
+            "session_id": session_id, "turn_id": turn_id,
+            "event_type": event_type, "occurred_at": occurred_at,
+            "outcome": outcome,
+        }
+        payload_sha = hashlib.sha256(_json_dump(payload).encode("utf-8")).hexdigest()
+        with self._transaction() as connection:
+            existing = connection.execute(
+                """SELECT payload_sha256, receipt_json
+                   FROM hermes_codex_telemetry_receipts
+                   WHERE project_id = ? AND event_id = ?""",
+                (project_id, event_id),
+            ).fetchone()
+            if existing is not None:
+                if existing["payload_sha256"] != payload_sha:
+                    raise ConflictError("Codex telemetry event ID was reused with changed data")
+                return json.loads(existing["receipt_json"])
+            if event_type == "start":
+                row = connection.execute(
+                    """SELECT started_at FROM hermes_codex_turns
+                       WHERE project_id = ? AND profile_id = ? AND session_id = ?
+                         AND turn_id = ?""",
+                    (project_id, profile_id, session_id, turn_id),
+                ).fetchone()
+                if row is not None and row["started_at"] != occurred_at:
+                    raise ConflictError("Codex turn start conflicts with its saved observation")
+                connection.execute(
+                    """INSERT INTO hermes_codex_turns
+                       (project_id, profile_id, session_id, turn_id, started_at)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(project_id, profile_id, session_id, turn_id)
+                       DO NOTHING""",
+                    (project_id, profile_id, session_id, turn_id, occurred_at),
+                )
+            else:
+                cursor = connection.execute(
+                    """UPDATE hermes_codex_turns SET ended_at = ?, outcome = ?
+                       WHERE project_id = ? AND profile_id = ? AND session_id = ?
+                         AND turn_id = ? AND ended_at IS NULL""",
+                    (occurred_at, outcome, project_id, profile_id, session_id, turn_id),
+                )
+                row = connection.execute(
+                    """SELECT ended_at, outcome FROM hermes_codex_turns
+                       WHERE project_id = ? AND profile_id = ? AND session_id = ?
+                         AND turn_id = ?""",
+                    (project_id, profile_id, session_id, turn_id),
+                ).fetchone()
+                if row is None:
+                    raise NotFoundError("Codex turn start has not been observed")
+                if cursor.rowcount == 0 and (
+                    row["ended_at"] != occurred_at or row["outcome"] != outcome
+                ):
+                    raise ConflictError("Codex turn end conflicts with its saved observation")
+            receipt: dict[str, object] = {
+                "project_id": project_id, "event_id": event_id,
+                "status": "processed", "profile_id": profile_id,
+                "session_id": session_id, "turn_id": turn_id,
+                "event_type": event_type,
+            }
+            connection.execute(
+                """INSERT INTO hermes_codex_telemetry_receipts
+                   (project_id, event_id, payload_sha256, receipt_json, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (project_id, event_id, payload_sha, _json_dump(receipt), utc_now()),
+            )
+        return receipt
+
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    def link_hermes_codex_turn_goal(
+        self,
+        project_id: str,
+        profile_id: str,
+        session_id: str,
+        turn_id: str,
+        goal_id: str,
+        event_id: str,
+        source_tool: str,
+    ) -> dict[str, object]:
+        """Link a goal only after the caller observed its successful task call."""
+
+        for value, name in (
+            (project_id, "project_id"), (profile_id, "profile_id"),
+            (session_id, "session_id"), (turn_id, "turn_id"),
+            (goal_id, "goal_id"), (event_id, "event_id"),
+        ):
+            self._validate_access_identity(value, name)
+        if source_tool not in {
+            "goal_start", "goal_activate", "goal_finish", "goal_defer",
+            "goal_block", "fact_record", "goal_reopen", "goal_cancel",
+            "goal_supersede", "goal_amend_criteria",
+        }:
+            raise ValueError("source_tool is not a Curator task lifecycle or fact call")
+        payload = {
+            "project_id": project_id, "profile_id": profile_id,
+            "session_id": session_id, "turn_id": turn_id,
+            "goal_id": goal_id, "source_tool": source_tool,
+        }
+        payload_sha = hashlib.sha256(_json_dump(payload).encode("utf-8")).hexdigest()
+        with self._transaction() as connection:
+            existing = connection.execute(
+                """SELECT payload_sha256, receipt_json
+                   FROM hermes_codex_telemetry_receipts
+                   WHERE project_id = ? AND event_id = ?""",
+                (project_id, event_id),
+            ).fetchone()
+            if existing is not None:
+                if existing["payload_sha256"] != payload_sha:
+                    raise ConflictError("Codex telemetry event ID was reused with changed data")
+                return json.loads(existing["receipt_json"])
+            turn = connection.execute(
+                """SELECT 1 FROM hermes_codex_turns
+                   WHERE project_id = ? AND profile_id = ? AND session_id = ?
+                     AND turn_id = ?""",
+                (project_id, profile_id, session_id, turn_id),
+            ).fetchone()
+            goal = connection.execute(
+                "SELECT 1 FROM goals WHERE project_id = ? AND goal_id = ?",
+                (project_id, goal_id),
+            ).fetchone()
+            if turn is None or goal is None:
+                raise NotFoundError("Codex turn or project goal is unavailable")
+            connection.execute(
+                """INSERT INTO hermes_codex_turn_links
+                   (project_id, profile_id, session_id, turn_id, goal_id,
+                    source_tool, linked_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(project_id, profile_id, session_id, turn_id, goal_id)
+                   DO NOTHING""",
+                (project_id, profile_id, session_id, turn_id, goal_id,
+                 source_tool, utc_now()),
+            )
+            receipt: dict[str, object] = {
+                "project_id": project_id, "event_id": event_id,
+                "status": "processed", "profile_id": profile_id,
+                "session_id": session_id, "turn_id": turn_id,
+                "goal_id": goal_id,
+            }
+            connection.execute(
+                """INSERT INTO hermes_codex_telemetry_receipts
+                   (project_id, event_id, payload_sha256, receipt_json, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (project_id, event_id, payload_sha, _json_dump(receipt), utc_now()),
+            )
+        return receipt
 
     def withdraw_sde_candidates(
         self,

@@ -2,7 +2,7 @@
   "name": "curatormd-v2-status",
   "displayName": "CuratorMD V2 Status",
   "description": "A local, project-scoped CuratorMD V2 dashboard and status bar integration.",
-  "version": "0.9.97",
+  "version": "0.9.106",
   "publisher": "curatormd",
   "repository": {
     "type": "git",
@@ -27,6 +27,10 @@
       {
         "command": "curatormdV2.openHealingToolbox",
         "title": "CuratorMD V2: Open Recovery Manager"
+      },
+      {
+        "command": "curatormdV2.joinMarkdownParagraphLines",
+        "title": "CuratorMD V2: Join Wrapped Markdown Paragraph Lines"
       }
     ]
   },
@@ -55,7 +59,7 @@
         "type": "object",
         "default": {},
         "scope": "application",
-        "description": "Owner-managed map from exact Curator project IDs to absolute local SQLite database paths. Exact project entries override databasePath."
+        "description": "Owner-managed map from exact Curator project IDs to absolute local SQLite database paths. When nonempty, every project requires an exact entry."
       },
       "curatormdV2.evidenceConfigBindings": {
         "type": "object",

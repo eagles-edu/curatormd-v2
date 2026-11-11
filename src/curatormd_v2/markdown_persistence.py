@@ -280,6 +280,10 @@ class MarkdownPersistenceAdapter:
             f"- Successfully completed: {_markdown_code(_local_timestamp(goal.completed_at) if goal.completed_at else 'unknown')}",
             f"- Problem / plan task: {_markdown_text(draft.problem)}",
         ]
+        if binding.evidence_override_reason:
+            lines.append(f"- Owner evidence override: {_markdown_text(binding.evidence_override_reason)}")
+        if not receipt.artifact_inventory_complete:
+            lines.append("- Cleanup inventory: incomplete; no artifacts authorized for deletion.")
         if receipt.cleanup_authorized:
             lines.extend([
                 f"- Cleanup authorization reviewer: {_markdown_code(receipt.cleanup_reviewer_id or 'unknown')}",

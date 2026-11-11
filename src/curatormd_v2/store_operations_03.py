@@ -650,19 +650,28 @@ class StoreOperations1Part0(StoreOperations0):
         connection: sqlite3.Connection,
         request: TerminalEventDispositionStoreRequest,
     ) -> None:
-        """Require the same fenced consumer-binding revision and epoch."""
+        """Require the same binding revision and fence sequenced sources."""
 
         binding = connection.execute(
             "SELECT status, revision, source_epoch FROM consumer_bindings "
             "WHERE project_id = ?", (request.project_id,),
         ).fetchone()
-        if (
-            binding is None
-            or binding["status"] not in {"deregistration_pending", "deregistered"}
-            or binding["revision"] != request.expected_binding_revision
+        if binding is None or (
+            binding["revision"] != request.expected_binding_revision
             or binding["source_epoch"] != request.expected_source_epoch
         ):
             raise ConflictError("consumer binding changed or is not fenced")
+        if binding["status"] in {"deregistration_pending", "deregistered"}:
+            return
+        if binding["status"] == "active":
+            event = connection.execute(
+                "SELECT source_sequence FROM event_inbox "
+                "WHERE project_id = ? AND event_id = ?",
+                (request.project_id, request.event_id),
+            ).fetchone()
+            if event is not None and event["source_sequence"] is None:
+                return
+        raise ConflictError("consumer binding changed or is not fenced")
 
     @staticmethod
     def _require_terminal_disposition_event(

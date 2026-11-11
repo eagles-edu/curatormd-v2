@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
+from uuid import NAMESPACE_URL, uuid5
 
-from .domain_enums import EvidenceOutcome, GoalStatus
+from .domain_enums import EvidenceOutcome, GoalStatus, Materiality
 from .models import (
     AuditReceipt,
     Fact,
@@ -41,7 +42,9 @@ from .service_goal_read import _GoalReadMixin
 from .sde_review_draft import SDEReviewBinding
 from .store import ConflictError
 
-_SDE_FACT_KINDS = frozenset({FactKind.RESEARCH, FactKind.CHANGE, FactKind.VERIFICATION})
+_SDE_FACT_KINDS = frozenset(
+    {FactKind.USER_REPORT, FactKind.RESEARCH, FactKind.CHANGE, FactKind.VERIFICATION}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +69,62 @@ class _ReviewMixin(_GoalReadMixin):
             request, lambda: self._effect_fence(expected_effect_revision)
         )
 
+    def sde_record_user_report(
+        self, goal_id: str, report: str, event_id: str
+    ) -> SDECandidate:
+        """Create a pending SDE from an authenticated user's concise report."""
+
+        report = report.strip()
+        if (
+            not report
+            or len(report) > 1000
+            or "\n" in report
+            or "\r" in report
+        ):
+            raise ValueError(
+                "user report must be a compact single line of at most 1000 characters"
+            )
+        if (
+            not event_id.strip()
+            or len(event_id) > 128
+            or "\n" in event_id
+            or "\r" in event_id
+        ):
+            raise ValueError("user report event_id must be a bounded single line")
+        goal = self.store.get_goal(goal_id, self.project_id)
+        if goal.status not in {GoalStatus.ACTIVE, GoalStatus.OPEN}:
+            raise ValueError("user reports require an active or open goal")
+        fact_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                f"curator-user-report:{self.project_id}:{goal_id}:{event_id}",
+            )
+        )
+        fact, _inserted = self.goal_fact(
+            goal_id,
+            FactKind.USER_REPORT,
+            report,
+            fact_id=fact_id,
+        )
+        candidate = SDECandidate(
+            goal_id=goal_id,
+            materiality=Materiality.DECISION,
+            rationale=report,
+            fact_ids=(fact.fact_id,),
+            impact="Owner-reported decision captured for owner review.",
+            retrieval_value="Retrieve the concise user-reported decision from Curator review.",
+            candidate_id=str(
+                uuid5(
+                    NAMESPACE_URL,
+                    f"curator-user-report-sde:{self.project_id}:{goal_id}:{event_id}",
+                )
+            ),
+        )
+        expected_effect_revision = self._capture_effect_revision()
+        with self._effect_fence(expected_effect_revision):
+            stored, _created = self.store.add_sde_candidate(candidate, self.project_id)
+        return stored
+
     def sde_assess_with_effect_fence(
         self,
         request: SDEAssessmentRequest,
@@ -84,7 +143,7 @@ class _ReviewMixin(_GoalReadMixin):
         request: SDEAssessmentRequest,
         effect_fence: Callable[[], AbstractContextManager[object]] | None,
     ) -> SDECandidate:
-        """Store a historical candidate only after task completion."""
+        """Store a candidate for human review, including during active work."""
 
         if request.impact is None or request.retrieval_value is None:
             raise EvidenceGateError(
@@ -98,11 +157,7 @@ class _ReviewMixin(_GoalReadMixin):
             )
         if len(request.fact_ids) != len(set(request.fact_ids)):
             raise EvidenceGateError("SDE assessment fact IDs must be unique")
-        goal = self.store.get_goal(request.goal_id, self.project_id)
-        if goal.status is not GoalStatus.COMPLETE:
-            raise EvidenceGateError(
-                "SDE assessment requires a completed goal"
-            )
+        self.store.get_goal(request.goal_id, self.project_id)
         selected = tuple(
             self.store.get_fact(fact_id, self.project_id)
             for fact_id in request.fact_ids
@@ -113,15 +168,6 @@ class _ReviewMixin(_GoalReadMixin):
             )
         if any(fact.goal_id != request.goal_id for fact in selected):
             raise EvidenceGateError("SDE facts must belong to the assessed goal")
-        reopen_cutoff = self._evidence_epoch_cutoff(
-            self.store.list_facts(request.goal_id, self.project_id)
-        )
-        if not self._selected_verifications_were_passing(
-            goal, selected, reopen_cutoff
-        ):
-            raise EvidenceGateError(
-                "selected verification facts must have passing completion evidence"
-            )
         candidate = SDECandidate(
             goal_id=request.goal_id,
             materiality=request.materiality,
@@ -426,12 +472,10 @@ class _ReviewMixin(_GoalReadMixin):
                 "review authorizer returned a different authenticated subject"
             )
         candidate = self.store.get_sde_candidate(request.candidate_id, self.project_id)
+        override = bool(request.evidence_override_reason)
+        if override and (validated_binding is None or request.decision is not ReviewDecision.APPROVED):
+            raise EvidenceGateError("evidence override requires an edited owner review")
         if request.decision is ReviewDecision.APPROVED:
-            goal = self.store.get_goal(candidate.goal_id, self.project_id)
-            if goal.status is not GoalStatus.COMPLETE:
-                raise EvidenceGateError(
-                    "approval requires a completed goal and passing task proof"
-                )
             facts = tuple(
                 self.store.get_fact(fact_id, self.project_id)
                 for fact_id in candidate.fact_ids
@@ -439,15 +483,6 @@ class _ReviewMixin(_GoalReadMixin):
             if any(fact.kind not in _SDE_FACT_KINDS for fact in facts):
                 raise EvidenceGateError(
                     "approval cannot retain advice, proposals, or lifecycle facts"
-                )
-            evidence_epoch_cutoff = self._evidence_epoch_cutoff(
-                self.store.list_facts(candidate.goal_id, self.project_id)
-            )
-            if not self._selected_verifications_were_passing(
-                goal, facts, evidence_epoch_cutoff, require_verification=True
-            ):
-                raise EvidenceGateError(
-                    "approval requires selected verification that passed at completion"
                 )
         facts_sha256 = self.store.facts_digest(candidate.fact_ids, self.project_id)
         if validated_binding is not None:
@@ -458,6 +493,7 @@ class _ReviewMixin(_GoalReadMixin):
                 or validated_binding.decision != request.decision.value
                 or validated_binding.reviewer_id != reviewer_id
                 or validated_binding.review_rationale != request.rationale
+                or validated_binding.evidence_override_reason != (request.evidence_override_reason or "")
                 or validated_binding.supporting_facts_sha256 != facts_sha256
                 or validated_binding.draft_sha256 != draft.sha256()
                 or validated_binding.sha256() != request.expected_review_binding_sha256
@@ -465,7 +501,7 @@ class _ReviewMixin(_GoalReadMixin):
                 raise ConflictError("edited SDE decision does not match its reviewed binding")
             evidence_state = self.sde_review_evidence_state(
                 request.candidate_id,
-                require_passing=request.decision is ReviewDecision.APPROVED,
+                require_passing=False,
             )
             if evidence_state != validated_binding.evidence_state_sha256:
                 raise ConflictError("SDE evidence changed after the review was displayed")

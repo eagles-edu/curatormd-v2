@@ -78,9 +78,7 @@ class _LifecycleSequenceState:
             self.epoch_verified = True
         elif action == "finish":
             if self.status is not GoalStatus.COMPLETE:
-                self.status = (
-                    GoalStatus.COMPLETE if self.epoch_verified else GoalStatus.OPEN
-                )
+                self.status = GoalStatus.COMPLETE
                 self.lifecycle_revision += 1
         elif action == "block":
             self.status = GoalStatus.BLOCKED
@@ -112,7 +110,7 @@ def _lifecycle_action_allowed(state: _LifecycleSequenceState, action: str) -> bo
     facts_allowed = state.status in FACT_ACCEPTING_GOAL_STATUSES
     finish_allowed = state.status in FINISHABLE_GOAL_STATUSES
     return {
-        "activate": state.status is GoalStatus.PLANNED,
+        "activate": state.status in {GoalStatus.PLANNED, GoalStatus.BLOCKED, GoalStatus.DEFERRED},
         "change": facts_allowed,
         "verify": facts_allowed,
         "finish": finish_allowed,
@@ -479,14 +477,14 @@ class EventPropertyTests(unittest.TestCase):
                 )
                 service.process_event(finish)
                 state = service.goal_status("generated-goal")
-                self.assertEqual(state.goal.status, GoalStatus.OPEN)
+                self.assertEqual(state.goal.status, GoalStatus.COMPLETE)
                 self.assertEqual(
-                    len(state.facts), len(set(bullets)) + 3
+                    len(state.facts), len(set(bullets)) + 2
                 )  # claim, open-gate/outcome facts, and distinct changes
                 outcomes = tuple(
                     fact for fact in state.facts if fact.kind is FactKind.OUTCOME
                 )
-                self.assertEqual(tuple(fact.bullet for fact in outcomes), ("open",))
+                self.assertTrue(outcomes[0].bullet.startswith("completed"))
             finally:
                 store.close()
 
@@ -591,7 +589,7 @@ class StagingUsagePropertyTests(unittest.TestCase):
                     )
 
                 goal = service.goal_finish(goal.goal_id, "Claim that work is done")
-                self.assertEqual(goal.status, GoalStatus.OPEN)
+                self.assertEqual(goal.status, GoalStatus.COMPLETE)
                 self.assertEqual(
                     goal.lifecycle_revision, initial_revision + len(actions) + 1
                 )
@@ -620,7 +618,7 @@ class StagingUsagePropertyTests(unittest.TestCase):
                 outcomes = tuple(
                     fact for fact in facts if fact.kind is FactKind.OUTCOME
                 )
-                self.assertEqual(tuple(fact.bullet for fact in outcomes), ("open",))
+                self.assertTrue(outcomes[0].bullet.startswith("completed"))
             finally:
                 store.close()
 

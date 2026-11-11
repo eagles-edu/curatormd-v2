@@ -55,6 +55,7 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
         review_draft_json: str = "",
         expected_review_binding_sha256: str | None = None,
         confirm_significance_five: bool = False,
+        evidence_override_reason: str | None = None,
     ) -> str:
         """Record disposition, optionally binding an edited decision and exact inventory."""
 
@@ -76,6 +77,7 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
                     ),
                     expected_review_binding_sha256=expected_review_binding_sha256,
                     confirm_significance_five=confirm_significance_five,
+                    evidence_override_reason=evidence_override_reason,
                 ),
             )
         )
@@ -107,6 +109,7 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
         rationale: str,
         review_draft_json: str,
         confirm_significance_five: bool = False,
+        evidence_override_reason: str | None = None,
     ) -> str:
         """Prepare the exact edited decision binding before owner confirmation."""
 
@@ -119,6 +122,7 @@ def register_cleanup_tools(registrar: _CleanupToolRegistrar) -> None:
             rationale=rationale,
             review_draft=SDEReviewDraft.from_json(review_draft_json),
             confirm_significance_five=confirm_significance_five,
+            evidence_override_reason=evidence_override_reason,
         )
         binding = api.prepare_sde_review_binding(caller, project_id, request)
         return json_result({"binding": binding, "sha256": binding.sha256()})

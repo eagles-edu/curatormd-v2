@@ -27,4 +27,9 @@ root = ".curatormd-v2/staging"
 # max_project_files = 10000
 
 [persistence]
-targets = ["persistence/HISTORY.md", "persistence/LESSONS-LEARNED.md"]
+targets = [
+  "persistence/HISTORY.md",
+  "persistence/LESSONS-LEARNED.md",
+  "persistence/SOP.md",
+  "persistence/AGENTS.md",
+]

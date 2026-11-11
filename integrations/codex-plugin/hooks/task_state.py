@@ -23,7 +23,7 @@ _PROMPT_CUES = frozenset({
     "next plan item",
     "end current task or item",
 })
-_TASK_SCOPE_CUES = frozenset({"ootask", "aotask"})
+_TASK_SCOPE_CUES = frozenset({"ootask", "aotask", "aatask"})
 
 
 def _state_directory() -> Path | None:
@@ -710,9 +710,13 @@ def record_completed_goal(
 
 
 def record_sde_proposal_state(
-    event: dict[str, object], project_id: str, goal_id: str
+    event: dict[str, object],
+    project_id: str,
+    goal_id: str,
+    *,
+    allow_active: bool = False,
 ) -> bool:
-    """Remember only a successful pending proposal for its own completed goal."""
+    """Remember a pending proposal, including an explicit owner report."""
 
     if not _GOAL_ID.fullmatch(goal_id):
         return False
@@ -720,7 +724,9 @@ def record_sde_proposal_state(
     if path is None:
         return False
     state = _load(path, project_id)
-    if goal_id not in state["completed_goal_ids"]:
+    if goal_id not in state["completed_goal_ids"] and not (
+        allow_active and goal_id in state["active_goal_ids"]
+    ):
         return False
     result = _response_object(event)
     candidate_id = result.get("candidate_id") if result else None

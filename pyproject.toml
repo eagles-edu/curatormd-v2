@@ -18,6 +18,7 @@ curatormd-v2-access = "curatormd_v2.access_cli:main"
 curatormd-v2-review = "curatormd_v2.review_cli:main"
 curatormd-v2-router = "curatormd_v2.router_cli:main"
 curatormd-v2-storage = "curatormd_v2.storage_cli:main"
+curatormd-v2-bindings = "curatormd_v2.bindings_coordinator:main"
 curatormd-v2-evidence = "curatormd_v2.evidence_cli:main"
 
 [dependency-groups]

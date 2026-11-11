@@ -1,5 +1,419 @@
 # Curator V2 history
 
+<!-- curatormd-v2:sde:2a4fa0275b81d0fa35b0273582692b5058e5cfa4a29b58dbf13539be1317996c:start -->
+### Confirm the project\-bound Hermes health snapshot and dashboard after installing the recovery update\
+
+- SDE: `ccb28aeddad24d79a01daac3b0acf18c`
+- Significance: 3 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-09T15:36:43+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `5d479fde296e402aa6510b584eca2cf8`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `f6ed5714efc9bded023ac726f3ecca18f6c13f7f9600e17a978cbfd98992112e`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `0481d531c4792e5d539ca51489ccdc3ac084cec800f28570837db64a33eee359`
+- Supporting facts SHA-256: `6f33c0b86eb1deff365e2a7edaf4ae34ee516fc2a643cdcaddb7aa70828793ea`
+- Evidence state SHA-256: `e15502fe9245253ab275b9a31302489670336e8fd52467645dc422f5024e3569`
+- Destination baseline SHA-256: `9361b57b4f390c5e84279f1ebe64de107739093c09c5d6c9d17ec7be7f7046d1`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-09T14:29:39+07:00`
+- Successfully completed: `2026-11-09T14:30:16+07:00`
+- Problem / plan task: Confirm the project\-bound Hermes health snapshot and dashboard after installing the recovery update\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-09T15:36:43+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- The configured Hermes health and isolated dashboard proof passed for the bound Curator project\.
+
+- Future utility: Identify the installed update and project\-bound health proof when diagnosing recovery\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:dde42d0042306250ac0a01490331acd3864bfe7ad8d59c907814ac8dc4bda5cb -->
+<!-- curatormd-v2:sde:2a4fa0275b81d0fa35b0273582692b5058e5cfa4a29b58dbf13539be1317996c:end -->
+
+<!-- curatormd-v2:sde:e5037b318e6b495683c4240407d72d5933a96c29f98c3e7f8e62c46e9b7ff734:start -->
+### The configured Hermes health probe returns no snapshot for the Curator V2 project\
+
+- SDE: `1fa9c728d5744fca9ad918df3dc2f86c`
+- Significance: 3 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-09T14:09:09+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `797ec34e9e734294970b6e5771ee102c`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `7eb4d7df94c8963c1d1ddf92a8f839737af9e0200b81394be847f502d6e9b5c0`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `fbba506b9a952e143305deb548089fce64f258790902d08288ea3c7af960ae42`
+- Supporting facts SHA-256: `b2fc31fc1f9706c3add5438cbbac9717a1a36916dc73490d0bdd0eb9799a9913`
+- Evidence state SHA-256: `b75a9b8189689748db7df28b8319ffed0e4ec5c51dbf8ecbba02f28e02c0e0c8`
+- Destination baseline SHA-256: `85a5df2d55219ee9d56428b658b22c4e05ab2233817f6a7244b2d038fa0b907b`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-09T12:53:05+07:00`
+- Successfully completed: `2026-11-09T13:39:29+07:00`
+- Problem / plan task: The configured Hermes health probe returns no snapshot for the Curator V2 project\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-09T14:09:09+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Configured Hermes health probe and isolated VS Code dashboard proof passed for the bound project\.
+
+- Future utility: Use the recorded routing and proof to diagnose missing Hermes health snapshots\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:60c1183052b930897be8ff4d3272450d7c4332cf54d2d0983a030aea750b6b31 -->
+<!-- curatormd-v2:sde:e5037b318e6b495683c4240407d72d5933a96c29f98c3e7f8e62c46e9b7ff734:end -->
+
+<!-- curatormd-v2:sde:3b2fb5b4687b43f66f1ec59a5602a0e351d95f9de9a85466074065158eb027f2:start -->
+### Repair locally fixable Hermes Doctor issues across the three Curator V2 profiles while preserving credentials and upstream dependency findings\
+
+- SDE: `a29c41b5b88544e5b7d254c55b44155a`
+- Significance: 1 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-07T15:57:33+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `8fc51ef261d94ef7885b2038f93abc51`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `f99cd3bf501bd44a13de4be018587eae8156f2c3f867003782fef0e7c696373a`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `31bcbe5cec9befa149af2515d86d5fe9ae52e6c3be874f064cd965dc1fef9897`
+- Supporting facts SHA-256: `81c7bbeaf1d84121ea3d9e41e5b4d372e9c520af1d7bdac3f70c522bedeb6c2b`
+- Evidence state SHA-256: `d1ef646703a5034c91cf1c6a4524c26f2d96c7f1d2b0256493104bf259937fa4`
+- Destination baseline SHA-256: `f095c2674985b7104f8c6b9fdf495c4f5b616ffd2a65498072384f63388a2085`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-07T03:17:06+07:00`
+- Successfully completed: `2026-11-07T03:17:06+07:00`
+- Problem / plan task: Repair locally fixable Hermes Doctor issues across the three Curator V2 profiles while preserving credentials and upstream dependency findings\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-07T15:57:33+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Owner confirmed: use the existing populated global \.env for both profiles; Doctor confirms both profile configuration checks pass and remaining credential and upstream dependency findings are recorded\.
+
+- Future utility: Recall shared Hermes profile env wiring and remaining Doctor findings when troubleshooting these profiles\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+- `persistence/SOP.md`
+- `persistence/AGENTS.md`
+<!-- curatormd-v2:block-sha256:ddda500bbc0ce3c62ab7ce6eaba10c98a6618a303220071a9ec004d39f33ca72 -->
+<!-- curatormd-v2:sde:3b2fb5b4687b43f66f1ec59a5602a0e351d95f9de9a85466074065158eb027f2:end -->
+
+<!-- curatormd-v2:sde:72fadf207446d31134f84f06934774a21980a6d0ab0c3443f48fc562774a534a:start -->
+### Diagnose and clear the live Curator V2 dashboard warning that local inbox or review files could not be refreshed after accepted SDE entries were removed\
+
+- SDE: `81b2e4ef832a4410b0eba1d700788a10`
+- Significance: 2 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T21:26:35+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `5aa4edb8f83d4226a853bf3668afc8ed`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `1c5883d5e8bc3eef2474a2c1a1aefb8863ac6ed871559c319740d5df69bb5393`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `24c499321535a2e996ab23524972e1da809db5fd86952478db7cf04b63decbf8`
+- Supporting facts SHA-256: `da0eeec2ae323fabdbca500b32f57a20cc66fdb152cbd79c3281f069e359c849`
+- Evidence state SHA-256: `f9447c087c832954604f580fbda9732cf1d814e48d90743d98796cb6b17a39f2`
+- Destination baseline SHA-256: `67abd55f3604c79e78940dd674105db0b9600fd9babd7817e4af808d292c6fc5`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-06T16:21:35+07:00`
+- Successfully completed: `2026-11-06T20:40:34+07:00`
+- Problem / plan task: Diagnose and clear the live Curator V2 dashboard warning that local inbox or review files could not be refreshed after accepted SDE entries were removed\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T21:26:35+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Checks passed: live CMD2 refresh shows no local projection\-refresh warning while retaining failed\_count 2; pending review projection has zero candidates; focused extension tests passed 2/2, and node \-\-check plus git diff \-\-check passed\.
+
+- Future utility: Useful when troubleshooting stale approval\-review Markdown or dashboard refresh behavior after an SDE decision\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:e2ea07f053eb79e0bef8589518926dc1c5f3b3491b70cc7526a1f33c42c296a2 -->
+<!-- curatormd-v2:sde:72fadf207446d31134f84f06934774a21980a6d0ab0c3443f48fc562774a534a:end -->
+
+<!-- curatormd-v2:sde:4f3905e3d9ce1d3d8c60f5940d0299a691def8448be32f48a7172fee15ae0673:start -->
+### Repair the Curator V2 accepted\-SDE review refresh and degraded project\-health event reporting after five proposals were accepted but remain in pending review\
+
+- SDE: `1be52c7bfa8f4f7fad2ca0df40af6eee`
+- Significance: 2 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T16:13:02+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `bfbdaac5244f4fbab166eeeb4397398a`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `ccd4394a0907c577cf255f59f741b7d53266a07f4e586227a7549fbe5c77d371`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `cbe167534494eed796050abbc998afa6754694ac8d7e4986df8af2890b6b504e`
+- Supporting facts SHA-256: `40a249846458085dd72eae19ca22fbf5dee4331e2bfea133c07d282009c32e41`
+- Evidence state SHA-256: `e527df2b33870998f5a2324c0252abe225df73d64098a20f46b4caaa1c9b92c2`
+- Destination baseline SHA-256: `08734700d4b4910d3fb82c58aafa8bc5040019cdb5af138a564e202bb6e19eb8`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-06T15:58:50+07:00`
+- Successfully completed: `2026-11-06T16:08:40+07:00`
+- Problem / plan task: Repair the Curator V2 accepted\-SDE review refresh and degraded project\-health event reporting after five proposals were accepted but remain in pending review\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T16:13:02+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Checks passed: \`node \-\-test integrations/vscode\-status/extension\.test\.js\` passed all 48 tests and \`node \-\-check integrations/vscode\-status/extension\.js\` passed; Curator queue and local review projections read back zero candidates, all five recent proposals are approved, and the two separate historical failed event receipts remain reported\.
+
+#### Lessons learned
+
+- Use when diagnosing divergence between Curator's canonical SDE queue and generated VS Code review files\.
+
+- Future utility: Use when diagnosing divergence between Curator's canonical SDE queue and generated VS Code review files\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:528304b31497519e9c207751b9cdc2dc901dd4afcd51d8c8dea245d58ab2a9d9 -->
+<!-- curatormd-v2:sde:4f3905e3d9ce1d3d8c60f5940d0299a691def8448be32f48a7172fee15ae0673:end -->
+
+<!-- curatormd-v2:sde:124d4a3d2a6a0ea9b753678ea7b7a5607036d08db9366642ecdcafd322bee5bf:start -->
+### Verify whether a fresh Codex CLI thread creates a distinct Curator V2 task under the active natural\-language intake goal before local work\
+
+- SDE: `744f1aabee0d49bf81419c262dab4839`
+- Significance: 2 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T15:54:16+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `fed72b8a4a89430caa30fe2457260623`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `4608d7b6b1197196e82ae25825ad4652a729cce2acaf8cbd094cd733eb0247ba`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `71d9ac24d339d6cff19349ffe5d0befd1b89ea08b9f28a42f6ce05b5510bb41a`
+- Supporting facts SHA-256: `a03fe5bd5020ea5804f534bf4643f27c1774dc4fadf9b44b356e98d66c26832d`
+- Evidence state SHA-256: `13f9a99b1b6b76d8f81b0146bfbf72ba50ec13994822347da59cbad3c2d0d60d`
+- Destination baseline SHA-256: `c79314702b16d23dbf9ac8a9a9fe77f8d1e309a0cf23f3175535f4e328e9c1c5`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-05T21:01:29+07:00`
+- Successfully completed: `2026-11-05T23:39:38+07:00`
+- Problem / plan task: Verify whether a fresh Codex CLI thread creates a distinct Curator V2 task under the active natural\-language intake goal before local work\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T15:54:16+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Checks passed: \`uv run \-\-locked \-\-group test python \-m unittest discover \-s tests \-p 'test\_codex\_plugin\_hook\.py' \-v\` passed all 33 tests; fresh CLI intake reused this child and read back intent, while PreToolUse blocked premature shell access\.
+
+#### Lessons learned
+
+- Use when checking fresh\-thread Curator intake ordering and the local\-work guard\.
+
+- Future utility: Use when checking fresh\-thread Curator intake ordering and the local\-work guard\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:5e0b976eb5451e6f629d671c81a2af0022f9baf87fcc2209c3bd9092e7f7a35f -->
+<!-- curatormd-v2:sde:124d4a3d2a6a0ea9b753678ea7b7a5607036d08db9366642ecdcafd322bee5bf:end -->
+
+<!-- curatormd-v2:sde:9c8219d4730406f700ed56b8270c8fcea17be8f6c010ce38977ba381e81c9a66:start -->
+### Remove the persistence destination picker from the active Curator V2 VS Code SDE Accept flow; the picker remained visible after the prior source edit\
+
+- SDE: `fef0d7a5caa047abbcb63991a3dd3c2c`
+- Significance: 4 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T15:52:57+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `7602e95254d14ec19a0f3abaac849809`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `5a4c8a9b9a1e1a60b3e53a597e1e8f1fd22a41eff68235f4467c32742683506c`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `4aed8d59926e3346bee76391409e8d3f5323df18b44acbfee1b016228cfde95a`
+- Supporting facts SHA-256: `38cbfaa33d7da3aa50f894858a1aa75f9bb5a631a9cac978297a6ef45a0c3dad`
+- Evidence state SHA-256: `2b465bc432aa1b93d5a0a6bbc890cecb7129f0597932b427a7ad800c7829463c`
+- Destination baseline SHA-256: `be679b906b9139a6db856394dd77f9299b4f5ed3e831a0412932b5a8610a3a24`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-06T01:28:53+07:00`
+- Successfully completed: `2026-11-06T02:32:58+07:00`
+- Problem / plan task: Remove the persistence destination picker from the active Curator V2 VS Code SDE Accept flow; the picker remained visible after the prior source edit\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T15:52:57+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Checks passed: VS Code extension suite passed 47/47; after installing and reloading 0\.9\.69, live Accept auto\-saved both configured destinations with no picker\. The proposal remains pending\.
+
+- Future utility: When a tested VS Code extension fix is not visible, compare the installed package to source, install the corrected package, reload, and exercise the UI action\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:239b5a37d7ee1833c90585aef5999d295906961f2afec10c74eb791c4b3eb733 -->
+<!-- curatormd-v2:sde:9c8219d4730406f700ed56b8270c8fcea17be8f6c010ce38977ba381e81c9a66:end -->
+
+<!-- curatormd-v2:sde:d50d1adafa1317902374b9cca3c33757f932fdd01c238a2af965a655a0ba3a6a:start -->
+### Verify whether the pending VS Code Accept\-flow SDE proposal is supported by the completed task facts; its selected install fact says live verification remains open while the completion claim reports that it passed\
+
+- SDE: `a818f33a17de4db8a5a443dcbd37fd54`
+- Significance: 4 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T15:52:05+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `1859fac53c524a01addc8a76dbf1e50d`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `64a1a7a3f07b13d002512bf3ce9e46815190234bd17f31d065e7f26d05320c39`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `2d4629581d6e6d1ea8583bfa36dd0b0296786ef6367458460b78e1265b1a2c70`
+- Supporting facts SHA-256: `211cb003c97de2a072cda34a0adaf7fb263a8ff9240ffd6f9a70649e22297b8f`
+- Evidence state SHA-256: `cb7be4182309bac9f6d462f3a5f833f032e4a34002444c3e5057c06aa73c7796`
+- Destination baseline SHA-256: `915aa63727585ebe56c9e219327b9f9e75986f95fb5848d96a70a49770033f2c`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-06T02:38:41+07:00`
+- Successfully completed: `2026-11-06T14:31:08+07:00`
+- Problem / plan task: Verify whether the pending VS Code Accept\-flow SDE proposal is supported by the completed task facts; its selected install fact says live verification remains open while the completion claim reports that it passed\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T15:52:05+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Checks passed: the focused VS Code Accept interaction test and hosted\-MCP edited\-draft confirmation regression both pass\. Readback reconciled the earlier install checkpoint with the later verified completion claim; the original SDE remains pending for owner review\.
+
+- Future utility: When review binding succeeds but sde\_confirm returns an internal error, inspect MCP argument preprocessing; nullable JSON\-string parameters may be decoded into objects before validation\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:3da962cdaa8139b635a08da8ca9ebdf78a80e8d51d0648020b6ac52ddb67dd75 -->
+<!-- curatormd-v2:sde:d50d1adafa1317902374b9cca3c33757f932fdd01c238a2af965a655a0ba3a6a:end -->
+
+<!-- curatormd-v2:sde:2812cb5b2deeb90bd96955936484e7ed544b4ff08571128a6218b803ff8a803f:start -->
+### Make Curator V2 Codex intake automatically track ordinary work without an opt\-in capture command, using natural language for plan\-item and one\-off task lifecycle changes and owner\-reviewed pending SDE proposals at evidence\-backed endpoints\
+
+- SDE: `98cb52181c34404d9f5bc1668f7f81c7`
+- Significance: 4 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T15:48:31+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `1f7ce497f8d54fc99c7d93bd0170d571`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `c366d922db5580843677ef1eda07c75973e76964a73885fad264eeab4afc45cf`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `b2ed317b767b17bdd438af01450adfebaf54ebd5f03d654172d2f5a81156db3a`
+- Supporting facts SHA-256: `adc9491c8b0c764737a5c96cebd5023b7795fbe2bd76458cc4db2c04fd0c42e6`
+- Evidence state SHA-256: `62695f9025d91c64456534e311515bdc90cb2d5d6547e4add4bf21d8d8bd0a35`
+- Destination baseline SHA-256: `7f0f862bafe04260292ca92182a5308b8b6fd4e62dbb1a393fddfe588886f764`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-06T00:09:36+07:00`
+- Successfully completed: `2026-11-06T00:35:34+07:00`
+- Problem / plan task: Make Curator V2 Codex intake automatically track ordinary work without an opt\-in capture command, using natural language for plan\-item and one\-off task lifecycle changes and owner\-reviewed pending SDE proposals at evidence\-backed endpoints\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T15:48:31+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Checks passed: \`uv run \-\-locked \-\-group test python \-m unittest discover \-s tests \-v\` passed 621 tests; the focused Codex hook suite passed 33 tests after the MCP guidance fix; the VS Code suite passed 46 tests; Pyright, errors\-only Pylint, Bandit, and git diff \-\-check passed\.
+
+- Future utility: Use when applying Curator V2 natural\-language lifecycle intake, one\-off isolation, and post\-approval persistence/cleanup\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:d697d1662a3359bbaa540cd11bf7a679cb6af112b124db53403ac8d99ac7d712 -->
+<!-- curatormd-v2:sde:2812cb5b2deeb90bd96955936484e7ed544b4ff08571128a6218b803ff8a803f:end -->
+
+<!-- curatormd-v2:sde:fe9189707f9bc29e5a4cb02cb1dff6d8e6f13180595860a983efffae47d33aac:start -->
+### Document how an owner activates and verifies the Curator V2 Codex hooks in the plugin README\
+
+- SDE: `fae5df765e0c41a09f264338e32dfc51`
+- Significance: 2 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-06T15:47:40+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
+- Decision receipt: `ed94720de4b044c180da4ad19cecf5ae`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `b9e6dc6754c5f5f52578274b33450e5dc390845554a586b698d4c6b9ed9f592c`
+- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
+- Draft SHA-256: `89d7a3f5c861b0571d6f4b80ace302a26bfe4ed2c9a95fbb3b72c684b7898d76`
+- Supporting facts SHA-256: `79533a4a19eba194f8d3df83b1a9d53d41f4f890f05d573c743ce0f5bf0d1c54`
+- Evidence state SHA-256: `d682f2a55ac00c035da9fa1d19f389fcafaf3ed222d9729d236c5d6bb6655ada`
+- Destination baseline SHA-256: `c1426459b0b1b93faaf10b9ab4c71e8f2ca202653f1d3d5f702564d2a7f4efac`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-05T19:55:59+07:00`
+- Successfully completed: `2026-11-05T23:16:44+07:00`
+- Problem / plan task: Document how an owner activates and verifies the Curator V2 Codex hooks in the plugin README\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-06T15:47:40+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Completion claim: Owner confirmed: the plugin and root README hook activation guide is complete; saved local README source checks pass\.
+
+#### Lessons learned
+
+- Useful when a future consumer documents or verifies Codex hook activation\.
+
+- Future utility: Useful when a future consumer documents or verifies Codex hook activation\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/LESSONS-LEARNED.md`
+<!-- curatormd-v2:block-sha256:a42c2b4ca241743f07818a1e708b1e120a61b55b8c08964fa8b066e7d1e2edaf -->
+<!-- curatormd-v2:sde:fe9189707f9bc29e5a4cb02cb1dff6d8e6f13180595860a983efffae47d33aac:end -->
+
 ## 2026-10-30 — Show disposition and update time on goal cards
 
 - **Intent:** Make repeated activity goals distinguishable by current status
@@ -1588,6 +2002,7 @@
 ## 2026-10-19 — Curator V2 hosted CI and SDE review boundary
 
 **Decision:** - **Verified (2026-10-19):** Curator V2 commit `c5c7ede` passed hosted CI run `39277608798`, including the Python 3.12/3.13/3.14 test matrix, clean-wheel launcher smoke test, Pyright, blocking Pylint, Bandit, and dependency audit. The current local suite passes 287 tests on Python 3.13.15; full Pylint still reports 258 non-blocking findings.
+
 - **Implementation boundary:** project-scoped SDE review queue/detail/packet/decision API and MCP tools exist and are covered by tests. Production Hermes identity/role binding and reviewer UI remain open; local profile IDs and synthetic test authorizers are not production authentication.
 
 **Rationale:** Confirmed the current worktree, local test/quality results, and successful hosted workflow against its exact commit; inspected the API/MCP review methods and tests.
@@ -1639,6 +2054,7 @@
 ## 2026-10-19 — Hermes Codex lifecycle outbox prototype
 
 **Decision:** - 2026-10-19: Hermes Core source adds opt-in, profile-local SQLite delivery for Codex lifecycle hooks; bounded source envelopes are committed before dispatch, assigned stable IDs/sequences/timestamps, and retried in order until durable consumers explicitly return `True`.
+
 - Hermes local verification: focused Codex lifecycle/MCP/profile-isolation checks passed; A→B→A tests verify separate outboxes. Curator translator tests passed independently.
 - Scope remains local source/test evidence only: no Curator durable hook consumer, authenticated identity, session-to-goal binding, live lifecycle delivery, deployment, or end-to-end privacy/replay acceptance is verified.
 
@@ -1671,6 +2087,7 @@
 ## 2026-10-20 — Host Steward cleanup approval contract
 
 **Decision:** - Host Steward remains a Hermes Core account concern; CuratorMD does not own or invoke host cleanup.
+
 - Hermes source integration requires a proposal-bound one-time `once` decision plus a plugin-owned receipt; global approval bypasses and remembered approvals alone do not authorize cleanup.
 - Managed cleanup is restricted to the registered `empty_configured_cache` action on the exact configured target, with an unchanged inventory manifest and bounded receipts.
 - Hermes approval hooks expose the decision and surface but not an authenticated human subject to this plugin; owner-authenticated identity and live deployment remain open gates.
@@ -1724,6 +2141,7 @@
 ## 2026-10-20 — 2026-10-20 Hermes Core local Codex usage ledger
 
 **Decision:** - In the Hermes Core fork, Codex app-server turn-end usage is now recorded locally by explicit project binding in the profile-local `curatormd/codex-outbox.sqlite3`; aggregate reads separate totals by project and provider/model, and missing/invalid counts remain `unknown` rather than zero.
+
 - Token counts are excluded from hook deliveries and Curator event envelopes; 75 focused tests passed, the final outbox test passed again (8 tests), the full Hermes `scripts/check` passed (12 checks), and the post-final-edit Ruff/health checks passed.
 - This implementation covers Codex app-server turns only. Cross-provider aggregation, a user-facing read interface, budgets, retention/alerts, active-profile installation, and production identity verification remain open.
 
@@ -2012,6 +2430,7 @@
 ## 2026-10-20 — Hermes public hook MCP context for Curator lifecycle delivery
 
 **Decision:** - Intent: Route the Curator V2 Hermes adapter through a supported Hermes gateway hook API.
+
 - Changed: Added a public profile-scoped hook `ctx.call_mcp` capability with per-hook default-deny allowlists, bounded session context, and delegation to Hermes' existing managed MCP handler; extended PluginContext.call_mcp additively. The Curator adapter now requires the injected public capability and retains an asynchronous test seam only for in-memory fixtures.
 - Verified: Hermes focused hook/MCP/trust tests passed (52), Ruff and `scripts/check` (12 checks) passed. Curator's full suite passed (304), the Hermes adapter suite passed (3), Pyright reported 0 diagnostics, and errors-only Pylint, Bandit, and both `git diff --check` checks passed. The adapter acceptance test uses the public call shape across a separate Curator stdio MCP process and verifies duplicate delivery leaves one durable fact and receipt.
 - Open: Profile identity in tests is synthetic. Authenticated Hermes identity, real gateway/outbox delivery, deployment, and production permission binding remain open.
@@ -2025,6 +2444,7 @@
 ## 2026-10-20 — Hermes hook context preserves host-derived profile metadata
 
 **Decision:** - Changed: Added a Hermes trust-gate regression that invokes the gateway hook's public `HookContext.call_mcp` through the managed MCP handler.
+
 - Verified: The MCP request contains only the tool event arguments plus Hermes-derived profile ID, supplied host session ID, and literal durable-event marker in request metadata; the focused trust-gate suite passes 24 tests.
 - Open: The test uses a synthetic profile and fake MCP transport. Authenticated identity and live profile/gateway delivery remain unverified.
 
@@ -2037,6 +2457,7 @@
 ## 2026-10-20 — Keep Curator lifecycle MCP context on the gateway hook API
 
 **Decision:** - Changed: Removed the optional PluginContext.call_mcp extension after Hermes `scripts/check` correctly rejected growth in an already-over-target facade; the method is back at its prior behavior and baseline length. The supported Curator integration uses the profile gateway hook's public `HookContext.call_mcp` with its per-hook default-deny allowlist.
+
 - Verified: Hermes `scripts/check` passes all 12 checks after the removal. The final grouped gateway hook, plugin MCP, and MCP trust suites pass 46 tests; Ruff and `git diff --check` pass.
 - Open: Profile identity remains synthetic in tests; authenticated identity, live gateway delivery, and deployment remain unverified.
 
@@ -2049,6 +2470,7 @@
 ## 2026-10-20 — Prove local health degrades for pending review and held purge work
 
 **Decision:** - Changed: Extended API health coverage for an outstanding SDE review and a held artifact with a pending purge receipt and artifact.
+
 - Verified: Both cases return `degraded` with all dependency probes healthy and expose the exact review/purge/staging gate codes. The focused API suite passes 31 tests; the full Curator suite passes 305; Pyright reports 0 diagnostics; errors-only Pylint and Bandit pass.
 - Open: Production scheduler health, alert delivery, and production storage-adapter failure accounting remain unverified.
 
@@ -2141,6 +2563,7 @@
 ## 2026-10-20 — Verify canonical persistence precedes unheld artifact purge
 
 **Decision:** - The MCP SDE lifecycle acceptance test stages a held artifact and an unheld transient-content canary; it verifies canonical Markdown persistence before immediate purge of the unheld file, while the held file remains pending and the canary is absent from canonical Markdown.
+
 - Current Curator quality checks pass: Pyright reports 0 diagnostics; errors-only Pylint, Bandit, locked dependency audit, and `git diff --check` exit successfully. Full warning-level Pylint cleanup and production purge scheduling remain open.
 
 **Rationale:** The V2 purge contract requires canonical persistence before cleanup, distinct held-artifact behavior, and no raw transient content in canonical facts. The completed local quality checks establish the current static baseline without closing live-runtime or deployment gates.
@@ -2152,6 +2575,7 @@
 ## 2026-10-20 — Scope Curator SQLite connections with the store context manager
 
 **Decision:** - `CuratorStore` now supports `with` blocks and closes its SQLite connection on exit; project-access test setup uses `TestCase.enterContext` to own the store through teardown.
+
 - `ProjectActivitySnapshot` keeps exact built-in boolean validation through the shared runtime type guard. The full suite passes 320 tests; Pyright, errors-only Pylint, targeted resource/type Pylint, Bandit, and locked dependency audit pass. Full warning-level Pylint reports 272 findings, down from 274.
 
 **Rationale:** The store owns an open SQLite connection and tests had to manage cleanup manually. Context-manager support makes connection lifetime explicit; the shared exact-type guard retains runtime rejection of non-boolean values without relaxing validation.
@@ -2163,6 +2587,7 @@
 ## 2026-10-20 — Refactor the Hermes project-hook adapter
 
 **Decision:** - Curator's Hermes hook adapter now separates bounded payload construction, public MCP invocation, and durable-receipt validation while preserving skip (`None`) and retry (`False`) behavior and retaining only allowlisted event context.
+
 - The three focused adapter tests and full 320-test Curator suite pass; Pyright, errors-only Pylint, targeted adapter complexity checks, Bandit, and `git diff --check` pass. Full warning-level Pylint reports 270 findings, down from 272.
 - This is local adapter/source evidence; Hermes runtime activation, authenticated profile identity, and live outbox-to-Curator delivery remain open.
 
@@ -2175,6 +2600,7 @@
 ## 2026-10-20 — Exercise Hermes durable hook dispatch through managed MCP
 
 **Decision:** - Added a Hermes gateway regression that binds a session and goal in the profile-local outbox, persists a bounded Codex event, dispatches it through a durable hook receiving public `ctx`, calls the allowlisted managed MCP handler with session/durable-event context, and acknowledges only a processed receipt.
+
 - `scripts/run_tests.sh tests/gateway/test_hooks.py` passes all 12 tests; Hermes `scripts/check` passes 12 checks. The managed MCP handler factory is stubbed at its connection seam, so configured Curator stdio, authenticated identity, and live profile activation remain unverified.
 
 **Rationale:** The existing Hermes tests covered durable outbox delivery and public managed-MCP capability in isolation. Combining those paths verifies the real gateway hook dispatcher passes its public context and only clears the durable event after an explicit successful receipt.
@@ -2196,6 +2622,7 @@
 ## 2026-10-20 — Exercise Hermes managed MCP handler in durable hook test
 
 **Decision:** - The Hermes gateway regression now runs the production `_make_tool_handler` and managed MCP dispatch against a fake connected session/background test loop, and verifies the processed receipt clears the persisted event while request metadata contains Hermes-derived profile/session plus the durable marker.
+
 - `scripts/run_tests.sh tests/gateway/test_hooks.py` passes all 12 tests; `python3 scripts/check` passes 12 checks; Hermes and Curator `git diff --check` pass.
 - This is local source/test evidence only. Configured Curator stdio launch, authenticated identity, profile authorization, live gateway delivery, and deployment remain open.
 
@@ -2769,7 +3196,6 @@
 
 **Outcome:** The deployed Vhost alpha route now produces acknowledged Hermes outbox events and processed Curator receipts. The natural-language CLI response claimed the bind had failed, while the persisted Hermes binding and Curator receipts show it completed; persisted state is the verification evidence. No V1 or GPTMD source/state was used.
 
-
 ## 2026-10-21 — Verify Curator V2 profile health after live receipt replay
 
 **Intent:** Confirm current V2 operational readiness independently from successful event receipts and avoid treating a working route as an overall healthy service.
@@ -2781,7 +3207,6 @@
 **Open gate:** Supply independently trusted readiness observations and approved identity/retention/recovery policy before claiming the global service is healthy or production-ready. V2 checklist progress remains 133/211 (78 open).
 
 **Outcome:** V2 persistence has verified processed lifecycle receipts, while overall readiness correctly remains unknown. This fact concerns the Curator V2 profile and does not report V1 status.
-
 
 ## 2026-10-21 — Compose Hermes lifecycle delivery with Vhost persistence
 
@@ -6635,6 +7060,7 @@ deployed consumer lifecycle. No checklist checkbox changed; progress remains
 
 **Outcome:** The same drain policy is passed as one typed value and its exact
 authorization checks are preserved.
+
 ## 2026-10-24 — Split durable-event test groups for focused Pylint cleanup
 
 **Intent:** Remove the event test class's excess-public-method warning while
@@ -8018,7 +8444,6 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** No existing gateway, web, or editor MCP process was restarted; fresh stdio verification does not claim those long-lived processes reloaded the wheel. No real certificate renewal, authenticated Hermes person, production route, or production readiness is claimed.
 - **Outcome:** Installed and exercised the current V2 alpha package at its dedicated local consumer profile while retaining a verified rollback archive.
 
-
 ## 2026-10-26 — Close standalone and multi-consumer alpha scope
 
 - **Intent:** Finish the Vhost standalone-utility coverage within the approved one-repository development alpha.
@@ -8026,7 +8451,6 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Re-ran the six focused disposable Vhost tests for those workflows; all passed. The evidence is bound to the current dirty Vhost checkout by the 24-file manifest digest in `docs/vhost-producer-coverage-v2.md`.
 - **Open gate:** Persistent-log retention, actual certificate renewal, production identity/runtime, and release approval remain open. Shared multi-consumer support reopens only if the owner expands scope.
 - **Outcome:** Closed local standalone coverage and clarified that multi-consumer runtime is not an alpha requirement; no checklist marker changed.
-
 
 ## 2026-10-26 — Bind standalone closure to pushed Vhost sources
 
@@ -9244,8 +9668,6 @@ while preserving explicit criteria and same-project parent validation.
 - **Open gate:** Direct Codex MCP without Hermes context remains unauthenticated by design; supported profile access is verified. This does not establish human identity or live event delivery. Slice G and production gates remain open; no checklist marker changed.
 - **Outcome:** Clarify the supported local access path without equating missing Codex caller context with a failed Curator ledger.
 
-
-
 ## 2026-10-27 — Verify the local alpha dashboard and alert surface
 
 - **Intent:** Finish the local V2 operator dashboard/alert requirement for the approved single-user development alpha.
@@ -9397,6 +9819,7 @@ while preserving explicit criteria and same-project parent validation.
 - **Verification:** Read the current Vhost checkout's `docs/curatormd-v2-alpha.md` sections “Vhost apply receipt bridge” and “SSL renewal receipt bridge”; the consumer documentation identifies the runs as local utility operations and distinguishes the fake ACME path from real renewal.
 - **Open gate:** Those operations predate the current request-bound exact problem/criteria preview and retry contract. No packet yet binds that current request and criteria to fingerprints, a bounded report, replay/restart, and out-of-scope hashes. Keep the Definition of done item open; no checklist marker changed.
 - **Outcome:** Preserve the verified local runs while narrowing the remaining evidence gap to the current request contract and its reviewed acceptance packet.
+
 ## 2026-10-28 — Reverify the local Curator V2 quality gate
 
 **Intent:** Complete the previously requested check of the current Curator V2 quality commands and record their result without rerunning the already-passing unit suite.
@@ -12242,6 +12665,7 @@ Pylint, Bandit, and `git diff --check` pass.
 
 <!-- curatormd-v2:goal:5ece0a846014501e891f2e3beed0bc913e80857842c58a3d9eafc2dca8f9c6c5:start -->
 ### Goal `vscode\-task\-01aeebd949afde13f163cfbf6c677856cf37c30be7f3eac66546d94302a1dde0`
+
 - Project: `curatormd\-v2\-dev\-alpha`
 - Problem: Complete remaining open requirements in Curator V2 at docs/curator\-v2\-plan\.md and docs/Repair V2 dashboard health and queue feeds PLAN\.md\.
 - Status: `active`
@@ -12257,414 +12681,48 @@ Pylint, Bandit, and `git diff --check` pass.
 <!-- curatormd-v2:block-sha256:d70af11b4b1af9a679b8601db6147e7a96d6f73af838d8ea8fab7cc67326faf3 -->
 <!-- curatormd-v2:goal:5ece0a846014501e891f2e3beed0bc913e80857842c58a3d9eafc2dca8f9c6c5:end -->
 
-<!-- curatormd-v2:sde:fe9189707f9bc29e5a4cb02cb1dff6d8e6f13180595860a983efffae47d33aac:start -->
-### Document how an owner activates and verifies the Curator V2 Codex hooks in the plugin README\.
+<!-- curatormd-v2:sde:4e4b1a5f042091c20e6002ce8953b08505bc499e07f4a6fc16560e4a1e809ad7:start -->
+### The current Curator V2 health read is unknown because all seven host dependencies are unobserved, despite a complete empty database queue snapshot\.
 
-- SDE: `fae5df765e0c41a09f264338e32dfc51`
+- SDE: `1ca610bc21984344b311a1706bd58679`
 - Significance: 2 / 5
 - Significance use: guides future compression, summarization, archiving, and culling decisions.
 - Decision: approved
-- Reviewed: `2026-11-06T15:47:40+07:00`
+- Reviewed: `2026-11-11T14:54:52+07:00`
 - Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `ed94720de4b044c180da4ad19cecf5ae`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md, persistence/SOP\.md, persistence/AGENTS\.md\.
+- Decision receipt: `0cd607fe00e44ef7960d93a3b09ceec7`
 - Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `b9e6dc6754c5f5f52578274b33450e5dc390845554a586b698d4c6b9ed9f592c`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `89d7a3f5c861b0571d6f4b80ace302a26bfe4ed2c9a95fbb3b72c684b7898d76`
-- Supporting facts SHA-256: `79533a4a19eba194f8d3df83b1a9d53d41f4f890f05d573c743ce0f5bf0d1c54`
-- Evidence state SHA-256: `d682f2a55ac00c035da9fa1d19f389fcafaf3ed222d9729d236c5d6bb6655ada`
-- Destination baseline SHA-256: `c1426459b0b1b93faaf10b9ab4c71e8f2ca202653f1d3d5f702564d2a7f4efac`
+- Receipt binding SHA-256: `0ee2ff6bca0b00b4a4a0262995610d47f5c87815b85c5b2801c88fc06fb39b34`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `ee158597bf7b041f5b90edcec181ff06e745254511df2f3e5125f4cbeced60fb`
+- Supporting facts SHA-256: `c91672c4ace42e7f386dde09df9b851d6d8f4c0112ebff85175a44e81ea5e047`
+- Evidence state SHA-256: `7e8d3fc3a22e0d28f5b596e39c527df2de904606b3e54f38c8ee31009fad3088`
+- Destination baseline SHA-256: `b67ff039c0396294ffed454f2acc85a47adb25f5d69928da14788805509fc69b`
 - Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
 - Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-05T19:55:59+07:00`
-- Successfully completed: `2026-11-05T23:16:44+07:00`
-- Problem / plan task: Document how an owner activates and verifies the Curator V2 Codex hooks in the plugin README\.
+- Task started: `2026-11-11T14:42:27+07:00`
+- Successfully completed: `2026-11-11T14:49:12+07:00`
+- Problem / plan task: The current Curator V2 health read is unknown because all seven host dependencies are unobserved, despite a complete empty database queue snapshot\.
 - Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T15:47:40+07:00`
+- Cleanup authorization time: `2026-11-11T14:54:52+07:00`
 - Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
 
 #### Completed successfully
 
-- Completion claim: Owner confirmed: the plugin and root README hook activation guide is complete; saved local README source checks pass\.
+- The host\-configured curator\-health\-dashboard proof passed for curatormd\-v2\-dev\-alpha: the profile\-bound Hermes snapshot was fresh and healthy with all seven dependencies healthy and no gates; the independent queue snapshot was complete with zero event and operational counts\. The earlier direct Codex project\_health result was unknown because that caller had no host dependency context\.
 
 #### Lessons learned
 
-- Useful when a future consumer documents or verifies Codex hook activation\.
+- When Curator health appears unknown from a direct Codex call, use the project\-bound Hermes dashboard probe and separate queue snapshot before diagnosing degradation\.
 
-- Future utility: Useful when a future consumer documents or verifies Codex hook activation\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:da49613fc4328505030d977cf6f941c205b2162ceed6c5805dfc3c20d5e723cd -->
-<!-- curatormd-v2:sde:fe9189707f9bc29e5a4cb02cb1dff6d8e6f13180595860a983efffae47d33aac:end -->
-
-<!-- curatormd-v2:sde:2812cb5b2deeb90bd96955936484e7ed544b4ff08571128a6218b803ff8a803f:start -->
-### Make Curator V2 Codex intake automatically track ordinary work without an opt\-in capture command, using natural language for plan\-item and one\-off task lifecycle changes and owner\-reviewed pending SDE proposals at evidence\-backed endpoints\.
-
-- SDE: `98cb52181c34404d9f5bc1668f7f81c7`
-- Significance: 4 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-06T15:48:31+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `1f7ce497f8d54fc99c7d93bd0170d571`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `c366d922db5580843677ef1eda07c75973e76964a73885fad264eeab4afc45cf`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `b2ed317b767b17bdd438af01450adfebaf54ebd5f03d654172d2f5a81156db3a`
-- Supporting facts SHA-256: `adc9491c8b0c764737a5c96cebd5023b7795fbe2bd76458cc4db2c04fd0c42e6`
-- Evidence state SHA-256: `62695f9025d91c64456534e311515bdc90cb2d5d6547e4add4bf21d8d8bd0a35`
-- Destination baseline SHA-256: `7f0f862bafe04260292ca92182a5308b8b6fd4e62dbb1a393fddfe588886f764`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-06T00:09:36+07:00`
-- Successfully completed: `2026-11-06T00:35:34+07:00`
-- Problem / plan task: Make Curator V2 Codex intake automatically track ordinary work without an opt\-in capture command, using natural language for plan\-item and one\-off task lifecycle changes and owner\-reviewed pending SDE proposals at evidence\-backed endpoints\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T15:48:31+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Checks passed: \`uv run \-\-locked \-\-group test python \-m unittest discover \-s tests \-v\` passed 621 tests; the focused Codex hook suite passed 33 tests after the MCP guidance fix; the VS Code suite passed 46 tests; Pyright, errors\-only Pylint, Bandit, and git diff \-\-check passed\.
-
-- Future utility: Use when applying Curator V2 natural\-language lifecycle intake, one\-off isolation, and post\-approval persistence/cleanup\.
+- Future utility: When Curator health appears unknown from a direct Codex call, use the project\-bound Hermes dashboard probe and separate queue snapshot before diagnosing degradation\.
 
 #### Approved persistence destinations
 
+- `persistence/AGENTS.md`
 - `persistence/HISTORY.md`
 - `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:f26cca5b7c713dbbfb7944c7f76cce53f2095852ec9a93872202c54c350d63d0 -->
-<!-- curatormd-v2:sde:2812cb5b2deeb90bd96955936484e7ed544b4ff08571128a6218b803ff8a803f:end -->
-
-<!-- curatormd-v2:sde:d50d1adafa1317902374b9cca3c33757f932fdd01c238a2af965a655a0ba3a6a:start -->
-### Verify whether the pending VS Code Accept\-flow SDE proposal is supported by the completed task facts; its selected install fact says live verification remains open while the completion claim reports that it passed\.
-
-- SDE: `a818f33a17de4db8a5a443dcbd37fd54`
-- Significance: 4 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-06T15:52:05+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `1859fac53c524a01addc8a76dbf1e50d`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `64a1a7a3f07b13d002512bf3ce9e46815190234bd17f31d065e7f26d05320c39`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `2d4629581d6e6d1ea8583bfa36dd0b0296786ef6367458460b78e1265b1a2c70`
-- Supporting facts SHA-256: `211cb003c97de2a072cda34a0adaf7fb263a8ff9240ffd6f9a70649e22297b8f`
-- Evidence state SHA-256: `cb7be4182309bac9f6d462f3a5f833f032e4a34002444c3e5057c06aa73c7796`
-- Destination baseline SHA-256: `915aa63727585ebe56c9e219327b9f9e75986f95fb5848d96a70a49770033f2c`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-06T02:38:41+07:00`
-- Successfully completed: `2026-11-06T14:31:08+07:00`
-- Problem / plan task: Verify whether the pending VS Code Accept\-flow SDE proposal is supported by the completed task facts; its selected install fact says live verification remains open while the completion claim reports that it passed\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T15:52:05+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Checks passed: the focused VS Code Accept interaction test and hosted\-MCP edited\-draft confirmation regression both pass\. Readback reconciled the earlier install checkpoint with the later verified completion claim; the original SDE remains pending for owner review\.
-
-- Future utility: When review binding succeeds but sde\_confirm returns an internal error, inspect MCP argument preprocessing; nullable JSON\-string parameters may be decoded into objects before validation\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:5c6c014881d0d3aef3acc1a21d44dfa032da80986919157ecb7381868dc3b1e3 -->
-<!-- curatormd-v2:sde:d50d1adafa1317902374b9cca3c33757f932fdd01c238a2af965a655a0ba3a6a:end -->
-
-<!-- curatormd-v2:sde:9c8219d4730406f700ed56b8270c8fcea17be8f6c010ce38977ba381e81c9a66:start -->
-### Remove the persistence destination picker from the active Curator V2 VS Code SDE Accept flow; the picker remained visible after the prior source edit\.
-
-- SDE: `fef0d7a5caa047abbcb63991a3dd3c2c`
-- Significance: 4 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-06T15:52:57+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `7602e95254d14ec19a0f3abaac849809`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `5a4c8a9b9a1e1a60b3e53a597e1e8f1fd22a41eff68235f4467c32742683506c`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `4aed8d59926e3346bee76391409e8d3f5323df18b44acbfee1b016228cfde95a`
-- Supporting facts SHA-256: `38cbfaa33d7da3aa50f894858a1aa75f9bb5a631a9cac978297a6ef45a0c3dad`
-- Evidence state SHA-256: `2b465bc432aa1b93d5a0a6bbc890cecb7129f0597932b427a7ad800c7829463c`
-- Destination baseline SHA-256: `be679b906b9139a6db856394dd77f9299b4f5ed3e831a0412932b5a8610a3a24`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-06T01:28:53+07:00`
-- Successfully completed: `2026-11-06T02:32:58+07:00`
-- Problem / plan task: Remove the persistence destination picker from the active Curator V2 VS Code SDE Accept flow; the picker remained visible after the prior source edit\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T15:52:57+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Checks passed: VS Code extension suite passed 47/47; after installing and reloading 0\.9\.69, live Accept auto\-saved both configured destinations with no picker\. The proposal remains pending\.
-
-- Future utility: When a tested VS Code extension fix is not visible, compare the installed package to source, install the corrected package, reload, and exercise the UI action\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:9afb7e3a060799a94c86c181dbc92b34f063530f583d9a5ae570fb641af6fd4e -->
-<!-- curatormd-v2:sde:9c8219d4730406f700ed56b8270c8fcea17be8f6c010ce38977ba381e81c9a66:end -->
-
-<!-- curatormd-v2:sde:124d4a3d2a6a0ea9b753678ea7b7a5607036d08db9366642ecdcafd322bee5bf:start -->
-### Verify whether a fresh Codex CLI thread creates a distinct Curator V2 task under the active natural\-language intake goal before local work\.
-
-- SDE: `744f1aabee0d49bf81419c262dab4839`
-- Significance: 2 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-06T15:54:16+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `fed72b8a4a89430caa30fe2457260623`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `4608d7b6b1197196e82ae25825ad4652a729cce2acaf8cbd094cd733eb0247ba`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `71d9ac24d339d6cff19349ffe5d0befd1b89ea08b9f28a42f6ce05b5510bb41a`
-- Supporting facts SHA-256: `a03fe5bd5020ea5804f534bf4643f27c1774dc4fadf9b44b356e98d66c26832d`
-- Evidence state SHA-256: `13f9a99b1b6b76d8f81b0146bfbf72ba50ec13994822347da59cbad3c2d0d60d`
-- Destination baseline SHA-256: `c79314702b16d23dbf9ac8a9a9fe77f8d1e309a0cf23f3175535f4e328e9c1c5`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-05T21:01:29+07:00`
-- Successfully completed: `2026-11-05T23:39:38+07:00`
-- Problem / plan task: Verify whether a fresh Codex CLI thread creates a distinct Curator V2 task under the active natural\-language intake goal before local work\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T15:54:16+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Checks passed: \`uv run \-\-locked \-\-group test python \-m unittest discover \-s tests \-p 'test\_codex\_plugin\_hook\.py' \-v\` passed all 33 tests; fresh CLI intake reused this child and read back intent, while PreToolUse blocked premature shell access\.
-
-#### Lessons learned
-
-- Use when checking fresh\-thread Curator intake ordering and the local\-work guard\.
-
-- Future utility: Use when checking fresh\-thread Curator intake ordering and the local\-work guard\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:3f13da36211ae3ee7a286d689a7343da703db0edd7e6c9bc6ee60cfa5e8df448 -->
-<!-- curatormd-v2:sde:124d4a3d2a6a0ea9b753678ea7b7a5607036d08db9366642ecdcafd322bee5bf:end -->
-
-<!-- curatormd-v2:sde:4f3905e3d9ce1d3d8c60f5940d0299a691def8448be32f48a7172fee15ae0673:start -->
-### Repair the Curator V2 accepted\-SDE review refresh and degraded project\-health event reporting after five proposals were accepted but remain in pending review\.
-
-- SDE: `1be52c7bfa8f4f7fad2ca0df40af6eee`
-- Significance: 2 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-06T16:13:02+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `bfbdaac5244f4fbab166eeeb4397398a`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `ccd4394a0907c577cf255f59f741b7d53266a07f4e586227a7549fbe5c77d371`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `cbe167534494eed796050abbc998afa6754694ac8d7e4986df8af2890b6b504e`
-- Supporting facts SHA-256: `40a249846458085dd72eae19ca22fbf5dee4331e2bfea133c07d282009c32e41`
-- Evidence state SHA-256: `e527df2b33870998f5a2324c0252abe225df73d64098a20f46b4caaa1c9b92c2`
-- Destination baseline SHA-256: `08734700d4b4910d3fb82c58aafa8bc5040019cdb5af138a564e202bb6e19eb8`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-06T15:58:50+07:00`
-- Successfully completed: `2026-11-06T16:08:40+07:00`
-- Problem / plan task: Repair the Curator V2 accepted\-SDE review refresh and degraded project\-health event reporting after five proposals were accepted but remain in pending review\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T16:13:02+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Checks passed: \`node \-\-test integrations/vscode\-status/extension\.test\.js\` passed all 48 tests and \`node \-\-check integrations/vscode\-status/extension\.js\` passed; Curator queue and local review projections read back zero candidates, all five recent proposals are approved, and the two separate historical failed event receipts remain reported\.
-
-#### Lessons learned
-
-- Use when diagnosing divergence between Curator's canonical SDE queue and generated VS Code review files\.
-
-- Future utility: Use when diagnosing divergence between Curator's canonical SDE queue and generated VS Code review files\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:2e4fa5a4ff2bdade3143da3c4e447e172a82eb2d2214ed9ddcf63176f01fd458 -->
-<!-- curatormd-v2:sde:4f3905e3d9ce1d3d8c60f5940d0299a691def8448be32f48a7172fee15ae0673:end -->
-
-<!-- curatormd-v2:sde:72fadf207446d31134f84f06934774a21980a6d0ab0c3443f48fc562774a534a:start -->
-### Diagnose and clear the live Curator V2 dashboard warning that local inbox or review files could not be refreshed after accepted SDE entries were removed\.
-
-- SDE: `81b2e4ef832a4410b0eba1d700788a10`
-- Significance: 2 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-06T21:26:35+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `5aa4edb8f83d4226a853bf3668afc8ed`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `1c5883d5e8bc3eef2474a2c1a1aefb8863ac6ed871559c319740d5df69bb5393`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `24c499321535a2e996ab23524972e1da809db5fd86952478db7cf04b63decbf8`
-- Supporting facts SHA-256: `da0eeec2ae323fabdbca500b32f57a20cc66fdb152cbd79c3281f069e359c849`
-- Evidence state SHA-256: `f9447c087c832954604f580fbda9732cf1d814e48d90743d98796cb6b17a39f2`
-- Destination baseline SHA-256: `67abd55f3604c79e78940dd674105db0b9600fd9babd7817e4af808d292c6fc5`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-06T16:21:35+07:00`
-- Successfully completed: `2026-11-06T20:40:34+07:00`
-- Problem / plan task: Diagnose and clear the live Curator V2 dashboard warning that local inbox or review files could not be refreshed after accepted SDE entries were removed\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-06T21:26:35+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Checks passed: live CMD2 refresh shows no local projection\-refresh warning while retaining failed\_count 2; pending review projection has zero candidates; focused extension tests passed 2/2, and node \-\-check plus git diff \-\-check passed\.
-
-- Future utility: Useful when troubleshooting stale approval\-review Markdown or dashboard refresh behavior after an SDE decision\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:abe59d096c3687fdd7fabd539cb708a757379475e41bdb4ef2dfa831d0d8cd0c -->
-<!-- curatormd-v2:sde:72fadf207446d31134f84f06934774a21980a6d0ab0c3443f48fc562774a534a:end -->
-
-<!-- curatormd-v2:sde:3b2fb5b4687b43f66f1ec59a5602a0e351d95f9de9a85466074065158eb027f2:start -->
-### Repair locally fixable Hermes Doctor issues across the three Curator V2 profiles while preserving credentials and upstream dependency findings\.
-
-- SDE: `a29c41b5b88544e5b7d254c55b44155a`
-- Significance: 1 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-07T15:57:33+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `8fc51ef261d94ef7885b2038f93abc51`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `f99cd3bf501bd44a13de4be018587eae8156f2c3f867003782fef0e7c696373a`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `31bcbe5cec9befa149af2515d86d5fe9ae52e6c3be874f064cd965dc1fef9897`
-- Supporting facts SHA-256: `81c7bbeaf1d84121ea3d9e41e5b4d372e9c520af1d7bdac3f70c522bedeb6c2b`
-- Evidence state SHA-256: `d1ef646703a5034c91cf1c6a4524c26f2d96c7f1d2b0256493104bf259937fa4`
-- Destination baseline SHA-256: `f095c2674985b7104f8c6b9fdf495c4f5b616ffd2a65498072384f63388a2085`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-07T03:17:06+07:00`
-- Successfully completed: `2026-11-07T03:17:06+07:00`
-- Problem / plan task: Repair locally fixable Hermes Doctor issues across the three Curator V2 profiles while preserving credentials and upstream dependency findings\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-07T15:57:33+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Completion claim: Owner confirmed: use the existing populated global \.env for both profiles; Doctor confirms both profile configuration checks pass and remaining credential and upstream dependency findings are recorded\.
-
-- Future utility: Recall shared Hermes profile env wiring and remaining Doctor findings when troubleshooting these profiles\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:a4929d6a1ecbd1adcac0bf11daa1516228c5c3fd1c3770c68c1063dafb825c98 -->
-<!-- curatormd-v2:sde:3b2fb5b4687b43f66f1ec59a5602a0e351d95f9de9a85466074065158eb027f2:end -->
-
-<!-- curatormd-v2:sde:e5037b318e6b495683c4240407d72d5933a96c29f98c3e7f8e62c46e9b7ff734:start -->
-### The configured Hermes health probe returns no snapshot for the Curator V2 project\.
-
-- SDE: `1fa9c728d5744fca9ad918df3dc2f86c`
-- Significance: 3 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-09T14:09:09+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `797ec34e9e734294970b6e5771ee102c`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `7eb4d7df94c8963c1d1ddf92a8f839737af9e0200b81394be847f502d6e9b5c0`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `fbba506b9a952e143305deb548089fce64f258790902d08288ea3c7af960ae42`
-- Supporting facts SHA-256: `b2fc31fc1f9706c3add5438cbbac9717a1a36916dc73490d0bdd0eb9799a9913`
-- Evidence state SHA-256: `b75a9b8189689748db7df28b8319ffed0e4ec5c51dbf8ecbba02f28e02c0e0c8`
-- Destination baseline SHA-256: `85a5df2d55219ee9d56428b658b22c4e05ab2233817f6a7244b2d038fa0b907b`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-09T12:53:05+07:00`
-- Successfully completed: `2026-11-09T13:39:29+07:00`
-- Problem / plan task: The configured Hermes health probe returns no snapshot for the Curator V2 project\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-09T14:09:09+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- Configured Hermes health probe and isolated VS Code dashboard proof passed for the bound project\.
-
-- Future utility: Use the recorded routing and proof to diagnose missing Hermes health snapshots\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:35a512800f328446ec92a9fcd9a693affd7c08509d9d2424df69a28de400bb03 -->
-<!-- curatormd-v2:sde:e5037b318e6b495683c4240407d72d5933a96c29f98c3e7f8e62c46e9b7ff734:end -->
-
-<!-- curatormd-v2:sde:2a4fa0275b81d0fa35b0273582692b5058e5cfa4a29b58dbf13539be1317996c:start -->
-### Confirm the project\-bound Hermes health snapshot and dashboard after installing the recovery update\.
-
-- SDE: `ccb28aeddad24d79a01daac3b0acf18c`
-- Significance: 3 / 5
-- Significance use: guides future compression, summarization, archiving, and culling decisions.
-- Decision: approved
-- Reviewed: `2026-11-09T15:36:43+07:00`
-- Reviewer: `local-uid:1000`
-- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/LESSONS\-LEARNED\.md\.
-- Decision receipt: `5d479fde296e402aa6510b584eca2cf8`
-- Project ID: `curatormd-v2-dev-alpha`
-- Receipt binding SHA-256: `f6ed5714efc9bded023ac726f3ecca18f6c13f7f9600e17a978cbfd98992112e`
-- Project config SHA-256: `9af8812d008d753121489dd3c4e4a41768ddb6b56aa8b9fa27c95d06333c547e`
-- Draft SHA-256: `0481d531c4792e5d539ca51489ccdc3ac084cec800f28570837db64a33eee359`
-- Supporting facts SHA-256: `6f33c0b86eb1deff365e2a7edaf4ae34ee516fc2a643cdcaddb7aa70828793ea`
-- Evidence state SHA-256: `e15502fe9245253ab275b9a31302489670336e8fd52467645dc422f5024e3569`
-- Destination baseline SHA-256: `9361b57b4f390c5e84279f1ebe64de107739093c09c5d6c9d17ec7be7f7046d1`
-- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-- Task started: `2026-11-09T14:29:39+07:00`
-- Successfully completed: `2026-11-09T14:30:16+07:00`
-- Problem / plan task: Confirm the project\-bound Hermes health snapshot and dashboard after installing the recovery update\.
-- Cleanup authorization reviewer: `local-uid:1000`
-- Cleanup authorization time: `2026-11-09T15:36:43+07:00`
-- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
-
-#### Completed successfully
-
-- The configured Hermes health and isolated dashboard proof passed for the bound Curator project\.
-
-- Future utility: Identify the installed update and project\-bound health proof when diagnosing recovery\.
-
-#### Approved persistence destinations
-
-- `persistence/HISTORY.md`
-- `persistence/LESSONS-LEARNED.md`
-<!-- curatormd-v2:block-sha256:d4fffeff9fc0f84191588739201d702e09a9ddc5a95073c28329480d690b0c33 -->
-<!-- curatormd-v2:sde:2a4fa0275b81d0fa35b0273582692b5058e5cfa4a29b58dbf13539be1317996c:end -->
+- `persistence/SOP.md`
+<!-- curatormd-v2:block-sha256:66d00dd9c140c47ffc7a66a58db158f9d78cd78c26c7003fc0b32b43fcfd38fb -->
+<!-- curatormd-v2:sde:4e4b1a5f042091c20e6002ce8953b08505bc499e07f4a6fc16560e4a1e809ad7:end -->

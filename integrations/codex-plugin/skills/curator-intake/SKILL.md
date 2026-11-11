@@ -17,7 +17,8 @@ engineering criteria. Ask the owner about material product decisions, resolve
 routine implementation choices within agreed scope, and continue work that
 does not depend on an unanswered decision.
 
-Curator task tracking is the default workflow for non-trivial development,
+Curator task tracking is the default workflow for development, including quick
+formatting work, and for non-trivial
 inspection, debugging, and research. It is not an optional capture mode. Before
 analysis, commands, or edits, state the problem and observable success checks,
 read existing goals, and create or reuse the matching active task. For a plan,
@@ -67,6 +68,9 @@ short clarification while preserving task state.
   may use `aotask <parent-or-child>:` to add progress to that existing goal's
   scope and saved criteria, keeping the same goal ID. The hook retains only the
   normalized prefix category and blocks `goal_start` for `aotask`.
+  `aatask:` means an aside unrelated to this repository: handle it without
+  creating or changing the current project's goals, facts, lifecycle, or SDEs.
+  Leave any existing task as it is and return to it only when the user asks.
   Save intent and checks, and
   say “Beginning task tracking.” For each newly started
   goal, state the same compact kickoff in this exact form: `Problem: <what is
@@ -79,16 +83,16 @@ short clarification while preserving task state.
 - Progress language records changed facts and checks as work proceeds. Saying
   “moving to the next item”, “check this off”, “mark this complete”, “done with
   this item”, or similar means close out the current item before moving on.
-  Run the relevant test or lint check, or use the owner's explicit confirmation
-  that it works. Record that result, call `goal_finish` when it passes, then activate the next planned child
+  Record the observed result and available checks, call `goal_finish` when the
+  task is done, then activate the next planned child
   with `goal_activate`. Every completed task must get its own pending SDE
   proposal before another plan item is activated. Call `sde_review_detail` for
   that candidate and confirm its goal ID and `pending_review` status. Present
   its facts as recommendations; the user decides importance and disposition.
   Before lifecycle calls, read
   `goal_status` and pass its
-  current lifecycle revision. If the check failed or was not run and the owner
-  has not confirmed it works, keep the item open and say what remains.
+  current lifecycle revision. If the outcome is uncertain, ask for guidance
+  and say what remains.
 - Holding language (“pause”, “hold”, “put it aside”, “not now”, “park this”, or
   “shelve it”) records current facts, the reason, and the next action, then
   calls `goal_defer`. Read `goal_status` first and pass its current lifecycle
@@ -114,13 +118,13 @@ short clarification while preserving task state.
   done”, “we finished this item”, “check it off”, “mark it complete”, “close
   out this item”, or similar). A request to do the remaining work (“finish the
   plugin”, “complete this task”, “close the bug”) begins or continues work; it
-  does not claim the task is already complete. Before `goal_finish`, record a
-  current verification fact for every success criterion using evidence returned
-  by `evidence_capture` and passed unchanged to `fact_record`. The
-  `completion_claim` is an outcome note only; prefixes such as `Checks passed:`
-  and `Owner confirmed:` do not satisfy criteria. If current evidence is
-  unavailable, leave the goal open and record the gap and next action. Do not
-  require a separate summary fact or report-page readback. Never close unrelated goals or claim a criterion passed without evidence. A
+  does not by itself claim the task is already complete. When the requested
+  result is observed or the owner confirms it, record the result and finish
+  without waiting for another instruction or automated evidence. A user moving
+  on after seeing the result can indicate completion. Record available checks
+  honestly; never label an unverified claim as verified. If unsure whether the
+  result satisfies the request, ask the owner for guidance. Do not close
+  unrelated goals. A
   one-off task ends at its own endpoint; activate another child only when the
   task belongs to a plan and the user is continuing to that next item.
   When an `ootask` interrupts a plan child, checkpoint and defer that exact
@@ -171,27 +175,35 @@ the complete exact inventory internally, keep review and cleanup receipts, and
 leave held, changed, incomplete, out-of-scope, or failed items pending. A task
 endpoint or pending proposal alone does not authorize cleanup.
 
-Use the actual passing local test/lint result or the owner's explicit
-confirmation as the task's completion proof. `evidence_capture` may be used
+Record observed results and any actual passing local test/lint result or owner
+confirmation. `evidence_capture` may be used
 when a configured source is available, but it is not required for ordinary
 repository completion. Never invent a result or store raw prompts, transcripts,
 imports, or scratch content.
 
 Use a configured evidence source when it is already available. Ordinary task
-completion does not depend on an immutable-commit receipt: the relevant local
-test/lint result or the owner's explicit confirmation is sufficient. Record
+completion does not depend on an immutable-commit receipt or a test. Record
 the result as a compact fact; do not invent evidence references or hashes.
 
 ## Prepare owner-reviewed SDE proposals at task endpoints
+
+When the owner explicitly says to record a verbally relayed SDE, use
+`sde_record_user_report` on the current active goal with a compact normalized
+single-line summary and a fresh operation event ID. This route writes a
+`user_report` fact and creates a pending SDE candidate without asking for an
+artifact or evidence packet. Read the candidate back with
+`sde_review_detail`; leave it pending for the owner's decision. Do not turn a
+verbal report into task-completion evidence, infer a fact beyond what the
+owner relayed, or save the raw chat.
 
 Task evidence and lifecycle tracking are part of each tracked task; do not ask
 the user to enable capture. A hold records a checkpoint and pauses work; it does
 not discard facts. Resuming continues from that point.
 
-Curator tracks development while the goal is active. If the practical check
-failed or was not run and the owner has not confirmed the behavior, record the
-gap and next action, keep the goal active, and continue development. Do not call
-`sde_assess` for active, deferred, blocked, or otherwise incomplete work. After
+Curator tracks development while the goal is active. When the result is
+uncertain, ask for guidance and report what is known. Missing automated
+evidence alone does not block recording a result or an SDE proposal. Propose
+potentially useful facts for owner review, including during active work. After
 `goal_finish` succeeds
 and `goal_status` confirms complete, use only supported facts belonging to that
 completed goal to prepare a pending proposal. For a child one-off, assess its
@@ -213,8 +225,8 @@ Use concise cues that report actual transitions:
   the candidate with `sde_review_detail`, then resume the exact deferred plan
   item when the user says to continue. Leave the proposal pending for owner
   review.
-- When checks remain open: state the specific gap and next development action;
-  keep the goal active and do not create an SDE candidate.
+- When the result is uncertain: state what is known and ask for guidance;
+  missing automated evidence alone does not prevent a pending proposal.
 
 Never imply a tool write succeeded until the corresponding Curator tool
 returns success. After an accepted goal or fact write, read the same goal with

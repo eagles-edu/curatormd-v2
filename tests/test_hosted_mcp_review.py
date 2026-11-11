@@ -32,7 +32,7 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
     """Exercise an evidence-backed acceptance using the local OS reviewer."""
 
     def test_outline_exposes_single_check_completion_claim_for_review(self) -> None:
-        """Expose passing task proof even when the proposal selects only a change fact."""
+        """Expose an outcome claim alongside its recorded task proof."""
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
@@ -47,6 +47,7 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
                 profile_id="reviewer-profile",
                 allow_write=True,
                 allow_review=True,
+                evidence_verifier=TestVerifier(),
             )
             try:
                 plugin = getattr(runtime.api, "_plugins")["bound-project"]
@@ -56,6 +57,11 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
                 )
                 changed, _ = plugin.service.goal_fact(
                     goal.goal_id, FactKind.CHANGE, "The tested change is ready for review."
+                )
+                verified, _ = plugin.service.goal_fact(
+                    goal.goal_id, FactKind.VERIFICATION, "The local check passed.",
+                    criterion_id="works",
+                    evidence=(EvidenceRef("unit-test", "test-proof:verified", "0" * 64, EvidenceOutcome.PASSED),),
                 )
                 completed = plugin.service.goal_finish(
                     goal.goal_id,
@@ -67,7 +73,7 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
                         goal_id=goal.goal_id,
                         materiality=Materiality.IMPLEMENTATION,
                         rationale="Retain the completed task outcome for owner review.",
-                        fact_ids=(changed.fact_id,),
+                        fact_ids=(changed.fact_id, verified.fact_id),
                         impact="The task has a passing one-check completion result.",
                         retrieval_value="Use the review outline to inspect task proof.",
                     )
@@ -93,7 +99,7 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
                         )
                         self.assertEqual(
                             [fact["fact_id"] for fact in outline["supporting_facts"]],
-                            [changed.fact_id],
+                            [changed.fact_id, verified.fact_id],
                         )
                         self.assertEqual(
                             completed.lifecycle_revision, outline["lifecycle_revision"]
@@ -113,7 +119,7 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
             )
 
             class SwitchableVerifier(TestVerifier):
-                """Make an already recorded proof become stale after proposal."""
+                """Make new verification unavailable after the proof was recorded."""
 
                 stale = False
 
@@ -187,7 +193,7 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
                         outline_content = outline_result.content[0]
                         assert isinstance(outline_content, TextContent)
                         outline = json.loads(outline_content.text)
-                        self.assertEqual(outline["evidence_status"], "not_current_or_missing")
+                        self.assertEqual(outline["evidence_status"], "current_passing")
                         self.assertEqual(outline["goal_status"], "complete")
 
                         reopen_result = await client.call_tool(
@@ -205,6 +211,19 @@ class HostedMcpReviewTests(HostedMcpFixtures, unittest.TestCase):
                         reopen_content = reopen_result.content[0]
                         assert isinstance(reopen_content, TextContent)
                         self.assertEqual(json.loads(reopen_content.text)["status"], "processed")
+
+                        reopened_outline = await client.call_tool(
+                            "sde_review_outline",
+                            {"candidate_id": candidate.candidate_id},
+                            meta=hermes_meta("reviewer-profile"),
+                        )
+                        self.assertFalse(reopened_outline.is_error)
+                        reopened_content = reopened_outline.content[0]
+                        assert isinstance(reopened_content, TextContent)
+                        self.assertEqual(
+                            json.loads(reopened_content.text)["evidence_status"],
+                            "not_current_or_missing",
+                        )
 
                         withdrawal_result = await client.call_tool(
                             "sde_withdraw_candidates",

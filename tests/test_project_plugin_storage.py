@@ -825,10 +825,6 @@ class ProjectPluginStorageAndExpiryTests(ProjectPluginTestSupport):
 
         candidate = self.store.list_sde_candidates(goal_id, "consumer-a")[0]
         self.assertEqual(candidate.status, SDEStatus.PENDING_REVIEW)
-        with self.assertRaisesRegex(EvidenceGateError, "current|passing task proof"):
-            plugin.service.sde_confirm(
-                approved_empty_inventory_request(candidate.candidate_id)
-            )
         plugin.service.sde_confirm(SDEConfirmationRequest(
             candidate_id=candidate.candidate_id,
             decision=ReviewDecision.REJECTED,

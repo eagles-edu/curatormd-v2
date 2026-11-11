@@ -74,11 +74,10 @@ class CodexPluginHookTests(unittest.TestCase):
             "separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent",
             "cues are hints",
             "advance only if continuing",
-            "At task end, save one compact result fact",
-            "passing relevant test/lint check or the owner's explicit confirmation",
-            "create its pending `sde_assess` proposal",
-            "Keep it pending for owner review",
-            "never approve/reject/codify",
+            "At task end, save the observed result",
+            "without waiting for separate proof",
+            "Propose potentially useful facts for owner review",
+            "do not approve or codify on the owner's behalf",
             "Never retain prompts",
             "Claim writes only after success",
         ):
@@ -94,8 +93,7 @@ class CodexPluginHookTests(unittest.TestCase):
             with self.subTest(cue=cue):
                 context = _CONTEXT("p" * 128, "codex-turn-" + "a" * 32, cue)
                 self.assertLessEqual(len(context), limit)
-                self.assertIn("create its pending `sde_assess` proposal", context)
-                self.assertIn("Keep it pending for owner review", context)
+                self.assertIn("Propose potentially useful facts for owner review", context)
                 if cue == "resume":
                     self.assertIn(
                         "`Resuming problem/task: <saved problem/title> [plan item X]. Open checks: <saved checks>.`",
@@ -113,6 +111,10 @@ class CodexPluginHookTests(unittest.TestCase):
             "ootask",
         )
         self.assertEqual(_TASK_SCOPE_CUE("  AOTASK parent-alpha: add the toolbox task"), "aotask")
+        self.assertEqual(_TASK_SCOPE_CUE("  AATASK: unrelated aside"), "aatask")
+        aside = _CONTEXT("project", "codex-turn-aside", scope_cue="aatask")
+        self.assertIn("Do not create or update a Curator project goal", aside)
+        self.assertNotIn("Track nontrivial work", aside)
         self.assertIsNone(_TASK_SCOPE_GOAL_ID("ootask: update the README"))
         self.assertEqual(
             _TASK_SCOPE_GOAL_ID("  AOTASK parent-alpha: add the toolbox task"),
@@ -165,9 +167,11 @@ class CodexPluginHookTests(unittest.TestCase):
         server = configured_servers["codex-intake"]
         self.assertEqual(server["type"], "stdio")
         self.assertIn("--allow-write", server["args"])
-        database_arg = server["args"][server["args"].index("--database") + 1]
+        database_arg = server["args"][
+            server["args"].index("--database-bindings") + 1
+        ]
         self.assertEqual(
-            database_arg, "~/.local/share/curatormd-v2-alpha/global.sqlite3"
+            database_arg, "~/.config/curatormd-v2/database-bindings.json"
         )
         self.assertNotIn("--project-root", server["args"])
         self.assertNotIn("--evidence-config", server["args"])
@@ -221,12 +225,12 @@ class CodexPluginHookTests(unittest.TestCase):
         pre_handler = hooks["PreToolUse"][0]
         self.assertEqual(
             pre_handler["matcher"],
-            "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_start|goal_activate|goal_finish|goal_defer))$",
+            "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_start|goal_activate|goal_finish|goal_defer|fact_record|sde_assess|sde_record_user_report))$",
         )
         self.assertIn("lifecycle_pre_tool.py", pre_handler["hooks"][0]["command"])
         self.assertIn("lifecycle_post_tool.py", hooks["PostToolUse"][0]["hooks"][0]["command"])
         self.assertIn(
-            "fact_record|sde_assess",
+            "fact_record|sde_assess|sde_record_user_report",
             hooks["PostToolUse"][0]["matcher"],
         )
         self.assertIn("sde_review_detail", hooks["PostToolUse"][0]["matcher"])
@@ -931,6 +935,19 @@ class CodexPluginHookTests(unittest.TestCase):
                     input=json.dumps(dict(event)), capture_output=True, check=False,
                     text=True, timeout=3, env=environment,
                 )
+
+            aside_turn = base | {"turn_id": "aside-turn"}
+            aside = invoke(HOOK, aside_turn | {"prompt": "aatask: check unrelated weather"})
+            self.assertIn("SCOPE=AATASK", aside.stdout)
+            work = invoke(PRE_TOOL_HOOK, aside_turn | {"tool_name": "Bash"})
+            self.assertEqual(work.stdout, "")
+            for tool in ("goal_start", "fact_record", "sde_assess"):
+                denied = invoke(PRE_TOOL_HOOK, aside_turn | {
+                    "tool_name": f"mcp__codex-intake__{tool}", "tool_input": {},
+                })
+                self.assertEqual(json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+            stopped = invoke(STOP_HOOK, aside_turn | {"last_assistant_message": "The aside is done."})
+            self.assertEqual(stopped.stdout, "")
 
             oneoff_turn = base | {"turn_id": "ootask-turn"}
             prompt = invoke(HOOK, oneoff_turn | {
@@ -1968,7 +1985,7 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertNotIn(turn_id, first)
 
     def test_plugin_mcp_config_discovers_the_active_project(self) -> None:
-        """Use the shared alpha ledger but resolve project config per workspace."""
+        """Resolve each workspace to its exact owner-configured database."""
 
         transport = _MCP_INSTALLER_MODULE["_expected_transport"](
             Path("/tmp/curator-v2-test.sqlite3")
@@ -2030,7 +2047,7 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertIn("server-enforced", instructions)
         self.assertIn("do not require a host receipt for ordinary local checks", instructions)
         self.assertNotIn("use a host-configured repository_test receipt", instructions)
-        self.assertIn("local test/lint check or the owner's explicit confirmation is sufficient", instructions)
+        self.assertIn("never require it for completion or", instructions)
 
     def test_intake_skill_tracks_normal_lifecycle_and_leaves_sde_decisions_to_user(self) -> None:
         """Ensure ordinary item language controls work and SDE decisions stay human."""
@@ -2041,9 +2058,9 @@ class CodexPluginHookTests(unittest.TestCase):
             "saved problem, success checks, and parent ID before comparing candidates",
             "never create from a truncated or partially reviewed list",
             "“moving to the next item”, “check this off”, “mark this complete”",
-            "call `goal_finish` when it passes, then activate the next planned child",
+            "call `goal_finish` when the task is done, then activate the next planned child",
             "one practical success check",
-            "Do not require a separate summary fact or report-page readback",
+            "without waiting for another instruction or automated evidence",
             "“pause”, “hold”, “put it aside”, “not now”",
             "then calls `goal_defer`",
             "“resume”, “continue”, “back to this”",
@@ -2074,7 +2091,7 @@ class CodexPluginHookTests(unittest.TestCase):
             "do not ask for a separate deletion approval",
             "Task evidence and lifecycle tracking are part of each tracked task",
             "do not ask the user to enable capture",
-            "Do not call `sde_assess` for active, deferred, blocked, or otherwise incomplete work",
+            "Propose potentially useful facts for owner review, including during active work",
             "After `goal_finish` succeeds",
             "For a child one-off, assess its",
             "read `goal_status` and pass its current lifecycle revision",
@@ -2182,7 +2199,7 @@ class CodexPluginHookTests(unittest.TestCase):
             "`ootask:` explicitly means a distinct one-off",
             "`aotask <parent-or-child>:` means progress on that existing goal's scope",
             "Use one practical success check per task",
-            "local test/lint check or the owner's explicit confirmation is sufficient",
+            "never require it for completion or a proposal",
             "create a pending proposal using only supported facts from that goal",
             "the user decides what is memorialized, its importance",
             "Never approve/reject or codify on the user's behalf",

@@ -43,21 +43,20 @@ class GoalReportingTests(LifecycleTestSupport):
         )
         self.assertEqual(before_finish[1].status, CriterionStatus.OPEN)
         stored = self.service.goal_finish(self.goal.goal_id, "Work is finished")
-        self.assertEqual(stored.status, GoalStatus.OPEN)
-        self.assertIn("readiness probe returns healthy", stored.next_action or "")
+        self.assertEqual(stored.status, GoalStatus.COMPLETE)
+        self.assertIsNone(stored.next_action)
         snapshot = self.service.goal_status(self.goal.goal_id)
-        self.assertTrue(any(fact.kind is FactKind.OPEN_GATE for fact in snapshot.facts))
+        self.assertFalse(any(fact.kind is FactKind.OPEN_GATE for fact in snapshot.facts))
         outcome = next(
             fact for fact in snapshot.facts if fact.kind is FactKind.OUTCOME
         )
-        self.assertEqual(outcome.bullet, "open")
+        self.assertTrue(outcome.bullet.startswith("completed"))
         self.assertEqual(
             [item.status for item in snapshot.criteria],
             [CriterionStatus.VERIFIED, CriterionStatus.OPEN],
         )
         report = self.service.goal_report(self.goal.goal_id)
-        self.assertIn("- Outcome: `open`", report)
-        self.assertIn("Outcome: open", report)
+        self.assertIn("- Outcome: `complete`", report)
         self.assertIn("- Owner: agent", report)
         self.assertIn("readiness probe returns healthy", report)
         self.assertIn("unit test suite passed", report)
@@ -67,32 +66,19 @@ class GoalReportingTests(LifecycleTestSupport):
         opened = self.service.goal_finish(
             self.goal.goal_id, "The implementation is complete"
         )
-        self.assertEqual(opened.status, GoalStatus.OPEN)
+        self.assertEqual(opened.status, GoalStatus.COMPLETE)
         projection = self.service.goal_bullet_projection(self.goal.goal_id)
         categories = [item.category.value for item in projection.bullets]
         rendered = [item.as_bullet() for item in projection.bullets]
 
         self.assertIn("verified_fact", categories)
         self.assertIn("unverified_claim", categories)
-        self.assertIn("open_gate", categories)
-        self.assertTrue(
-            any(
-                item.category.value == "open_gate" and "probe" in item.text
-                for item in projection.bullets
-            )
-        )
+        self.assertTrue(any("No independent verification recorded" in item.text
+                            for item in projection.bullets))
         self.assertTrue(all("\n" not in bullet for bullet in rendered))
         self.assertEqual(projection.next_action, opened.next_action)
 
-        self.verify("probe", "Readiness probe returned healthy")
-        completed = self.service.goal_finish(
-            self.goal.goal_id, "Every required criterion is verified"
-        )
-        final_projection = self.service.goal_bullet_projection(self.goal.goal_id)
-        self.assertEqual(completed.status, GoalStatus.COMPLETE)
-        self.assertFalse(
-            any(item.category.value == "open_gate" for item in final_projection.bullets)
-        )
+        self.assertEqual(projection.status, GoalStatus.COMPLETE)
 
     def test_evidence_verifier_runs_outside_sqlite_write_transactions(self) -> None:
         verifier = TransactionCheckingVerifier(self.store)
@@ -111,16 +97,11 @@ class GoalReportingTests(LifecycleTestSupport):
         )
 
         self.assertEqual(completed.status, GoalStatus.COMPLETE)
-        self.assertGreaterEqual(verifier.calls, 6)
+        self.assertGreaterEqual(verifier.calls, 4)
 
     def test_goal_report_preserves_truth_labels_and_bounds_fact_pages(self) -> None:
         intake_report = self.service.goal_report(self.goal.goal_id)
-        self.assertIn("owner: agent", intake_report)
-        self.assertIn(
-            "suggested next action: Verify criterion `probe` against its stated "
-            "acceptance condition; goal next action: not recorded",
-            intake_report,
-        )
+        self.assertIn("no current independent verification recorded", intake_report)
         self.service.goal_fact(
             self.goal.goal_id,
             FactKind.CHANGE,
@@ -145,14 +126,8 @@ class GoalReportingTests(LifecycleTestSupport):
         self.assertIn("## Success criteria", report)
         self.assertIn("## Facts to date (showing 1–1 of", report)
         self.assertIn("## Open TODOs", report)
-        self.assertIn("Verify criterion `probe`", report)
         self.assertIn("readiness probe returns healthy", report)
-        self.assertIn(
-            "blocker: Open: success criterion 'readiness probe returns healthy' "
-            "lacks passing evidence",
-            report,
-        )
-        self.assertIn("owner: agent", report)
+        self.assertIn("no current independent verification recorded", report)
         self.assertIn("More facts available: request `fact_offset=1`", report)
         self.assertNotIn("test-proof:", report)
 
@@ -165,6 +140,7 @@ class GoalReportingTests(LifecycleTestSupport):
         self.assertIn("Verified facts", second_page)
         self.assertIn("Unverified claims or checks", second_page)
         self.assertIn("completion claim", second_page)
+        self.service.goal_reopen(self.goal.goal_id, "Follow-up", "Record a new result")
         self.service.goal_fact(
             self.goal.goal_id,
             FactKind.CHANGE,
@@ -238,7 +214,7 @@ class GoalReportingTests(LifecycleTestSupport):
             "Report snapshot: `", 1
         )[1].split("`", 1)[0]
         self.assertNotEqual(first_revision, second_revision)
-        self.assertIn("`unit` — open:", second_page)
+        self.assertIn("`unit` — unverified:", second_page)
         self.assertEqual(
             verified.verification_attestations[0].adapter_id, "test-fixture"
         )
@@ -286,17 +262,8 @@ class GoalReportingTests(LifecycleTestSupport):
         self.assertIn(
             "- Next action: Add the report's bounded next-action field", report
         )
-        self.assertIn(
-            "blocker: No current passing verification fact is linked to this criterion; "
-            "owner: agent; suggested next action: Verify criterion `report` against "
-            "its stated acceptance condition; goal next action: Add the report's "
-            "bounded next-action field",
-            report,
-        )
-        self.assertIn(
-            "Verify criterion `report`: The report lists verified facts and TODOs",
-            report,
-        )
+        self.assertIn("no current independent verification recorded", report)
+        self.assertNotIn("blocker: No current passing verification", report)
         self.assertEqual(
             self.service.goal_status(goal.goal_id).goal.next_action,
             "Add the report's bounded next-action field",
@@ -316,13 +283,7 @@ class GoalReportingTests(LifecycleTestSupport):
             criterion_id="report",
         )
         open_report = self.service.goal_report(goal.goal_id)
-        self.assertIn(
-            "blocker: The smoke test has not run on this revision; owner: agent; "
-            "suggested next action: Verify criterion `report` against its stated "
-            "acceptance condition; goal next action: Add the report's bounded "
-            "next-action field",
-            open_report,
-        )
+        self.assertIn("The smoke test has not run on this revision", open_report)
         self.assertIn(
             "- Next action: Add the report's bounded next-action field",
             open_report,
@@ -549,5 +510,5 @@ class GoalReportingTests(LifecycleTestSupport):
             report,
         )
         self.assertIn("## Current open gates", report)
-        self.assertIn("Required criterion remains unverified", report)
+        self.assertIn("no current independent verification recorded", report)
         self.assertIn("Re-run the proof against the regression", report)

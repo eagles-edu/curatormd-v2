@@ -384,7 +384,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
         completion_claim: str,
         expected_lifecycle_revision: int | None = None,
     ) -> GoalCard:
-        """Request completion; missing proof or dependent work leaves the goal open."""
+        """Record completion; unfinished children or dependencies remain open."""
         expected_effect_revision = self._capture_effect_revision()
         if not completion_claim.strip():
             raise ValueError("completion claim must not be empty")
@@ -402,7 +402,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
             return initial_goal
         facts_snapshot = self.store.list_facts(goal_id, self.project_id)
         for _attempt in range(3):
-            verified = self._verified_criterion_attestations(initial_goal, facts_snapshot)
+            verified: dict[str, tuple[EvidenceAttestation, ...]] = {}
             with self._effect_fence(expected_effect_revision):
                 with self.store.transaction():
                     current_goal = self.store.get_goal(goal_id, self.project_id)
@@ -544,21 +544,9 @@ class _GoalLifecycleMixin(_CuratorServiceState):
             if (dependency := self.store.get_goal(dependency_id, self.project_id)).status
             is not GoalStatus.COMPLETE
         )
-        # External verification is performed before the write transaction. Recheck
-        # its bounded local lease after transaction reads, immediately before the
-        # completion decision and transition.
-        verified = self._criteria_with_unexpired_attestations(
-            verified_criterion_attestations or {},
-            datetime.now(UTC),
-        )
-        missing = tuple(
-            criterion
-            for criterion in goal.success_criteria
-            if criterion.criterion_id not in verified
-        )
-        if missing or open_children or blocked_dependencies:
+        if open_children or blocked_dependencies:
             next_action, open_gate_facts = self._goal_finish_open_gate_payload(
-                goal_id, missing, open_children, blocked_dependencies
+                goal_id, (), open_children, blocked_dependencies
             )
             facts.extend(open_gate_facts)
             facts.append(
@@ -583,10 +571,7 @@ class _GoalLifecycleMixin(_CuratorServiceState):
             Fact(
                 goal_id=goal_id,
                 kind=FactKind.OUTCOME,
-                bullet=(
-                    "completed — every success criterion has current passing "
-                    "evidence, and all child goals and dependencies are complete"
-                ),
+                bullet="completed — outcome recorded; child goals and dependencies are complete",
             )
         )
         return self.store.transition_goal(

@@ -4,18 +4,37 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import re
+import sqlite3
 import sys
+from pathlib import Path
 from typing import TextIO
 
 from .backup import backup_daily
 from .cli_args import positive_integer_limit
 from .cli_interaction import SafeArgumentParser, parse_safe_arguments
+from .errors import safe_exception_label
 from .models import PurgeStatus
 from .project_config import ProjectConfig
 from .process_privacy import protect_process_data
 from .project_plugin import ProjectPlugin
 from .store import CuratorStore
+
+
+_SQLITE_ERROR_NAME = re.compile(r"SQLITE_[A-Z0-9_]{1,64}\Z")
+
+
+def _safe_failure_detail(error: Exception) -> str:
+    """Describe an operational failure without logging paths or exception text."""
+
+    details = [f"cause={safe_exception_label(error)}"]
+    if isinstance(error, OSError) and type(error.errno) is int:
+        details.append(f"errno={error.errno}")
+    if isinstance(error, sqlite3.Error):
+        error_name = getattr(error, "sqlite_errorname", None)
+        if isinstance(error_name, str) and _SQLITE_ERROR_NAME.fullmatch(error_name):
+            details.append(f"sqlite_code={error_name}")
+    return " ".join(details)
 
 
 def _positive_limit(value: str) -> int:
@@ -117,10 +136,11 @@ def main(
         return _execute_retry_pass(
             config, database, arguments.batch_limit, output
         )
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         # The boundary must sanitize any host adapter or filesystem exception.
         print(
-            "Curator V2 maintenance failed (configuration or purge error).",
+            "Curator V2 maintenance failed (configuration or purge error; "
+            f"{_safe_failure_detail(exc)}).",
             file=errors,
         )
         return 2

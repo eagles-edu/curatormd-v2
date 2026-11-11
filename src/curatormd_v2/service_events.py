@@ -14,6 +14,7 @@ from datetime import (
     datetime,
 )
 from .models import (
+    EvidenceAttestation,
     EvidenceOutcome,
     Fact,
     FactKind,
@@ -142,7 +143,7 @@ class _EventMixin(_PurgeMixin):  # pylint: disable=too-few-public-methods  # Int
         if goal.lifecycle_revision != expected_revision:
             raise ConflictError("goal lifecycle revision changed; reload before finishing")
         facts = self.store.list_facts(payload.goal_id, self.project_id)
-        verified_criteria = self._verified_criterion_attestations(goal, facts)
+        verified_criteria: dict[str, tuple[EvidenceAttestation, ...]] = {}
         return _PreparedEvent(
             prior_fact_ids=prepared.prior_fact_ids,
             finish_snapshot=(goal, facts, verified_criteria),

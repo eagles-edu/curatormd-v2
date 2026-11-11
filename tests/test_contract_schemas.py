@@ -368,6 +368,13 @@ class ContractSchemaTests(unittest.TestCase):
             verification_attestations=(attestation,),
             source_event_id="evt-contract-schema",
         )
+        user_report = Fact(
+            goal_id=goal.goal_id,
+            fact_id="fact-user-report-contract-schema",
+            kind=FactKind.USER_REPORT,
+            bullet="Owner reported the decision for pending review",
+            source_event_id="evt-user-report-contract-schema",
+        )
         candidate = SDECandidate(
             goal_id=goal.goal_id,
             candidate_id="sde-contract-schema",
@@ -478,6 +485,7 @@ class ContractSchemaTests(unittest.TestCase):
             ("goalCard", goal),
             ("evidenceAttestation", attestation),
             ("fact", fact),
+            ("fact", user_report),
             ("sdeCandidate", candidate),
             ("sdeCorrection", correction),
             ("sdeQualityFeedback", quality_feedback),

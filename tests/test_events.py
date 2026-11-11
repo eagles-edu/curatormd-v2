@@ -458,7 +458,7 @@ class EventProcessingTests(_EventInboxTestCase):
     """Check event application, migration, status, and usage projections."""
 
     def test_service_applies_project_event_atomically_and_replay_is_safe(self) -> None:
-        """Apply a start and finish event once while preserving open truth."""
+        """Apply a start and finish event once without inventing proof."""
 
         started = self.service.process_event(self.event)
         snapshot = self.service.goal_status("goal-1")
@@ -481,7 +481,7 @@ class EventProcessingTests(_EventInboxTestCase):
         self.assertEqual(snapshot.goal.project_id, "project-a")
         self.assertEqual(finish_receipt.status.value, "processed")
         self.assertEqual(
-            self.service.goal_status("goal-1").goal.status, GoalStatus.OPEN
+            self.service.goal_status("goal-1").goal.status, GoalStatus.COMPLETE
         )
         self.assertEqual(len(self.store.list_goals(project_id="project-a")), 1)
 

@@ -15,20 +15,31 @@ from typing import Any
 SERVER_NAME = "codex-intake"
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = PLUGIN_ROOT / "bin" / "launch-curator-mcp.py"
-DEFAULT_DATABASE = (
-    Path.home() / ".local" / "share" / "curatormd-v2-alpha" / "global.sqlite3"
+DEFAULT_DATABASE_BINDINGS = (
+    Path.home() / ".config" / "curatormd-v2" / "database-bindings.json"
 )
 
 
-def _expected_transport(database: Path) -> dict[str, Any]:
+def _expected_transport(
+    database: Path | None, database_bindings: Path | None = None
+) -> dict[str, Any]:
+    """Build the explicit single-ledger or per-project launch contract."""
+
+    if (database is None) == (database_bindings is None):
+        raise ValueError("select exactly one Codex database routing mode")
+    route_args = (
+        ["--database", str(database)]
+        if database is not None
+        else ["--database-bindings", str(database_bindings)]
+    )
     return {
         "type": "stdio",
         "command": "python3",
         "args": [
             str(LAUNCHER),
-            "--database",
-            str(database),
+            *route_args,
             "--allow-write",
+            "--allow-purge-retry",
         ],
         "cwd": None,
     }
@@ -94,16 +105,42 @@ def _matches_expected(existing: dict[str, Any], expected: dict[str, Any]) -> boo
     )
 
 
-def install_user_mcp(database: Path | None = None) -> bool:
-    """Add or verify the workspace-relative global server without overwrites."""
+def install_user_mcp(
+    database: Path | None = None,
+    database_bindings: Path | None = None,
+) -> bool:
+    """Add or verify a workspace-relative server without overwriting routes."""
 
-    selected_database = database or Path(
-        os.environ.get("CURATOR_V2_DATABASE", str(DEFAULT_DATABASE))
-    )
-    if not selected_database.is_absolute():
-        raise ValueError("Curator V2 database path must be absolute")
-    selected_database = selected_database.expanduser()
-    expected = _expected_transport(selected_database)
+    env_database = os.environ.get("CURATOR_V2_DATABASE")
+    env_bindings = os.environ.get("CURATOR_V2_DATABASE_BINDINGS")
+    if database is not None and database_bindings is not None:
+        raise ValueError("supply one Codex database routing mode")
+    selected_database = database or (Path(env_database) if env_database else None)
+    selected_bindings = database_bindings
+    if selected_bindings is None and env_bindings:
+        selected_bindings = Path(env_bindings)
+    if selected_database is None and selected_bindings is None:
+        selected_bindings = DEFAULT_DATABASE_BINDINGS
+    if selected_database is not None:
+        selected_database = selected_database.expanduser()
+        if not selected_database.is_absolute():
+            raise ValueError("Curator V2 database path must be absolute")
+    if selected_bindings is not None:
+        selected_bindings = selected_bindings.expanduser()
+        if not selected_bindings.is_absolute():
+            raise ValueError("Curator V2 database bindings path must be absolute")
+        try:
+            metadata = selected_bindings.lstat()
+        except OSError:
+            raise ValueError("Curator V2 database bindings file is unavailable") from None
+        if (
+            not selected_bindings.is_file()
+            or selected_bindings.is_symlink()
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_mode & 0o077
+        ):
+            raise ValueError("Curator V2 database bindings file is not private")
+    expected = _expected_transport(selected_database, selected_bindings)
     if _has_user_server():
         existing = _get_server()
         if existing is None:
@@ -115,18 +152,8 @@ def install_user_mcp(database: Path | None = None) -> bool:
         )
 
     subprocess.run(
-        [
-            "codex",
-            "mcp",
-            "add",
-            SERVER_NAME,
-            "--",
-            "python3",
-            str(LAUNCHER),
-            "--database",
-            str(selected_database),
-            "--allow-write",
-        ],
+        ["codex", "mcp", "add", SERVER_NAME, "--", "python3", str(LAUNCHER),
+         *expected["args"][1:]],
         check=True,
         capture_output=True,
         text=True,

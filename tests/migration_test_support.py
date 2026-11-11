@@ -138,6 +138,21 @@ PROJECT_USAGE_COLUMNS = {
     "sde_quality_feedback": frozenset(
         {"feedback_id", "candidate_id", "reviewer_id", "label", "rationale", "created_at"}
     ),
+    "hermes_codex_turns": frozenset(
+        {
+            "project_id", "profile_id", "session_id", "turn_id", "started_at",
+            "ended_at", "outcome",
+        }
+    ),
+    "hermes_codex_turn_links": frozenset(
+        {
+            "project_id", "profile_id", "session_id", "turn_id", "goal_id",
+            "source_tool", "linked_at",
+        }
+    ),
+    "hermes_codex_telemetry_receipts": frozenset(
+        {"project_id", "event_id", "payload_sha256", "receipt_json", "created_at"}
+    ),
     "staging_artifact_occurrences": frozenset(
         {"project_id", "path", "sha256", "device_id", "inode_id", "occurrence_id", "observed_at"}
     ),

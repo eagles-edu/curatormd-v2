@@ -41,6 +41,7 @@ class FactKind(StrEnum):
     """Typed development facts that may be appended to a goal ledger."""
 
     INTENT = "intent"
+    USER_REPORT = "user_report"
     RESEARCH = "research"
     ADVICE = "advice"
     PROPOSAL = "proposal"

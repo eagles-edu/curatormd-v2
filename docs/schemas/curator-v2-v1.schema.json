@@ -85,7 +85,7 @@
       "required": ["goal_id", "kind", "bullet", "fact_id", "criterion_id", "evidence", "source_event_id", "created_at"],
       "properties": {
         "goal_id": {"type": "string", "minLength": 1},
-        "kind": {"enum": ["intent", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome", "reopened", "criteria_amended", "cancelled", "superseded"]},
+        "kind": {"enum": ["intent", "user_report", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome", "reopened", "criteria_amended", "cancelled", "superseded"]},
         "bullet": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "^[^\\r\\n]+$"},
         "fact_id": {"type": "string", "minLength": 1},
         "criterion_id": {"type": ["string", "null"]},
@@ -442,7 +442,7 @@
       "additionalProperties": false
     },
     "goalActivatedPayload": {"type": "object", "required": ["goal_id", "reason", "expected_lifecycle_revision"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}, "expected_lifecycle_revision": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
-    "factRecordedPayload": {"type": "object", "required": ["goal_id", "fact_id", "kind", "bullet", "evidence"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "fact_id": {"type": "string", "minLength": 1}, "kind": {"enum": ["intent", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome"]}, "bullet": {"type": "string", "minLength": 1, "maxLength": 1000}, "criterion_id": {"type": ["string", "null"]}, "evidence": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceRef"}}}, "additionalProperties": false},
+    "factRecordedPayload": {"type": "object", "required": ["goal_id", "fact_id", "kind", "bullet", "evidence"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "fact_id": {"type": "string", "minLength": 1}, "kind": {"enum": ["intent", "user_report", "research", "advice", "proposal", "change", "verification", "open_gate", "completion_claim", "outcome"]}, "bullet": {"type": "string", "minLength": 1, "maxLength": 1000}, "criterion_id": {"type": ["string", "null"]}, "evidence": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/evidenceRef"}}}, "additionalProperties": false},
     "goalActivityPayload": {"type": "object", "required": ["goal_id", "fact_id", "kind", "bullet"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "fact_id": {"type": "string", "minLength": 1}, "kind": {"enum": ["intent", "change", "open_gate"]}, "bullet": {"type": "string", "minLength": 1, "maxLength": 1000}}, "additionalProperties": false},
     "goalFinishPayload": {"type": "object", "required": ["goal_id", "completion_claim"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "completion_claim": {"type": "string", "minLength": 1, "maxLength": 980}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},
     "goalDeferredPayload": {"type": "object", "required": ["goal_id", "reason", "next_action"], "properties": {"goal_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1}, "next_action": {"type": "string", "minLength": 1, "maxLength": 1000}, "expected_lifecycle_revision": {"type": ["integer", "null"], "minimum": 1}}, "additionalProperties": false},

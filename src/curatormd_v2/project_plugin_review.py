@@ -257,10 +257,19 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
         draft = request.review_draft
         if draft is None or request.rationale is None:
             raise ValueError("edited SDE review requires a draft and rationale")
+        if request.evidence_override_reason is not None and (
+            request.decision is not ReviewDecision.APPROVED
+            or not request.evidence_override_reason.strip()
+        ):
+            raise ValueError("evidence override requires an approval and a reason")
         if request.decision is ReviewDecision.APPROVED and not draft.documents:
             raise ValueError("approval requires at least one configured document")
-        if not request.artifact_inventory_complete or request.dependency_map_sha256 is None:
-            raise ValueError("edited SDE review requires the complete displayed inventory")
+        if request.dependency_map_sha256 is None:
+            raise ValueError("edited SDE review requires an inventory binding")
+        if not request.artifact_inventory_complete and (
+            request.artifacts or request.dependency_map_sha256 != "0" * 64
+        ):
+            raise ValueError("incomplete inventory cannot authorize artifact cleanup")
         reviewer = self.service.review_authorizer.authorize(
             self.config.project_id, request.candidate_id, request.decision,
             authenticated_subject,
@@ -270,15 +279,17 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
         expected_revision = self._capture_active_project_revision()
         with self._locked_staging_root() as root_fd:
             candidate = self.sde_review_detail(request.candidate_id).candidate
-            artifacts = self._require_current_artifact_inventory(
-                candidate.goal_id, request.artifacts, staging_root_fd=root_fd
-            )
-            self._require_current_dependency_map(
-                candidate.goal_id, artifacts, request.dependency_map_sha256
-            )
+            artifacts = request.artifacts
+            if request.artifact_inventory_complete:
+                artifacts = self._require_current_artifact_inventory(
+                    candidate.goal_id, artifacts, staging_root_fd=root_fd
+                )
+                self._require_current_dependency_map(
+                    candidate.goal_id, artifacts, request.dependency_map_sha256
+                )
             evidence_state = self.service.sde_review_evidence_state(
                 request.candidate_id,
-                require_passing=request.decision is ReviewDecision.APPROVED,
+                require_passing=False,
             )
             facts_sha256 = self.service.store.facts_digest(
                 candidate.fact_ids, self.config.project_id
@@ -286,7 +297,7 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
             projection_state = draft.projection_state_sha256(self.config)
             if self.service.sde_review_evidence_state(
                 request.candidate_id,
-                require_passing=request.decision is ReviewDecision.APPROVED,
+                require_passing=False,
             ) != evidence_state:
                 raise ConflictError("SDE evidence changed during review preparation")
             if self._capture_active_project_revision() != expected_revision:
@@ -304,6 +315,7 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
             inventory_sha256=artifact_manifest_sha256(artifacts),
             dependency_map_sha256=request.dependency_map_sha256,
             draft_sha256=draft.sha256(),
+            evidence_override_reason=request.evidence_override_reason or "",
         )
 
     def sde_confirm(
@@ -326,7 +338,7 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
             )
             if not hmac.compare_digest(current_binding.sha256(), expected_binding):
                 raise ConflictError("SDE review changed after it was displayed")
-        elif request.expected_review_binding_sha256 is not None or request.confirm_significance_five:
+        elif request.expected_review_binding_sha256 is not None or request.confirm_significance_five or request.evidence_override_reason is not None:
             raise ValueError("SDE binding options require an edited review draft")
         with self._locked_staging_root() as root_fd:
             expected_revision = self._capture_active_project_revision()
@@ -345,6 +357,8 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
                     candidate.goal_id, artifacts, request.dependency_map_sha256
                 )
                 validated_dependency_map_sha256 = request.dependency_map_sha256
+            elif current_binding is not None:
+                validated_dependency_map_sha256 = "0" * 64
             if current_binding is not None:
                 draft = request.review_draft
                 if draft is None or (
@@ -424,20 +438,11 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
         ):
             raise PermissionError("SDE projection requires the original reviewer")
         if self.service.sde_review_evidence_state(
-            receipt.candidate_id, require_passing=True
+            receipt.candidate_id, require_passing=False
         ) != binding.evidence_state_sha256:
             raise ConflictError("SDE evidence changed after approval")
         expected_revision = self._capture_active_project_revision()
-        with self._locked_staging_root() as root_fd:
-            candidate = self.sde_review_detail(receipt.candidate_id).candidate
-            artifacts = self._require_current_artifact_inventory(
-                candidate.goal_id, receipt.artifacts, staging_root_fd=root_fd
-            )
-            if artifact_manifest_sha256(artifacts) != binding.inventory_sha256:
-                raise ConflictError("SDE inventory changed after approval")
-            self._require_current_dependency_map(
-                candidate.goal_id, artifacts, binding.dependency_map_sha256
-            )
+        with self._locked_staging_root():
             adapter = MarkdownPersistenceAdapter(
                 self.config, self.service.store, target, self.service.evidence_verifier
             )
@@ -484,21 +489,26 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
             raise PermissionError("SDE projection requires the original reviewer")
         if self.service.sde_review_evidence_state(
             receipt.candidate_id,
-            require_passing=receipt.decision is ReviewDecision.APPROVED,
+            require_passing=False,
         ) != binding.evidence_state_sha256:
             raise ConflictError("SDE evidence changed after the decision")
         draft = SDEReviewDraft.from_json(receipt.review_draft_json)
         expected_revision = self._capture_active_project_revision()
         with self._locked_staging_root() as root_fd:
             candidate = self.sde_review_detail(receipt.candidate_id).candidate
-            artifacts = self._require_current_artifact_inventory(
-                candidate.goal_id, receipt.artifacts, staging_root_fd=root_fd
-            )
-            if artifact_manifest_sha256(artifacts) != binding.inventory_sha256:
-                raise ConflictError("SDE inventory changed after approval")
-            self._require_current_dependency_map(
-                candidate.goal_id, artifacts, binding.dependency_map_sha256
-            )
+            cleanup_ready = receipt.artifact_inventory_complete
+            if receipt.artifact_inventory_complete:
+                try:
+                    artifacts = self._require_current_artifact_inventory(
+                        candidate.goal_id, receipt.artifacts, staging_root_fd=root_fd
+                    )
+                    if artifact_manifest_sha256(artifacts) != binding.inventory_sha256:
+                        raise ConflictError("SDE inventory changed after approval")
+                    self._require_current_dependency_map(
+                        candidate.goal_id, artifacts, binding.dependency_map_sha256
+                    )
+                except ConflictError:
+                    cleanup_ready = False
             if receipt.decision is ReviewDecision.REJECTED:
                 # A rejection is durable in the SQLite audit ledger and must
                 # not be projected as a knowledge entry. Its typed confirmation
@@ -509,6 +519,8 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
                     self.service.mark_canonical_persisted(
                         receipt_id, canonical_target, canonical_digest
                     )
+                    if not cleanup_ready:
+                        return self.service.store.get_receipt(receipt_id, self.config.project_id)
                     return self.service.mark_cleanup_authorization_canonical_persisted(
                         receipt_id, canonical_target, canonical_digest
                     )
@@ -536,6 +548,8 @@ class ProjectReviewMixin(ProjectRepositoryMixin):  # pylint: disable=abstract-me
                 self.service.mark_canonical_persisted(
                     receipt_id, canonical_target, canonical_sha256
                 )
+                if not cleanup_ready:
+                    return self.service.store.get_receipt(receipt_id, self.config.project_id)
                 return self.service.mark_cleanup_authorization_canonical_persisted(
                     receipt_id, canonical_target, canonical_sha256
                 )

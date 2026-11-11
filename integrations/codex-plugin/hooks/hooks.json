@@ -15,7 +15,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_start|goal_activate|goal_finish|goal_defer))$",
+        "matcher": "^(?:Bash|apply_patch|Edit|Write|mcp__codex[-_]intake__(?:goal_start|goal_activate|goal_finish|goal_defer|fact_record|sde_assess|sde_record_user_report))$",
         "hooks": [
           {
             "type": "command",
@@ -28,7 +28,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess|sde_review_detail|evidence_capture)$",
+        "matcher": "^mcp__codex[-_]intake__(goal_start|goal_activate|goal_status|goal_report|goal_finish|goal_defer|fact_record|sde_assess|sde_record_user_report|sde_review_detail|evidence_capture)$",
         "hooks": [
           {
             "type": "command",

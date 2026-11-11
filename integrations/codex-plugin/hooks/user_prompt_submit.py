@@ -20,7 +20,7 @@ CONFIG_NAME = ".curatormd-v2.toml"
 MAX_INPUT_BYTES = 64 * 1024
 _PR_SET_DUMPABLE = 4
 _GOAL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
-_TASK_SCOPE_CUE_PREFIX = re.compile(r"\s*(ootask|aotask)\b", re.IGNORECASE)
+_TASK_SCOPE_CUE_PREFIX = re.compile(r"\s*(ootask|aotask|aatask)\b", re.IGNORECASE)
 _AOTASK_TARGET_PREFIX = re.compile(
     r"\s*aotask\s+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\s*:",
     re.IGNORECASE,
@@ -255,6 +255,11 @@ def _context(
     scope_cue: str | None = None,
     scope_goal_id: str | None = None,
 ) -> str:
+    if scope_cue == "aatask":
+        return ("SCOPE=AATASK: Handle this aside as work unrelated to the current "
+                "repository. Do not create or update a Curator project goal, "
+                "facts, lifecycle, or SDE for it. Preserve the current task and "
+                "resume it only when the user asks. Do not retain the prompt.")
     transition = {
         "hold": "TURN=HOLD: save checkpoint; read status; call goal_defer.",
         "resume": "TURN=RESUME: page all goals; match saved problem/checks; read goal_status. If already active, do NOT call goal_start or goal_activate: save intent/progress with fact_record, then continue. Activate only a planned/deferred/blocked goal using its current revision. Say `Resuming problem/task: <saved problem/title> [plan item X]. Open checks: <saved checks>.` Append facts to that goal ID.",
@@ -280,7 +285,7 @@ def _context(
 {transition}
 {scope}
 Interpret full request; cues are hints. “Finish the plugin” means work. Track nontrivial work before edits; save intent. Before work, page all goals and match saved problem/checks; repository or topic alone is not a match. Reuse one clear same-task goal; ask if ambiguous. A distinct bounded task within an active broader goal gets a separate active child via `parent_goal_id`; an unrelated task gets a top-level active one-off. Keep its checks/facts/lifecycle on that goal; never append a distinct task to its parent. Reuse the parent only when the request advances its saved criteria. For a new task use `initial_status="active"`; same-task active: read status and record intent, no start/activate. Plans=parent+child; follow each item/one-off; advance only if continuing. Say `Problem: <problem>. Success: <observable checks>.` Retry/resume reuse same goal and wording; separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent.
-At task end, save one compact result fact and use a passing relevant test/lint check or the owner's explicit confirmation as the completion evidence. Read status and finish the goal; then create its pending `sde_assess` proposal from supported facts on that goal. Keep it pending for owner review; never approve/reject/codify. For an interrupting OOTASK, resume the exact previously paused plan item only if the user says continue. Never attach one-off facts to that item or proposal. Never retain prompts. Use configured `evidence_capture` when available; do not invent evidence references. Claim writes only after success."""
+At task end, save the observed result and finish without waiting for separate proof or another instruction; moving on after seeing the result can indicate completion. Record available evidence honestly, never invent it, and ask the owner for guidance when unsure. Propose potentially useful facts for owner review, including during active work; do not approve or codify on the owner's behalf. For an interrupting OOTASK, resume the exact previously paused plan item only if the user says continue. Never attach one-off facts to another task. Never retain prompts. Claim writes only after success."""
 
 
 def main() -> int:

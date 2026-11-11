@@ -127,7 +127,7 @@ present, both and `checklist_id` are required.
 | `goal.activated` | Goal ID, explicit acceptance reason, expected lifecycle revision | Moves only a planned goal to active, records an intent fact and advances lifecycle revision atomically. |
 | `fact.recorded` | Goal ID, stable fact ID, fact kind, one-line bullet; optional criterion ID; evidence array | Adds one compact lifecycle fact. Verification facts require evidence references and a criterion. |
 | `goal.activity_observed` | Goal ID, stable fact ID, one of `intent`, `change`, or `open_gate`, and one-line bullet | Status-independent Hermes activity envelope. In one transaction, active goals receive the fact; non-active goals receive a processed receipt with `suppressed_nonactive_goal`, no fact, and an advanced source cursor. Exact replay preserves that disposition even after reopening. |
-| `goal.finish_requested` | Goal ID, completion claim, expected lifecycle revision | Requests evaluation; the claim is not proof and cannot itself close the goal. |
+| `goal.finish_requested` | Goal ID, completion claim, expected lifecycle revision | Records the reported outcome and requests completion; independent evidence is optional and remains separately labeled. Unfinished child goals and dependencies remain open. |
 | `goal.deferred` | Goal ID, reason, next action, expected lifecycle revision | Records an explicit deferred state and follow-up. |
 | `goal.blocked` | Goal ID, dependency, recovery, expected lifecycle revision | Records the dependency and recovery path for a blocked state. |
 | `goal.reopened` | Goal ID, reason, next action, expected lifecycle revision | Reopens a completed goal in a new evidence epoch; prior facts remain, but prior verification does not count. |
@@ -190,8 +190,9 @@ Criteria revisions are append-only and returned in goal status. An amendment
 must name the revision it observed; a stale revision is rejected without
 changing criteria. Completed goals must be reopened before amendment. Both
 reopening and amendment retain the old verification facts for audit, but only
-passing verification recorded after the latest evidence-epoch boundary may
-satisfy current criteria. Criteria amendment is not cancellation or
+passing verification recorded after the latest evidence-epoch boundary is
+shown as current verification. A completion claim does not turn older or
+missing verification into proof. Criteria amendment is not cancellation or
 supersession; those lifecycle semantics are defined below. A goal is limited
 to 16 total criteria versions to bound this history; total lifetime fact and
 goal retention remains an open policy gate.
@@ -214,9 +215,9 @@ The local lifecycle action matrix is explicit:
 
 | Action | Planned | Active / open / blocked / deferred | Complete | Cancelled / superseded |
 | --- | --- | --- | --- | --- |
-| Activate | Allowed; moves to active | Rejected | Rejected | Rejected |
+| Activate | Allowed; moves to active | Blocked or deferred can resume; active or open is rejected | Rejected | Rejected |
 | Change or verification fact | Rejected until activation | Allowed; verification still requires passing trusted evidence | Rejected | Rejected |
-| Finish evaluation | Rejected until activation | Allowed; becomes complete only when criteria, children, and dependencies pass, otherwise open | Idempotent read; no new fact or revision | Rejected |
+| Finish evaluation | Rejected until activation | Records completion unless children or dependencies remain unfinished; evidence is optional | Idempotent read; no new fact or revision | Rejected |
 | Block or defer | Allowed | Allowed | Rejected | Rejected |
 | Amend criteria | Allowed; retains planned status | Allowed; retains current status | Rejected until reopened | Rejected |
 | Cancel or supersede | Allowed | Allowed | Rejected until reopened | Rejected |
@@ -292,8 +293,9 @@ revision fence of `2`, because their prior transition count cannot be inferred;
 those goals require a fresh status read before a write.
 
 Cancelled or superseded child goals do not provide evidence for parent success
-criteria. A parent can finish only when its own criteria have passing evidence
-and no unfinished child remains. Cancelled/superseded dependencies do not
+criteria. A parent can finish when no unfinished child remains; missing
+independent verification does not prevent recording completion.
+Cancelled/superseded dependencies do not
 unblock dependents; unfinished dependents must be handled before retiring the
 dependency. A completed dependent remains historical; it cannot be reopened
 while a dependency is cancelled or superseded.
@@ -322,6 +324,12 @@ serialized `passed` value alone must never close a success criterion.
   is eligible only when its sequence is next; later events wait for the missing
   predecessor. Queue status reports received, failed, quarantined, and oldest
   pending age without exposing event contents.
+- An attended terminal disposition binds to the exact failed payload digest,
+  binding revision, source epoch, and an event with no active processing lease.
+  Sequenced events require the consumer binding to be fenced before disposition;
+  an unsequenced one-off event may be dispositioned while the binding remains
+  active because it has no source cursor to advance. Both paths retain the
+  disposition receipt and follow the configured payload-scrub process.
 - Local multi-process claim coordination is implemented with expiring SQLite
   leases. A production router still needs process scheduling, alert policy,
   restart/load/failure-injection probes, deployment-observed lag, and shared

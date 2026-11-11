@@ -429,6 +429,7 @@ class MarkdownPersistenceTests(MarkdownPersistenceFixture):
             facts_sha256="a" * 64,
             created_at="2026-11-02T02:00:00+07:00",
             cleanup_authorized=False,
+            artifact_inventory_complete=True,
         )
         store = Mock()
         store.get_receipt.return_value = receipt
