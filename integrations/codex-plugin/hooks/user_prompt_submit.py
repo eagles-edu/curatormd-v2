@@ -22,7 +22,7 @@ _PR_SET_DUMPABLE = 4
 _GOAL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _TASK_SCOPE_CUE_PREFIX = re.compile(r"\s*(ootask|aotask|aatask)\b", re.IGNORECASE)
 _AOTASK_TARGET_PREFIX = re.compile(
-    r"\s*aotask\s+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\s*:",
+    r"\s*aotask(?:\s+([A-Za-z0-9][A-Za-z0-9._:-]{0,127}))?\s*:",
     re.IGNORECASE,
 )
 
@@ -272,19 +272,21 @@ def _context(
     scope = {
         "ootask": "SCOPE=OOTASK: create or resume a distinct one-off with its own criteria, facts, checks, and lifecycle. Reuse only an exact matching goal previously started as an OOTASK; never attach this work to the broader goal itself. If it interrupts an active plan item, first checkpoint and defer that exact item; keep the one-off's facts and pending SDE proposal separate. After Curator confirms the pending candidate's goal ID and status with sde_review_detail, reactivate the previously paused item only when the user says to continue. Use parent_goal_id only when this distinct one-off is explicitly within a broader goal.",
         "aotask": (
-            f"SCOPE=AOTASK goal_id={scope_goal_id}: add progress to that exact "
-            "existing parent or child goal and its saved criteria; read its status "
-            "and record facts on that same goal. Do not create or activate a "
-            "different goal."
+            f"SCOPE=AOTASK goal_id={scope_goal_id}: add a sub-item to, or "
+            "correct/change, that current goal or plan item; keep its same ID. "
+            "Do not create another goal or activate another plan item."
             if scope_goal_id
-            else "SCOPE=AOTASK: name the existing goal as `aotask <goal-id>:`; "
-            "read and update that same goal only. Do not create another goal."
+            else "SCOPE=AOTASK (add-on to current item): add a sub-item under, or "
+            "correct/change, the current goal or plan item under the same goal ID. "
+            "Use current task context; do not create another goal, switch items, "
+            "or ask the owner for an ID. Read and update that same goal only. Do not require "
+            "`aotask <goal-id>:`."
         ),
     }.get(scope_cue, "")
     return f"""Curator V2; `goal_start.event_id`={source_event_id or 'unavailable'} (retry).
 {transition}
 {scope}
-Interpret full request; cues are hints. “Finish the plugin” means work. Track nontrivial work before edits; save intent. Before work, page all goals and match saved problem/checks; repository or topic alone is not a match. Reuse one clear same-task goal; ask if ambiguous. A distinct bounded task within an active broader goal gets a separate active child via `parent_goal_id`; an unrelated task gets a top-level active one-off. Keep its checks/facts/lifecycle on that goal; never append a distinct task to its parent. Reuse the parent only when the request advances its saved criteria. For a new task use `initial_status="active"`; same-task active: read status and record intent, no start/activate. Plans=parent+child; follow each item/one-off; advance only if continuing. Say `Problem: <problem>. Success: <observable checks>.` Retry/resume reuse same goal and wording; separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent.
+Interpret the full request and conversation; cues are hints. Route by workspace scope and active plan. Continue through the active plan's current item; the plan workflow advances through its items. `aotask:` (add-on to current item) adds a sub-item under, or corrects/changes, the current goal or plan item under the same implicit goal ID. Do not create another goal or switch plan items. With no plan match, normal-language work starts or resumes a top-level one-off; `ootask:` forces a distinct one-off. If the request clearly targets another repository, treat it as `aatask` even without the prefix: do not change this project's goals, facts, lifecycle, or SDEs, and preserve unrelated work in progress. Do not interrupt unrelated work unless the request is germane or the owner asks to change scope. Ask only when repository scope is genuinely ambiguous; if AOTASK has no current goal context, ask for the task by problem or title, never ID. Repository or topic similarity alone is not a plan match. “Finish the plugin” means work. Track nontrivial project work before edits; save intent. Before work, page all goals and match saved problem/checks; reuse one clear same-task goal. For new task use `initial_status="active"`; same-task active: read status and record intent, no start/activate. Plans=parent+child; follow each item/one-off; advance only if continuing. Say `Problem: <problem>. Success: <observable checks>.` Retry/resume reuse same goal and wording; separated records for one task stay under the same goal ID across pauses/threads; child IDs link to parent.
 At task end, save the observed result and finish without waiting for separate proof or another instruction; moving on after seeing the result can indicate completion. Record available evidence honestly, never invent it, and ask the owner for guidance when unsure. Propose potentially useful facts for owner review, including during active work; do not approve or codify on the owner's behalf. For an interrupting OOTASK, resume the exact previously paused plan item only if the user says continue. Never attach one-off facts to another task. Never retain prompts. Claim writes only after success."""
 
 

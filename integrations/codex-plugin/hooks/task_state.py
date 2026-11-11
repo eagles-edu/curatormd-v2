@@ -387,7 +387,7 @@ def record_scoped_goal_status(
     scope = next(iter(state["task_scope_cues"]), None)
     if scope == "aotask":
         target = next(iter(state["task_scope_target_goal_ids"]), None)
-        relation_matches = target is not None and target == goal_id
+        relation_matches = target is None or target == goal_id
     elif scope == "ootask":
         relation_matches = ootask_goal_registered(project_id, goal_id)
     else:

@@ -57,14 +57,14 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertLessEqual(len(context), limit)
         for phrase in (
             "`goal_start.event_id`=",
-            "Track nontrivial work",
+            "Track nontrivial project work before edits",
             "“Finish the plugin” means work",
-            "Reuse one clear same-task goal; ask if ambiguous",
-            "repository or topic alone is not a match",
-            "separate active child via `parent_goal_id`",
-            "top-level active one-off",
-            "never append a distinct task to its parent",
-            "Reuse the parent only when the request advances its saved criteria",
+            "reuse one clear same-task goal",
+            "Repository or topic similarity alone is not a plan match",
+            "Plans=parent+child",
+            "top-level one-off",
+            "Never attach one-off facts to another task",
+            "same-task active: read status and record intent, no start/activate",
             '`initial_status="active"`',
             "save intent",
             "Plans=parent+child",
@@ -114,7 +114,7 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertEqual(_TASK_SCOPE_CUE("  AATASK: unrelated aside"), "aatask")
         aside = _CONTEXT("project", "codex-turn-aside", scope_cue="aatask")
         self.assertIn("Do not create or update a Curator project goal", aside)
-        self.assertNotIn("Track nontrivial work", aside)
+        self.assertNotIn("Track nontrivial project work before edits", aside)
         self.assertIsNone(_TASK_SCOPE_GOAL_ID("ootask: update the README"))
         self.assertEqual(
             _TASK_SCOPE_GOAL_ID("  AOTASK parent-alpha: add the toolbox task"),
@@ -128,14 +128,15 @@ class CodexPluginHookTests(unittest.TestCase):
         self.assertIn("reactivate the previously paused item", standalone)
         self.assertIn("Never attach one-off facts", standalone)
         addon = _CONTEXT("project", "codex-turn-addon", scope_cue="aotask")
-        self.assertIn("aotask <goal-id>:", addon)
+        self.assertIn("same implicit goal ID", addon)
+        self.assertNotIn("must name the goal ID", addon)
         self.assertIn("Do not create another goal", addon)
         targeted_addon = _CONTEXT(
             "project", "codex-turn-addon", scope_cue="aotask",
             scope_goal_id="parent-alpha",
         )
         self.assertIn("goal_id=parent-alpha", targeted_addon)
-        self.assertIn("that same goal", targeted_addon)
+        self.assertIn("keep its same ID", targeted_addon)
 
     def test_plugin_bundles_the_mcp_server_whose_tools_have_approval_rules(self) -> None:
         """Bind approval policy to the actual plugin server name."""
@@ -304,7 +305,7 @@ class CodexPluginHookTests(unittest.TestCase):
         response = json.loads(result.stdout)
         context = response["hookSpecificOutput"]["additionalContext"]
         self.assertIn("Curator V2;", context)
-        self.assertIn("Track nontrivial work", context)
+        self.assertIn("Track nontrivial project work before edits", context)
         self.assertIn(
             _HOOK_MODULE["_source_event_id"](turn_id),
             context,
@@ -1518,7 +1519,7 @@ class CodexPluginHookTests(unittest.TestCase):
             hook_output = cast(dict[str, object], submitted["hookSpecificOutput"])
             context = cast(str, hook_output["additionalContext"])
             self.assertIn("TURN=BEGIN", context)
-            self.assertIn("Track nontrivial work", context)
+            self.assertIn("Track nontrivial project work before edits", context)
             self.assertIn("follow each item/one-off", context)
             self.assertIn("defer that exact item", context)
 
@@ -2081,7 +2082,7 @@ class CodexPluginHookTests(unittest.TestCase):
             "Give every later `fact_record`, lifecycle transition, and SDE operation its own fresh event ID",
             "its saved `parent_goal_id` groups it under the plan",
             "`ootask:` to require a distinct one-off goal",
-            "`aotask <parent-or-child>:` to add progress",
+            "`aotask:` (add-on to current item) to add a sub-item",
             "Build the completed task's proposal summary from its supported facts",
             "never submit child fact IDs as a parent's SDE facts",
             "Do not create or read back a separate `Task summary:` fact",
@@ -2197,7 +2198,7 @@ class CodexPluginHookTests(unittest.TestCase):
             '"Pausing task tracking"',
             "prepare a pending SDE proposal from supported facts belonging to that goal",
             "`ootask:` explicitly means a distinct one-off",
-            "`aotask <parent-or-child>:` means progress on that existing goal's scope",
+            "`aotask:` means add a sub-item under, or correct/change, the current goal or plan item",
             "Use one practical success check per task",
             "never require it for completion or a proposal",
             "create a pending proposal using only supported facts from that goal",

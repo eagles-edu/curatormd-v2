@@ -40,8 +40,22 @@ wording to build a phrase library. If meaning is genuinely ambiguous, ask a
 short clarification while preserving task state.
 
 - Beginning language (“start”, “begin”, “work on”, “fix”, “let's tackle”, or a
-  direct request) starts the matching one-off task or activates the matching
-  plan item. Before creating anything, page through `goal_list_page` until all
+  direct request) is routed by context before creating a goal. If it advances
+  an existing plan shepherded by a goal, keep working through its current
+  child; the plan workflow advances through its items. `AOTASK` means “add-on
+  to current item”; `aotask:` adds a sub-item under, or corrects/changes, the
+  current goal or plan item under the same goal ID. The ID is implicit in
+  current task context. Do not select another goal, create another goal, or ask
+  the owner for an ID. If there is no current goal,
+  ask which task by problem or title, never by ID. If there is no matching plan,
+  natural-language work starts or resumes
+  its own top-level one-off; `ootask` explicitly forces a distinct one-off.
+  If the request clearly targets a repository outside the configured project's
+  scope, treat it as an aside like `aatask`, even without that prefix: do not
+  create or update this project's goals, facts, lifecycle, or SDEs, and do not
+  interrupt unrelated work in progress. Ask only when the target scope or
+  relationship to more than one plausible goal is unclear.
+  Before creating anything, page through `goal_list_page` until all
   project goals have been checked. Use `limit=10` and reduce each
   result to its `goal_id`, status, saved problem, success checks, and parent ID
   before comparing candidates; never create from a truncated or partially
@@ -53,11 +67,12 @@ short clarification while preserving task state.
   attach unrelated work to the most recent goal. For a new task the user has
   asked you to do now, set `initial_status="active"` when calling `goal_start`.
   If the request is a distinct bounded task clearly within an active broader
-  goal, create a separate active child with `parent_goal_id` set to that
+  plan, create a separate active child with `parent_goal_id` set to that
   parent. Keep the child's criteria, facts, checks, and lifecycle separate;
   the parent link records scope and provenance. If the request is unrelated to
-  the active item, create a top-level one-off with no parent. Reuse the active
-  goal itself only when the request advances its saved criteria. Never append
+  the active item but still belongs to this configured repository, create a
+  top-level one-off with no parent. Reuse the active goal itself only when the
+  request advances its saved criteria. Never append
   a distinct task's facts to a broader goal just because both concern the same
   repository. If the parent relationship is unclear, ask.
   The owner may prefix a request with `ootask` or `ootask:` to require a
@@ -65,12 +80,16 @@ short clarification while preserving task state.
   If it is unrelated to an active item, keep it top-level; if it is a distinct
   bounded task within a named parent or child, link the new goal with
   `parent_goal_id`. The owner
-  may use `aotask <parent-or-child>:` to add progress to that existing goal's
-  scope and saved criteria, keeping the same goal ID. The hook retains only the
-  normalized prefix category and blocks `goal_start` for `aotask`.
-  `aatask:` means an aside unrelated to this repository: handle it without
-  creating or changing the current project's goals, facts, lifecycle, or SDEs.
-  Leave any existing task as it is and return to it only when the user asks.
+  may use `aotask:` (add-on to current item) to add a sub-item under, or correct
+  or change, the current goal or plan item. Reuse its existing ID; do not
+  select another goal, create another goal, activate a different item, or ask
+  the owner for an ID. The hook retains only the normalized prefix category and
+  blocks `goal_start` for `aotask`.
+  `aatask:` means an aside unrelated to this repository. Apply the same route
+  automatically when natural language clearly names work outside this
+  repository: do not create or change the current project's goals, facts,
+  lifecycle, or SDEs. Leave any existing task as it is and return to it only
+  when the user asks.
   Save intent and checks, and
   say “Beginning task tracking.” For each newly started
   goal, state the same compact kickoff in this exact form: `Problem: <what is

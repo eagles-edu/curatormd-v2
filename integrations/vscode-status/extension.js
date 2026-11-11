@@ -454,6 +454,41 @@ function writeWorkspaceQueueViews(
   ).allUpdated;
 }
 
+function suggestPersistenceDocuments(candidate, goal, outline, configuredDocuments) {
+  const available = Array.isArray(configuredDocuments)
+    ? [...new Set(configuredDocuments.filter((item) => typeof item === 'string'))] : [];
+  const text = [goal?.problem, candidate?.rationale, candidate?.impact,
+    candidate?.retrieval_value, outline?.future_utility,
+    ...(Array.isArray(outline?.supporting_facts)
+      ? outline.supporting_facts.map((fact) => fact?.bullet) : [])]
+    .filter((item) => typeof item === 'string')
+    .join(' ').toLowerCase();
+  const matches = [];
+  const add = (document) => {
+    if (available.includes(document)) matches.push(document);
+  };
+
+  // HISTORY is the chronological record of a significant SDE outcome.
+  add('persistence/HISTORY.md');
+
+  // Put only explicit, reusable lessons in the lessons file.
+  if (candidate?.materiality === 'verified_lesson'
+    || outline?.supporting_facts?.some((fact) => fact?.kind === 'verified_lesson'
+      || fact?.kind === 'lesson')) {
+    add('persistence/LESSONS-LEARNED.md');
+  }
+
+  // SOP is for repeatable operations; AGENTS is for durable agent/repository rules.
+  if (/\b(workflow|procedure|runbook|operating steps|lifecycle|maintenance|recovery procedure|approval flow|cleanup process|retry process|plan item|task lifecycle|task tracking|task completion|sde proposal|recordkeeping)\b/.test(text)) {
+    add('persistence/SOP.md');
+  }
+  if (/\b(agent|codex|instruction|policy|rule|scope|routing|intake|hook|task behavior|aotask|ootask|aatask)\b/.test(text)) {
+    add('persistence/AGENTS.md');
+  }
+
+  return [...new Set(matches)];
+}
+
 function writePendingReviewDocument(
   projectRoot, projectId, reviews, outlines = new Map(), resolvedCandidateIds = new Set(),
 ) {
@@ -556,10 +591,19 @@ function writePendingReviewDocument(
     const completed = verifiedCompletion
       ? verificationFacts.map((fact) => fact.bullet).slice(0, 32)
       : taskSummaries.map((fact) => fact.bullet).slice(0, 32);
+    const configuredDocuments = outlineMatchesCandidate
+      && Array.isArray(outline.persistence_documents)
+      && outline.persistence_documents.length <= 16
+      && outline.persistence_documents.every((document) => typeof document === 'string'
+        && document.length <= 512 && !document.startsWith('/') && !document.includes('\\'))
+      ? outline.persistence_documents : [];
+    const persistenceDocuments = suggestPersistenceDocuments(
+      candidate, goal, outlineMatchesCandidate ? outline : null, configuredDocuments,
+    );
     const draft = {
       title: proposedTitle,
       significance: suggestedSignificance,
-      documents: [],
+      documents: persistenceDocuments,
       problem: goal.problem,
       completed,
       difficulties: [],
@@ -582,6 +626,17 @@ function writePendingReviewDocument(
             && completed.length > 0) {
             savedDecision.completed = completed;
             draftBlock = `${savedJson[1]}${JSON.stringify(savedDecision, null, 2)}${savedJson[3]}`;
+          }
+          if (persistenceDocuments.length > 0
+            && Array.isArray(savedDecision.documents) && savedDecision.documents.length === 0) {
+            const savedWithoutDocuments = { ...savedDecision };
+            const suggestedWithoutDocuments = { ...draft };
+            delete savedWithoutDocuments.documents;
+            delete suggestedWithoutDocuments.documents;
+            if (JSON.stringify(savedWithoutDocuments) === JSON.stringify(suggestedWithoutDocuments)) {
+              savedDecision.documents = persistenceDocuments;
+              draftBlock = `${savedJson[1]}${JSON.stringify(savedDecision, null, 2)}${savedJson[3]}`;
+            }
           }
         } catch (_) {
           // Keep an owner's malformed draft intact for attended repair.
@@ -613,6 +668,17 @@ function writePendingReviewDocument(
       for (const document of outline.persistence_documents) pushParagraph(`\`${safe(document)}\``, '  - ');
     } else {
       pushParagraph('Choose one or more configured persistence documents in the editable copy.', '  - ');
+    }
+    if (persistenceDocuments.length > 0) {
+      pushParagraph(
+        'Suggested destinations match the document purposes; edit the JSON list if another configured document is a better fit.',
+        '  - ',
+      );
+    } else {
+      pushParagraph(
+        'No destination matched confidently; choose only the configured documents whose purpose fits this entry.',
+        '  - ',
+      );
     }
 
     lines.push('', `### ${candidateNumber}. Task and outcomes`, '');
@@ -3079,8 +3145,13 @@ async function launchDocumentReview(
         vscode.window.showWarningMessage('The editable decision must list persistence destinations as a JSON array.');
         return;
       }
-      const selectedDocuments = Array.isArray(draft.documents) && draft.documents.length > 0
-        ? draft.documents : configuredDocuments;
+      const selectedDocuments = Array.isArray(draft.documents) ? draft.documents : [];
+      if (selectedDocuments.length === 0) {
+        vscode.window.showWarningMessage(
+          'Select at least one configured persistence destination in the editable proposal before approval.',
+        );
+        return;
+      }
       if (selectedDocuments.some((item) => typeof item !== 'string'
         || !configuredDocuments.includes(item))
         || new Set(selectedDocuments).size !== selectedDocuments.length) {

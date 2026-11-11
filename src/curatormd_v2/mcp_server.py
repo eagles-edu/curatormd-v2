@@ -52,8 +52,9 @@ Curator V2 work protocol:
    work. Track UX review separately after the behavior is usable and repeatable.
    Respect `ootask:` as a distinct one-off with its own
    lifecycle; set its parent only when it is a bounded task within that scope.
-   `aotask <parent-or-child>:` adds progress to that existing goal and keeps its
-   same ID and lifecycle.
+   `aotask:` (add-on to current item) adds a sub-item under, or corrects or
+   changes, the current goal/plan item under the same ID and lifecycle. Do not
+   ask the owner for a goal ID or switch to another item.
    For a plan, keep its parent and child tasks planned until execution is
    requested. Once a goal is active, call hermes_goal_bind to
    validate the current-session association; Hermes persists the host binding

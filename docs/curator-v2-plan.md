@@ -146,15 +146,19 @@ flowchart TB
   evidence. Only the owner decides importance and disposition.
 - Intake distinguishes progress on a saved task from a distinct one-off. Reuse
   a goal only when the request advances its saved problem and criteria. A
-  distinct bounded task clearly within a broader active goal gets its own
-  active child linked by `parent_goal_id`, with separate criteria, facts, and
-  lifecycle; an unrelated task gets a top-level one-off. Repository or topic
-  similarity alone is not a match. A completed child may be assessed on its
+  request advancing a goal-shepherded plan is automatically matched to that
+  plan and its current child; a distinct bounded task within the plan gets its
+  own active child linked by `parent_goal_id`, with separate criteria, facts,
+  and lifecycle. If no plan matches, same-repository work gets its own
+  top-level one-off; work clearly outside the configured repository is an
+  aside and does not change its goals or interrupt unrelated work. Repository
+  or topic similarity alone is not a plan match. A completed child may be assessed on its
   own facts while its parent remains active.
   The explicit `ootask` or `ootask:` prefix selects a distinct one-off with
   its own lifecycle; link it to a parent only when it is a bounded task within
-  that scope. `aotask <parent-or-child>:` adds progress to that existing goal's
-  criteria under the same goal ID.
+  that scope. `aotask:` (add-on to current item) adds a sub-item under, or
+  corrects or changes, the current goal or plan item under its existing ID.
+  Do not create another goal or switch to another plan item.
   If an `ootask` interrupts an active plan child, checkpoint and defer that
   exact child first. On one-off completion, create a pending SDE proposal from
   the one-off's own supported facts; after confirming it is attached to that

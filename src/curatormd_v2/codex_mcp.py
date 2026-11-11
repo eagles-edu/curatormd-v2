@@ -41,18 +41,30 @@ own session using host-injected profile and session metadata.
    saved problem, success checks, and parent ID; follow every `next_offset`.
    Compare only after every page is read, and never create from a truncated or
    partially reviewed list.
-   Reuse one clear same-task match; ask which goal when multiple could match.
-   Repository or topic similarity alone is not a match. A distinct bounded
-   task within an active broader goal gets its own active child via
-   `parent_goal_id`; an unrelated task gets a top-level active one-off. Keep
-   each task's checks and facts on its own goal. Reuse the parent itself only
-   when the request advances its saved criteria.
+   Route requests using the full conversation, the active plan, saved goal
+   criteria, and the named repository or files. When work advances a plan
+   shepherded by an existing goal, continue on its current child; the plan
+   workflow already advances through its items. `aotask:` (add-on to current
+   item) adds a sub-item under, or corrects or changes, the current goal or plan
+   item under the same goal ID. The ID is implicit in current task context. Do
+   not create another goal or switch plan items. Do not ask the owner for an ID
+   or require `aotask <goal-id>:`.
+   If no plan matches, normal-language work starts or resumes a top-level one-off;
+   `ootask:` explicitly forces a distinct one-off. When the request clearly
+   targets work outside this repository, treat it as an aside whether or not
+   the user says `aatask:`: do not change this project's goals, facts,
+   lifecycle, or SDEs, and do not interrupt unrelated work in progress.
+   Repository or topic similarity alone is not a plan match. Ask only when
+   multiple goals are plausible or repository/plan scope is genuinely unclear.
+   Keep each task's checks and facts on its own goal. Reuse the parent itself
+   only when the request advances its saved criteria.
    `ootask:` explicitly means a distinct one-off with its own goal lifecycle;
    link it to a named parent only when it is a bounded task within that scope.
    `aatask:` is an aside unrelated to this repository and must not create or
    change this project's goals, facts, lifecycle, or SDEs; preserve existing work.
-   `aotask <parent-or-child>:` means progress on that existing goal's scope and
-   criteria; keep its same goal ID and do not start another goal.
+   `aotask:` means add a sub-item under, or correct/change, the current goal or
+   plan item; reuse its existing ID and do not start another goal. Do not
+   require `aotask <parent-or-child>:` from the owner.
    For an already-active match, read `goal_status`, record an intent/progress fact, and continue; never call
    `goal_start` or `goal_activate` for it. Activate a planned, deferred, or
    resolved blocked match only at its current revision. Do not attach unrelated work to the latest

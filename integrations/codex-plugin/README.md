@@ -3,18 +3,32 @@
 The Codex plugin turns ordinary requests into Curator V2 task intake. In a
 workspace with `.curatormd-v2.toml`, type the request normally. Codex states the
 problem and checkable success criteria, saves an active one-off goal, then
-starts implementation. A request for a plan creates planned parent and child
-goals. A distinct bounded task within an active broader goal gets its own
-active child goal and lifecycle; an unrelated task gets a top-level one-off.
+starts implementation. Route each request by its relationship to the active
+plan and configured repository, using the full conversation and saved goal
+criteria rather than requiring special wording:
 
-Prefix with `ootask` or `ootask:` to force a distinct one-off with its own
-lifecycle, top-level unless it is a bounded task under a named parent or child.
-Use `aotask <parent-or-child>:` to add progress to that existing goal and its
-saved criteria. Use `aatask:` for an aside unrelated to the repository; it
-does not create or update project goals, facts, or SDEs. Resume any existing
-task only when asked. Repository or topic similarity alone never makes two tasks the
-same goal. The plugin does not add a command-palette action or save raw prompt
-text.
+- **Plan work:** When a request advances a plan shepherded by an existing goal,
+  continue with the current plan item; the plan workflow already advances
+  through its items. `AOTASK` means “add-on to current item.” Use `aotask:` to
+  add a sub-item under the current goal/plan item, or to correct or change that
+  item. Keep its existing goal ID; the ID is implicit in current task context.
+  Do not create another goal or switch to another plan item for an AOTASK.
+- **One-off work:** A normal work request with no matching plan starts or
+  resumes its own top-level one-off goal. Use `ootask` or `ootask:` to
+  explicitly force a distinct one-off. Keep its facts and SDE proposal on
+  that goal; do not merge them into a plan item.
+- **Unrelated repository work:** If the request is clearly outside the
+  configured repository's scope, treat it as an aside whether the user says so
+  naturally or prefixes it with `aatask:`. Do not create or update this
+  project's goals, facts, lifecycle, or SDEs, and do not interrupt unrelated
+  work in progress. Ask only when the target repository or relationship to the
+  active plan is genuinely unclear.
+
+Do not infer a plan match from repository or topic similarity alone. Do not
+make the user learn these prefixes: natural language is sufficient, and the
+prefixes are explicit routing controls when desired. Resume a deferred task
+only when the user asks to continue it. The plugin does not add a
+command-palette action or save raw prompt text.
 
 The Codex plugin supplies the intake skill and its own local MCP connection.
 The connection uses the active Codex workspace to select the configured V2

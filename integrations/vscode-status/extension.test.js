@@ -3652,7 +3652,9 @@ for (const inventoryComplete of [true, false]) test(`pending SDE Accept allows m
     status: 'pending_review',
     evidence_status: 'not_current_or_missing',
     successful_completion_evidence_current: false,
-    persistence_documents: [target],
+    persistence_documents: [
+      target, 'persistence/LESSONS-LEARNED.md', 'persistence/SOP.md', 'persistence/AGENTS.md',
+    ],
     supporting_facts: [],
   };
   const remainingCandidate = {
@@ -4247,9 +4249,11 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     assert.ok(generated.includes('Successful completion (+07): 2026\\-11\\-01T11:45:00\\+07:00'));
     assert.match(generated, /curator-v2-decision:candidate-42:start/);
     assert.match(generated, /"significance": 3/);
+    assert.match(generated, /Suggested destinations match the document purposes/);
     const jsonFences = [...generated.matchAll(/```json\n([\s\S]*?)\n```/g)];
     assert.equal(jsonFences.length, 2);
     assert.equal(jsonFences[0][1], jsonFences[1][1]);
+    assert.match(jsonFences[0][1], /"documents": \[\n    "persistence\/HISTORY\.md"\n  \]/);
     assert.match(jsonFences[0][1], /"completed": \[\n    "Task summary: Read-only source tracing is complete; tests were not run and verification remains open\."\n  \]/);
     assert.match(generated, /Completed task work, with verification still open:/);
 
@@ -4258,7 +4262,8 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     const editedDraft = generated.slice(draftStart, draftEnd)
       .replace('"significance": 3', '"significance": 4')
       .replace(/"completed": \[\n    "Task summary:[^\n]+\n  \]/, '"completed": []')
-      .replace('"documents": []', '"documents": [\n    "persistence/HISTORY.md",\n    "persistence/LESSONS-LEARNED.md"\n  ]');
+      .replace('"documents": [\n    "persistence/HISTORY.md"\n  ]',
+        '"documents": [\n    "persistence/HISTORY.md",\n    "persistence/LESSONS-LEARNED.md"\n  ]');
     const edited = generated.slice(0, draftStart) + editedDraft + generated.slice(draftEnd);
     fs.writeFileSync(destination, edited, 'utf8');
     const refreshedOutline = { ...outline, future_utility: 'Updated source proposal text.' };
@@ -4273,6 +4278,63 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     assert.equal(refreshedFences.length, 2);
     assert.equal(refreshedFences[0][1], refreshedFences[1][1]);
     assert.match(refreshedFences[0][1], /"completed": \[\n    "Task summary:/);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('SDE destination suggestions follow document purpose instead of selecting every file', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-sde-destinations-'));
+  const documents = [
+    'persistence/HISTORY.md',
+    'persistence/LESSONS-LEARNED.md',
+    'persistence/SOP.md',
+    'persistence/AGENTS.md',
+  ];
+  const cases = [
+    {
+      id: 'history', materiality: 'decision', problem: 'Record a significant project decision.',
+      facts: [], expected: ['persistence/HISTORY.md'],
+    },
+    {
+      id: 'lesson', materiality: 'verified_lesson', problem: 'Retain a verified lesson.',
+      facts: [{ fact_id: 'fact-lesson', kind: 'verified_lesson', bullet: 'Use the supported recovery path.' }],
+      expected: ['persistence/HISTORY.md', 'persistence/LESSONS-LEARNED.md'],
+    },
+    {
+      id: 'procedure', materiality: 'implementation', problem: 'Document the retry procedure for maintenance.',
+      facts: [], expected: ['persistence/HISTORY.md', 'persistence/SOP.md'],
+    },
+    {
+      id: 'instruction', materiality: 'decision', problem: 'Change Codex AOTASK instructions and scope.',
+      facts: [], expected: ['persistence/HISTORY.md', 'persistence/AGENTS.md'],
+    },
+  ];
+  try {
+    const reviews = cases.map(({ id, materiality, problem }) => ({
+      candidate: {
+        candidate_id: `candidate-${id}`, goal_id: `goal-${id}`, status: 'pending_review',
+        materiality, rationale: 'Retain the proposed project outcome.',
+      },
+      goal: { goal_id: `goal-${id}`, project_id: 'alpha', problem },
+    }));
+    const outlines = new Map(cases.map(({ id, materiality, facts }) => [`candidate-${id}`, {
+      project_id: 'alpha', candidate_id: `candidate-${id}`, goal_id: `goal-${id}`,
+      status: 'pending_review', persistence_documents: documents,
+      supporting_facts: facts, future_utility: '',
+    }]));
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', reviews, outlines), true);
+    const reviewPath = path.join(
+      projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
+    );
+    const generated = fs.readFileSync(reviewPath, 'utf8');
+    const drafts = [...generated.matchAll(/<!-- curator-v2-decision:candidate-([^:]+):start -->\n```json\n([\s\S]*?)\n```/g)];
+    assert.equal(drafts.length, cases.length);
+    const byId = new Map(drafts.map(([, id, json]) => [id, JSON.parse(json)]));
+    for (const { id, expected } of cases) {
+      assert.deepEqual(byId.get(id).documents, expected, id);
+    }
+    assert.doesNotMatch(generated, /"documents": \[\n    "persistence\/HISTORY\.md",\n    "persistence\/LESSONS-LEARNED\.md",\n    "persistence\/SOP\.md",\n    "persistence\/AGENTS\.md"/);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

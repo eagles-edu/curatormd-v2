@@ -30,6 +30,34 @@ At the start of a project or bounded task:
 
 **A plan can and should include an explicit decision task when the project genuinely lacks a required but undetermined product choice.** That task covers the choice itself; _it does not make all other implementation wait_. Continue work that does not depend on the answer, then implement the decision after the owner resolves it.
 
+## Route work to its goal
+
+Use the full conversation, active plan, saved goal criteria, and the named
+repository or files to route work. Do not require the owner to use a prefix for
+ordinary task tracking:
+
+- If a request advances a plan shepherded by an existing goal, continue on its
+  current child; the plan workflow already advances through its items. `AOTASK`
+  means “add-on to current item”; `aotask:` adds a sub-item under, or corrects
+  or changes, the current goal or plan item under the same goal ID. The ID is
+  implicit in current task context. Do not create another goal or switch to a
+  different plan item for an AOTASK.
+- If no plan matches, a normal-language work request starts or resumes its own
+  top-level one-off goal. `ootask` or `ootask:` explicitly forces a distinct
+  one-off. Keep its facts, checks, and SDE proposal on that goal.
+- If the request clearly targets work outside the configured repository, treat
+  it as an aside just as if it were prefixed `aatask:`. Do not create or update
+  this project's goals, facts, lifecycle, or SDEs. Preserve unrelated work in
+  progress; do not pause or switch its tracked goal unless the request is
+  germane or the owner asks to resume/change scope. Ask only when repository or
+  plan scope is genuinely ambiguous.
+
+Repository or topic similarity alone does not establish a plan match. Natural
+language is sufficient for all three routes; `aotask:`, `ootask`, and `aatask`
+are optional explicit controls. Goal IDs are internal and must not be requested
+from the owner. If an AOTASK has no current goal context, ask for the task's
+problem or title, never its ID.
+
 ## Decide what to ask
 
 Ask the owner whenever an unresolved choice materially changes agreed product

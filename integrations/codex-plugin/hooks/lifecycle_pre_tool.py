@@ -22,7 +22,6 @@ from task_state import (
     ootask_resume_state,
     prompt_cue,
     task_scope_cue,
-    task_scope_target_goal_id,
 )
 from user_prompt_submit import (
     MAX_INPUT_BYTES,
@@ -139,11 +138,10 @@ def main() -> int:
                     return 0
             else:
                 scope = task_scope_cue(event, project_id)
-                target_goal_id = task_scope_target_goal_id(event, project_id)
-                if scope == "aotask" and activating_goal_id != target_goal_id:
+                if scope == "aotask":
                     reason = (
-                        "An `aotask <goal-id>:` request can only resume its named "
-                        "goal. Keep the add-on on that exact existing goal ID."
+                        "AOTASK adds a sub-item to, or corrects/changes, the current "
+                        "goal or plan item. Do not activate another goal or item."
                     )
                 elif scope is not None and (
                     activating_goal_id is None
@@ -153,7 +151,7 @@ def main() -> int:
                 ):
                     reason = (
                         "Read `goal_status` for the matching task first. The status "
-                        "must confirm the requested one-off or exact AOTASK goal "
+                        "must confirm the requested one-off or current AOTASK goal "
                         "before activation."
                     )
                 else:
@@ -171,8 +169,8 @@ def main() -> int:
             if scope != "aotask":
                 return 0
             reason = (
-                "The `aotask` prefix adds progress to an existing parent or child goal. "
-                "Read and use that goal's status and ID; do not create another goal."
+                "AOTASK adds a sub-item to, or corrects/changes, the current parent "
+                "or child goal. Reuse its ID; do not create another goal."
             )
             sys.stdout.write(json.dumps({
                 "hookSpecificOutput": {
@@ -228,7 +226,7 @@ def main() -> int:
         ):
             reason = (
                 "This scoped task can write lifecycle changes only to the goal "
-                "whose status readback matches its OOTASK or exact AOTASK target."
+                "whose status readback matches its OOTASK or current AOTASK goal."
             )
             sys.stdout.write(json.dumps({
                 "hookSpecificOutput": {

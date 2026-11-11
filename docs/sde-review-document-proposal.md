@@ -24,9 +24,15 @@ fresh passing evidence for every criterion, finish the task, and assess a new
 proposal. No decision is accepted and no facts or receipts are deleted.
 When Accept is blocked by missing or stale evidence, its warning points the
 owner to this action; it does not bypass the evidence gate.
-Missing persistence destinations are selected in VS Code. A final owner
-confirmation binds an acceptance or rejection to the live review packet and
-complete artifact inventory.
+The editable proposal recommends destinations by document purpose. `HISTORY.md`
+is the chronological record for a significant SDE outcome. `LESSONS-LEARNED.md`
+is recommended only for an explicit, reusable lesson. `SOP.md` is for a
+repeatable operating procedure, and `AGENTS.md` is for durable agent or
+repository instructions. The proposal never selects every configured document
+by default. The owner can edit the recommended paths; approval requires at
+least one configured destination and validates each selected path. A final
+owner confirmation binds an acceptance or rejection to the live review packet
+and complete artifact inventory.
 
 ## Example: `pending-review.md`
 
