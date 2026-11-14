@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
+const MAX_HEALTH_AGE_MS = 180000;
 const [projectRoot, projectId, profileId, database, hermes, server] = process.argv.slice(2);
 const required = ['event router', 'purge scheduler', 'database storage adapter',
   'host identity', 'human review', 'alert delivery', 'artifact producer inventory'];
@@ -58,13 +59,14 @@ function validateSnapshot(wire, expectedProjectId = projectId, gate = null) {
   if (value.connected !== true || value.project_id !== expectedProjectId || health?.project_id !== expectedProjectId
     || health.status !== (gate ? 'degraded' : 'healthy') || !Array.isArray(health.gate_codes)
     || health.gate_codes.length !== (gate ? 1 : 0) || (gate && health.gate_codes[0] !== gate)
-    || !Number.isFinite(age) || age < -5000 || age > 60000 || !Array.isArray(health.dependencies)) fail();
+    || !Number.isFinite(age) || age < -5000 || age > MAX_HEALTH_AGE_MS
+    || !Array.isArray(health.dependencies)) fail();
   const dependencies = new Map(health.dependencies.map((item) => [item.name, item]));
   for (const name of required.map((item) => item.replaceAll(' ', '_'))) {
     const dependency = dependencies.get(name);
     const dependencyAge = Date.now() - Date.parse(dependency?.observed_at);
     if (dependency?.status !== 'healthy' || !Number.isFinite(dependencyAge)
-      || dependencyAge < -5000 || dependencyAge > 60000) fail();
+      || dependencyAge < -5000 || dependencyAge > MAX_HEALTH_AGE_MS) fail();
   }
 }
 
@@ -95,7 +97,7 @@ async function evaluate(target) {
 function validDashboard(value, expectedProjectId = projectId, gate = null) {
   if (!value || value.project !== expectedProjectId || !Array.isArray(value.rows)) return false;
   const age = Date.now() - Date.parse(value.observed);
-  if (!Number.isFinite(age) || age < -5000 || age > 60000) return false;
+  if (!Number.isFinite(age) || age < -5000 || age > MAX_HEALTH_AGE_MS) return false;
   const rows = new Map(value.rows.map((row) => [row.label, row]));
   return ['Project health', 'Open gates', ...required, 'Hermes profile probe'].every((name) => {
     const row = rows.get(name);

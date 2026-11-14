@@ -1,5 +1,36 @@
 # Curator V2 history
 
+## 2026-11-12 — Repair the purge scheduler's composite foreign-key schema
+
+- **Cause:** The live schema-48 database had `hermes_codex_turn_links` referencing
+  `goals(project_id, goal_id)`, but `goals` had no unique index on that pair.
+  SQLite `integrity_check` passed; the scheduled backup's `foreign_key_check`
+  raised `foreign key mismatch` before purge processing began.
+- **Changed:** Schema 49 adds the idempotent unique index
+  `goals_project_goal_unique`; the migration preserves rows and supports the
+  existing single-column and composite link-table variants.
+- **Verification:** Schema migration and maintenance CLI suites pass 30/30;
+  live schema 49 reports `integrity_check=ok` and no foreign-key violations.
+  The configured maintenance service then exited 0 with a verified backup and
+  zero due purge/expiry work. The profile-bound health probe reports all seven
+  dependencies healthy and no gates.
+
+## 2026-11-12 — Prevent health freshness flapping at the automatic refresh boundary
+
+- **Intent:** Stop healthy Curator V2 status from becoming unknown when a
+  one-minute refresh runs slightly late, and prevent the 60-second coupling
+  from returning unnoticed.
+- **Changed:** Backend dependency evaluation, the VS Code status/dashboard
+  parser, and the live-dashboard proof now share a 180-second freshness window
+  against the existing 60-second refresh. Missing, malformed, failed, and
+  older-than-window probes remain unknown. The SOP records the three-cycle
+  margin requirement.
+- **Verification:** Backend health suites pass 13/13 and 21/21; VS Code and
+  live health-proof suites pass 78/78. Cross-layer regression asserts the
+  backend, extension cadence, and proof helper use the same policy.
+- **Scope:** Source and regression coverage only; no extension install or host
+  reload was performed.
+
 <!-- curatormd-v2:sde:2a4fa0275b81d0fa35b0273582692b5058e5cfa4a29b58dbf13539be1317996c:start -->
 ### Confirm the project\-bound Hermes health snapshot and dashboard after installing the recovery update\
 
@@ -12726,3 +12757,239 @@ Pylint, Bandit, and `git diff --check` pass.
 - `persistence/SOP.md`
 <!-- curatormd-v2:block-sha256:66d00dd9c140c47ffc7a66a58db158f9d78cd78c26c7003fc0b32b43fcfd38fb -->
 <!-- curatormd-v2:sde:4e4b1a5f042091c20e6002ce8953b08505bc499e07f4a6fc16560e4a1e809ad7:end -->
+
+<!-- curatormd-v2:sde:6aad001192a282be52d92e97239ab094bfa2e647ed761200b12bfa106f78263e:start -->
+### Prevent Renew SSL scheduled maintenance from failing when its configured runtime is older than the project database schema\.
+
+- SDE: `04cc889c79744c0b80f1a95b612cf19b`
+- Significance: 3 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-12T01:13:27+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md\.
+- Decision receipt: `cb007622a0744b9ea6f7de0de155fadb`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `d07b2c1fbf4371fd23c80522c7bd5be046c36d5366d3d6b452424284c484748d`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `a9e437a63e49a5991030487a26a12f2d89457d8a0f04881df2b1c5c216f97ce2`
+- Supporting facts SHA-256: `2d34a2d513c0a4b007ca050ff0617d704f27a95771f50f04cccaa2f7d00088df`
+- Evidence state SHA-256: `e70d1360ec46a938d573888dbe1f9a027709fd2eb95cd0c51278717e7f5343e5`
+- Destination baseline SHA-256: `66c4adc495efba1404af3f6b96e1badf4da80b2cdc80fa60a5f21df78c9b5d9d`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-11T15:57:48+07:00`
+- Successfully completed: `2026-11-11T16:00:20+07:00`
+- Problem / plan task: Prevent Renew SSL scheduled maintenance from failing when its configured runtime is older than the project database schema\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-12T01:13:27+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Focused fallback and fail\-closed regression passed; Renew SSL maintenance unit succeeded twice using the compatible fallback and its timer is active\.
+
+- Future utility: Renew SSL maintenance schema compatibility and fallback recovery\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+<!-- curatormd-v2:block-sha256:d692417c4c25819ae7e51e6c9044a3a045f69ead5de611254530ab070bf172b0 -->
+<!-- curatormd-v2:sde:6aad001192a282be52d92e97239ab094bfa2e647ed761200b12bfa106f78263e:end -->
+
+<!-- curatormd-v2:sde:f38fd1247954741dee3ed6becc02a37896d22b1abbf49e634e14272258f97b9e:start -->
+### Support untracked repository\-unrelated aside requests and an editor command to join wrapped Markdown prose\.
+
+- SDE: `7be226eba18c417c9e9d1f4de8c87700`
+- Significance: 4 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-12T01:17:00+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/AGENTS\.md\.
+- Decision receipt: `a7fea8673e3e420b8bb2005f65de0a23`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `fc4a9a80f8d81ab444556371e327d6be7208da1384877229c08ea069702d50fa`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `326f370ce702408163e4982dbafaaa6bf39226717b8d599d88b0eba93e12bce2`
+- Supporting facts SHA-256: `2c102a25266ffae6a58e525227377d312c0245e39a1290832dd32911f0a007bb`
+- Evidence state SHA-256: `093e2f61b6176752d99ef1e1b04379485ad266402709b88864e0c2772ea5bee7`
+- Destination baseline SHA-256: `d4226e790cfab845f8c22660a3970b39363aa758773322e3e0a8ef3de213bbc8`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-11T16:18:10+07:00`
+- Successfully completed: `2026-11-11T16:22:06+07:00`
+- Problem / plan task: Support untracked repository\-unrelated aside requests and an editor command to join wrapped Markdown prose\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-12T01:17:00+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Focused aatask hook and Markdown join tests passed; complete hook suite passed 35 tests and VS Code suite passed 70 tests\.
+
+- Future utility: aatask aside scope and Markdown paragraph joining\.
+
+#### Approved persistence destinations
+
+- `persistence/AGENTS.md`
+- `persistence/HISTORY.md`
+<!-- curatormd-v2:block-sha256:8c5cafc20ff06a3beecea1215bb1450af6c5a1b4e6aca2e514968add8bff6fb6 -->
+<!-- curatormd-v2:sde:f38fd1247954741dee3ed6becc02a37896d22b1abbf49e634e14272258f97b9e:end -->
+
+<!-- curatormd-v2:sde:cfbf02e7f95c17a50785dccac1b09e73c068bf87924aff9cdafdd1fd24747cfe:start -->
+### Allow Curator task completion and SDE proposals without requiring automated proof while keeping uncertain claims honest and persistence human\-reviewed\.
+
+- SDE: `fd6e44278e394d34aec71a2206e434a6`
+- Significance: 3 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-12T01:41:03+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/AGENTS\.md, persistence/HISTORY\.md\.
+- Decision receipt: `e5cb3450c2444ac985254c0d105c3f3f`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `598ab0ee80e30e2bd12adaaf29518871b95dcd6e969899792ff8c989bd4c61a7`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `01a565cb16afb23b71f24a7450427e0d30c26e98f8d22b16de0984ef7a1ce0ad`
+- Supporting facts SHA-256: `0a126061d5c7f11bb908038ed955217dd182613b7f87bdeabde3a56f02bd7db0`
+- Evidence state SHA-256: `11801e14928e7c24f7115db1200c9d2395bd4fc10c948e23f8c0e6f90a1ab67d`
+- Destination baseline SHA-256: `fb870b669a149b04228497ab6fdb0f4bc552804e8c31d59abadf0661fa8b0642`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-11T16:37:21+07:00`
+- Successfully completed: `2026-11-11T16:52:05+07:00`
+- Problem / plan task: Allow Curator task completion and SDE proposals without requiring automated proof while keeping uncertain claims honest and persistence human\-reviewed\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-12T01:41:03+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+- Future utility: Nonblocking Curator completion and owner\-reviewed SDE recording\.
+
+#### Approved persistence destinations
+
+- `persistence/AGENTS.md`
+- `persistence/HISTORY.md`
+<!-- curatormd-v2:block-sha256:ecd246e8b17fc2f2f9cd38d48c75a73f459706b6b696e7ae8e120a53d98c2a64 -->
+<!-- curatormd-v2:sde:cfbf02e7f95c17a50785dccac1b09e73c068bf87924aff9cdafdd1fd24747cfe:end -->
+
+<!-- curatormd-v2:sde:bad69059631a32e63e2b2963977d64a26ac0c56f63935bdf3a1a6850e14be841:start -->
+### Complete remaining open requirements in Curator V2 at docs/curator\-v2\-plan\.md and docs/Repair V2 dashboard health and queue feeds PLAN\.md\.
+
+- SDE: `10cb433892ef4c059c0801ffd5f279bb`
+- Significance: 4 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-12T23:15:52+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/SOP\.md\.
+- Decision receipt: `9b9beaaefce842a8bfe1b81c71ec2cc1`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `05780cb7309c733d525fecc3bbf18deb770fe263a3e3c2130def48397012c5b1`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `acdce70361f7e05ec030c4dd8e1db050198790d470a31cf70f05282413171071`
+- Supporting facts SHA-256: `0ac076ac2414afc0ae24629c70489f84092bcb73e9b81dff958a33eb5efa8d26`
+- Evidence state SHA-256: `74d01a2dbd6e9c11651bbc2cdeeaf883258f627382deb1463312772a88e3f35d`
+- Destination baseline SHA-256: `9df68dc2f227a4ba64c0db4ee90b4933f40e6004d27ca24acbca5688724c976a`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-02T18:20:57+07:00`
+- Successfully completed: `unknown`
+- Problem / plan task: Complete remaining open requirements in Curator V2 at docs/curator\-v2\-plan\.md and docs/Repair V2 dashboard health and queue feeds PLAN\.md\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-12T23:15:52+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Added and installed \`curatormd\-v2\-ops\` for \`curatormd\-v2\-dev\-alpha\`: an owner\-private exact\-binding manifest, 60\-second resident monitor, six\-hour maintenance path, seven\-dependency and complete\-queue freshness checks, resource limits, and one runbook inventory\. Incident diagnosis is deduplicated and bounded; identity, grant, deployment, and destructive changes remain owner\-gated\.
+
+- Future utility: Useful for future Curator V2 local\-alpha maintenance and operations\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/SOP.md`
+<!-- curatormd-v2:block-sha256:19e5ab1d7814d54f480c1cd2e66c4089ea88249d06cd03e44d4ed3677fec3d56 -->
+<!-- curatormd-v2:sde:bad69059631a32e63e2b2963977d64a26ac0c56f63935bdf3a1a6850e14be841:end -->
+
+<!-- curatormd-v2:sde:0614ccb97486af75b45c0d0e685e5778e262184d72143565081fd7153c8c8b20:start -->
+### Complete remaining open requirements in Curator V2 at docs/curator\-v2\-plan\.md and docs/Repair V2 dashboard health and queue feeds PLAN\.md\.
+
+- SDE: `7633fb2d6d974cc2a8cfaa453adad9fc`
+- Significance: 3 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-12T23:16:52+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/SOP\.md, persistence/AGENTS\.md\.
+- Decision receipt: `12e66e23f9f94e0f96120239e254baf1`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `5cc1f140a6126c44736a4b660ac65a8429eb850a556dcb80ba20b94b28d8a6bc`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `c7c3f9b8ba80e64af613e18de4acb77fa2dd2a8696015e408e5d290a2f38f8bf`
+- Supporting facts SHA-256: `5bdea14d3e2171e0d6678d3a89e7e06b18b8aadc53dffe3ee8f22bd82a313eed`
+- Evidence state SHA-256: `ee310bb0a64e1f83062483c4a5edd14a183b87561004166e2a406588bcd1d2f3`
+- Destination baseline SHA-256: `52046bea21df66950cf632cd71f86d35676ea633e2cad8adbc1d8b3878836f92`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-02T18:20:57+07:00`
+- Successfully completed: `unknown`
+- Problem / plan task: Complete remaining open requirements in Curator V2 at docs/curator\-v2\-plan\.md and docs/Repair V2 dashboard health and queue feeds PLAN\.md\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-12T23:16:52+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- Added reversible recovery safeguards: verified before\-images and restore steps for changed files, consistent snapshots before migration, post\-migration SQLite integrity and foreign\-key checks, bounded idempotent retry, and reconciliation of expired Codex diagnosis units\. \`tests/test\_ops\_cli\.py\` covers binding conflicts, corrupt/locked databases, snapshot/FK failures, stale or incomplete health, deduplication, diagnosis dispatch, CPU/RSS limits, timer, and restart behavior\.
+
+- Future utility: Useful when diagnosing or safely recovering Curator V2 local\-alpha incidents\.
+
+#### Approved persistence destinations
+
+- `persistence/AGENTS.md`
+- `persistence/HISTORY.md`
+- `persistence/SOP.md`
+<!-- curatormd-v2:block-sha256:5a9dbfcce6f636bb58dfec469172e4023c371de673c06ae21518b925c0841c52 -->
+<!-- curatormd-v2:sde:0614ccb97486af75b45c0d0e685e5778e262184d72143565081fd7153c8c8b20:end -->
+
+<!-- curatormd-v2:sde:85a2dd86412aae8093e542f64ca8f03b220d6e0b5daa177c926dac85591f5551:start -->
+### Four\-level JSON proposals with editable pending SDE approval copies
+
+- SDE: `8b825a5ee25244d9a83977383af38231`
+- Significance: 4 / 5
+- Significance use: guides future compression, summarization, archiving, and culling decisions.
+- Decision: approved
+- Reviewed: `2026-11-13T16:17:54+07:00`
+- Reviewer: `local-uid:1000`
+- Review rationale: Owner approved the SDE entry for persistence/HISTORY\.md, persistence/SOP\.md\.
+- Decision receipt: `b38a7682825b4aad95d5d8b2cffafde4`
+- Project ID: `curatormd-v2-dev-alpha`
+- Receipt binding SHA-256: `d2819ade4d063c8e1d851c6dc60427978379c5f97cddd2d092baf1e675f01175`
+- Project config SHA-256: `46c099c7182a553a53ce112e1612ae0f425b24def9361538a885a86958f0b86c`
+- Draft SHA-256: `4741171c9fb512455ba5e6994770f1a612c739165ce4d68a4c61956b2a653fa4`
+- Supporting facts SHA-256: `c28aeea4d84e09ddbae624c70625a8d2faf0184d0bab7ac57faeaf1bb9654122`
+- Evidence state SHA-256: `3b0e24e742ad660ec434e783682d4cd6f147e379967338db0f095f83c0906a76`
+- Destination baseline SHA-256: `0ae545c7c4f2ff65d42b82fe58a785ccfa7bc511390bb55ad1db4fe90c907ae7`
+- Artifact inventory SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Dependency map SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+- Task started: `2026-11-13T00:14:07+07:00`
+- Successfully completed: `2026-11-13T00:14:47+07:00`
+- Problem / plan task: Pending SDE reviews lacked a structured four\-level proposal, a separately editable owner approval copy, and nonempty\-completion validation\.
+- Cleanup authorization reviewer: `local-uid:1000`
+- Cleanup authorization time: `2026-11-13T16:17:54+07:00`
+- Cleanup manifest SHA-256: `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`
+
+#### Completed successfully
+
+- The working\-tree VS Code generator builds a four\-level sdeProposal object, renders a source proposal and a separate editable approval copy, maps edits back for review, and refuses empty completion\.
+
+- Future utility: Useful for future SDE proposal generation and review\.
+
+#### Approved persistence destinations
+
+- `persistence/HISTORY.md`
+- `persistence/SOP.md`
+<!-- curatormd-v2:block-sha256:b0dc7d3ca78991e669a6a0be5dca55caead579f696b149cf1bb51aad7388183f -->
+<!-- curatormd-v2:sde:85a2dd86412aae8093e542f64ca8f03b220d6e0b5daa177c926dac85591f5551:end -->

@@ -23,6 +23,7 @@ from curatormd_v2 import (
 from curatormd_v2.schema_migrations import (
     apply_schema_migrations,
     migrate_codex_session_turns_v48,
+    migrate_goal_project_reference_v49,
     migrate_sde_candidate_withdrawals_v47,
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
@@ -51,6 +52,59 @@ class SchemaMigrationTests(unittest.TestCase):
             self.assertEqual(
                 connection.execute("PRAGMA user_version").fetchone()[0], 48
             )
+        finally:
+            connection.close()
+
+    def test_v49_repairs_composite_goal_parent_key_and_is_idempotent(self) -> None:
+        """A v48 composite reference validates and remains scoped to project."""
+
+        connection = sqlite3.connect(":memory:")
+        connection.execute("PRAGMA foreign_keys = ON")
+        try:
+            connection.executescript(
+                """CREATE TABLE goals (
+                       goal_id TEXT PRIMARY KEY,
+                       project_id TEXT NOT NULL
+                   );
+                   CREATE TABLE hermes_codex_turns (
+                       project_id TEXT NOT NULL,
+                       profile_id TEXT NOT NULL,
+                       session_id TEXT NOT NULL,
+                       turn_id TEXT NOT NULL,
+                       PRIMARY KEY(project_id, profile_id, session_id, turn_id)
+                   );
+                   CREATE TABLE hermes_codex_turn_links (
+                       project_id TEXT NOT NULL,
+                       profile_id TEXT NOT NULL,
+                       session_id TEXT NOT NULL,
+                       turn_id TEXT NOT NULL,
+                       goal_id TEXT NOT NULL,
+                       PRIMARY KEY(project_id, profile_id, session_id, turn_id, goal_id),
+                       FOREIGN KEY(project_id, profile_id, session_id, turn_id)
+                           REFERENCES hermes_codex_turns(project_id, profile_id, session_id, turn_id),
+                       FOREIGN KEY(project_id, goal_id)
+                           REFERENCES goals(project_id, goal_id)
+                   );
+                   INSERT INTO goals VALUES ('goal-a', 'project-a');
+                   INSERT INTO hermes_codex_turns
+                       VALUES ('project-a', 'profile', 'session', 'turn');
+                   PRAGMA user_version = 48;"""
+            )
+
+            migrate_goal_project_reference_v49(connection)
+            migrate_goal_project_reference_v49(connection)
+
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 49)
+            self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+            connection.execute(
+                "INSERT INTO hermes_codex_turn_links VALUES "
+                "('project-a', 'profile', 'session', 'turn', 'goal-a')"
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(
+                    "INSERT INTO hermes_codex_turn_links VALUES "
+                    "('project-b', 'profile', 'session', 'turn', 'goal-a')"
+                )
         finally:
             connection.close()
 

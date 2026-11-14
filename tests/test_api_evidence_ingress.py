@@ -12,6 +12,7 @@ from test_api import (
     EvidenceVerificationContext,
     EventEnvelope,
     EventInboxStatus,
+    FactRecorded,
     FactCompactionApprovalRequest,
     FactCompactionProposal,
     FactKind,
@@ -208,10 +209,23 @@ class ApiEvidenceIngressTests(_ApiTestSupport):
             )
 
 
-    def test_project_health_treats_old_or_invalid_probe_time_as_unknown(self) -> None:
-        stale = DependencyReadiness(
+    def test_project_health_tolerates_delayed_refresh_but_expires_stale_probe(self) -> None:
+        delayed = DependencyReadiness(
             {name: True for name in REQUIRED_HEALTH_DEPENDENCIES},
             (datetime.now(UTC) - timedelta(seconds=90)).isoformat(),
+        )
+        delayed_api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin}, self.authorizer,
+            dependency_readiness=delayed,
+        )
+        delayed_health = delayed_api.project_health(self.caller, "project-a")
+        self.assertEqual(delayed_health.status.value, "healthy")
+        self.assertEqual(delayed_health.gate_codes, ())
+        self.assertTrue(all(item.age_seconds == 90 for item in delayed_health.dependencies))
+
+        stale = DependencyReadiness(
+            {name: True for name in REQUIRED_HEALTH_DEPENDENCIES},
+            (datetime.now(UTC) - timedelta(seconds=181)).isoformat(),
         )
         stale_api = AuthenticatedCuratorAPI(
             {"project-a": self.plugin}, self.authorizer,
@@ -324,6 +338,29 @@ class ApiEvidenceIngressTests(_ApiTestSupport):
             api.goal_status(self.caller, "project-a", "goal-api-1").goal.problem,
             "Record the API task",
         )
+
+    def test_fact_for_completed_goal_is_rejected_before_event_receipt_creation(self) -> None:
+        """Prevent a late client write from becoming a persistent failed event."""
+        api = AuthenticatedCuratorAPI(
+            {"project-a": self.plugin}, self.authorizer
+        )
+        goal = self.plugin.service.goal_start("Already completed task")
+        self.plugin.service.goal_finish(goal.goal_id, "The task was completed.")
+        event = EventEnvelope(
+            "late-fact-after-complete",
+            "project-a",
+            FactRecorded(
+                goal_id=goal.goal_id,
+                fact_id="late-fact-after-complete",
+                kind=FactKind.CHANGE,
+                bullet="Synthetic fixture for a late fact write.",
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "terminal goals cannot accept new facts"):
+            api.process_event_json(self.caller, "project-a", event.to_json())
+        with self.assertRaises(NotFoundError):
+            self.store.event_receipt("project-a", event.event_id)
 
 
     def test_published_producer_fixture_runs_through_authenticated_backend(self) -> None:

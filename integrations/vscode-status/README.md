@@ -53,6 +53,16 @@ credentials, or project paths. If local storage cannot be read back, the
 dashboard reports the log as unavailable rather than showing a false empty
 state.
 
+After each health refresh, the extension also writes a bounded, content-free
+dashboard telemetry snapshot to the project's private local-alpha ops state
+directory. It records the states of the Hermes probe, Curator queue, event
+processing, operational error log, health history, and dashboard refresh. The
+ops monitor reads this snapshot with the profile-bound health and event
+inventory, then includes each node state and evidence gap in the AI mitigation
+incident. Event IDs and payloads are not copied into this dashboard handoff.
+The handoff must be owner-owned, private, valid, and no older than three
+minutes; otherwise the monitor marks it unavailable or stale.
+
 The dashboard reads Hermes readiness and Curator queue counts independently.
 It gets readiness from Hermes and uses Curator's read-only
 `project_queue_snapshot` MCP tool for queue counts. Queue counts are accepted
@@ -75,14 +85,16 @@ temporary artifact staging root. The two JSON files are rewritten from an
 authorized database read. They are views, not canonical records or approval
 receipts. SQLite remains authoritative. The extension refuses symlinked state
 directories and writes these local views with owner-only permissions.
-Each candidate includes a readable proposed SDE entry and a separate editable
-copy. The copy starts with a materiality-based significance recommendation;
-the owner may set any score from 0 to 5 for future compression, summarization,
-archiving, and culling decisions, and may edit configured destinations in the
-JSON. An empty destination list uses all configured documents on acceptance.
-A score of 5 requires extra confirmation. The proposal separates the plan task,
-evidence-checked work, difficulties, plan changes, lessons, and future utility;
-unsupported details are marked as not recorded.
+Each candidate has a source proposal and a duplicate editable approval copy.
+Both use a four-level `sdeProposal` JSON structure: `meta` identifies the
+candidate and evidence state, `payload` holds the outcome, and `persistence`
+lists configured documents with their purpose, directives, and `enabled`
+selection. The owner
+edits the payload and destination selections in the approval copy; source
+identity and evidence fields stay Curator-generated. Its `completion` field
+must contain a supported outcome before Accept can proceed. Significance starts
+from materiality, may be changed from 0 to 5, and guides future compression,
+summarization, archiving, and culling; a score of 5 requires extra confirmation.
 Accept and Reject open the attended reviewer with the saved copy. Withdraw
 asks for an owner rationale and confirmation, removes only the pending proposal,
 and retains its facts and audit receipt. Refresh evidence asks for a reason and
@@ -360,3 +372,8 @@ changes, and when the VS Code window regains focus. Clicking the item opens the
 pending review document when approvals are waiting; otherwise it opens the
 dashboard and performs a fresh health read. Reopening the repository is not
 needed for later health changes.
+
+Health snapshots remain usable for up to 180 seconds, three dashboard refresh
+intervals. This margin absorbs delayed probes and one or two missed refresh
+cycles without extending stale health indefinitely; older observations render
+as unknown.

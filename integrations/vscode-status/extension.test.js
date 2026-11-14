@@ -16,6 +16,22 @@ function assertTooltipIncludesCurrentVersion(item) {
   assert.ok(item.tooltip.includes(`CuratorMD V2 ${extensionVersion}.`));
 }
 
+function groundedTestOutline(projectId, review, supportingFacts = undefined) {
+  const { candidate, goal } = review;
+  return {
+    project_id: projectId,
+    candidate_id: candidate.candidate_id,
+    goal_id: goal.goal_id,
+    status: 'pending_review',
+    persistence_documents: ['persistence/HISTORY.md'],
+    supporting_facts: supportingFacts || [{
+      fact_id: `fact-${candidate.candidate_id}`,
+      kind: 'change',
+      bullet: 'Observed result included in the focused lifecycle test.',
+    }],
+  };
+}
+
 const vscodeMock = {
   ThemeColor: class ThemeColor {
     constructor(id) { this.id = id; }
@@ -58,6 +74,7 @@ const {
   dashboardComponentRows,
   healthHistoryStatus,
   updatePersistentHealthHistory,
+  persistDashboardTelemetry,
   hostFilesystemRows,
   parsePurgeReceiptInspection,
   parseTerminalEventInventory,
@@ -364,20 +381,27 @@ test('Hermes health probe requires a complete fresh-schema project-bound result'
   const health = parseHermesHealthProbe(JSON.stringify(payload), 'alpha');
   assert.equal(health.status, 'healthy');
   assert.equal(health.dependencies.length, 7);
+  const delayedRefresh = healthyHermesProbe();
+  delayedRefresh.health.observed_at = new Date(Date.now() - 90000).toISOString();
+  delayedRefresh.health.dependencies.forEach((dependency) => {
+    dependency.observed_at = new Date(Date.now() - 90000).toISOString();
+    dependency.age_seconds = 90;
+  });
+  assert.equal(parseHermesHealthProbe(JSON.stringify(delayedRefresh), 'alpha').status, 'healthy');
   const staleAge = healthyHermesProbe();
-  staleAge.health.dependencies[0].age_seconds = 61;
+  staleAge.health.dependencies[0].age_seconds = 181;
   assert.throws(
     () => parseHermesHealthProbe(JSON.stringify(staleAge), 'alpha'),
     (error) => error.code === 'hermes-probe-stale',
   );
   const staleTimestamp = healthyHermesProbe();
-  staleTimestamp.health.dependencies[0].observed_at = new Date(Date.now() - 66_000).toISOString();
+  staleTimestamp.health.dependencies[0].observed_at = new Date(Date.now() - 186_000).toISOString();
   assert.throws(
     () => parseHermesHealthProbe(JSON.stringify(staleTimestamp), 'alpha'),
     (error) => error.code === 'hermes-probe-stale',
   );
   const staleHealth = healthyHermesProbe();
-  staleHealth.health.observed_at = new Date(Date.now() - 66_000).toISOString();
+  staleHealth.health.observed_at = new Date(Date.now() - 186_000).toISOString();
   assert.throws(
     () => parseHermesHealthProbe(JSON.stringify(staleHealth), 'alpha'),
     (error) => error.code === 'hermes-probe-stale',
@@ -418,6 +442,24 @@ test('Hermes health probe requires a complete fresh-schema project-bound result'
   );
 });
 
+test('backend, VS Code, and live proof share a three-refresh health freshness window', () => {
+  const extensionSource = fs.readFileSync(path.join(__dirname, 'extension.js'), 'utf8');
+  const backendSource = fs.readFileSync(
+    path.join(__dirname, '../../src/curatormd_v2/health_evaluation.py'), 'utf8',
+  );
+  const proofSource = fs.readFileSync(path.join(__dirname, 'health-proof.js'), 'utf8');
+  const refreshMs = Number(extensionSource.match(/STATUS_REFRESH_INTERVAL_MS\s*=\s*(\d+)/)?.[1]);
+  const refreshCycles = Number(extensionSource.match(/HEALTH_FRESHNESS_INTERVALS\s*=\s*(\d+)/)?.[1]);
+  const backendMaxSeconds = Number(
+    backendSource.match(/MAX_DEPENDENCY_PROBE_AGE_SECONDS\s*=\s*(\d+)/)?.[1],
+  );
+  const liveProofMaxMs = Number(proofSource.match(/MAX_HEALTH_AGE_MS\s*=\s*(\d+)/)?.[1]);
+  assert.equal(refreshMs, 60000);
+  assert.equal(refreshCycles, 3);
+  assert.equal(backendMaxSeconds, refreshMs / 1000 * refreshCycles);
+  assert.equal(liveProofMaxMs, backendMaxSeconds * 1000);
+});
+
 test('Curator queue snapshot is project-bound and independent from host readiness status', () => {
   const snapshot = healthyCuratorQueueSnapshot();
   const parsed = parseCuratorQueueSnapshot(JSON.stringify(snapshot), 'alpha');
@@ -429,13 +471,19 @@ test('Curator queue snapshot is project-bound and independent from host readines
     (error) => error.code === 'curator-queue-project-mismatch',
   );
   assert.throws(
-    () => parseCuratorQueueSnapshot(JSON.stringify({ ...snapshot, observed_at: new Date(Date.now() - 70000).toISOString() }), 'alpha'),
+    () => parseCuratorQueueSnapshot(JSON.stringify({ ...snapshot, observed_at: new Date(Date.now() - 186000).toISOString() }), 'alpha'),
     (error) => error.code === 'curator-queue-stale',
   );
   assert.throws(
-    () => parseCuratorQueueSnapshot(JSON.stringify({ ...snapshot, database_observed_at: new Date(Date.now() - 70000).toISOString() }), 'alpha'),
+    () => parseCuratorQueueSnapshot(JSON.stringify({ ...snapshot, database_observed_at: new Date(Date.now() - 186000).toISOString() }), 'alpha'),
     (error) => error.code === 'curator-queue-stale',
   );
+  const delayedSnapshot = {
+    ...snapshot,
+    observed_at: new Date(Date.now() - 90000).toISOString(),
+    database_observed_at: new Date(Date.now() - 90000).toISOString(),
+  };
+  assert.doesNotThrow(() => parseCuratorQueueSnapshot(JSON.stringify(delayedSnapshot), 'alpha'));
   assert.throws(
     () => parseCuratorQueueSnapshot(JSON.stringify({ ...snapshot, database_observation_complete: false }), 'alpha'),
     (error) => error.code === 'curator-queue-invalid',
@@ -561,11 +609,15 @@ test('health component rows expose every dependency and preserve stale or unknow
   assert.ok(healthyRows.every((row) => row.state === 'healthy'));
   assert.equal(healthyRows[0].label, 'event router');
 
+  health.dependencies[1].observed_at = new Date(Date.now() - 90000).toISOString();
+  health.dependencies[1].age_seconds = 90;
+  assert.equal(healthComponentRows(health, 'alpha')[1].state, 'healthy');
+
   health.dependencies[1].status = 'degraded';
   const degradedRows = healthComponentRows(health, 'alpha');
   assert.equal(degradedRows[1].state, 'degraded');
 
-  health.dependencies[1].observed_at = new Date(Date.now() - 70000).toISOString();
+  health.dependencies[1].observed_at = new Date(Date.now() - 186000).toISOString();
   health.dependencies[1].age_seconds = 70;
   const staleRows = healthComponentRows(health, 'alpha');
   assert.equal(staleRows[1].state, 'unknown');
@@ -750,6 +802,42 @@ test('health history persists a bounded project and Hermes-profile scoped series
   }, 'alpha', 'alpha-hermes', 'healthy', new Date().toISOString());
   assert.equal(unreadable.persisted, false);
   assert.equal(unreadable.scope, result.scope);
+});
+
+test('dashboard telemetry handoff records bounded failure nodes without payload details', () => {
+  const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-ops-telemetry-'));
+  try {
+    const saved = persistDashboardTelemetry({
+      projectId: 'alpha',
+      profileId: 'alpha-profile',
+      health: { project_id: 'alpha', status: 'degraded', gate_codes: ['event_failures'] },
+      healthProbeError: null,
+      queueSnapshot: {
+        project_id: 'alpha', database_observation_complete: true,
+        event_failed_count: 1, event_quarantined_count: 0,
+      },
+      queueProbeError: null,
+      operationalErrorLog: {
+        persisted: true,
+        entries: [{ key: 'events:other', active: true, summary: 'One event failed.' }],
+      },
+      healthHistoryPersisted: true,
+      observedAt: '2026-11-13T09:39:00.000Z',
+      stateRoot,
+    });
+    assert.equal(saved.persisted, true);
+    const target = path.join(stateRoot, 'alpha', 'ops', 'dashboard-telemetry.json');
+    const metadata = fs.statSync(target);
+    assert.equal(metadata.mode & 0o777, 0o600);
+    const snapshot = JSON.parse(fs.readFileSync(target, 'utf8'));
+    assert.equal(snapshot.nodes.hermes_health_probe.status, 'degraded');
+    assert.equal(snapshot.nodes.event_processing.status, 'degraded');
+    assert.deepEqual(snapshot.active_error_keys, ['events:other']);
+    assert.equal(Object.hasOwn(snapshot, 'event_id'), false);
+    assert.equal(JSON.stringify(snapshot).includes('payload'), false);
+  } finally {
+    fs.rmSync(stateRoot, { recursive: true, force: true });
+  }
 });
 
 test('dashboard restores persistent health history returned by the host', () => {
@@ -1740,7 +1828,13 @@ test('dashboard refreshes the authoritative queue before opening the pending rev
       materiality: 'decision', rationale: 'Keep the accepted decision in the local queue until refreshed.',
     },
     goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Refresh the accepted review.' },
-  }], new Map()), true);
+  }], new Map([['accepted-candidate', {
+    project_id: 'alpha', candidate_id: 'accepted-candidate', goal_id: 'goal-1',
+    status: 'pending_review', supporting_facts: [{
+      fact_id: 'fact-accepted-candidate', kind: 'change',
+      bullet: 'The accepted decision remains in the local queue until refreshed.',
+    }],
+  }]])), true);
 
   const previousWorkspace = vscodeMock.workspace;
   const previousWindow = vscodeMock.window;
@@ -3409,7 +3503,13 @@ test('project workspace exposes inbox, SDE proposals, and side-buffer without co
         },
         facts: [{ bullet: 'MUST_NOT_BE_COPIED' }],
       }],
-    });
+    }, new Map([['candidate-1', {
+      project_id: 'alpha', candidate_id: 'candidate-1', goal_id: 'goal-1',
+      status: 'pending_review', supporting_facts: [{
+        fact_id: 'safe-fact', kind: 'change',
+        bullet: 'Retain this verified project decision.',
+      }],
+    }]]));
 
     assert.equal(written, true);
     assert.ok(fs.statSync(path.join(projectRoot, '.curatormd-v2/inbox')).isDirectory());
@@ -3445,7 +3545,12 @@ test('project workspace exposes inbox, SDE proposals, and side-buffer without co
         },
         goal: { goal_id: 'goal-1', project_id: 'alpha', problem: 'Smoke goal' },
       }],
-    });
+    }, new Map([['candidate-1', {
+      project_id: 'alpha', candidate_id: 'candidate-1', goal_id: 'goal-1',
+      status: 'pending_review', supporting_facts: [{
+        fact_id: 'safe-fact', kind: 'change', bullet: 'Retain this verified project decision.',
+      }],
+    }]]));
     const inboxAfter = fs.statSync(inboxPath, { bigint: true });
     const proposalAfter = fs.statSync(proposalPath, { bigint: true });
     assert.equal(rewritten, true);
@@ -3467,7 +3572,13 @@ test('project workspace exposes inbox, SDE proposals, and side-buffer without co
           goal_id: 'goal-2', project_id: 'alpha', problem: 'Review projection recovery',
         },
       }],
-    }, new Map(), new Set(['candidate-1']));
+    }, new Map([['candidate-2', {
+      project_id: 'alpha', candidate_id: 'candidate-2', goal_id: 'goal-2',
+      status: 'pending_review', supporting_facts: [{
+        fact_id: 'candidate-2-fact', kind: 'change',
+        bullet: 'Refresh the review projection independently.',
+      }],
+    }]]), new Set(['candidate-1']));
     assert.deepEqual(reviewOnly, {
       reviewQueueUpdated: true,
       reviewDocumentUpdated: true,
@@ -3514,7 +3625,13 @@ test('project workspace exposes inbox, SDE proposals, and side-buffer without co
           },
         }],
       },
-      new Map(),
+      new Map([['candidate-2', {
+        project_id: 'alpha', candidate_id: 'candidate-2', goal_id: 'goal-2',
+        status: 'pending_review', supporting_facts: [{
+          fact_id: 'candidate-2-fact', kind: 'change',
+          bullet: 'Refresh the review projection independently.',
+        }],
+      }]]),
       new Set(['candidate-1']),
     );
     assert.deepEqual(refreshedStaleProjections, {
@@ -3600,12 +3717,14 @@ test('pending review keeps completion claims separate from verified successful w
       projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
     );
     const documentText = fs.readFileSync(reviewPath, 'utf8');
-    assert.match(documentText, /- Completed successfully:\n  - No recorded passing verification supports a successful-completion claim\./);
-    assert.doesNotMatch(documentText, /- Completed successfully:\n  - Completion claim: Checks passed:/);
+    assert.match(documentText, /"completion": \[/);
+    assert.doesNotMatch(documentText, /Checks passed: `npm test` passed/);
     const jsonFences = [...documentText.matchAll(/```json\n([\s\S]*?)\n```/g)];
     assert.equal(jsonFences.length, 2);
     assert.equal(jsonFences[0][1], jsonFences[1][1]);
-    assert.deepEqual(JSON.parse(jsonFences[0][1]).completed, []);
+    assert.deepEqual(JSON.parse(jsonFences[0][1]).sdeProposal.payload.completion, [
+      'The tested change is ready for review.',
+    ]);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
@@ -3655,7 +3774,9 @@ for (const inventoryComplete of [true, false]) test(`pending SDE Accept allows m
     persistence_documents: [
       target, 'persistence/LESSONS-LEARNED.md', 'persistence/SOP.md', 'persistence/AGENTS.md',
     ],
-    supporting_facts: [],
+    supporting_facts: [{
+      fact_id: 'fact-42', kind: 'change', bullet: 'Retain this proposal for attended review.',
+    }],
   };
   const remainingCandidate = {
     candidate_id: 'candidate-remaining-43',
@@ -3672,7 +3793,10 @@ for (const inventoryComplete of [true, false]) test(`pending SDE Accept allows m
     evidence_status: 'current_passing',
     successful_completion_evidence_current: true,
     persistence_documents: [target],
-    supporting_facts: [],
+    supporting_facts: [{
+      fact_id: 'fact-remaining-43', kind: 'change',
+      bullet: 'Keep this other proposal available for review.',
+    }],
   };
   const artifact = {
     path: 'goal-42/scratch/review-cue.bin',
@@ -3743,6 +3867,17 @@ for (const inventoryComplete of [true, false]) test(`pending SDE Accept allows m
       },
     }], new Map([[candidateId, outline], [remainingCandidate.candidate_id, remainingOutline]])), true);
     let documentText = fs.readFileSync(reviewPath, 'utf8');
+    const selectedStart = documentText.indexOf(
+      '<!-- curator-v2-decision:candidate-42:start -->',
+    );
+    const rationaleStart = documentText.indexOf(
+      '"rationale": "Retain the verified project decision."', selectedStart,
+    );
+    documentText = `${documentText.slice(0, rationaleStart)}${documentText.slice(rationaleStart)
+      .replace('"rationale": "Retain the verified project decision."',
+        '"rationale": "Retain the verified project decision!"')}`;
+    assert.match(documentText, /verified project decision!/);
+    fs.writeFileSync(reviewPath, documentText, 'utf8');
     let documentDirty = false;
     const document = {
       uri: { fsPath: reviewPath },
@@ -3802,12 +3937,12 @@ for (const inventoryComplete of [true, false]) test(`pending SDE Accept allows m
       (line) => line === `<!-- curator-v2-actions: ${candidateId} -->`,
     );
     const headingLine = documentText.split('\n').findIndex(
-      (line) => line.endsWith('Editable decision'),
+      (line) => line.endsWith('Approval copy (editable)'),
     );
     const lenses = reviewDocumentActions(document);
     const selectedLenses = lenses.filter((lens) => lens.command.arguments[0] === candidateId);
     assert.equal(selectedLenses.length, 4);
-    assert.ok(actionLine < headingLine);
+    assert.ok(actionLine > headingLine);
     assert.deepEqual(selectedLenses.map((lens) => lens.command.title), ['Accept', 'Reject', 'Withdraw', 'Refresh evidence']);
 
     await launchDocumentReview(candidateId, 'approve', (command, args) => {
@@ -3950,7 +4085,10 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
     goal_id: candidate.goal_id,
     status: 'pending_review',
     evidence_status: 'not_current_or_missing',
-    supporting_facts: [{ fact_id: 'fact-retained-42' }],
+    supporting_facts: [{
+      fact_id: 'fact-retained-42', kind: 'change',
+      bullet: 'Clear the stale proposal before retesting.',
+    }],
   };
   const withdrawal = {
     withdrawal_id: 'withdrawal-42',
@@ -3962,6 +4100,22 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
   };
   const reviewResponses = {
     sde_review_outline: outline,
+    sde_review_queue_cards: {
+      project_id: projectId,
+      candidates: [{
+        candidate,
+        goal: { goal_id: candidate.goal_id, project_id: projectId, problem: 'Smoke goal' },
+      }],
+    },
+    event_queue_status: {
+      received_count: 0,
+      failed_count: 0,
+      quarantined_count: 0,
+      claimed_count: 0,
+      expired_claim_count: 0,
+      oldest_pending_age_seconds: null,
+      oldest_pending_received_at: null,
+    },
     sde_withdraw_candidates: [withdrawal],
   };
   const priorWorkspace = vscodeMock.workspace;
@@ -3990,15 +4144,19 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
       candidate,
       goal: { goal_id: candidate.goal_id, project_id: projectId, problem: 'Smoke goal' },
     }], new Map([[candidateId, outline]])), true);
-    const documentText = fs.readFileSync(reviewPath, 'utf8');
+    let documentText = fs.readFileSync(reviewPath, 'utf8');
+    const canonicalProjectLine = 'Project: alpha';
+    documentText = documentText.replace(canonicalProjectLine, 'Project: stale-alpha');
+    fs.writeFileSync(reviewPath, documentText, 'utf8');
     assert.doesNotMatch(documentText, /Edit this JSON copy to change the significance rating/);
     assert.doesNotMatch(documentText, /These actions do not open a terminal/);
     const document = {
       uri: { fsPath: reviewPath },
-      isDirty: false,
+      get isDirty() { return false; },
       get lineCount() { return documentText.split('\n').length; },
       lineAt: (line) => ({ text: documentText.split('\n')[line] }),
       getText: () => documentText,
+      positionAt: (offset) => ({ offset }),
       save: async () => true,
     };
     vscodeMock.Uri = { file: (fsPath) => ({ fsPath }) };
@@ -4008,10 +4166,18 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
     vscodeMock.CodeLens = class CodeLens {
       constructor(range, command) { this.range = range; this.command = command; }
     };
+    vscodeMock.WorkspaceEdit = class WorkspaceEdit {
+      replace(uri, range, replacement) { this.change = { uri, range, replacement }; }
+    };
     vscodeMock.workspace = {
       workspaceFolders: [{ uri: { fsPath: projectRoot } }],
       textDocuments: [document],
       openTextDocument: async () => document,
+      applyEdit: async (edit) => {
+        documentText = documentText.slice(0, edit.change.range.start.offset)
+          + edit.change.replacement + documentText.slice(edit.change.range.end.offset);
+        return true;
+      },
       getConfiguration: () => ({
         get: (key, fallback) => settings[key] ?? fallback,
         inspect: () => ({ globalValue: true }),
@@ -4047,12 +4213,14 @@ test('pending SDE Withdraw clears one stale proposal in VS Code and retains its 
     assert.match(warnings[0].message, /Withdraw SDE proposal candidate-withdraw-42/);
     assert.match(warnings[0].options.detail, /task facts and evidence remain unchanged/);
     assert.match(information[0], /source facts retained.*withdrawal-42/);
-    assert.equal(children.length, 2);
+    assert.equal(children.length, 3);
     assert.ok(launchArgs[0].args.includes('--allow-review'));
     assert.ok(!launchArgs[0].args.includes('--allow-write'));
     assert.ok(launchArgs[1].args.includes('--allow-review'));
-    assert.ok(launchArgs[1].args.includes('--allow-write'));
-    const withdrawalCall = children[1].requests.find(
+    assert.ok(!launchArgs[1].args.includes('--allow-write'));
+    assert.ok(launchArgs[2].args.includes('--allow-write'));
+    assert.match(fs.readFileSync(reviewPath, 'utf8'), /Project: alpha/);
+    const withdrawalCall = children[2].requests.find(
       (request) => request.params?.name === 'sde_withdraw_candidates',
     );
     assert.ok(withdrawalCall);
@@ -4091,7 +4259,10 @@ test('Refresh evidence reopens the source task and withdraws the stale proposal 
     problem: 'Verify the local alpha review path.',
     status: 'pending_review',
     evidence_status: 'not_current_or_missing',
-    supporting_facts: [{ fact_id: 'fact-refresh-42' }],
+    supporting_facts: [{
+      fact_id: 'fact-refresh-42', kind: 'change',
+      bullet: 'Clear stale proof before a fresh review.',
+    }],
   };
   const activeOutline = { ...completeOutline, goal_status: 'active', lifecycle_revision: 8 };
   let outlineReads = 0;
@@ -4235,6 +4406,10 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
         fact_id: 'fact-42',
         kind: 'change',
         bullet: 'Task summary: Read-only source tracing is complete; tests were not run and verification remains open.',
+      }, {
+        fact_id: 'fact-43',
+        kind: 'change',
+        bullet: 'Added the bounded project-binding validation.',
       }],
     };
     const destination = path.join(
@@ -4244,26 +4419,36 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
       ['candidate-42', outline],
     ])), true);
     const generated = fs.readFileSync(destination, 'utf8');
-    assert.ok(generated.includes('SDE ID: candidate\\-42'));
-    assert.ok(generated.includes('Task started (+07): 2026\\-11\\-01T09:20:00\\+07:00'));
-    assert.ok(generated.includes('Successful completion (+07): 2026\\-11\\-01T11:45:00\\+07:00'));
+    assert.match(generated, /"sdeId": "candidate-42"/);
+    assert.match(generated, /"startedAt": "2026-11-01T09:20:00\+07:00"/);
+    assert.doesNotMatch(generated, /Successful completion \(\+07\)/);
     assert.match(generated, /curator-v2-decision:candidate-42:start/);
     assert.match(generated, /"significance": 3/);
-    assert.match(generated, /Suggested destinations match the document purposes/);
+    assert.match(generated, /"persistence"/);
     const jsonFences = [...generated.matchAll(/```json\n([\s\S]*?)\n```/g)];
     assert.equal(jsonFences.length, 2);
     assert.equal(jsonFences[0][1], jsonFences[1][1]);
-    assert.match(jsonFences[0][1], /"documents": \[\n    "persistence\/HISTORY\.md"\n  \]/);
-    assert.match(jsonFences[0][1], /"completed": \[\n    "Task summary: Read-only source tracing is complete; tests were not run and verification remains open\."\n  \]/);
-    assert.match(generated, /Completed task work, with verification still open:/);
+    const proposal = JSON.parse(jsonFences[0][1]).sdeProposal;
+    assert.equal(proposal.persistence['persistence/HISTORY.md'].enabled, true);
+    assert.equal(proposal.persistence['persistence/LESSONS-LEARNED.md'].enabled, false);
+    assert.deepEqual(proposal.payload.completion, [
+      'Task summary: Read-only source tracing is complete; tests were not run and verification remains open.',
+      'Added the bounded project-binding validation.',
+    ]);
+    assert.match(generated, /"evidenceStatus": "unknown"/);
+    assert.doesNotMatch(generated, /No recorded passing verification supports a successful-completion claim/);
 
     const draftStart = generated.indexOf('<!-- curator-v2-decision:candidate-42:start -->');
     const draftEnd = generated.indexOf('<!-- curator-v2-decision:candidate-42:end -->');
+    const approvalMatch = jsonFences[1];
+    const editedApproval = JSON.parse(approvalMatch[1]);
+    editedApproval.sdeProposal.meta.significance = 4;
+    editedApproval.sdeProposal.persistence['persistence/LESSONS-LEARNED.md'].enabled = true;
+    editedApproval.sdeProposal.payload.completion = [];
+    const approvalFence = `\`\`\`json\n${approvalMatch[1]}\n\`\`\``;
+    const replacementFence = `\`\`\`json\n${JSON.stringify(editedApproval, null, 2)}\n\`\`\``;
     const editedDraft = generated.slice(draftStart, draftEnd)
-      .replace('"significance": 3', '"significance": 4')
-      .replace(/"completed": \[\n    "Task summary:[^\n]+\n  \]/, '"completed": []')
-      .replace('"documents": [\n    "persistence/HISTORY.md"\n  ]',
-        '"documents": [\n    "persistence/HISTORY.md",\n    "persistence/LESSONS-LEARNED.md"\n  ]');
+      .replace(approvalFence, replacementFence);
     const edited = generated.slice(0, draftStart) + editedDraft + generated.slice(draftEnd);
     fs.writeFileSync(destination, edited, 'utf8');
     const refreshedOutline = { ...outline, future_utility: 'Updated source proposal text.' };
@@ -4276,8 +4461,13 @@ test('pending SDE Markdown keeps editable rating and destination changes on refr
     assert.match(refreshed, /Updated source proposal text\./);
     const refreshedFences = [...refreshed.matchAll(/```json\n([\s\S]*?)\n```/g)];
     assert.equal(refreshedFences.length, 2);
-    assert.equal(refreshedFences[0][1], refreshedFences[1][1]);
-    assert.match(refreshedFences[0][1], /"completed": \[\n    "Task summary:/);
+    assert.notEqual(refreshedFences[0][1], refreshedFences[1][1]);
+    assert.deepEqual(JSON.parse(refreshedFences[1][1]).sdeProposal.payload.completion,
+      proposal.payload.completion);
+    assert.equal(JSON.parse(refreshedFences[1][1]).sdeProposal.meta.significance, 4);
+    assert.equal(JSON.parse(refreshedFences[1][1]).sdeProposal.persistence[
+      'persistence/LESSONS-LEARNED.md'].enabled, true);
+    assert.notEqual(proposal.payload.title, review.goal.problem);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
@@ -4294,7 +4484,8 @@ test('SDE destination suggestions follow document purpose instead of selecting e
   const cases = [
     {
       id: 'history', materiality: 'decision', problem: 'Record a significant project decision.',
-      facts: [], expected: ['persistence/HISTORY.md'],
+      facts: [{ fact_id: 'history-fact', kind: 'change', bullet: 'Recorded the decision outcome.' }],
+      expected: ['persistence/HISTORY.md'],
     },
     {
       id: 'lesson', materiality: 'verified_lesson', problem: 'Retain a verified lesson.',
@@ -4303,11 +4494,23 @@ test('SDE destination suggestions follow document purpose instead of selecting e
     },
     {
       id: 'procedure', materiality: 'implementation', problem: 'Document the retry procedure for maintenance.',
-      facts: [], expected: ['persistence/HISTORY.md', 'persistence/SOP.md'],
+      facts: [{ fact_id: 'procedure-fact', kind: 'change', bullet: 'Recorded the retry procedure.' }],
+      expected: ['persistence/HISTORY.md', 'persistence/SOP.md'],
     },
     {
-      id: 'instruction', materiality: 'decision', problem: 'Change Codex AOTASK instructions and scope.',
-      facts: [], expected: ['persistence/HISTORY.md', 'persistence/AGENTS.md'],
+      id: 'recovery', materiality: 'recovery', problem: 'Record a recovery implementation.',
+      facts: [{ fact_id: 'fact-recovery', kind: 'change', bullet: 'Restore from a verified before-image or consistent snapshot, then retry idempotently.' }],
+      expected: ['persistence/HISTORY.md', 'persistence/SOP.md'],
+    },
+    {
+      id: 'recovery-summary', materiality: 'recovery', problem: 'Record a recovery outcome.',
+      facts: [{ fact_id: 'recovery-fact', kind: 'change', bullet: 'Recorded the recovery outcome.' }],
+      expected: ['persistence/HISTORY.md'],
+    },
+    {
+      id: 'instruction', materiality: 'decision', problem: 'Change Codex AOTASK instructions and plan function behavior.',
+      facts: [{ fact_id: 'instruction-fact', kind: 'change', bullet: 'Recorded the instruction outcome.' }],
+      expected: ['persistence/HISTORY.md', 'persistence/AGENTS.md'],
     },
   ];
   try {
@@ -4330,11 +4533,14 @@ test('SDE destination suggestions follow document purpose instead of selecting e
     const generated = fs.readFileSync(reviewPath, 'utf8');
     const drafts = [...generated.matchAll(/<!-- curator-v2-decision:candidate-([^:]+):start -->\n```json\n([\s\S]*?)\n```/g)];
     assert.equal(drafts.length, cases.length);
-    const byId = new Map(drafts.map(([, id, json]) => [id, JSON.parse(json)]));
+    const byId = new Map(drafts.map(([, id, json]) => [id,
+      JSON.parse(json).sdeProposal]));
     for (const { id, expected } of cases) {
-      assert.deepEqual(byId.get(id).documents, expected, id);
+      const selected = Object.entries(byId.get(id).persistence)
+        .filter(([, settings]) => settings.enabled).map(([document]) => document);
+      assert.deepEqual(selected, expected, id);
     }
-    assert.doesNotMatch(generated, /"documents": \[\n    "persistence\/HISTORY\.md",\n    "persistence\/LESSONS-LEARNED\.md",\n    "persistence\/SOP\.md",\n    "persistence\/AGENTS\.md"/);
+    assert.doesNotMatch(generated, /documents` field disposition/);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
@@ -4357,7 +4563,9 @@ test('resolved proposals leave the pending document only after terminal status i
     const destination = path.join(
       projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
     );
-    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const initialOutlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline('alpha', review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], initialOutlines), true);
     const original = fs.readFileSync(destination, 'utf8');
     assert.equal(writePendingReviewDocument(
       projectRoot, 'alpha', [], new Map(), new Set(['candidate-withdrawn']),
@@ -4371,7 +4579,7 @@ test('resolved proposals leave the pending document only after terminal status i
   }
 });
 
-test('pending review keeps generated prose contiguous across refresh and preserves decisions', () => {
+test('pending review refresh preserves editable JSON decisions', () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-prose-'));
   const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
   const rationale = 'A long proposal rationale should remain one contiguous source line so that the editor can wrap it responsively to the available width.';
@@ -4380,19 +4588,174 @@ test('pending review keeps generated prose contiguous across refresh and preserv
     goal: { goal_id: 'goal-prose', project_id: 'alpha', problem: 'Keep prose responsive.' },
   };
   try {
-    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const outlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline('alpha', review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
     const original = fs.readFileSync(reviewPath, 'utf8');
-    assert.ok(original.includes(`- Proposal rationale: ${rationale}\n`));
     const marker = '<!-- curator-v2-decision:candidate-prose:start -->';
     const start = original.indexOf(marker) + marker.length;
-    const edited = original.slice(0, start) + original.slice(start)
-      .replace('"documents": []', '"documents": ["persistence/HISTORY.md"]');
+    const approvalFenceStart = original.indexOf('```json\n', start);
+    const approvalFenceEnd = original.indexOf('\n```', approvalFenceStart) + 4;
+    const approval = JSON.parse(original.slice(approvalFenceStart + 7, approvalFenceEnd - 4));
+    approval.sdeProposal.meta.significance = 4;
+    approval.sdeProposal.persistence['persistence/HISTORY.md'].enabled = true;
+    const replacement = `\`\`\`json\n${JSON.stringify(approval, null, 2)}\n\`\`\``;
+    const edited = `${original.slice(0, approvalFenceStart)}${replacement}${original.slice(approvalFenceEnd)}`;
     assert.notEqual(edited, original);
     fs.writeFileSync(reviewPath, edited);
-    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
     const refreshed = fs.readFileSync(reviewPath, 'utf8');
-    assert.ok(refreshed.includes(`- Proposal rationale: ${rationale}\n`));
-    assert.ok(refreshed.includes('"documents": ["persistence/HISTORY.md"]'));
+    const refreshedDrafts = [...refreshed.matchAll(/```json\n([\s\S]*?)\n```/g)];
+    assert.equal(refreshedDrafts.length, 2);
+    assert.equal(JSON.parse(refreshedDrafts[1][1]).sdeProposal.meta.significance, 4);
+    assert.equal(JSON.parse(refreshedDrafts[1][1]).sdeProposal.persistence[
+      'persistence/HISTORY.md'].enabled, true);
+    assert.ok(refreshed.includes(rationale));
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending review preserves and rebuilds malformed editable decisions without blocking refresh', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-malformed-draft-'));
+  const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  const review = {
+    candidate: { candidate_id: 'candidate-malformed', goal_id: 'goal-malformed', status: 'pending_review', materiality: 'routine', rationale: 'Keep malformed edits safe.' },
+    goal: { goal_id: 'goal-malformed', project_id: 'alpha', problem: 'Test malformed draft recovery.' },
+  };
+  try {
+    const outlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline('alpha', review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
+    const original = fs.readFileSync(reviewPath, 'utf8');
+    const marker = '<!-- curator-v2-decision:candidate-malformed:start -->';
+    const start = original.indexOf(marker) + marker.length;
+    const end = original.indexOf('<!-- curator-v2-decision:candidate-malformed:end -->', start);
+    const decision = original.slice(start, end).replace(/"title": "[^"]*"/, '"title": invalid');
+    const edited = `${original.slice(0, start)}${decision}${original.slice(end)}`
+      .replace('"rationale": "Keep malformed edits safe."', '"rationale": "stale generated text"');
+    assert.match(edited, /"title": invalid/);
+    assert.match(edited, /stale generated text/);
+    fs.writeFileSync(reviewPath, edited);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
+    const recovered = fs.readFileSync(reviewPath, 'utf8');
+    assert.doesNotMatch(recovered, /"title": invalid/);
+    const fences = [...recovered.matchAll(/```json\n([\s\S]*?)\n```/g)];
+    assert.equal(fences.length, 2);
+    assert.doesNotThrow(() => JSON.parse(fences[1][1]));
+    const recoveryDirectory = path.join(
+      projectRoot, '.curatormd-v2', 'side-buffer', 'sde-review-recovery',
+    );
+    const backups = fs.readdirSync(recoveryDirectory);
+    assert.equal(backups.length, 1);
+    assert.equal(fs.readFileSync(path.join(recoveryDirectory, backups[0]), 'utf8'),
+      edited.slice(edited.indexOf(`${marker}\n`) + marker.length + 1,
+        edited.indexOf(`<!-- curator-v2-decision:${review.candidate.candidate_id}:end -->`))
+        .replace(/\n$/, ''));
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending review repairs legacy project metadata escaping without losing owner edits', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-project-escape-'));
+  const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  const projectId = 'curatormd-v2-dev-alpha';
+  const review = {
+    candidate: {
+      candidate_id: 'candidate-project-escape', goal_id: 'goal-project-escape',
+      status: 'pending_review', materiality: 'routine', rationale: 'Retain valid owner edits.',
+    },
+    goal: {
+      goal_id: 'goal-project-escape', project_id: projectId,
+      problem: 'Test recovery from an older project metadata escape pattern.',
+    },
+  };
+  try {
+    const outlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline(projectId, review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, projectId, [review], outlines), true);
+    const original = fs.readFileSync(reviewPath, 'utf8');
+    const legacyProjectLine = 'Project: curatormd-v2\\-dev\\-alpha';
+    const canonicalProjectLine = 'Project: curatormd\\-v2\\-dev\\-alpha';
+    assert.ok(original.includes(canonicalProjectLine));
+    fs.writeFileSync(reviewPath, original.replace(canonicalProjectLine, legacyProjectLine));
+    assert.equal(writePendingReviewDocument(projectRoot, projectId, [review], outlines), true);
+    const recovered = fs.readFileSync(reviewPath, 'utf8');
+    assert.ok(recovered.includes(canonicalProjectLine));
+    assert.ok(recovered.includes('Retain valid owner edits.'));
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending review stays actionable with unknown materiality and missing outline evidence', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-missing-outline-'));
+  const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  const review = {
+    candidate: {
+      candidate_id: 'candidate-missing-outline', goal_id: 'goal-missing-outline',
+      status: 'pending_review', materiality: 'unrecognized', rationale: 'Keep this proposal reviewable.',
+    },
+    goal: {
+      goal_id: 'goal-missing-outline', project_id: 'alpha',
+      problem: 'Test review availability without a matching outline.',
+    },
+  };
+  try {
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const content = fs.readFileSync(reviewPath, 'utf8');
+    const proposals = [...content.matchAll(/```json\n([\s\S]*?)\n```/g)]
+      .map((match) => JSON.parse(match[1]).sdeProposal);
+    assert.equal(proposals.length, 2);
+    assert.deepEqual(proposals[0], proposals[1]);
+    assert.equal(proposals[0].meta.significance, 1);
+    assert.equal(proposals[0].meta.evidenceStatus, 'unknown');
+    assert.match(proposals[0].payload.completion[0], /details are unavailable/);
+    assert.match(proposals[0].payload.completion[0], /No verification claim is made/);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('pending review repairs low-similarity generated text and preserves its exact recovery copy', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'curator-v2-review-low-similarity-'));
+  const reviewPath = path.join(projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md');
+  const review = {
+    candidate: { candidate_id: 'candidate-drift', goal_id: 'goal-drift', status: 'pending_review', materiality: 'routine', rationale: 'Keep valid user decisions.' },
+    goal: { goal_id: 'goal-drift', project_id: 'alpha', problem: 'Test low-similarity recovery.' },
+  };
+  try {
+    const outlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline('alpha', review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
+    const original = fs.readFileSync(reviewPath, 'utf8');
+    const startMarker = '<!-- curator-v2-decision:candidate-drift:start -->';
+    const endMarker = '<!-- curator-v2-decision:candidate-drift:end -->';
+    const start = original.indexOf(startMarker);
+    const end = original.indexOf(endMarker, start);
+    const decisionBlock = original.slice(start, end + endMarker.length);
+    const decisionStart = decisionBlock.indexOf('\n') + 1;
+    const decisionEnd = decisionBlock.indexOf(endMarker);
+    const editable = decisionBlock.slice(decisionStart, decisionEnd);
+    const heavilyChanged = [
+      '# Unrelated generated text', '',
+      '<!-- curator-v2-candidate: candidate-drift -->',
+      startMarker, editable, endMarker, '',
+    ].join('\n');
+    const corrupted = `${original.slice(0, original.indexOf('\n') + 1)}${heavilyChanged}`;
+    fs.writeFileSync(reviewPath, corrupted);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
+    const recovered = fs.readFileSync(reviewPath, 'utf8');
+    assert.match(recovered, /Project: alpha/);
+    assert.doesNotMatch(recovered, /# Unrelated generated text/);
+    const recoveryDirectory = path.join(
+      projectRoot, '.curatormd-v2', 'side-buffer', 'sde-review-recovery',
+    );
+    const backups = fs.readdirSync(recoveryDirectory);
+    assert.ok(backups.some((name) => fs.readFileSync(
+      path.join(recoveryDirectory, name), 'utf8',
+    ) === corrupted));
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }
@@ -4439,7 +4802,9 @@ test('queue refresh preserves unsaved review edits and reports the Markdown view
   };
   const previousWorkspace = vscodeMock.workspace;
   try {
-    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const initialOutlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline('alpha', review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], initialOutlines), true);
     const original = fs.readFileSync(reviewPath, 'utf8');
     const draftStart = original.indexOf('<!-- curator-v2-decision:candidate-accepted:start -->');
     const draftEnd = original.indexOf('<!-- curator-v2-decision:candidate-accepted:end -->');
@@ -4520,7 +4885,9 @@ test('withdrawal refresh preserves owner edits to a removed proposal', () => {
     const destination = path.join(
       projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
     );
-    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review]), true);
+    const outlines = new Map([[review.candidate.candidate_id,
+      groundedTestOutline('alpha', review)]]);
+    assert.equal(writePendingReviewDocument(projectRoot, 'alpha', [review], outlines), true);
     const original = fs.readFileSync(destination, 'utf8');
     const edited = original.replace(/("significance": )\d+/, '$1 4');
     assert.notEqual(edited, original);

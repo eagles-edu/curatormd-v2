@@ -942,9 +942,10 @@ class CodexPluginHookTests(unittest.TestCase):
             self.assertIn("SCOPE=AATASK", aside.stdout)
             work = invoke(PRE_TOOL_HOOK, aside_turn | {"tool_name": "Bash"})
             self.assertEqual(work.stdout, "")
+            empty_tool_input: dict[str, object] = {}
             for tool in ("goal_start", "fact_record", "sde_assess"):
                 denied = invoke(PRE_TOOL_HOOK, aside_turn | {
-                    "tool_name": f"mcp__codex-intake__{tool}", "tool_input": {},
+                    "tool_name": f"mcp__codex-intake__{tool}", "tool_input": empty_tool_input,
                 })
                 self.assertEqual(json.loads(denied.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
             stopped = invoke(STOP_HOOK, aside_turn | {"last_assistant_message": "The aside is done."})

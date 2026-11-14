@@ -36,7 +36,10 @@ REQUIRED_HEALTH_DEPENDENCIES = (
     "alert_delivery",
     "artifact_producer_inventory",
 )
-MAX_DEPENDENCY_PROBE_AGE_SECONDS = 60
+# The V2 dashboard refreshes once per minute. Keep three refresh intervals of
+# tolerance so delayed reads do not make an otherwise current probe flap to
+# unknown; observations still fail closed after that bounded window.
+MAX_DEPENDENCY_PROBE_AGE_SECONDS = 180
 MAX_DEPENDENCY_CLOCK_SKEW_SECONDS = 5
 STAGING_BUDGET_WARNING_PERCENT = 75
 

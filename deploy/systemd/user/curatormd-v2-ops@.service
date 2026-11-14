@@ -1,0 +1,33 @@
+[Unit]
+Description=Curator V2 local-alpha monitor and recovery coordinator (%i)
+After=default.target
+
+[Service]
+Type=simple
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/dockerz/curatormd-v2.0/.venv/bin/curatormd-v2-ops monitor
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+UMask=0077
+LimitCORE=0
+CPUQuota=5%
+MemoryMax=64M
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=curatormd-v2-ops-%i
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=%h/.local/state/curatormd-v2/curatormd-v2-dev-alpha/ops
+ReadWritePaths=%h/.local/share/curatormd-v2-alpha
+
+[Install]
+WantedBy=default.target

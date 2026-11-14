@@ -15,7 +15,7 @@ from curatormd_v2 import (
     SuccessCriterion,
 )
 from curatormd_v2.events import GoalCriteriaAmended
-from curatormd_v2.service import EvidenceGateError, SDEAssessmentRequest
+from curatormd_v2.service import SDEAssessmentRequest
 
 
 class GoalEvidenceEpochTests(LifecycleTestSupport):

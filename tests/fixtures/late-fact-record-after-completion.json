@@ -1,0 +1,21 @@
+{
+  "scenario": "late_fact_record_after_completed_goal",
+  "project_id": "curatormd-v2-dev-alpha",
+  "binding_revision": 22,
+  "source_epoch": 8,
+  "transition_id": "3ee5a17e-03bf-41de-aa67-4132ce6ed673",
+  "event": {
+    "event_id": "9c5dd72b-1453-4fa4-b1a1-5607b4d98b99",
+    "event_type": "fact.recorded",
+    "status": "failed",
+    "error_code": "ConflictError",
+    "payload_sha256": "a73e01b8d2245cbeb1b2da398058d3942246237dde5663fe0384cfab535afb13",
+    "payload_included": false
+  },
+  "expected": {
+    "terminal_disposition": "terminal_authorized",
+    "payload_scrubbed": true,
+    "event_failure_count_after_disposition": 0,
+    "profile_health_after_disposition": "healthy"
+  }
+}

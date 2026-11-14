@@ -21,6 +21,7 @@ from .events import (
     EventEnvelope,
     EventInboxReceipt,
     EventQueueStatus,
+    FactRecorded,
     GoalCriteriaAmended,
     MAX_EVENT_BYTES,
 )
@@ -80,6 +81,7 @@ from .project_plugin import ProjectPlugin
 from .reporting import GoalFactEvidence, GoalReportPage
 from .service import PurgeTargetStatus, SDEAssessmentRequest
 from .store import (
+    ConflictError,
     EventReceiptArchiveRequest,
     FactCompactionApprovalRequest,
     NotFoundError,
@@ -301,6 +303,24 @@ class _APIEventMethods(_APIState):
             caller, project_id, event, plugin, replay_only
         )
         with plugin.project_effect_lock():
+            if isinstance(event.payload, FactRecorded):
+                try:
+                    plugin.service.store.event_receipt(project_id, event.event_id)
+                    prior_event_exists = True
+                except NotFoundError:
+                    prior_event_exists = False
+                if not prior_event_exists:
+                    goal = plugin.service.store.get_goal(
+                        event.payload.goal_id, project_id
+                    )
+                    if goal.status in {
+                        GoalStatus.COMPLETE,
+                        GoalStatus.CANCELLED,
+                        GoalStatus.SUPERSEDED,
+                    }:
+                        raise ConflictError(
+                            "terminal goals cannot accept new facts"
+                        )
             if normally_authorized and binding.status == "active":
                 plugin.refresh_consumer_binding_revision(binding.revision)
             with plugin.service.store.project_revision_fence(

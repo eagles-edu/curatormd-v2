@@ -16,11 +16,10 @@ from unittest.mock import patch
 from store_test_support import patch_store_symbol
 
 from project_plugin_test_support import ProjectPluginTestSupport
-from purge_fixtures import TestReviewAuthorizer, approved_empty_inventory_request
+from purge_fixtures import TestReviewAuthorizer
 
 from curatormd_v2 import (
     CuratorStore,
-    EvidenceGateError,
     ProjectStatusChangeRequest,
     ReviewDecision,
     SDEConfirmationRequest,

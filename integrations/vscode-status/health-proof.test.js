@@ -37,8 +37,22 @@ test('project probe rejects failed, stale, mismatched, or incomplete snapshots',
     assert.throws(() => validateSnapshot(JSON.stringify(value), project));
   }
 });
+test('project probe tolerates delayed minute refreshes but still expires old health', () => {
+  const delayed = snapshot();
+  delayed.health.observed_at = new Date(Date.now() - 90000).toISOString();
+  delayed.health.dependencies.forEach((dependency) => {
+    dependency.observed_at = new Date(Date.now() - 90000).toISOString();
+  });
+  assert.doesNotThrow(() => validateSnapshot(JSON.stringify(delayed), project));
+  const stale = snapshot();
+  stale.health.observed_at = new Date(Date.now() - 181000).toISOString();
+  assert.throws(() => validateSnapshot(JSON.stringify(stale), project));
+});
 test('rendered dashboard requires matching fresh project, every component, and no gates', () => {
   assert.equal(validDashboard(dashboard(), project), true);
+  const delayed = dashboard();
+  delayed.observed = new Date(Date.now() - 90000).toISOString();
+  assert.equal(validDashboard(delayed, project), true);
   for (const mutate of [
     (x) => { x.project = 'other'; },
     (x) => { x.observed = '2000-01-01T00:00:00Z'; },
@@ -49,6 +63,9 @@ test('rendered dashboard requires matching fresh project, every component, and n
     const value = dashboard(); mutate(value);
     assert.equal(validDashboard(value, project), false);
   }
+  const stale = dashboard();
+  stale.observed = new Date(Date.now() - 181000).toISOString();
+  assert.equal(validDashboard(stale, project), false);
 });
 test('only this task\'s own unfinished receipt can explain a degraded gate', () => {
   const own = 'hermes-health-proof-verification-20261109-1';

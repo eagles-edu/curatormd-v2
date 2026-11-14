@@ -1,286 +1,162 @@
-
 # PLEASE CHECK ALL SYSTEMS, PROFILES, LOGS, CRONS, SKILLS, PLUGINS, MCPS, CONFIGS ,SYSTEMS
 
-   DEFAUT PROFILE SHOULD BE CONFIGURED AND AGGRESSIVELY MAINTAINING THIS SERVERS' PERFORMANCE,
-   FREE SSD SPACE, BLOAT, ENSURING OPTIMUM OPERATIONS - PLUGINGS, SKILLS, MCPs MUST BE CHOSEN FOR
-    THIS THOUGHFULLY & COMPREHENSIELY, ASA WELL AS CULLING UNUSED, SUPERFLUOUS BLOAT. LIKEWISE,
-   CURATORMD2 PROFILES SHOULD BE FREE OF UNUSED, SUPERFLUOUS BLOAT, FOCUSED ON CMD2 FUNCTIONS AND
-    THEIR CONFIGURATIONS NORMALIZED THE SAME. ASK, DEELY RESEARCH OPTIIZATION OF HERMES, SERIOULY
-    PROMOTE DISK SPACE, PERFORMANCE, STABILITY BEST PRACTICES -
+DEFAUT PROFILE SHOULD BE CONFIGURED AND AGGRESSIVELY MAINTAINING THIS SERVERS' PERFORMANCE,
+FREE SSD SPACE, BLOAT, ENSURING OPTIMUM OPERATIONS - PLUGINGS, SKILLS, MCPs MUST BE CHOSEN FOR
+THIS THOUGHFULLY & COMPREHENSIELY, ASA WELL AS CULLING UNUSED, SUPERFLUOUS BLOAT. LIKEWISE,
+CURATORMD2 PROFILES SHOULD BE FREE OF UNUSED, SUPERFLUOUS BLOAT, FOCUSED ON CMD2 FUNCTIONS AND
+THEIR CONFIGURATIONS NORMALIZED THE SAME. ASK, DEELY RESEARCH OPTIIZATION OF HERMES, SERIOULY
+PROMOTE DISK SPACE, PERFORMANCE, STABILITY BEST PRACTICES -
 
+└─ Response
 
- ·  /linux-disk-maintenance
+┊ The disk is critically tight: / is 96% used, with 2.7 GB free. Hermes accounts for about 13
+GB under ~/.hermes; its largest areas are installs (3.7 GB), tools (3.6 GB), and cache (1.9
+GB). The root filesystem also has about 3.5 GiB of swap in use. These are audit findings—not
+authorization to delete anything.
 
- ───
+    A few safety and performance points from the audit:
 
- ❯ /linux-disk-maintenance
+    • The gateway is running, and CuratorMD2 processes point at
+    /home/eaglesvn/dockerz/curatormd-v2.0. The Hermes checkout that AGENTS.md protects also has a
+    local modification; I did not touch it.
+    • Some Hermes tool directories are large staging folders. They may be in use, so they need
+    process/lease checks before cleanup.
+    • Hermes’ documented pm gc removes eligible unreferenced artifacts; it does not justify
+    manually deleting installs/ or tools/. Official guidance also supports ordinary uv cache
+    prune for recoverable cache entries. (hermes-agent.nousresearch.com)
+    • For gateway memory, Hermes documents bounds for its per-session agent cache. MCP servers
+    can also be lazy-started, and discovery concurrency can be limited—useful options to evaluate
+    after identifying what each profile needs. (hermes-agent.nousresearch.com)
+    • Profiles are isolated, and bundled skills sync across profiles during updates; deleting or
+    disabling them blindly could affect other workflows. (hermes-agent.nousresearch.com)
 
+    No cleanup or configuration changes were made. One unplanned side effect: hermes profile list
+    triggered Hermes’ automatic source/skill update, which reported updating bundled skills
+    across profiles, then timed out while preparing the Computer Use dependency. I’ll avoid
+    further Hermes CLI commands that trigger that path until we decide how to proceed.
 
- ·  /codebase-inspection ALL REPOS PY, TS, JS, VUE NUXT, CSS, HTML, BASH
+    The clarification prompt timed out unanswered, so I still need your policy before making
+    changes: which profiles to include, what capabilities must stay enabled in default, and
+    whether routine cleanup may run automatically. The conservative starting point is to audit
+    profiles first, then—once approved—use only verified, recoverable cache/PM cleanup, and
+    present a per-profile proposal before culling skills, plugins, MCPs, or dependencies.
 
- ───
+───
 
- ❯ /codebase-inspection ALL REPOS PY, TS, JS, VUE NUXT, CSS, HTML, BASH
+❯ reclaim in all profiles al reclaimable cache/stle session space; check what's taking install
+space, cull hogs i dont use, ...then timed out while preparing the Computer Use dependency -
+fix; thprough audit of ALL BLOAT!
 
- └─ ▾ Tool calls (21)
-   ├─ ● Terminal("pwd + 2 commands") (0.4s)
-   ├─ ● Skills List("linux-disk-maintenance") (0.3s)
-   ├─ ● Skills List("autonomous-ai-agents") (0.3s)
-   ├─ ● Skill View("hermes-agent") (0.4s)
-   ├─ ● Skill View("linux-disk-maintenance") (0.5s)
-   ├─ ● Skill View("hermes-agent → references/troubleshooting.md") (0.6s)
-   ├─ ● Skill View("hermes-agent → references/background-systems.md") (0.6s)
-   ├─ ● Skill View("hermes-agent → references/configuration.md") (0.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/llms.txt") (0.7s)
-   ├─ ● Terminal("printf '%s\n' '--- disk ---' + 11 commands") (60.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- current git safety ---' + 9 commands") (2.0s)
-   ├─ ● Terminal("hermes profile list") (5.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/reference/package-ma…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- process status of in-flight MCP probe ---' +…") (13.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/skills") (0.1s)
-   ├─ ● Terminal("python3 -c 'import json; from pathlib import Path; import yaml;…") (2.0s)
-   ├─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (4.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- config and skill metadata file locations (na…") (0.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/configura…") (0.1s)
-   └─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (2.4s)
-   ├─ ● Skill View("linux-disk-maintenance") (0.5s)
-   ├─ ● Skill View("hermes-agent → references/troubleshooting.md") (0.6s)
-   ├─ ● Skill View("hermes-agent → references/background-systems.md") (0.6s)
-   ├─ ● Skill View("hermes-agent → references/configuration.md") (0.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/llms.txt") (0.7s)
-   ├─ ● Terminal("printf '%s\n' '--- disk ---' + 11 commands") (60.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- current git safety ---' + 9 commands") (2.0s)
-   ├─ ● Terminal("hermes profile list") (5.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/reference/package-ma…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- process status of in-flight MCP probe ---' +…") (13.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/skills") (0.1s)
-   ├─ ● Terminal("python3 -c 'import json; from pathlib import Path; import yaml;…") (2.0s)
-   ├─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (4.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- config and skill metadata file locations (na…") (0.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/configura…") (0.1s)
-   ├─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (2.4s)
-   ├─ ● Clarify("For first-pass cleanup, what deletion boundary do you authorize…") (193.9s)
-   ├─ ● Skill View("hermes-agent → references/background-systems.md") (0.6s)
-   ├─ ● Skill View("hermes-agent → references/configuration.md") (0.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/llms.txt") (0.7s)
-   ├─ ● Terminal("printf '%s\n' '--- disk ---' + 11 commands") (60.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- current git safety ---' + 9 commands") (2.0s)
-   ├─ ● Terminal("hermes profile list") (5.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/reference/package-ma…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- process status of in-flight MCP probe ---' +…") (13.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/skills") (0.1s)
-   ├─ ● Terminal("python3 -c 'import json; from pathlib import Path; import yaml;…") (2.0s)
-   ├─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (4.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- config and skill metadata file locations (na…") (0.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/configura…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- disk ---' + 11 commands") (60.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- current git safety ---' + 9 commands") (2.0s)
-   ├─ ● Terminal("hermes profile list") (5.6s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/reference/package-ma…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- process status of in-flight MCP probe ---' +…") (13.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/skills") (0.1s)
-   ├─ ● Terminal("python3 -c 'import json; from pathlib import Path; import yaml;…") (2.0s)
-   ├─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (4.5s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/features/…") (0.1s)
-   ├─ ● Terminal("printf '%s\n' '--- config and skill metadata file locations (na…") (0.4s)
-   ├─ ● Web Extract("https://hermes-agent.nousresearch.com/docs/user-guide/configura…") (0.1s)
-   ├─ ● Terminal("python3 -c 'import json,re; from pathlib import Path; h=Path.ho…") (2.4s)
-   ├─ ● Clarify("For first-pass cleanup, what deletion boundary do you authorize…") (193.9s)
-   ├─ ● Terminal("printf '%s\n' '--- memory pressure and top RSS processes ---' +…") (0.4s)
-   ├─ ● Terminal("python_bin=/home/eaglesvn/.hermes/hermes-agent/.venv/bin/python…") (0.4s)
-   ├─ ● Clarify("Per-item cleanup list
-   │ └─ (1) Hermes-managed stale install/depende…") (48.9s)
-   ├─ ● Terminal("printf '%s\n' '--- installed Hermes update state ---' + 5 comma…") (2.3s)
-   ├─ ● Terminal("printf '%s\n' '--- post-update service state ---' + 10 commands") (0.6s)
-   └─ ● Clarify("A Hermes CLI invocation unexpectedly entered the updater. The u…") (115.6s)
+───
 
- ┊  Read-only audit: urgent risks and cleanup candidates
+❯ [STILL IN PROGRESS — this is the active request, restated after the compaction boundary
+because it was not finished yet. Continue it; do not start over.]
+reclaim in all profiles al reclaimable cache/stle session space; check what's taking install
+space, cull hogs i dont use, ...then timed out while preparing the Computer Use dependency -
+fix; thprough audit of ALL BLOAT!
 
-    Disk is critically tight: / is 60 GB, 92% used, with 5.3 GiB free. Hermes occupies about 9
-    GB:
+└─ ▾ Tool calls (21)
+├─ ● Terminal("printf '== CUA CLI health ==\n' + 10 commands")
+├─ ● Terminal("printf '== All-profile stale-session dry-run (90 days) ==\n' + …")
+├─ ● Terminal("printf '== Managed install generations and leases ==\n' + 12 co…")
+├─ ● Tool Search("Searching tools · session search conversation history query ful…")
+├─ ● Tool Describe("Reading tool details · 1 tool")
+├─ ● Tool Call("Searching past sessions")
+├─ ● Tool Call("Searching past sessions")
+├─ ● Skill View("hermes-agent")
+├─ ● Read File("update_lock.py")
+├─ ● Read File("source_completion.py")
+├─ ● Read File("venv_sync.py")
+├─ ● Read File("hermes_bootstrap.py L540-659")
+├─ ● Terminal("python3 -c 'import os,pathlib,time,datetime,json; roots=[pathli…")
+├─ ● Skill View("hermes-agent → references/troubleshooting.md")
+├─ ● Skill View("hermes-agent → references/cli-reference.md")
+├─ ● Terminal("printf '== Update-owner and child processes ==\n' + 5 commands")
+├─ ● Tool Call("Searching past sessions")
+├─ ● Terminal("git -C /usr/local/lib/hermes-agent status --short --branch + 7 …")
+├─ ● Terminal("do printf '\n=== %s PM doctor ===\n' "$p" if [ "$p" = default ]…")
+├─ ● Terminal("printf '== Top-level Hermes tool-store consumers ==\n' + 7 comm…")
+└─ ● Clarify("May I take a short maintenance window to stop/restart the gatew…")
 
-      Area                  Size   Recommendation
-      ────────────────────  ─────  ──────────────────────────────────────────────────────────
-      installs/             3.2    Check with Hermes PM; don’t remove anything until it
-                            GB     identifies unreferenced generations.
-      tools/                2.2    Contains multiple runtime versions. Don’t delete manually;
-                            GB     verify live use and PM references first.
-      cache/uv              883    Candidate for conservative cache pruning, subject to your
-                            MB     separate approval.
-      Active hermes-agent   2.4    Preserve. It is protected by the local checkout policy and
-      checkout              GB     serves the active Curator integration.
-      Logs                  23 MB  Small compared with the space shortage; preserve retention
-                                   for now.
-      Profiles              272    You said to retain all five.
-                            MB
+└─ Response
 
-    There is also substantial non-Hermes usage, including about 5.2 GB in ~/.cache and 3.5 GB in
-    ~/.codex. I did not inspect or modify those user-data locations.
+┊ Partial cleanup completed; the runtime still needs a safe maintenance pass. I stopped before
+restarting services or removing optional workloads because the approval prompt timed out.
 
-    Performance/stability: RAM is 7.8 GiB; the 6 GiB swap is fully allocated, although 3.5 GiB
-    RAM was available and memory pressure was low in the latest snapshot. The gateway is active;
-    its cgroup showed 1.53 GiB current memory and a 1.84 GiB peak. Logs report elevated-memory
-    warnings, a Curator MCP startup failure (project-read-grant-missing), Feishu adapter
-    validation failures, hook handler errors, and intermittent Postman MCP keepalive failures.
+    Completed
 
-    Profiles and scheduled jobs: Hermes reported five active profiles—default plus four named
-    profiles—and you chose to keep all five. I found four jobs across named profiles: two enabled
-    daily Curator jobs, one disabled daily Curator job, and one enabled one-time SSL reminder
-    scheduled for December 5, 2026. I did not change any jobs.
-
-    Skills, plugins, MCPs, and configs: The named profiles contain roughly 60 SKILL.md files
-    each, but that is not evidence they are unused. Usage/provenance data is missing or
-    incomplete for several profiles. Hermes seeds bundled skills into profiles; its Curator
-    normally archives eligible agent-created skills rather than deleting them, and a zero-use
-    count alone is explicitly not proof a skill is disposable. (hermes-agent.nousresearch.com)
-    Plugin directories and MCP entries vary by profile; readiness and exact enabled state remain
-    unverified. The MCP failures need targeted investigation, not blanket removal. Also,
-    identical MCP definitions across profiles do not necessarily mean duplicates: profiles
-    establish separate MCP connections. Hermes documents MCP discovery concurrency and lazy start
-    as ways to manage startup load, but I have not changed either setting.
+    • Enabled automatic session pruning in all five profiles, including setting
+    sessions.auto_prune: true for curatormd-v2-dev-alpha. The effective retention is 90 days. A
+    dry run found no sessions older than the cutoff (August 16, 2026), so no session history was
+    deleted. Hermes only prunes eligible ended/stale sessions; its documented automatic VACUUM
+    also has safeguards to avoid rewriting a dense database too often.
     (hermes-agent.nousresearch.com)
+    • Pruned the Hermes uv cache: 90 files / about 1.1 MiB removed. The latest pnpm prune found
+    nothing eligible.
+    • Computer Use’s cua-driver 0.21.0 is installed and its runtime contract reports ready. Its
+    doctor check is still degraded: this host has neither reachable X11 nor a Wayland display, so
+    it cannot capture or control a desktop here. That’s a display limitation, not a missing
+    driver dependency. (hermes-agent.nousresearch.com)
+    • Inventoried plugins and MCP names across the five profiles; I did not remove any. The
+    plugin directories total only about 2.4 MiB, and the skill files are small compared with the
+    install/runtime footprint. I can’t infer non-use from a component being installed or
+    disabled.
 
-    Important: updater side effect
+    Space and performance findings
 
-    Important: updater side effect
+    • / is currently 91% used, with 5.7 GiB available. The earlier recorded baseline was 96% used
+    with about 2.7 GiB available.
+    • ~/.hermes is about 11 GiB: roughly 3.6 GiB installs, 2.4 GiB tools, 1.7 GiB caches, and 2.6
+    GiB source checkout.
+    • The largest plausible reclaim targets are unselected Python generations and test
+    environments: the main install has about 832 MiB in an older environment and 933 MiB across
+    test-environment generations. The tools store also contains 393 MiB of Python 3.14.7, 255 MiB
+    of Python 3.14.9, 438 MiB of FFmpeg, 364 MiB of Chromium, and two Node versions around 220
+    MiB each. Hermes’ supported pm gc is designed to remove eligible unreferenced tools and
+    unleased generations; I will not manually delete these directories.
+    (hermes-agent.nousresearch.com)
+    • The gateway was using about 695 MiB RAM, with 4.1 GiB swap in use at the last check. The
+    system has about 4.1 GiB RAM available; swap use is worth monitoring.
 
-    Important: updater side effect
+    Still unresolved
 
-    A hermes profile list invocation unexpectedly entered Hermes’ updater. Its log says the code
-    update ran, the gateway restarted, and the remaining update steps were left pending; it also
-    says one dashboard process was stopped. I should have caught that risk before invoking the
-    CLI. The gateway is active now, port 9119 is listening, and the protected checkout at
-    /home/eaglesvn/.hermes/hermes-agent remains clean. However, /usr/local/lib/hermes-agent
-    reports 14 modified or untracked paths. I stopped invoking Hermes CLI commands and did not
-    run cleanup, alter configuration or grants, or restart anything further.
+    Package state is not stable yet. Immediately after reinstalling Node, Python, and uv, hermes
+    pm doctor passed for the default and Curator profiles. Later profile commands again
+    reported Node out of sync. The shared tool facts currently reflect Node 26.7.0 / Python
+    3.14.7 / uv 0.12.3, while the installed release expects Node 26.12.1 / Python 3.14.9 / uv
+    0.13.5. There is also a pending source-completion record in install state 9fbb…. This
+    appears to involve two Hermes checkouts sharing runtime state; both have local changes, so I
+    left them untouched. The global update check reported the installed release is already
+    current.
 
-    Cleanup candidates presented for your approval
+    Session database optimization was refused because the live dashboard and gateway were using
+    the database. Hermes explicitly refuses that rewrite under live writers; I did not force it.
+    (hermes-agent.nousresearch.com) The final all-profile verification command also did not run
+    because its approval prompt timed out.
 
-    1. Hermes PM garbage collection: inspect whether any of the 3.2 GB of install generations are
-    safely reclaimable; exact recoverable space is unknown until PM can report it.
-    2. Hermes UV cache prune: up to 883 MB is present, but actual reclaimable space is unknown.
-    3. Old tool runtimes: only consider versions PM identifies as unreferenced and no live
-    process uses.
-    4. Logs: leave unchanged for now; the potential space gain is small.
-    5. Do not cull the active checkout, any of the five profiles, or their
-    skills/plugins/MCP/cron state without a specific reviewed list.
+    To finish safely, reply “maintenance window approved” if I may briefly stop/restart the
+    gateway and dashboard, and tell me which workloads you want to keep: local Whisper/STT/voice,
+    FFmpeg/media, Browser/Computer Use, and Hermes test environments. Until then, I’ll leave
+    those workloads and the live services unchanged.
 
-    You approved read-only inspection of the updater state/logs only, with no updater execution,
-    and asked to defer cleanup until an exact preview is available. The pending update makes
-    Hermes PM diagnostics unsafe to run through its CLI right now, so the PM preview is not yet
-    done. No cleanup was performed.
- └─ ▾ Tool calls (1)
-   └─ ● Terminal("printf '%s\n' '--- date ---' + 23 commands") (9.0s)
-The 250 MB Git target WAS A HISTORICAL FIGURE THE STRATEGY REDUCED GIT FROM ~650 TO 250 MB;
- └─ Response
- └─ Σ ~64 total
+## Hermes source Git object footprint — 2026-11-14
 
- ┊  Read-only disk audit complete. Nothing was deleted or changed.
+The checkout at `/home/eaglesvn/.hermes/hermes-agent` had 1.1 GiB in `.git/objects`. The
+`fork` remote already used the blobless partial-clone filter, but `origin` did not. Its reflog
+showed an unfiltered `fetch origin main` on November 7, which populated the oversized object
+store.
 
-    • Root filesystem: 60 GB total, 55 GB used, 5.3 GiB free (92%). Inodes are healthy at 11%
-    used.
-    • Hermes uses about 9.0 GB: installs/ 3.2 GB, tools/ 2.2 GB, source checkout 2.4 GB, UV cache
-    883 MB, logs 23 MB. The checkout is protected; leave it in place.
-    • Outside Hermes, ~/.cache is 5.2 GB and ~/.codex is 3.5 GB. I left both untouched.
+I replaced only the Git metadata with a single-branch clone of the existing branch using
+`--filter=blob:none`. The checkout remains at commit `6d9760ba0de6c2f7e4375cb51e7353d49742b0a7`,
+and the pre-existing edit in `tools/curator_v2_health.py` is unchanged. The active object store is
+152 MiB after fetching upstream `main`; connectivity-only `git fsck` passed. Both `origin` and
+`fork` now have `promisor=true` and `partialclonefilter=blob:none`. After confirming the retired
+metadata copy had no refs, index entries, reachable objects, or live process users, I removed its
+orphaned 269.8 MiB promisor pack. Only 16 KiB of metadata remains there. The active object store
+is down about 0.95 GiB from the original checkout.
 
-    Do not run Hermes PM GC now. The gateway and dashboard processes hold live leases on an
-    install generation/environment under installs/76f6e7e5145b5f39. Their executable links
-    resolve to a deleted previous Python runtime. The gateway is still active, so I did not stop
-    it or try to repair it. This makes GC unsafe until there is an approved maintenance window
-    and the update/runtime state is reconciled.
-
-    I also found three running uv processes holding the lock on the global cache at
-    /home/eaglesvn/.cache/uv/.lock. I did not run a prune or interfere with those processes. No
-    cache was removed.
-
-    The pending Hermes update remains the blocker: the installed runtime has 14
-    modified/untracked paths, and the update log says remaining steps are owed. I did not execute
-    the updater—you authorized inspection only. The next safe step is to decide how to handle
-    that update and schedule any needed service restart; until then, preserve the live processes
-    and skip GC.
-
- └─ ▾ Tool calls (11)
-   ├─ ● Skill View("codebase-inspection") (0.1s)
-   ├─ ● Terminal("command -v pygount + 1 command") (2.8s)
-   ├─ ● Terminal("python3 -c 'import os,subprocess; home="/home/eaglesvn"; skip={…") (3.0s)
-   ├─ ● Terminal("python3 -c 'import os,subprocess; home="/home/eaglesvn"; skip={…") (3.7s)
-   ├─ ● Terminal("python3 -m venv /home/eaglesvn/.hermes/cache/scratch/pygount-au…") (10.7s)
-   ├─ ● Terminal("printf '%s\n' '--- pygount options and suffix behavior ---' + 1…") (0.9s)
-   ├─ ● Terminal("repo=/home/eaglesvn/dockerz/curatormd-v2.0 + 1 command") (16.1s)
-   ├─ ● Terminal("python3 -c 'import json,subprocess; from pathlib import Path; e…") (5.9s)
-   ├─ ● 🔎 Searching tools · process_manage poll background terminal process (1.6s)
-   ├─ ● 📖 Reading tool details · 1 tool (0.0s)
-   └─ ● Process Manage("wait proc_5c64a569a0f 600s") (60.0s)
-
- ┊  I found nine actual working-tree repositories; pygount 3.2.0 is scanning the requested
-    Python/TypeScript/JavaScript/Vue/CSS/HTML/Bash suffixes while excluding dependency
-    and generated folders. I’ll report the aggregated per-repo breakdown when it finishes.
-
- ├─ ▸ Thinking  ~80 tokens
- └─ Σ ~268 total
-
- ┊  The nine-repository scan is still running. I’ll provide the verified summaries when it
-    completes.
-
- ·  💾 Self-improvement review: Skill 'codebase-inspection' patched · Skill 'codebase-inspection'
-     written (references/multi-repository-audit.md)
-
- ▾ Processes · 1 running · Ctrl+T expand · Ctrl+R collapse
- ⚙ python3 -c 'import json,subprocess; from pathlib import Path; exe="/home/eagle… · 0s · starting
-
-## Pygount scan complete
-
-    I scanned 9 working trees across 8 distinct Git repositories; the Curator restoration
-    worktree shares its Git repository with curatormd. Pygount 3.2.0 analyzed 19,275 materialized
-    source files for the requested extensions, excluding dependency and generated directories.
-
-      Working tree           Python    TS/TSX  JS/JSX  Vue    CSS    HTML    Bash    Total
-                                                                                     code
-                                                                                     lines
-      ─────────────────────  ────────  ──────  ──────  ─────  ─────  ──────  ──────  ────────
-      hermes-agent           1,548,16  632,48  42,797  —      6,319  3,064   8,102   2,240,92
-                             5         1                                             8
-      hermes-newswire        2,792     —       1,545   —      —      —       —       4,337
-      curatormd              4,343     —       790     —      —      —       —       5,133
-      curatormd-v2.0         52,902    —       7,069   —      —      —       —       59,971
-      Curator restoration    3,230     —       471     —      —      —       —       3,701
-      worktree
-      Curator restoration    3,230     —       471     —      —      —       —       3,701
-      worktree
-      gptmd                  —         22,500  7,732   7,644  605    14,093  40      52,614
-      redis-stack-7.4.1      —         —       —       —      —      —       24      24
-      renew_ssl              3,665     —       7,640   —      2,630  1,026   1,671   16,632
-      supabase-docker-stack  —         240     24      —      —      —       3,378   3,642
-      *
-      Total                  1,615,09  655,22  68,068  7,644  9,554  18,183  13,215  2,386,98
-                             7         1                                             2
-
-    Pygount counted 502,586 documentation/comment lines. “JS/JSX,” “CSS,” and “HTML” totals
-    include Pygount’s embedded-template categories; Nuxt is a framework rather than a separate
-    language, so its materialized Vue/TypeScript/JavaScript sources are counted under those
-    languages. Generated .nuxt output was excluded.
-
-    Important limitation: supabase-docker-stack is a sparse checkout containing only the docker
-    cone. Pygount analyzed its 23 materialized source files, not the full tree; 8,649 other
-    matching source paths were not present locally. So that row is partial.
-
-    Pygount also flagged 2,255 identical-content duplicate files, 8 generated files, and 10
-    empty-file classifications. Those are scan classifications—not a recommendation to delete
-    anything.
-
-    Correction: my previous message misstated the suffix-candidate count. The verified total is
-    27,925, not 31,925; the difference from the analyzed count is mostly the unmaterialized
-    Supabase sparse-checkout paths.
-
-    No repository files were changed. The isolated Pygount environment and per-repository JSON
-    summaries are under /home/eaglesvn/.hermes/cache/scratch/pygount-all-repos/manifest.json.
-
- ·  💾 Self-improvement review: Skill 'codebase-inspection' patched
-    (references/multi-repository-audit.md)
+Keep those two remote filter settings on this checkout. Use
+`git fetch --filter=blob:none --no-tags origin main` for explicit upstream fetches. Fresh source
+clones should use `git clone --filter=blob:none --single-branch`; do not fetch every fork branch
+unless they are needed locally. Hermes' installer already documents blobless clones, and the
+promisor filter on `origin` makes updater fetches follow the same policy.

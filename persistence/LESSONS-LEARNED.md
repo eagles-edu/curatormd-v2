@@ -1,5 +1,53 @@
 # Verified lessons
 
+## 2026-11-12 — Validate SQLite foreign keys as well as page integrity
+
+- **Lesson:** `PRAGMA integrity_check` can return `ok` while a composite foreign
+  key is unusable because its referenced parent columns lack a matching unique
+  index. Scheduled backup validation must retain `foreign_key_check`, and
+  schema regressions must exercise both checks on the real relation shape.
+- **Root cause:** Schema 48 allowed turn links to reference
+  `goals(project_id, goal_id)` without a unique index on those exact columns;
+  backup stopped before the purge retry pass.
+- **Fix:** Schema 49 idempotently adds the parent unique index. The live database
+  migrated, backup verified, the maintenance service exited successfully, and
+  the project-bound health probe returned healthy with no gates.
+- **Regression coverage:** A schema-48 composite-reference fixture verifies
+  migration idempotence, a clean `foreign_key_check`, and rejection of a
+  cross-project link.
+
+## 2026-11-12 — Keep health-probe expiry wider than the refresh cadence
+
+- **Lesson:** A one-minute polling interval paired with a one-minute freshness
+  limit makes normal scheduling delay flip a healthy project to `unknown`.
+  Keep backend, VS Code, and live-dashboard proof thresholds aligned at three
+  refresh intervals; continue reporting missing or expired observations as
+  `unknown`.
+- **Root cause:** The poll interval and every consumer's freshness threshold
+  were both 60 seconds, leaving no timing margin.
+- **Fix:** The shared behavior now allows 180 seconds while the dashboard keeps
+  its 60-second refresh cadence. Probes older than that still fail closed.
+- **Regression coverage:** Backend and UI accept a 90-second delayed refresh,
+  reject observations beyond 180 seconds, and assert that backend and live
+  proof thresholds remain aligned with the UI refresh policy.
+- **Evidence:** `test_api_evidence_ingress.py` (13 tests),
+  `test_api_health_metrics.py` (21 tests), and the focused VS Code and live
+  health-proof suites (78 tests) pass.
+
+## 2026-11-12 — Verify the effective Curator project before writing
+
+- **Lesson:** A shared Codex intake MCP server can retain the project selected
+  when its host process started. A terminal command's `workdir` does not rebind
+  an already running MCP connection. Read the effective project ID before any
+  Curator write; on mismatch, bind a fresh server to the intended repository
+  root and database, then verify the project ID again.
+- **Root cause:** The active intake connection returned another project's goal
+  list while the current repository's `.curatormd-v2.toml` named a different
+  project.
+- **Fix:** Started an explicit-root, project-bound Codex MCP process and
+  confirmed it returned the repository's project ID and existing goal list
+  before recording the task and SDE proposals.
+
 <!-- curatormd-v2:sde:2a4fa0275b81d0fa35b0273582692b5058e5cfa4a29b58dbf13539be1317996c:start -->
 ### Confirm the project\-bound Hermes health snapshot and dashboard after installing the recovery update\.
 

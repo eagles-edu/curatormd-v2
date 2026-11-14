@@ -127,17 +127,23 @@ const HEALTH_DEPENDENCY_LABELS = Object.freeze({
 const REPORT_PAGE_SIZE = 16;
 const GOAL_PAGE_SIZE = 20;
 const REVIEW_QUEUE_SIZE = 100;
+const REVIEW_RECOVERY_SIMILARITY_THRESHOLD = 0.92;
 const REQUEST_TIMEOUT_MS = 15000;
 const HERMES_HEALTH_TIMEOUT_MS = 20000;
 const HERMES_HEALTH_RETRY_DELAY_MS = 1000;
 const REVIEW_REFRESH_RETRY_DELAYS_MS = [0, 500, 1500];
 const HERMES_HEALTH_MAX_BYTES = 32768;
 const MAX_MCP_RESPONSE_LINE_BYTES = 4 * 1024 * 1024;
-const MAX_HEALTH_PROBE_AGE_SECONDS = 60;
+const STATUS_REFRESH_INTERVAL_MS = 60000;
+const HEALTH_FRESHNESS_INTERVALS = 3;
+// Keep the bounded health window at three polling intervals so delayed reads
+// do not flap, while health still expires when refreshes stop.
+const MAX_HEALTH_PROBE_AGE_SECONDS = Math.ceil(
+  STATUS_REFRESH_INTERVAL_MS * HEALTH_FRESHNESS_INTERVALS / 1000,
+);
 const MAX_HEALTH_PROBE_CLOCK_SKEW_SECONDS = 5;
 const WORKSPACE_PROJECTION_MAX_AGE_SECONDS = 300;
 const WORKSPACE_PROJECTION_CLOCK_SKEW_SECONDS = 5;
-const STATUS_REFRESH_INTERVAL_MS = 60000;
 const HEALTH_HISTORY_LIMIT = 60;
 const OPERATIONAL_ERROR_LOG_LIMIT = 100;
 const MAX_IDENTICAL_FEED_FAILURES = 3;
@@ -454,7 +460,7 @@ function writeWorkspaceQueueViews(
   ).allUpdated;
 }
 
-function suggestPersistenceDocuments(candidate, goal, outline, configuredDocuments) {
+function assessPersistenceDocuments(candidate, goal, outline, configuredDocuments) {
   const available = Array.isArray(configuredDocuments)
     ? [...new Set(configuredDocuments.filter((item) => typeof item === 'string'))] : [];
   const text = [goal?.problem, candidate?.rationale, candidate?.impact,
@@ -463,30 +469,58 @@ function suggestPersistenceDocuments(candidate, goal, outline, configuredDocumen
       ? outline.supporting_facts.map((fact) => fact?.bullet) : [])]
     .filter((item) => typeof item === 'string')
     .join(' ').toLowerCase();
-  const matches = [];
-  const add = (document) => {
-    if (available.includes(document)) matches.push(document);
+  const facts = Array.isArray(outline?.supporting_facts) ? outline.supporting_facts : [];
+  const hasReusableLesson = candidate?.materiality === 'verified_lesson'
+    || facts.some((fact) => fact?.kind === 'verified_lesson' || fact?.kind === 'lesson');
+  const hasProcedure = /\b(workflow|procedure|runbook|operating steps|lifecycle|maintenance|recovery procedure|approval flow|cleanup process|retry process|plan item|task lifecycle|task tracking|task completion|sde proposal|recordkeeping)\b/.test(text)
+    || (candidate?.materiality === 'recovery'
+      && /\b(before-image|snapshot|restore|retry|repair|reversible|rollback|roll back|idempotent)\b/.test(text));
+  // AGENTS is about changing agent behavior or instructions. Generic mentions
+  // of an agent, a recovery, a rule, or a project scope are not enough.
+  const changesAgentBehavior = /\b(?:codex|agent|assistant|hook|intake)\b.{0,48}\b(?:instruction|policy|behavior|scope|routing|plan function|planning rule|task behavior|aotask|ootask|aatask)\b/.test(text)
+    || /\b(?:instruction|policy|behavior|scope|routing|plan function|planning rule|task behavior)\b.{0,48}\b(?:codex|agent|assistant|hook|intake)\b/.test(text);
+  const evidence = [
+    {
+      document: 'persistence/HISTORY.md',
+      selected: available.includes('persistence/HISTORY.md')
+        && Boolean(goal?.problem || facts.length || candidate?.rationale),
+      reason: available.includes('persistence/HISTORY.md')
+        ? 'Records this SDE outcome in the project timeline.'
+        : 'Not available in the configured persistence documents.',
+    },
+    {
+      document: 'persistence/LESSONS-LEARNED.md',
+      selected: available.includes('persistence/LESSONS-LEARNED.md') && hasReusableLesson,
+      reason: !available.includes('persistence/LESSONS-LEARNED.md')
+        ? 'Not available in the configured persistence documents.'
+        : hasReusableLesson
+          ? 'The candidate contains an explicitly reusable lesson or verified lesson fact.'
+          : 'No reusable always, never, remember, or check rule is supported by the candidate facts.',
+    },
+    {
+      document: 'persistence/AGENTS.md',
+      selected: available.includes('persistence/AGENTS.md') && changesAgentBehavior,
+      reason: !available.includes('persistence/AGENTS.md')
+        ? 'Not available in the configured persistence documents.'
+        : changesAgentBehavior
+          ? 'The candidate changes agent instructions, behavior, scope, routing, or planning rules.'
+          : 'No agent instruction, behavior, scope, routing, or planning-function change is explicit.',
+    },
+    {
+      document: 'persistence/SOP.md',
+      selected: available.includes('persistence/SOP.md') && hasProcedure,
+      reason: !available.includes('persistence/SOP.md')
+        ? 'Not available in the configured persistence documents.'
+        : hasProcedure
+          ? 'The candidate records repeatable operational steps or recovery controls.'
+          : 'No repeatable procedure or operational prevention control is supported.',
+    },
+  ];
+  return {
+    documents: evidence.filter((item) => item.selected).map((item) => item.document),
+    evidence,
+    availableDocuments: available,
   };
-
-  // HISTORY is the chronological record of a significant SDE outcome.
-  add('persistence/HISTORY.md');
-
-  // Put only explicit, reusable lessons in the lessons file.
-  if (candidate?.materiality === 'verified_lesson'
-    || outline?.supporting_facts?.some((fact) => fact?.kind === 'verified_lesson'
-      || fact?.kind === 'lesson')) {
-    add('persistence/LESSONS-LEARNED.md');
-  }
-
-  // SOP is for repeatable operations; AGENTS is for durable agent/repository rules.
-  if (/\b(workflow|procedure|runbook|operating steps|lifecycle|maintenance|recovery procedure|approval flow|cleanup process|retry process|plan item|task lifecycle|task tracking|task completion|sde proposal|recordkeeping)\b/.test(text)) {
-    add('persistence/SOP.md');
-  }
-  if (/\b(agent|codex|instruction|policy|rule|scope|routing|intake|hook|task behavior|aotask|ootask|aatask)\b/.test(text)) {
-    add('persistence/AGENTS.md');
-  }
-
-  return [...new Set(matches)];
 }
 
 function writePendingReviewDocument(
@@ -501,48 +535,64 @@ function writePendingReviewDocument(
   let previousDrafts = new Map();
   let existingContent = null;
   let previousTrailingNewlines = null;
+  let staleGeneratedText = null;
+  let staleCandidateIds = [];
   try {
     const metadata = fs.lstatSync(destination);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) return false;
     const existing = fs.readFileSync(destination, 'utf8');
     existingContent = existing;
     const marker = pendingReviewChecksumMarker(existing);
-    if (!marker) return false;
-    const oldBody = existing.slice(marker.length);
-    const parts = reviewDraftParts(oldBody);
-    if (!parts) return false;
-    const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
-    if (hash(parts.normalized) !== marker.checksum
-      && hash(normalizeReviewChecksumWhitespace(parts.normalized)) !== marker.checksum
-      && hash(oldBody) !== marker.checksum) return false;
-    previousTrailingNewlines = trailingReviewNewlineCount(oldBody);
-    const currentIds = new Set(reviews.map(({ candidate }) => candidate.candidate_id));
-    const removedIds = [...parts.drafts.keys()].filter((id) => !currentIds.has(id));
-    if (removedIds.some((id) => !resolvedCandidateIds.has(id))) return false;
-    previousDrafts = new Map([...parts.drafts].filter(([id]) => currentIds.has(id)));
-  } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
-  const safe = (value) => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~\-]/g, '\\$&');
-  const pushParagraph = (text, firstPrefix = '') => {
-    const paragraph = text.trim().replace(/\s+/g, ' ');
-    if (paragraph) lines.push(`${firstPrefix}${paragraph}`);
-  };
-  const pushField = (label, value) => pushParagraph(`${label}: ${value}`, '- ');
-  const pushFacts = (facts, fallback) => {
-    if (facts.length === 0) {
-      pushParagraph(fallback, '  - ');
-      return;
+    const oldBody = marker ? existing.slice(marker.length) : existing;
+    let parts = reviewDraftParts(oldBody);
+    const existingProjectLine = oldBody.split('\n').find((line) => line.startsWith('Project: '));
+    const candidateIds = [...existing.matchAll(
+      /^<!-- curator-v2-candidate: ([A-Za-z0-9_-]{1,128}) -->$/gm,
+    )].map((match) => match[1]);
+    const candidateMappingValid = Boolean(parts)
+      && candidateIds.length <= REVIEW_QUEUE_SIZE
+      && new Set(candidateIds).size === candidateIds.length
+      && candidateIds.length === parts.drafts.size
+      && candidateIds.every((candidateId) => parts.drafts.has(candidateId));
+    if (!candidateMappingValid) {
+      // The live queue is authoritative. Preserve the entire broken projection
+      // privately, then rebuild it from that queue instead of blocking review.
+      preserveInvalidReviewDraft(projectRoot, 'review-document', existing);
+      parts = { drafts: new Map(), normalized: '' };
+      previousTrailingNewlines = trailingReviewNewlineCount(oldBody);
+    } else {
+      const currentIds = new Set(reviews.map(({ candidate }) => candidate.candidate_id));
+      const projectMetadataMatches = reviewProjectLineMatches(existingProjectLine, projectId);
+      const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
+      const checksumValid = Boolean(marker && (hash(parts.normalized) === marker.checksum
+        || hash(normalizeReviewChecksumWhitespace(parts.normalized)) === marker.checksum
+        || hash(oldBody) === marker.checksum));
+      if (!projectMetadataMatches) {
+        // Candidate IDs bind editable copies to the authoritative live queue.
+        // Keep matching decisions, save the malformed generated document, and
+        // rewrite its metadata from the current project context.
+        preserveInvalidReviewDraft(projectRoot, 'review-document', existing);
+      } else if (!checksumValid) {
+        staleGeneratedText = parts.normalized;
+        staleCandidateIds = candidateIds;
+      }
+      previousTrailingNewlines = trailingReviewNewlineCount(oldBody);
+      const removedIds = [...parts.drafts.keys()].filter((id) => !currentIds.has(id));
+      if (projectMetadataMatches
+        && removedIds.some((id) => !resolvedCandidateIds.has(id))) return false;
+      previousDrafts = new Map([...parts.drafts].filter(([id]) => currentIds.has(id)));
     }
-    for (const fact of facts) pushParagraph(safe(fact.bullet), '  - ');
-  };
+  } catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
   const lines = [
-    '# Pending SDE reviews', '',
+    '# Pending SDE reviews',
+    '',
+    `Project: ${escapeReviewMarkdown(projectId)}`,
+    '',
+    'Edit the approval copy below. Accept and Reject open attended review; Withdraw and Refresh evidence are separate actions.',
+    '',
   ];
-  pushParagraph(`Project: ${safe(projectId)}`);
-  lines.push('');
-  pushParagraph('Review each proposal and its editable JSON copy. Accept and Reject open the attended reviewer. Withdraw clears a proposal while retaining its source facts and receipt. Refresh evidence reopens the source task for a new proof pass, then withdraws the stale proposal; it does not accept or delete facts.');
-  lines.push('');
   if (reviews.length === REVIEW_QUEUE_SIZE) {
-    pushParagraph('Only the first 100 candidates are shown.');
+    lines.push('Only the first 100 candidates are shown.');
     lines.push('');
   }
   if (reviews.length === 0) {
@@ -565,14 +615,23 @@ function writePendingReviewDocument(
     const supportingFacts = outlineMatchesCandidate ? outline.supporting_facts : [];
     const verificationFacts = supportingFacts.filter((fact) => fact.kind === 'verification');
     const changeFacts = supportingFacts.filter((fact) => fact.kind === 'change');
+    const userReportFacts = supportingFacts.filter((fact) => fact.kind === 'user_report');
+    const researchFacts = supportingFacts.filter((fact) => fact.kind === 'research');
+    const lessonFacts = supportingFacts.filter((fact) =>
+      fact.kind === 'verified_lesson' || fact.kind === 'lesson');
     const suggestedSignificance = ({
       implementation: 4,
       decision: 3,
       recovery: 3,
       verified_lesson: 2,
       routine: 1,
-    })[candidate.materiality] ?? null;
-    const proposedTitle = goal.problem;
+    })[candidate.materiality] ?? 1;
+    const titleCandidates = [candidate.impact, candidate.rationale]
+      .filter((value) => typeof value === 'string' && value.trim().length > 0
+        && value.length <= 256)
+      .map((value) => value.trim());
+    const proposedTitle = titleCandidates.find((value) => value !== goal.problem)
+      || `SDE candidate ${candidate.candidate_id}`;
     const proposalRationale = outlineMatchesCandidate
       && typeof outline.proposal_rationale === 'string'
       && outline.proposal_rationale.length <= 1000
@@ -585,136 +644,115 @@ function writePendingReviewDocument(
       && (outline.successful_completion_evidence_recorded === true
         || outline.successful_completion_evidence_current === true)
       && verificationFacts.length > 0;
-    const taskSummaries = changeFacts
-      .filter((fact) => /^Task summary:/i.test(fact.bullet))
-      .slice(0, 1);
     const completed = verifiedCompletion
       ? verificationFacts.map((fact) => fact.bullet).slice(0, 32)
-      : taskSummaries.map((fact) => fact.bullet).slice(0, 32);
+      : [
+        ...changeFacts.map((fact) => fact.bullet),
+        ...researchFacts.map((fact) => `Completed research: ${fact.bullet}`),
+        ...userReportFacts.map((fact) => `Owner-reported outcome (unverified): ${fact.bullet}`),
+        ...verificationFacts.map((fact) => `Historical verification (not current proof): ${fact.bullet}`),
+        ...lessonFacts.map((fact) => `Reusable lesson recorded: ${fact.bullet}`),
+      ].slice(0, 32);
+    if (reviews.length > 0) {
+      for (let index = 0; index < completed.length; index += 1) {
+        // A stale task fact may claim that the queue is empty even while this
+        // candidate is pending. Drop only the contradictory sentence.
+        const sentences = completed[index].match(/[^.!?]+(?:[.!?]+|$)/g) || [completed[index]];
+        completed[index] = sentences
+          .filter((sentence) => !/\b(?:no|zero|none)\s+pending\s+(?:sde\s+)?(?:candidate|proposal|review)s?\b/i.test(sentence))
+          .join('').trim();
+      }
+    }
+    const groundedCompletion = completed.filter((item) => item.length > 0);
+    const reviewCompletion = groundedCompletion.length > 0
+      ? groundedCompletion
+      : [
+        `Completion details are unavailable in the current review outline; evidence status: ${outlineMatchesCandidate
+          ? (outline.evidence_status || 'unknown') : 'unknown'}. No verification claim is made.`,
+      ];
     const configuredDocuments = outlineMatchesCandidate
       && Array.isArray(outline.persistence_documents)
       && outline.persistence_documents.length <= 16
       && outline.persistence_documents.every((document) => typeof document === 'string'
         && document.length <= 512 && !document.startsWith('/') && !document.includes('\\'))
       ? outline.persistence_documents : [];
-    const persistenceDocuments = suggestPersistenceDocuments(
+    const persistenceAssessment = assessPersistenceDocuments(
       candidate, goal, outlineMatchesCandidate ? outline : null, configuredDocuments,
     );
+    const persistenceDocuments = persistenceAssessment.documents;
     const draft = {
       title: proposedTitle,
       significance: suggestedSignificance,
       documents: persistenceDocuments,
       problem: goal.problem,
-      completed,
+      completed: reviewCompletion,
       difficulties: [],
       plan_changes: [],
-      lessons: proposedLesson ? [proposedLesson] : [],
-      future_utility: outline && typeof outline.future_utility === 'string'
+      lessons: [
+        ...(proposedLesson ? [proposedLesson] : []),
+        ...lessonFacts.map((fact) => fact.bullet),
+      ].slice(0, 32),
+      future_utility: outlineMatchesCandidate && typeof outline.future_utility === 'string'
         && outline.future_utility.length <= 1000
         ? outline.future_utility : '',
     };
-    const draftJson = JSON.stringify(draft, null, 2);
-    let fence = '```';
-    while (draftJson.includes(fence)) fence += '`';
+    const metadata = {
+      candidateId: candidate.candidate_id,
+      startedAt: outlineMatchesCandidate ? outline.task_started_at || null : null,
+      evidenceStatus: outlineMatchesCandidate ? outline.evidence_status || 'unknown' : 'unknown',
+      rationale: proposalRationale,
+    };
+    const proposal = reviewProposalFromDraft(draft, metadata, persistenceAssessment);
+    const fenceFor = (value) => {
+      const json = JSON.stringify(value, null, 2);
+      let fence = '```';
+      while (json.includes(fence)) fence += '`';
+      return `${fence}json\n${json}\n${fence}`;
+    };
+    let editableProposal = proposal;
     let draftBlock = previousDrafts.get(candidate.candidate_id);
-    if (draftBlock) {
+    if (draftBlock !== undefined) {
+      let savedDecisionApplied = false;
       const savedJson = /^(`{3,}json\n)([\s\S]*)(\n`{3,})$/.exec(draftBlock);
       if (savedJson) {
         try {
-          const savedDecision = JSON.parse(savedJson[2]);
-          if (Array.isArray(savedDecision.completed) && savedDecision.completed.length === 0
-            && completed.length > 0) {
-            savedDecision.completed = completed;
-            draftBlock = `${savedJson[1]}${JSON.stringify(savedDecision, null, 2)}${savedJson[3]}`;
-          }
-          if (persistenceDocuments.length > 0
-            && Array.isArray(savedDecision.documents) && savedDecision.documents.length === 0) {
-            const savedWithoutDocuments = { ...savedDecision };
-            const suggestedWithoutDocuments = { ...draft };
-            delete savedWithoutDocuments.documents;
-            delete suggestedWithoutDocuments.documents;
-            if (JSON.stringify(savedWithoutDocuments) === JSON.stringify(suggestedWithoutDocuments)) {
-              savedDecision.documents = persistenceDocuments;
-              draftBlock = `${savedJson[1]}${JSON.stringify(savedDecision, null, 2)}${savedJson[3]}`;
+          const savedProposal = JSON.parse(savedJson[2]);
+          const savedDecision = reviewDraftFromProposal(savedProposal, candidate.candidate_id);
+          if (savedDecision) {
+            const preserved = { ...draft, ...savedDecision };
+            if ((!Array.isArray(savedDecision.completed) || savedDecision.completed.length === 0)
+              && completed.length > 0) preserved.completed = completed;
+            if (persistenceDocuments.length > 0
+              && Array.isArray(savedDecision.documents) && savedDecision.documents.length === 0) {
+              const savedWithoutDocuments = { ...savedDecision };
+              const suggestedWithoutDocuments = { ...draft };
+              delete savedWithoutDocuments.documents;
+              delete suggestedWithoutDocuments.documents;
+              if (reviewJsonEquivalent(savedWithoutDocuments, suggestedWithoutDocuments)) {
+                preserved.documents = persistenceDocuments;
+              }
             }
+            editableProposal = reviewProposalWithDraft(proposal, preserved, candidate.candidate_id);
+            draftBlock = fenceFor(editableProposal);
+            savedDecisionApplied = true;
           }
         } catch (_) {
-          // Keep an owner's malformed draft intact for attended repair.
+          // Preserve the exact invalid copy below, then rebuild from the current queue.
         }
       }
+      if (!savedDecisionApplied) {
+        preserveInvalidReviewDraft(projectRoot, candidate.candidate_id, draftBlock);
+        editableProposal = proposal;
+        draftBlock = fenceFor(editableProposal);
+      }
     } else {
-      draftBlock = `${fence}json\n${draftJson}\n${fence}`;
+      draftBlock = fenceFor(editableProposal);
     }
-    const proposedBlock = draftBlock;
     lines.push(`<!-- curator-v2-candidate: ${candidate.candidate_id} -->`,
       `## SDE candidate ${candidateNumber}`, '',
-      `### ${candidateNumber}. Proposed entry`, '');
-    lines.push(proposedBlock, '');
-    pushField('SDE ID', safe(candidate.candidate_id));
-    pushField('Proposed title', safe(proposedTitle));
-    pushField('Task started (+07)', outline && typeof outline.task_started_at === 'string'
-      ? safe(outline.task_started_at) : 'Unknown');
-    pushField('Successful completion (+07)', outline && typeof outline.successful_completion_at === 'string'
-      ? safe(outline.successful_completion_at) : 'Unknown');
-    pushField('Significance', suggestedSignificance === null
-      ? 'Choose 0–5'
-      : `${suggestedSignificance} / 5 initial recommendation; owner-editable. Use this rating to guide future compression, summarization, archiving, and culling. A rating of 5 requires extra confirmation.`);
-    pushField('Proposal rationale', safe(proposalRationale));
-    lines.push('- Available persistence documents:');
-    if (outline && Array.isArray(outline.persistence_documents)
-      && outline.persistence_documents.length <= 16
-      && outline.persistence_documents.every((document) => typeof document === 'string'
-        && document.length <= 512 && !document.startsWith('/') && !document.includes('\\'))) {
-      for (const document of outline.persistence_documents) pushParagraph(`\`${safe(document)}\``, '  - ');
-    } else {
-      pushParagraph('Choose one or more configured persistence documents in the editable copy.', '  - ');
-    }
-    if (persistenceDocuments.length > 0) {
-      pushParagraph(
-        'Suggested destinations match the document purposes; edit the JSON list if another configured document is a better fit.',
-        '  - ',
-      );
-    } else {
-      pushParagraph(
-        'No destination matched confidently; choose only the configured documents whose purpose fits this entry.',
-        '  - ',
-      );
-    }
-
-    lines.push('', `### ${candidateNumber}. Task and outcomes`, '');
-    pushField('Problem / plan task', safe(goal.problem));
-    lines.push('- Completed successfully:');
-    if (verifiedCompletion) {
-      pushFacts(
-        verificationFacts.length > 0 ? verificationFacts : [completionClaim],
-        'No successful work is recorded.',
-      );
-      pushParagraph('The attended reviewer checks the current evidence before acceptance.', '  - ');
-    } else {
-      pushFacts([], 'No recorded passing verification supports a successful-completion claim.');
-      if (taskSummaries.length > 0) {
-        lines.push('- Completed task work, with verification still open:');
-        pushFacts(taskSummaries, 'No task summary is recorded.');
-      }
-      for (const fact of verificationFacts) {
-        pushParagraph(`Recorded verification, not current proof: ${safe(fact.bullet)}`, '  - ');
-      }
-    }
-    lines.push('- Difficulties encountered:');
-    pushFacts([], 'No difficulty is separately recorded.');
-    lines.push('- Plan changes required:');
-    pushFacts([], 'No plan change is separately recorded.');
-    lines.push('- Lessons learned:');
-    pushFacts(proposedLesson ? [{ bullet: proposedLesson }] : [], 'No lesson is separately stated.');
-    if (outlineMatchesCandidate && typeof outline.future_utility === 'string'
-      && outline.future_utility.length <= 1000) pushField('Future utility', safe(outline.future_utility));
-    if (changeFacts.length > 0) {
-      lines.push('- Other recorded work:');
-      pushFacts(changeFacts.slice(0, 8), 'No change facts are available.');
-      if (changeFacts.length > 8) pushParagraph('Additional change facts are available in the attended review.', '  - ');
-    }
-    lines.push('', `<!-- curator-v2-actions: ${candidate.candidate_id} -->`);
-    lines.push(`### ${candidateNumber}. Editable decision`, '');
+      `### ${candidateNumber}. Proposal`, '', fenceFor(proposal), '',
+      `### ${candidateNumber}. Approval copy (editable)`, '',
+      `<!-- curator-v2-actions: ${candidate.candidate_id} -->`);
     lines.push('',
       `<!-- curator-v2-decision:${candidate.candidate_id}:start -->`,
       draftBlock,
@@ -728,6 +766,21 @@ function writePendingReviewDocument(
   if (Buffer.byteLength(body, 'utf8') > 1024 * 1024 - 128) return false;
   const generated = reviewDraftParts(body);
   if (!generated) return false;
+  if (staleGeneratedText !== null) {
+    const generatedCandidateIds = new Set(reviewCandidateIds(generated.normalized));
+    const sharedCandidateIds = new Set(staleCandidateIds.filter(
+      (candidateId) => generatedCandidateIds.has(candidateId),
+    ));
+    const previousComparable = reviewTextForCandidates(staleGeneratedText, sharedCandidateIds);
+    const generatedComparable = reviewTextForCandidates(generated.normalized, sharedCandidateIds);
+    if (reviewTextSimilarity(previousComparable, generatedComparable)
+      <= REVIEW_RECOVERY_SIMILARITY_THRESHOLD && existingContent !== null) {
+      // Generated prose can be rebuilt; all valid editable decisions have
+      // already been carried forward. Keep an exact private recovery copy of
+      // unexpected source changes rather than leaving review blocked.
+      preserveInvalidReviewDraft(projectRoot, 'review-document', existingContent);
+    }
+  }
   const checksum = createHash('sha256')
     .update(normalizeReviewChecksumWhitespace(generated.normalized), 'utf8').digest('hex');
   const content = `<!-- sha256:${checksum} -->\n${body}`;
@@ -752,6 +805,229 @@ function writePendingReviewDocument(
     throw error;
   }
   return true;
+}
+
+function reviewTextSimilarity(left, right) {
+  const tokens = (value) => value.toLowerCase().match(/[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu) || [];
+  const shingles = (value) => {
+    const words = tokens(value);
+    const counts = new Map();
+    if (words.length < 3) {
+      for (const word of words) counts.set(word, (counts.get(word) || 0) + 1);
+      return counts;
+    }
+    for (let index = 0; index <= words.length - 3; index += 1) {
+      const shingle = `${words[index]} ${words[index + 1]} ${words[index + 2]}`;
+      counts.set(shingle, (counts.get(shingle) || 0) + 1);
+    }
+    return counts;
+  };
+  const leftShingles = shingles(left);
+  const rightShingles = shingles(right);
+  const total = [...leftShingles.values()].reduce((sum, count) => sum + count, 0)
+    + [...rightShingles.values()].reduce((sum, count) => sum + count, 0);
+  if (total === 0) return 1;
+  let overlap = 0;
+  for (const [shingle, count] of leftShingles) {
+    overlap += Math.min(count, rightShingles.get(shingle) || 0);
+  }
+  return (2 * overlap) / total;
+}
+
+function reviewCandidateIds(content) {
+  return [...content.matchAll(/^<!-- curator-v2-candidate: ([A-Za-z0-9_-]{1,128}) -->$/gm)]
+    .map((match) => match[1]);
+}
+
+function reviewJsonEquivalent(left, right) {
+  const canonicalize = (value) => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+    }
+    return value;
+  };
+  return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+}
+
+function reviewProposalFromDraft(draft, metadata, persistenceAssessment) {
+  const destinations = Object.fromEntries(persistenceAssessment.evidence
+    .filter((item) => persistenceAssessment.availableDocuments.includes(item.document))
+    .map((item) => {
+      const guidance = ({
+        'persistence/HISTORY.md': {
+          lifecycleGate: 'post_commit', tokenBudget: 500,
+          directive: 'Record the approved milestone and outcome.',
+        },
+        'persistence/LESSONS-LEARNED.md': {
+          lifecycleGate: 'pre_diff_and_post_error', tokenBudget: 800,
+          directive: 'Record only a reusable prevention lesson supported by the facts.',
+        },
+        'persistence/AGENTS.md': {
+          lifecycleGate: 'planning_phase', tokenBudget: 1200,
+          directive: 'Record only an explicit agent instruction or behavior change.',
+        },
+        'persistence/SOP.md': {
+          lifecycleGate: 'always_active', tokenBudget: 1000,
+          directive: 'Record repeatable operating steps or recovery controls.',
+        },
+      })[item.document];
+      return [item.document, {
+        enabled: item.selected,
+        writePolicy: 'staged_approval',
+        directives: item.selected && guidance ? [guidance.directive] : [],
+        reason: item.reason,
+        lifecycleGate: guidance?.lifecycleGate ?? 'post_review',
+        tokenBudget: guidance?.tokenBudget ?? 500,
+      }];
+    }));
+  return {
+    sdeProposal: {
+      meta: {
+        sdeId: metadata.candidateId,
+        startedAt: metadata.startedAt,
+        evidenceStatus: metadata.evidenceStatus,
+        significance: draft.significance,
+        rationale: metadata.rationale,
+      },
+      payload: {
+        title: draft.title,
+        problem: draft.problem,
+        completion: draft.completed,
+        difficulties: draft.difficulties,
+        planChanges: draft.plan_changes,
+        lessons: draft.lessons,
+        futureUtility: draft.future_utility,
+      },
+      persistence: destinations,
+    },
+  };
+}
+
+function reviewDraftFromProposal(value, candidateId) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const proposal = value.sdeProposal;
+  if (!Object.prototype.hasOwnProperty.call(value, 'sdeProposal')) return value;
+  if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal)) return null;
+  const meta = proposal.meta;
+  const payload = proposal.payload;
+  const persistence = proposal.persistence;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)
+    || meta.sdeId !== candidateId
+    || !Number.isSafeInteger(meta.significance) || meta.significance < 0 || meta.significance > 5
+    || !payload || typeof payload !== 'object' || Array.isArray(payload)
+    || !persistence || typeof persistence !== 'object' || Array.isArray(persistence)) return null;
+  if (typeof payload.title !== 'string' || typeof payload.problem !== 'string'
+    || !Array.isArray(payload.completion) || !Array.isArray(payload.difficulties)
+    || !Array.isArray(payload.planChanges) || !Array.isArray(payload.lessons)
+    || [...payload.completion, ...payload.difficulties, ...payload.planChanges, ...payload.lessons]
+      .some((item) => typeof item !== 'string')
+    || typeof payload.futureUtility !== 'string'
+    || Object.values(persistence).some((settings) => !settings
+      || typeof settings !== 'object' || Array.isArray(settings)
+      || typeof settings.enabled !== 'boolean')) return null;
+  const documents = Object.entries(persistence)
+    .filter(([, value]) => value && typeof value === 'object' && value.enabled === true)
+    .map(([document]) => document);
+  return {
+    title: payload.title,
+    significance: meta.significance,
+    documents,
+    problem: payload.problem,
+    completed: payload.completion,
+    difficulties: payload.difficulties,
+    plan_changes: payload.planChanges,
+    lessons: payload.lessons,
+    future_utility: payload.futureUtility,
+  };
+}
+
+function reviewProposalWithDraft(value, draft, candidateId) {
+  const proposal = value?.sdeProposal;
+  if (!proposal || proposal.meta?.sdeId !== candidateId) return draft;
+  const persistence = Object.fromEntries(Object.entries(proposal.persistence || {}).map(
+    ([document, settings]) => [document, {
+      ...settings,
+      enabled: Array.isArray(draft.documents) && draft.documents.includes(document),
+    }],
+  ));
+  return {
+    sdeProposal: {
+      ...proposal,
+      meta: { ...proposal.meta, significance: draft.significance },
+      payload: {
+        ...proposal.payload,
+        title: draft.title,
+        problem: draft.problem,
+        completion: draft.completed,
+        difficulties: draft.difficulties,
+        planChanges: draft.plan_changes,
+        lessons: draft.lessons,
+        futureUtility: draft.future_utility,
+      },
+      persistence,
+    },
+  };
+}
+
+function reviewTextForCandidates(content, candidateIds) {
+  const lines = content.split('\n');
+  const retained = [];
+  let include = true;
+  for (const line of lines) {
+    const candidate = /^<!-- curator-v2-candidate: ([A-Za-z0-9_-]{1,128}) -->$/.exec(line);
+    if (candidate) include = candidateIds.has(candidate[1]);
+    if (include) retained.push(line);
+  }
+  return retained.join('\n');
+}
+
+function escapeReviewMarkdown(value) {
+  return value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]#+!<>|~\-]/g, '\\$&');
+}
+
+function unescapeReviewMarkdown(value) {
+  const escaped = new Set(['\\', '`', '*', '_', '{', '}', '[', ']', '#', '+', '!', '<', '>', '|', '~', '-']);
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '\\' && escaped.has(value[index + 1])) index += 1;
+    result += value[index];
+  }
+  return result;
+}
+
+function reviewProjectLineMatches(line, projectId) {
+  return typeof line === 'string' && line.startsWith('Project: ')
+    && unescapeReviewMarkdown(line.slice('Project: '.length)) === projectId;
+}
+
+function preserveInvalidReviewDraft(projectRoot, candidateId, draftBlock) {
+  const sideBuffer = ensureWorkspaceArea(projectRoot, 'side-buffer');
+  const directory = path.join(sideBuffer, 'sde-review-recovery');
+  try {
+    const metadata = fs.lstatSync(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error('SDE review recovery area is unavailable.');
+    }
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') throw error;
+    fs.mkdirSync(directory, { mode: 0o700 });
+  }
+  const digest = createHash('sha256').update(draftBlock, 'utf8').digest('hex');
+  const destination = path.join(directory, `${candidateId}-${digest}.md`);
+  try {
+    const metadata = fs.lstatSync(destination);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024
+      || fs.readFileSync(destination, 'utf8') !== draftBlock) {
+      throw new Error('SDE review recovery copy does not match its source.');
+    }
+    return destination;
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') throw error;
+  }
+  const descriptor = fs.openSync(destination, 'wx', 0o600);
+  try { fs.writeFileSync(descriptor, draftBlock, 'utf8'); } finally { fs.closeSync(descriptor); }
+  return destination;
 }
 
 function reviewDraftParts(body) {
@@ -796,27 +1072,23 @@ function normalizeReviewChecksumWhitespace(value) {
     : value;
 }
 
-function pendingReviewDocumentState(content) {
+function pendingReviewDocumentState(content, expectedProjectId = null) {
+  // Review eligibility depends on a complete candidate-to-decision mapping;
+  // generated prose bytes are checked during refresh, not used as an approval gate.
   const marker = pendingReviewChecksumMarker(content);
-  if (!marker) return null;
-  const body = content.slice(marker.length);
+  const body = marker ? content.slice(marker.length) : content;
+  if (expectedProjectId !== null) {
+    const projectLine = body.split('\n').find((line) => line.startsWith('Project: '));
+    if (!reviewProjectLineMatches(projectLine, expectedProjectId)) return null;
+  }
   const parts = reviewDraftParts(body);
   if (!parts) return null;
-  const hash = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
-  if (hash(parts.normalized) !== marker.checksum
-    && hash(normalizeReviewChecksumWhitespace(parts.normalized)) !== marker.checksum
-    && hash(body) !== marker.checksum) return null;
-  const candidateIds = [...content.matchAll(/^<!-- curator-v2-candidate: ([A-Za-z0-9_-]{1,128}) -->$/gm)]
-    .map((match) => match[1]);
+  const candidateIds = reviewCandidateIds(content);
   if (candidateIds.length > REVIEW_QUEUE_SIZE
     || new Set(candidateIds).size !== candidateIds.length
     || candidateIds.length !== parts.drafts.size
     || candidateIds.some((candidateId) => !parts.drafts.has(candidateId))) return null;
   return { candidateIds, drafts: parts.drafts };
-}
-
-function isUnmodifiedReviewDocument(content) {
-  return pendingReviewDocumentState(content) !== null;
 }
 
 function tryWriteWorkspaceQueueViews(
@@ -863,7 +1135,7 @@ function workspaceQueueViewsConfirmResolved(projectRoot, projectId, candidateId)
     projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
   );
   const reviewText = readProjection('sde-proposals/pending-review.md');
-  const reviewState = reviewText === null ? null : pendingReviewDocumentState(reviewText);
+  const reviewState = reviewText === null ? null : pendingReviewDocumentState(reviewText, projectId);
   const openDocument = vscode.workspace?.textDocuments?.find(
     (document) => document.uri?.fsPath === reviewPath,
   );
@@ -904,7 +1176,7 @@ function workspaceQueueViewsConfirmResolved(projectRoot, projectId, candidateId)
   };
 }
 
-function pendingReviewCandidateIds(projectRoot) {
+function pendingReviewCandidateIds(projectRoot, projectId = null) {
   const destination = path.join(
     projectRoot, '.curatormd-v2', 'sde-proposals', 'pending-review.md',
   );
@@ -913,12 +1185,12 @@ function pendingReviewCandidateIds(projectRoot) {
       (document) => document.uri?.fsPath === destination,
     );
     if (openDocument && typeof openDocument.getText === 'function') {
-      return pendingReviewDocumentState(openDocument.getText())?.candidateIds || [];
+      return pendingReviewDocumentState(openDocument.getText(), projectId)?.candidateIds || [];
     }
     const metadata = fs.lstatSync(destination);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1024 * 1024) return [];
     const content = fs.readFileSync(destination, 'utf8');
-    return pendingReviewDocumentState(content)?.candidateIds || [];
+    return pendingReviewDocumentState(content, projectId)?.candidateIds || [];
   } catch (_) {
     return [];
   }
@@ -932,7 +1204,8 @@ async function readReviewOutlines(client, reviewWire, projectId, projectRoot) {
   const currentIds = new Set(reviews.map(({ candidate }) => candidate.candidate_id));
   const candidatesToRead = [
     ...reviews.map(({ candidate }) => candidate.candidate_id),
-    ...pendingReviewCandidateIds(projectRoot).filter((candidateId) => !currentIds.has(candidateId)),
+    ...pendingReviewCandidateIds(projectRoot, projectId)
+      .filter((candidateId) => !currentIds.has(candidateId)),
   ];
   let next = 0;
   const worker = async () => {
@@ -2100,6 +2373,102 @@ async function updatePersistentOperationalErrorLog(store, projectId, profileId, 
   }
 }
 
+function persistDashboardTelemetry({
+  projectId, profileId, health, healthProbeError, queueSnapshot, queueProbeError,
+  operationalErrorLog, healthHistoryPersisted, observedAt,
+  stateRoot = path.join(os.homedir(), '.local', 'state', 'curatormd-v2'),
+}) {
+  if (typeof projectId !== 'string' || !PROJECT_ID_PATTERN.test(projectId)
+    || typeof profileId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(profileId)) {
+    return { persisted: false, reason: 'invalid_scope' };
+  }
+  const queueValid = queueSnapshot?.project_id === projectId
+    && queueSnapshot.database_observation_complete === true
+    && Number.isSafeInteger(queueSnapshot.event_failed_count)
+    && Number.isSafeInteger(queueSnapshot.event_quarantined_count);
+  const healthValid = health?.project_id === projectId
+    && ['healthy', 'degraded', 'unknown'].includes(health.status)
+    && Array.isArray(health.gate_codes);
+  const errors = Array.isArray(operationalErrorLog?.entries) ? operationalErrorLog.entries : [];
+  const nodes = {
+    dashboard_refresh: { status: 'healthy' },
+    hermes_health_probe: {
+      status: healthProbeError ? 'degraded' : healthValid ? health.status : 'unknown',
+    },
+    curator_queue: {
+      status: queueProbeError ? 'degraded' : !queueValid ? 'unknown'
+        : queueSnapshot.event_failed_count + queueSnapshot.event_quarantined_count > 0
+          ? 'degraded' : 'healthy',
+    },
+    event_processing: {
+      status: !queueValid ? 'unknown'
+        : queueSnapshot.event_failed_count + queueSnapshot.event_quarantined_count > 0
+          ? 'degraded' : 'healthy',
+    },
+    operational_error_log: {
+      status: operationalErrorLog?.persisted === true ? 'healthy' : 'unavailable',
+    },
+    health_history: {
+      status: healthHistoryPersisted === true ? 'healthy' : 'unavailable',
+    },
+  };
+  const snapshot = {
+    schema_version: 1,
+    project_id: projectId,
+    profile_id: profileId,
+    observed_at: typeof observedAt === 'string' && Number.isFinite(Date.parse(observedAt))
+      ? new Date(Date.parse(observedAt)).toISOString() : new Date().toISOString(),
+    nodes,
+    active_error_keys: errors.filter((entry) => entry?.active === true
+      && typeof entry.key === 'string' && /^[a-z][a-z0-9:_-]{0,63}$/.test(entry.key))
+      .map((entry) => entry.key).slice(0, 16),
+  };
+  const base = stateRoot;
+  const projectDirectory = path.join(base, projectId);
+  const directory = path.join(projectDirectory, 'ops');
+  const target = path.join(directory, 'dashboard-telemetry.json');
+  const temporary = path.join(directory, `.dashboard-telemetry-${process.pid}-${randomBytes(8).toString('hex')}.tmp`);
+  let descriptor;
+  try { fs.mkdirSync(base, { mode: 0o700, recursive: true }); } catch (_) {
+    return { persisted: false, reason: 'directory_unavailable' };
+  }
+  for (const candidate of [projectDirectory, directory]) {
+    try { fs.mkdirSync(candidate, { mode: 0o700 }); } catch (error) {
+      if (error?.code !== 'EEXIST') return { persisted: false, reason: 'directory_unavailable' };
+    }
+  }
+  try {
+    for (const candidate of [base, projectDirectory, directory]) {
+      const metadata = fs.lstatSync(candidate);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()
+        || (typeof process.getuid === 'function' && metadata.uid !== process.getuid())) {
+        return { persisted: false, reason: 'directory_invalid' };
+      }
+    }
+    try {
+      const existing = fs.lstatSync(target);
+      if (!existing.isFile() || existing.isSymbolicLink()
+        || (typeof process.getuid === 'function' && existing.uid !== process.getuid())
+        || (existing.mode & 0o077) !== 0) return { persisted: false, reason: 'file_invalid' };
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    descriptor = fs.openSync(temporary, 'wx', 0o600);
+    fs.writeFileSync(descriptor, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temporary, target);
+    fs.chmodSync(target, 0o600);
+    return { persisted: true, path: target };
+  } catch (_) {
+    return { persisted: false, reason: 'write_failed' };
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    try { fs.unlinkSync(temporary); } catch (_) { /* The rename already consumed it. */ }
+  }
+}
+
 function parsePurgeReceiptInspection(wire, expectedReceiptId) {
   let value;
   try { value = typeof wire === 'string' ? JSON.parse(wire) : wire; } catch (_) { value = null; }
@@ -2946,11 +3315,46 @@ async function launchDocumentReview(
       vscode.window.showWarningMessage('Save the review document before continuing.');
       return;
     }
-    const diskContent = fs.readFileSync(documentPath, 'utf8');
-    if (openDocument?.isDirty || (openDocument && openDocument.getText() !== diskContent)
-      || !isUnmodifiedReviewDocument(diskContent)) {
-      vscode.window.showWarningMessage('The review document is stale or its generated sections changed. Your changes have been preserved.');
+    let diskContent = fs.readFileSync(documentPath, 'utf8');
+    let reviewState = pendingReviewDocumentState(diskContent, reviewProjectId);
+    if (openDocument?.isDirty) {
+      vscode.window.showWarningMessage(
+        'The review editor still has unsaved changes after the save attempt. No decision was submitted; your edits are preserved.',
+      );
       return;
+    }
+    if (openDocument && openDocument.getText() !== diskContent) {
+      // External projection repairs can update the saved file while this clean
+      // editor buffer is stale. Synchronize only clean buffers; never replace
+      // unsaved owner edits.
+      if (!await refreshOpenPendingReviewDocumentSafely(projectRoot)) return;
+      diskContent = fs.readFileSync(documentPath, 'utf8');
+      reviewState = pendingReviewDocumentState(diskContent, reviewProjectId);
+    }
+    if (!reviewState?.candidateIds.includes(candidateId)
+      || !readEditableReviewDraft(diskContent, candidateId)) {
+      // Repair generated review metadata and malformed editable copies from
+      // the authoritative pending queue. The writer preserves valid owner
+      // edits and snapshots malformed copies before rebuilding them.
+      try {
+        await withReviewClient(
+          projectRoot,
+          (client, projectId) => refreshWorkspaceQueueViews(client, projectRoot, projectId),
+          { spawnProcess },
+        );
+        await refreshOpenPendingReviewDocumentSafely(projectRoot);
+      } catch (_) {
+        // Recheck disk below; an unavailable refresh must never submit a decision.
+      }
+      diskContent = fs.readFileSync(documentPath, 'utf8');
+      reviewState = pendingReviewDocumentState(diskContent, reviewProjectId);
+      if (!reviewState?.candidateIds.includes(candidateId)
+        || !readEditableReviewDraft(diskContent, candidateId)) {
+        vscode.window.showWarningMessage(
+          'Automatic review repair could not recover this proposal. The SDE remains pending and no decision was submitted.',
+        );
+        return;
+      }
     }
     if (!diskContent.includes(`<!-- curator-v2-decision:${candidateId}:start -->`)) throw new Error('draft missing');
     if (!diskContent.includes(`<!-- curator-v2-candidate: ${candidateId} -->`)) throw new Error('candidate missing');
@@ -3134,6 +3538,35 @@ async function launchDocumentReview(
     }, { spawnProcess });
 
     if (selectedDecision === 'approve') {
+      if (!Array.isArray(draft.completed) || draft.completed.length === 0) {
+        const facts = Array.isArray(initial.outline.supporting_facts)
+          ? initial.outline.supporting_facts.filter((fact) => fact
+            && typeof fact.kind === 'string' && typeof fact.bullet === 'string'
+            && fact.bullet.trim()) : [];
+        const verifications = facts.filter((fact) => fact.kind === 'verification');
+        const verified = (initial.outline.successful_completion_evidence_recorded === true
+          || initial.outline.successful_completion_evidence_current === true)
+          && verifications.length > 0;
+        const completion = verified
+          ? verifications.map((fact) => fact.bullet)
+          : [
+            ...facts.filter((fact) => fact.kind === 'change').map((fact) => fact.bullet),
+            ...facts.filter((fact) => fact.kind === 'research')
+              .map((fact) => `Completed research: ${fact.bullet}`),
+            ...facts.filter((fact) => fact.kind === 'user_report')
+              .map((fact) => `Owner-reported outcome (unverified): ${fact.bullet}`),
+            ...verifications
+              .map((fact) => `Historical verification (not current proof): ${fact.bullet}`),
+          ].slice(0, 32);
+        if (completion.length > 0) draft = { ...draft, completed: completion };
+      }
+      if (!Array.isArray(draft.completed) || draft.completed.length === 0
+        || draft.completed.some((item) => typeof item !== 'string' || !item.trim())) {
+        vscode.window.showWarningMessage(
+          'An SDE proposal needs at least one non-empty completion outcome. Add a supported result to the editable decision; no approval was recorded.',
+        );
+        return;
+      }
       const configuredDocuments = Array.isArray(initial.outline.persistence_documents)
         ? [...new Set(initial.outline.persistence_documents.filter(
           (item) => typeof item === 'string' && item.length > 0,
@@ -3213,7 +3646,7 @@ async function launchDocumentReview(
       }
       return { packet, binding, reviewDraftJson, projectId };
     }, { spawnProcess });
-    if (!reviewDraftMatchesDocument(openDocument, documentPath, candidateId, draft)) {
+    if (!reviewDraftMatchesDocument(openDocument, documentPath, candidateId, draft, outline.project_id)) {
       vscode.window.showWarningMessage('The editable decision changed during review. Refresh and review it again; no decision was recorded.');
       return;
     }
@@ -3238,7 +3671,7 @@ async function launchDocumentReview(
       `Confirm ${decisionLabel.toLowerCase()}`,
     );
     if (confirmed !== `Confirm ${decisionLabel.toLowerCase()}`) return;
-    if (!reviewDraftMatchesDocument(openDocument, documentPath, candidateId, draft)) {
+    if (!reviewDraftMatchesDocument(openDocument, documentPath, candidateId, draft, outline.project_id)) {
       vscode.window.showWarningMessage('The editable decision changed after confirmation. Refresh and review it again; no decision was recorded.');
       return;
     }
@@ -3421,7 +3854,7 @@ async function withReviewClient(
   }
 }
 
-function readEditableReviewDraft(content, candidateId) {
+function readEditableReviewProposal(content, candidateId) {
   const parts = reviewDraftParts(content);
   if (!parts) return null;
   const block = parts.drafts.get(candidateId);
@@ -3429,11 +3862,15 @@ function readEditableReviewDraft(content, candidateId) {
   const match = /^\s*(`{3,})json\s*\n([\s\S]*?)\n\1\s*$/.exec(block);
   if (!match) return null;
   try {
-    const draft = JSON.parse(match[2]);
-    return draft && typeof draft === 'object' && !Array.isArray(draft) ? draft : null;
+    const proposal = JSON.parse(match[2]);
+    return proposal && typeof proposal === 'object' && !Array.isArray(proposal) ? proposal : null;
   } catch (_) {
     return null;
   }
+}
+
+function readEditableReviewDraft(content, candidateId) {
+  return reviewDraftFromProposal(readEditableReviewProposal(content, candidateId), candidateId);
 }
 
 async function writeEditableReviewDraft(document, content, candidateId, draft) {
@@ -3444,8 +3881,10 @@ async function writeEditableReviewDraft(document, content, candidateId, draft) {
   const endIndex = content.indexOf(endMarker, startIndex + startMarker.length);
   if (startIndex < 0 || endIndex < 0 || content.indexOf(startMarker, startIndex + 1) >= 0
     || content.indexOf(endMarker, endIndex + 1) >= 0) return false;
+  const currentProposal = readEditableReviewProposal(content, candidateId);
+  const editableProposal = reviewProposalWithDraft(currentProposal, draft, candidateId);
   const replaceStart = startIndex + startMarker.length;
-  const replacement = `\n\`\`\`json\n${JSON.stringify(draft, null, 2)}\n\`\`\`\n`;
+  const replacement = `\n\`\`\`json\n${JSON.stringify(editableProposal, null, 2)}\n\`\`\`\n`;
   const range = new vscode.Range(document.positionAt(replaceStart), document.positionAt(endIndex));
   const edit = new vscode.WorkspaceEdit();
   edit.replace(document.uri, range, replacement);
@@ -3453,13 +3892,14 @@ async function writeEditableReviewDraft(document, content, candidateId, draft) {
   return document.save();
 }
 
-function reviewDraftMatchesDocument(document, documentPath, candidateId, draft) {
+function reviewDraftMatchesDocument(document, documentPath, candidateId, draft, projectId) {
   try {
     if (document.isDirty) return false;
     const diskContent = fs.readFileSync(documentPath, 'utf8');
-    if (document.getText() !== diskContent || !isUnmodifiedReviewDocument(diskContent)) return false;
+    const reviewState = pendingReviewDocumentState(diskContent, projectId);
+    if (document.getText() !== diskContent || !reviewState?.candidateIds.includes(candidateId)) return false;
     const currentDraft = readEditableReviewDraft(diskContent, candidateId);
-    return JSON.stringify(currentDraft) === JSON.stringify(draft);
+    return currentDraft !== null && reviewJsonEquivalent(currentDraft, draft);
   } catch (_) {
     return false;
   }
@@ -4493,10 +4933,22 @@ async function showDashboard(
           healthHistoryStatus(feeds.health, projectId),
           feeds.healthCheckedAt,
         );
+        const dashboardTelemetry = persistDashboardTelemetry({
+          projectId,
+          profileId: resolveHermesProfileId(projectId, hermesProfileBindings),
+          health: feeds.health,
+          healthProbeError: feeds.healthProbeError,
+          queueSnapshot: feeds.queueSnapshot,
+          queueProbeError: feeds.queueProbeError,
+          operationalErrorLog,
+          healthHistoryPersisted: history.persisted,
+          observedAt: feeds.healthCheckedAt || feeds.queueCheckedAt,
+        });
         panel.webview.postMessage({
           type: 'healthSnapshot',
           projectId,
           operationalErrorLog,
+          dashboardTelemetryPersisted: dashboardTelemetry.persisted,
           health: feeds.health,
           healthProbeError: feeds.healthProbeError,
           healthProbeFailure: feeds.healthProbeError
@@ -4634,6 +5086,17 @@ async function showDashboard(
           hostFilesystemRows: measuredFilesystemRows, workspaceViewsUpdated,
           healthHistory, healthHistoryPersisted, healthHistoryScope,
         } = result;
+        const dashboardTelemetry = persistDashboardTelemetry({
+          projectId: result.page.project_id,
+          profileId: resolveHermesProfileId(result.page.project_id, hermesProfileBindings),
+          health: result.health,
+          healthProbeError: result.healthProbeError,
+          queueSnapshot: result.queueSnapshot,
+          queueProbeError: result.queueProbeError,
+          operationalErrorLog,
+          healthHistoryPersisted,
+          observedAt: result.healthCheckedAt || result.queueCheckedAt,
+        });
         if (page.project_id !== undefined && page.project_id !== '') {
           projectId = page.project_id;
           goalIds = new Set((page.goals || []).map((goal) => goal.goal_id));
@@ -4665,6 +5128,7 @@ async function showDashboard(
         panel.webview.postMessage({
           type: 'goals', page, health, activity, storage,
           operationalErrorLog,
+          dashboardTelemetryPersisted: dashboardTelemetry.persisted,
           hostFilesystemRows: measuredFilesystemRows,
           reviews: reviewItems,
           healthComponentRows: dashboardComponentRows({
@@ -6608,6 +7072,7 @@ module.exports = {
   dashboardComponentRows,
   healthHistoryStatus,
   updatePersistentHealthHistory,
+  persistDashboardTelemetry,
   hostFilesystemRows,
   parsePurgeReceiptInspection,
   parseTerminalEventInventory,

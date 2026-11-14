@@ -2548,7 +2548,10 @@ plugin or Hermes integration is installed and working end to end.
       observations without event/artifact content; missing/failed probes remain
       unknown, while known failures/backlogs remain degraded. Exact review/purge
       counts use SQL aggregates, not bounded queue samples. Host readiness must
-      include timezone-aware observation timestamps no older than 60 seconds;
+      include timezone-aware observation timestamps no older than 180 seconds,
+      three times the dashboard's 60-second refresh interval, so delayed probe
+      reads do not flap a healthy project to unknown; stale observations still
+      fail closed after that bounded margin;
       stale, malformed, missing, or over-five-second-future observations remain
       unknown. Local database aggregates share one SQLite read snapshot while
       staging is scanned separately through its bounded no-follow traversal.

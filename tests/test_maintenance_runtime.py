@@ -19,7 +19,7 @@ class MaintenanceRuntimeTests(unittest.TestCase):
             database = root / "ledger.sqlite3"
             with sqlite3.connect(database) as connection:
                 connection.execute("PRAGMA user_version=48")
-            def runtime(name, version):
+            def runtime(name: str, version: int) -> str:
                 folder = root / name / "bin"
                 folder.mkdir(parents=True)
                 python = folder / "python"
