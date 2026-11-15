@@ -125,6 +125,8 @@ class OpsBindingTests(unittest.TestCase):
                 mock.patch.object(ops_cli, "_acceptance_history_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_maintenance_timer_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_maintenance_status", return_value=healthy),
+                mock.patch.object(ops_cli, "_event_failure_status", return_value=healthy),
+                mock.patch.object(ops_cli, "_dashboard_telemetry_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_probe_health") as health_probe,
                 mock.patch.object(ops_cli, "_dispatch_ai", side_effect=failed_diagnosis) as dispatch,
             ):
@@ -594,6 +596,8 @@ class OpsIncidentTests(unittest.TestCase):
                     "acceptance_history",
                     "maintenance_timer",
                     "maintenance",
+                    "event_failures",
+                    "dashboard_telemetry",
                     "health",
                 )
             }
@@ -630,6 +634,8 @@ class OpsIncidentTests(unittest.TestCase):
                 mock.patch.object(ops_cli, "_acceptance_history_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_maintenance_timer_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_maintenance_status", return_value=healthy),
+                mock.patch.object(ops_cli, "_event_failure_status", return_value=healthy),
+                mock.patch.object(ops_cli, "_dashboard_telemetry_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_probe_health", return_value=healthy),
                 mock.patch.object(ops_cli, "_close_recovered_incidents") as close,
                 mock.patch.object(ops_cli, "_reconcile_abandoned_ai_runs") as reconcile,
@@ -667,6 +673,8 @@ class OpsIncidentTests(unittest.TestCase):
             mock.patch.object(ops_cli, "_acceptance_history_status", return_value=healthy),
             mock.patch.object(ops_cli, "_maintenance_timer_status", return_value=healthy),
             mock.patch.object(ops_cli, "_maintenance_status", return_value=healthy),
+            mock.patch.object(ops_cli, "_event_failure_status", return_value=healthy),
+            mock.patch.object(ops_cli, "_dashboard_telemetry_status", return_value=healthy),
             mock.patch.object(ops_cli, "_probe_health", return_value=healthy),
             mock.patch.object(ops_cli, "_reconcile_abandoned_ai_runs") as reconcile,
             mock.patch.object(ops_cli, "_close_recovered_incidents") as close,
@@ -715,6 +723,8 @@ class OpsIncidentTests(unittest.TestCase):
                     mock.patch.object(ops_cli, "_acceptance_history_status", return_value=healthy),
                     mock.patch.object(ops_cli, "_maintenance_timer_status", return_value=healthy),
                     mock.patch.object(ops_cli, "_maintenance_status", return_value=healthy),
+                    mock.patch.object(ops_cli, "_event_failure_status", return_value=healthy),
+                    mock.patch.object(ops_cli, "_dashboard_telemetry_status", return_value=healthy),
                     mock.patch.object(ops_cli, "_probe_health", return_value=healthy),
                     mock.patch.object(ops_cli, helper, return_value={"status": "degraded"}),
                     mock.patch.object(ops_cli, "_dispatch_ai", side_effect=dispatched) as dispatch,
@@ -862,6 +872,12 @@ class OpsIncidentTests(unittest.TestCase):
                     ),
                     mock.patch.object(
                         ops_cli, "_maintenance_status", return_value=healthy_components
+                    ),
+                    mock.patch.object(
+                        ops_cli, "_event_failure_status", return_value=healthy_components
+                    ),
+                    mock.patch.object(
+                        ops_cli, "_dashboard_telemetry_status", return_value=healthy_components
                     ),
                     mock.patch.object(ops_cli, "_probe_health", return_value=unhealthy_health),
                     mock.patch.object(ops_cli, "_dispatch_ai", side_effect=dispatched) as dispatch,
@@ -1069,6 +1085,12 @@ class OpsServiceTests(unittest.TestCase):
                 mock.patch.object(
                     ops_cli, "_maintenance_status", return_value={"status": "healthy"}
                 ),
+                mock.patch.object(
+                    ops_cli, "_event_failure_status", return_value={"status": "healthy"}
+                ),
+                mock.patch.object(
+                    ops_cli, "_dashboard_telemetry_status", return_value={"status": "healthy"}
+                ),
                 mock.patch.object(ops_cli, "_probe_health", return_value={"status": "healthy"}),
             ):
                 result = ops_cli.check(dispatch=False)
@@ -1102,6 +1124,7 @@ class OpsServiceTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         with tempfile.TemporaryDirectory() as temporary:
             state = Path(temporary)
+            os.chmod(state, 0o700)
             day = now.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date().isoformat()
             sample_path = state / f"checks-{day}.jsonl"
             sample: dict[str, Any] = {
@@ -1223,6 +1246,8 @@ class OpsServiceTests(unittest.TestCase):
                 mock.patch.object(ops_cli, "_monitor_status", return_value=monitor),
                 mock.patch.object(ops_cli, "_maintenance_timer_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_maintenance_status", return_value=healthy),
+                mock.patch.object(ops_cli, "_event_failure_status", return_value=healthy),
+                mock.patch.object(ops_cli, "_dashboard_telemetry_status", return_value=healthy),
                 mock.patch.object(ops_cli, "_probe_health", return_value=healthy),
                 mock.patch.object(ops_cli, "_incident", return_value="incident") as incident,
             ):
