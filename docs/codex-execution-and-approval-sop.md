@@ -95,6 +95,15 @@ the behavior being changed. Run the relevant checks and test the behavior
 against its stated purpose. Include performance checks when performance is a
 stated requirement or an observable part of that purpose.
 
+Before implementation edits, establish a recoverable checkpoint in the target
+worktree. Inspect the branch and `HEAD`, then inventory staged, unstaged, and
+untracked changes. Commit the authorized baseline before editing so the prior
+state has a stable rollback point. Do not include unrelated or unapproved work
+in that checkpoint; preserve it and use a separate worktree when needed. After
+the checkpoint commit, verify its commit ID and confirm the worktree state
+before proceeding. Never make implementation edits first and rely on a later
+commit to recover the starting state.
+
 Curator is a record-keeping aid. Record a task as completed when its requested
 result is observed, including when the owner sees the result and moves on.
 Do not require a separate proof packet, automated test, or follow-up owner
