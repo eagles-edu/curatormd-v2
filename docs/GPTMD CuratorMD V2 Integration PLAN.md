@@ -92,6 +92,14 @@ worktree edits, and V1 data.
   empty gate list. These calls were read-only and made no project-state
   changes. This verifies the normal app-server tool route and repeatable
   profile/session context after gateway reload.
+- Four additional consecutive profile-bound probes at 2026-11-25 14:35:40
+  UTC, 14:36:00 UTC, 14:36:11 UTC, and 14:36:23 UTC all report overall
+  `healthy`; all seven dependencies, including `human_review`, are healthy,
+  `gate_codes` is empty, and failed/quarantined events and pending purge or
+  expiry work remain zero. `pending_review_count=1` remains an expected review
+  queue item and does not degrade health. The review grant readback confirms
+  grant `6ac0b3c0762a4b5a8df5c4f6d4353117` is project-scoped to `gptmd`,
+  subject `local-uid:1000`, action `review`.
 - The complete Curator V2 test suite passes: 718 tests and 563 subtests. The
   health-probe fixture grants access to the runtime’s actual local host
   identity. Strict Pyright reports zero errors; blocking Pylint, Bandit, and
