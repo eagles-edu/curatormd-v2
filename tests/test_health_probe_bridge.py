@@ -1,23 +1,26 @@
 """Trust-boundary tests for host-injected health observations."""
 
 import asyncio
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mcp import Client
 from mcp.types import TextContent
-
 from project_fixtures import bind_test_project, configure_stdio_consumer
 
 from curatormd_v2 import CuratorStore
-from curatormd_v2.hosted_mcp import build_local_profile_mcp
+from curatormd_v2.hosted_mcp import (
+    _local_account_subject,
+    build_local_profile_mcp,
+)
 from curatormd_v2.mcp_server import (
     RequestHostReadiness,
     host_readiness_context,
     validate_host_readiness,
 )
 from curatormd_v2.models import DependencyProbeObservation
+
 
 def test_trusted_host_readiness_metadata_is_bounded_and_request_local():
     timestamp = "2026-10-23T00:00:00+00:00"
@@ -53,7 +56,7 @@ def test_health_tool_uses_all_host_probes_and_reports_degraded_not_unknown(
     configure_stdio_consumer(project_root, "mcp-project")
     database = tmp_path / "global.sqlite3"
     setup_store = CuratorStore(database)
-    bind_test_project(setup_store, project_root, "profile-a")
+    bind_test_project(setup_store, project_root, _local_account_subject())
     setup_store.close()
     runtime = build_local_profile_mcp(
         project_root=project_root,
