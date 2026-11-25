@@ -92,6 +92,10 @@ worktree edits, and V1 data.
   empty gate list. These calls were read-only and made no project-state
   changes. This verifies the normal app-server tool route and repeatable
   profile/session context after gateway reload.
+- The complete Curator V2 test suite passes: 718 tests and 563 subtests. The
+  health-probe fixture grants access to the runtime’s actual local host
+  identity. Strict Pyright reports zero errors; blocking Pylint, Bandit, and
+  the locked dependency audit also pass.
 - The shared Hermes Core checkout is installed locally at
   `/usr/local/lib/hermes-agent` on branch `fix/gptmd-curator-readiness`, with
   `10495e8a17` atop `79f808a6`; the branch is clean. Hermes Core has not been
