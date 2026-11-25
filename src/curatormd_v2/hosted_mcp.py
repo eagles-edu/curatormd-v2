@@ -114,6 +114,7 @@ def build_local_profile_mcp(
     allow_retention_hold_release: bool = False,
     allow_purge_retry: bool = False,
     require_authenticated_subject: bool = False,
+    allow_codex_app_server_context: bool = False,
     evidence_verifier: EvidenceVerifier | None = None,
     evidence_config: str | Path | None = None,
 ) -> LocalProfileMCP:
@@ -234,6 +235,7 @@ def build_local_profile_mcp(
             hermes_context=HermesContextOptions(
                 profile_id=profile_id,
                 require_authenticated_subject=require_authenticated_subject,
+                allow_codex_app_server_context=allow_codex_app_server_context,
             ),
         )
     except BaseException:
@@ -290,6 +292,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="deny every Hermes MCP call without a host-authenticated human subject",
     )
+    parser.add_argument(
+        "--allow-codex-app-server-context",
+        action="store_true",
+        help="accept per-session host context from the local Codex app-server parent",
+    )
     return parser
 
 
@@ -322,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_retention_hold_release=args.allow_retention_hold_release,
             allow_purge_retry=args.allow_purge_retry,
             require_authenticated_subject=args.require_authenticated_subject,
+            allow_codex_app_server_context=args.allow_codex_app_server_context,
             evidence_config=args.evidence_config,
         )
     except ProjectBindingStartupError as exc:

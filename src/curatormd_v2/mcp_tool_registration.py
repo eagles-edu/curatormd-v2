@@ -32,7 +32,11 @@ from .events import (
     GoalSuperseded,
 )
 from .hermes_events import CodexGoalBinding, codex_hook_to_event
-from .hermes_context import hermes_source_id, require_durable_hermes_context
+from .hermes_context import (
+    hermes_context_source,
+    hermes_source_id,
+    require_durable_hermes_context,
+)
 from .models import (
     FactKind,
     GoalChildrenPageRequest,
@@ -324,6 +328,8 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
     @_safe_tool()
     def hermes_goal_bind(goal_id: str, ctx: MCPContext) -> str:
         """Validate an active goal for the host-owned current Hermes session binding."""
+        if hermes_context_source.get() == "codex_app_server":
+            raise PermissionError("Codex app-server calls cannot bind a Hermes session goal")
         if not registrar.hermes_binding_enabled:
             raise PermissionError("Hermes session binding is unavailable on this host")
         metadata = ctx.request_context.meta
@@ -366,6 +372,10 @@ def _register_goal_intake_tools(registrar: _McpToolRegistrar) -> None:
         source_id: str | None = None,
     ) -> str:
         """Translate one exact host-outbox event for the active session goal."""
+        if hermes_context_source.get() == "codex_app_server":
+            raise PermissionError(
+                "Codex app-server calls cannot dispatch durable Hermes lifecycle events"
+            )
         if not registrar.hermes_binding_enabled:
             raise PermissionError("Hermes lifecycle events are unavailable on this host")
         profile_id, session_id = require_durable_hermes_context(
