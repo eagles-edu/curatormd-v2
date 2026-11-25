@@ -25,6 +25,25 @@ Connect GPTMD’s `gptmd-coding` Hermes profile to its existing CuratorMD V2 pro
   repeated profile-bound probes, including `human_review`.
 - Confirm the V1 plugin binding is gone, V2 is active, and no out-of-scope GPTMD files or preserved V1 data changed.
 
+## Current Verification
+
+- 2026-11-25: The owner authorized project-scoped review access. The attended
+  access flow granted `review` to `local-uid:1000` on project `gptmd`
+  (grant `6ac0b3c0762a4b5a8df5c4f6d4353117`). The GPTMD profile has the
+  matching `--allow-review` flag; a timestamped copy of its previous config
+  is saved in the GPTMD profile's `backups/config/` directory.
+- The GPTMD profile MCP handshake succeeds and discovers 64 tools. Two
+  repeated readiness probes report six healthy dependencies and a stable
+  `event_router` failure. The backend cursor is already at sequence 2, while
+  the profile outbox has unacknowledged lifecycle events at sequences 1 and 2;
+  sequence 1 is recorded as failed with `EventOrderError`.
+- The stale outbox events have not been retried, disposed, or rewritten in
+  this continuation. Current attended operations cannot resolve this exact
+  cursor mismatch. Keep lifecycle acceptance open until the sequence gap has
+  an audited recovery and repeated profile-bound health checks pass. The Hermes
+  Core source fix is committed locally but is not installed in the active
+  system checkout.
+
 ## Assumptions
 
 - Owner authorization on 2026-11-25: update this plan and grant
