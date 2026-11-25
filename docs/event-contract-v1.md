@@ -321,9 +321,13 @@ serialized `passed` value alone must never close a success criterion.
   retained. Only the project `event_retry` action can release it, and the
   authenticated actor is written to `event_retry_audit`.
 - Exact event IDs and source sequences remain idempotency/order fences. An event
-  is eligible only when its sequence is next; later events wait for the missing
-  predecessor. Queue status reports received, failed, quarantined, and oldest
-  pending age without exposing event contents.
+  is eligible when its sequence is next; later events wait for the missing
+  predecessor. A later `goal.activity_observed` event may be accepted when a
+  reset producer outbox reuses a sequence already consumed by the same source,
+  but only when its `occurred_at` is after the cursor update and not in the
+  future. It appends its fact without moving the cursor. Other stale events
+  remain failed for review. Queue status reports received, failed, quarantined,
+  and oldest pending age without exposing event contents.
 - An attended terminal disposition binds to the exact failed payload digest,
   binding revision, source epoch, and an event with no active processing lease.
   Sequenced events require the consumer binding to be fenced before disposition;

@@ -3,7 +3,7 @@
 **Status: local migration behavior is implemented and tested; production
 upgrade/rollback support is not approved.** SQLite's `PRAGMA user_version` is
 the database schema version. The current supported value is exported as
-`SQLITE_SCHEMA_VERSION` and is `34`.
+`SQLITE_SCHEMA_VERSION` and is `50`.
 
 ## Version 1 migration
 
@@ -13,7 +13,9 @@ criteria backfill, and receipt-state repair in a single SQLite write
 transaction. The `user_version = 1` stamp is written only after all migration
 work succeeds. Fresh databases continue through the ordered v2, v3, v4, v5, v6,
 v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22,
-v23, v24, v25, v26, v27, v28, v29, v30, v31, v32, v33, and v34 migrations below before the store is exposed.
+v23 through v50 migrations before the store is exposed. This document's
+individual migration notes currently cover v1 through v33 and v50; intermediate
+steps remain defined in the ordered source migration list.
 
 If any DDL or data repair fails, the transaction rolls back. Store construction
 closes its SQLite connection before propagating the error. On the next open, the
@@ -55,7 +57,7 @@ after migration.
 
 ## Rollback boundary
 
-All supported schema upgrades through version 29 run inside the store's SQLite
+All supported schema upgrades run inside the store's SQLite
 write transaction. A failed migration rolls back its schema/data changes and
 does not advance `PRAGMA user_version`; the failure-injection fixtures exercise
 this boundary. There are no reverse SQL migrations. An older application
@@ -424,3 +426,13 @@ registrations are backfilled as active binding epoch 1, revision 1; historical
 enrollment receipts are not fabricated. Fresh project registration creates both
 project and binding state atomically. Deregistration transitions use their own
 compare-and-set revisions and stable transition IDs.
+
+## Version 50 migration
+
+Version 50 restores the canonical persistence fields on
+`cleanup_authorizations` when an older database reports a later schema version
+but lacks those fields. Missing `canonical_persisted` values default to zero,
+so legacy cleanup approvals remain ineligible until canonical persistence is
+recorded. The migration adds only absent columns, can resume after a partial
+attempt, and is safe to repeat. It does not change grants, decisions, or
+artifact records.

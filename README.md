@@ -304,6 +304,7 @@ component in the diagram does not close them.
 
 ## Further reading
 
+- [CuratorMD V2 user manual](docs/curatormd-v2-user-manual.md)
 - [Local alpha scope and current gates](docs/alpha-v2.md)
 - [Implementation plan and lifecycle contract](docs/curator-v2-plan.md)
 - [Codex execution and approval SOP](docs/codex-execution-and-approval-sop.md)

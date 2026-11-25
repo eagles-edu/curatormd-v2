@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from contextvars import ContextVar
 from typing import cast
 
 _HERMES_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$")
 _OPAQUE_SUBJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _AUTHENTICATED_SUBJECT_PREFIX = "auth:v1:"
+hermes_context_source: ContextVar[str] = ContextVar(
+    "curator_v2_hermes_context_source", default="request_metadata"
+)
 
 
 def hermes_source_id(profile_id: str, project_id: str, source_epoch: int) -> str:
@@ -80,6 +84,10 @@ def require_durable_hermes_context(
     if not isinstance(metadata, dict):
         raise PermissionError("trusted Hermes profile context is unavailable or mismatched")
     values = cast(dict[str, object], metadata)
+    if hermes_context_source.get() == "codex_app_server":
+        raise PermissionError(
+            "Codex app-server calls cannot dispatch durable Hermes lifecycle events"
+        )
     profile_id = values.get("hermes/profile_id")
     if not isinstance(profile_id, str) or profile_id != expected_profile_id:
         raise PermissionError("trusted Hermes profile context is unavailable or mismatched")

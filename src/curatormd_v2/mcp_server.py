@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
 import json
+import os
 import re
 from typing import Any, cast
 
@@ -18,7 +19,7 @@ from .health_evaluation import REQUIRED_HEALTH_DEPENDENCIES
 from .models import DependencyProbeObservation
 from .mcp_tool_registration import register_mcp_tools
 from .mcp_tool_support import ArtifactInput, safe_tool_handler
-from .hermes_context import hermes_subject_grant_id
+from .hermes_context import hermes_context_source, hermes_subject_grant_id
 
 _SOURCE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 host_readiness_context: ContextVar[Mapping[str, object]] = ContextVar(
@@ -127,6 +128,7 @@ class HermesContextOptions:
 
     profile_id: str
     require_authenticated_subject: bool = False
+    allow_codex_app_server_context: bool = False
 
 
 def _hermes_identity_middleware(options: HermesContextOptions):
@@ -144,6 +146,12 @@ def _hermes_identity_middleware(options: HermesContextOptions):
             return await call_next(ctx)
 
         metadata = ctx.meta
+        app_server_metadata = _codex_app_server_metadata(options)
+        codex_app_server_context = app_server_metadata is not None
+        if app_server_metadata is not None:
+            # Ignore client metadata on this path so model-authored values
+            # cannot supply profile, session, readiness, or event authority.
+            metadata = app_server_metadata
         profile_id = (
             metadata.get("hermes/profile_id")
             if isinstance(metadata, Mapping)
@@ -224,13 +232,44 @@ def _hermes_identity_middleware(options: HermesContextOptions):
             validate_host_readiness(metadata)
         )
         subject_token = hermes_subject_context.set(subject_id)
+        source_token = hermes_context_source.set(
+            "codex_app_server" if codex_app_server_context else "request_metadata"
+        )
         try:
             return await call_next(ctx)
         finally:
+            hermes_context_source.reset(source_token)
             hermes_subject_context.reset(subject_token)
             host_readiness_context.reset(readiness_token)
 
     return enforce_profile
+
+
+def _codex_app_server_metadata(
+    options: HermesContextOptions,
+) -> dict[str, object] | None:
+    """Read bounded context injected by the opted-in app-server parent."""
+    if not options.allow_codex_app_server_context or os.environ.get(
+        "HERMES_CODEX_APP_SERVER_CONTEXT"
+    ) != "1":
+        return None
+    profile_id = os.environ.get("HERMES_CONTEXT_PROFILE_ID", "")
+    session_id = os.environ.get("HERMES_CONTEXT_SESSION_ID", "")
+    if profile_id != options.profile_id or not session_id:
+        return {}
+    metadata: dict[str, object] = {
+        "hermes/profile_id": profile_id,
+        "hermes/session_id": session_id,
+    }
+    raw_readiness = os.environ.get("HERMES_CONTEXT_READINESS_JSON", "")
+    if len(raw_readiness) <= 8192:
+        try:
+            readiness = json.loads(raw_readiness)
+        except (TypeError, ValueError):
+            readiness = None
+        if isinstance(readiness, dict):
+            metadata["hermes/readiness"] = readiness
+    return metadata
 
 
 def validate_host_readiness(metadata: object) -> dict[str, object]:

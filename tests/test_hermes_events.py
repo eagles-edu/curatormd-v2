@@ -21,6 +21,10 @@ from curatormd_v2 import (
     SuccessCriterion,
     codex_hook_to_event,
 )
+from curatormd_v2.hermes_context import (
+    hermes_context_source,
+    require_durable_hermes_context,
+)
 
 
 class HermesCodexEventTests(unittest.TestCase):
@@ -34,6 +38,21 @@ class HermesCodexEventTests(unittest.TestCase):
             goal_id="goal-1",
             source_id="hermes.gptmd-coding",
         )
+
+    def test_codex_app_server_context_cannot_authorize_durable_events(self) -> None:
+        token = hermes_context_source.set("codex_app_server")
+        try:
+            with self.assertRaisesRegex(PermissionError, "cannot dispatch durable"):
+                require_durable_hermes_context(
+                    {
+                        "hermes/profile_id": "gptmd-coding",
+                        "hermes/session_id": "session-1",
+                        "hermes/durable_event": True,
+                    },
+                    "gptmd-coding",
+                )
+        finally:
+            hermes_context_source.reset(token)
 
     def test_turn_start_maps_to_bound_intent_without_runtime_metadata(self) -> None:
         event = codex_hook_to_event(

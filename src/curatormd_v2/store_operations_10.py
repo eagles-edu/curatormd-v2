@@ -37,6 +37,7 @@ from .store_support_01 import (
     timedelta,
     utc_now,
 )
+from .events import GoalActivityObserved
 from .read_models import SQLITE_DATABASE_WARNING_THRESHOLD_BYTES
 from .store_operations_09 import StoreOperations3
 
@@ -153,13 +154,24 @@ class StoreOperations4Part0(StoreOperations3):
             return
         with self._transaction() as connection:
             row = connection.execute(
-                "SELECT last_sequence FROM event_cursors "
+                "SELECT last_sequence, updated_at FROM event_cursors "
                 "WHERE project_id = ? AND source_id = ?",
                 (event.project_id, event.source_id),
             ).fetchone()
             previous = row["last_sequence"] if row is not None else 0
             expected = previous + 1
             if event.source_sequence != expected:
+                if (
+                    event.source_sequence <= previous
+                    and isinstance(event.payload, GoalActivityObserved)
+                    and row is not None
+                    and self._late_activity_is_after_cursor(event, row["updated_at"])
+                ):
+                    # A reset producer outbox can deliver an append-only
+                    # activity after newer events already consumed its old
+                    # sequence. Preserve that activity without rewinding or
+                    # advancing the existing cursor.
+                    return
                 raise EventOrderError(
                     f"expected source sequence {expected}, received {event.source_sequence}"
                 )
@@ -177,6 +189,24 @@ class StoreOperations4Part0(StoreOperations3):
                     utc_now(),
                 ),
             )
+
+    @staticmethod
+    def _late_activity_is_after_cursor(
+        event: EventEnvelope, cursor_updated_at: str
+    ) -> bool:
+        """Allow only later append-only activity through an already-consumed sequence."""
+
+        try:
+            occurred_at = datetime.fromisoformat(event.occurred_at.replace("Z", "+00:00"))
+            cursor_time = datetime.fromisoformat(cursor_updated_at.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return (
+            occurred_at.tzinfo is not None
+            and cursor_time.tzinfo is not None
+            and occurred_at > cursor_time
+            and occurred_at <= datetime.now(UTC)
+        )
 
     def claim_pending_events(
         self,

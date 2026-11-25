@@ -37,7 +37,7 @@ JsonObject = dict[str, Any]
 PROJECT_ID = "curatormd-v2-dev-alpha"
 PROFILE_ID = "curatormd-v2-dev-alpha"
 ROOT = Path(__file__).resolve().parents[2]
-UID = 1000
+UID = os.getuid()
 DATABASE = Path.home() / ".local/share/curatormd-v2-alpha/global.sqlite3"
 MANIFEST = Path.home() / ".config/curatormd-v2/ops-curatormd-v2-dev-alpha.json"
 STATE = Path.home() / ".local/state/curatormd-v2/curatormd-v2-dev-alpha/ops"
@@ -226,7 +226,7 @@ def _event_failure_status() -> dict[str, Any]:
                    ORDER BY received_at, event_id LIMIT 50""",
                 (PROJECT_ID,),
             ).fetchall()
-        events = []
+        events: list[JsonObject] = []
         for row in rows:
             event_id = (
                 row[0] if isinstance(row[0], str) and len(row[0]) <= 128
@@ -287,21 +287,22 @@ def _dashboard_telemetry_status() -> dict[str, Any]:
             or metadata.st_size > 32768
         ):
             return {"status": "unavailable", "reason": "permissions_or_size"}
-        snapshot = _load_object(path.read_text(encoding="utf-8"))
+        snapshot: JsonObject = _load_object(path.read_text(encoding="utf-8"))
         age = _age(snapshot.get("observed_at"))
-        nodes = snapshot.get("nodes")
+        nodes_value = snapshot.get("nodes")
+        nodes = cast(dict[str, Any], nodes_value)
         if (
             snapshot.get("schema_version") != 1
             or snapshot.get("project_id") != PROJECT_ID
             or snapshot.get("profile_id") != PROFILE_ID
             or age > 180
-            or not isinstance(nodes, dict)
+            or not isinstance(nodes_value, dict)
             or len(nodes) > 16
             or any(
-                not isinstance(name, str)
-                or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name)
+                not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name)
                 or not isinstance(node, dict)
-                or node.get("status") not in {"healthy", "degraded", "unknown", "unavailable"}
+                or cast(dict[str, Any], node).get("status")
+                not in {"healthy", "degraded", "unknown", "unavailable"}
                 for name, node in nodes.items()
             )
         ):
@@ -495,6 +496,7 @@ def _incident_fingerprint(components: dict[str, Any]) -> str:
     """Hash stable fault classes, excluding probe timestamps and evidence ages."""
     stable: dict[str, Any] = {}
     for name, component in components.items():
+        component_object = cast(dict[str, Any], component)
         stable_item: dict[str, Any] = {"status": component.get("status")}
         for key in (
             "reason",
@@ -510,19 +512,26 @@ def _incident_fingerprint(components: dict[str, Any]) -> str:
         ):
             if key in component:
                 stable_item[key] = component[key]
-        if name == "event_failures" and isinstance(component.get("events"), list):
+        events = component_object.get("events")
+        if name == "event_failures" and isinstance(events, list):
             stable_item["event_ids"] = [
-                item.get("event_id") for item in component["events"]
-                if isinstance(item, dict) and isinstance(item.get("event_id"), str)
+                cast(dict[str, Any], item).get("event_id")
+                for item in cast(list[Any], events)
+                if isinstance(item, dict)
+                and isinstance(cast(dict[str, Any], item).get("event_id"), str)
             ]
-        if name == "dashboard_telemetry" and isinstance(component.get("nodes"), dict):
+        nodes_value = component_object.get("nodes")
+        if name == "dashboard_telemetry" and isinstance(nodes_value, dict):
+            nodes = cast(dict[str, Any], nodes_value)
             stable_item["nodes"] = {
-                key: item.get("status") for key, item in component["nodes"].items()
+                key: cast(dict[str, Any], item).get("status") for key, item in nodes.items()
                 if isinstance(item, dict)
             }
-        if isinstance(component.get("dependencies"), dict):
+        dependencies = component_object.get("dependencies")
+        if isinstance(dependencies, dict):
             stable_item["dependencies"] = {
-                key: item.get("status") for key, item in component["dependencies"].items()
+                key: cast(dict[str, Any], item).get("status")
+                for key, item in cast(dict[str, Any], dependencies).items()
             }
         stable[name] = stable_item
     wire = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode()

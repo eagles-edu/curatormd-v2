@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import asyncio
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -41,7 +42,12 @@ from curatormd_v2.mcp_server import (
     _HermesRequestCaller,  # pyright: ignore[reportPrivateUsage]
     _hermes_identity_middleware,  # pyright: ignore[reportPrivateUsage]
     HermesContextOptions,
+    host_readiness_context,
     hermes_subject_context,
+)
+from curatormd_v2.hermes_context import (
+    hermes_context_source,
+    require_durable_hermes_context,
 )
 from curatormd_v2.events import EventEnvelope
 
@@ -471,6 +477,58 @@ class McpServerTests(McpServerTestSupport):
         )
         self.assertTrue(invalid.is_error)
         self.assertEqual(json.loads(invalid.content[0].text)["code"], "unauthenticated")
+
+    def test_codex_app_server_context_is_host_scoped_and_cannot_forge_event_marker(self) -> None:
+        """Only the opted-in local process supplies context; request metadata is ignored."""
+        readiness = {"human_review": {"ready": True, "observed_at": "now"}}
+        environment = {
+            "HERMES_CODEX_APP_SERVER_CONTEXT": "1",
+            "HERMES_CONTEXT_PROFILE_ID": "gptmd-coding",
+            "HERMES_CONTEXT_SESSION_ID": "session-1",
+            "HERMES_CONTEXT_READINESS_JSON": json.dumps(readiness),
+        }
+        middleware = cast(
+            Any,
+            _hermes_identity_middleware(
+                HermesContextOptions(
+                    "gptmd-coding", allow_codex_app_server_context=True
+                )
+            ),
+        )
+        observed: list[tuple[dict[str, object], str]] = []
+
+        async def accepted_call(ctx: object) -> str:
+            observed.append((dict(host_readiness_context.get()), hermes_context_source.get()))
+            with self.assertRaisesRegex(PermissionError, "cannot dispatch durable"):
+                require_durable_hermes_context(
+                    ctx.meta, "gptmd-coding"  # type: ignore[attr-defined]
+                )
+            return "accepted"
+
+        with patch.dict(os.environ, environment, clear=False):
+            result = asyncio.run(
+                middleware(
+                    SimpleNamespace(
+                        method="tools/call",
+                        meta={
+                            "hermes/profile_id": "spoofed-profile",
+                            "hermes/session_id": "spoofed-session",
+                            "hermes/durable_event": True,
+                            "hermes/readiness": {"event_router": {"ready": False}},
+                        },
+                    ),
+                    accepted_call,
+                )
+            )
+
+        self.assertEqual(result, "accepted")
+        self.assertEqual(len(observed), 1)
+        self.assertTrue(observed[0][0]["human_review"].ready)  # type: ignore[union-attr]
+        self.assertEqual(
+            observed[0][0]["human_review"].observed_at, "now"  # type: ignore[union-attr]
+        )
+        self.assertEqual(observed[0][1], "codex_app_server")
+        self.assertEqual(hermes_context_source.get(), "request_metadata")
 
     def test_dynamic_exception_type_name_is_not_logged_or_returned(self) -> None:
         """Do not trust adapter-controlled exception class names in diagnostics."""

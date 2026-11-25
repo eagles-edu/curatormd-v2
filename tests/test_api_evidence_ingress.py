@@ -344,7 +344,10 @@ class ApiEvidenceIngressTests(_ApiTestSupport):
         api = AuthenticatedCuratorAPI(
             {"project-a": self.plugin}, self.authorizer
         )
-        goal = self.plugin.service.goal_start("Already completed task")
+        goal = self.plugin.service.goal_start(
+            "Already completed task",
+            (SuccessCriterion("completed", "The task is complete"),),
+        )
         self.plugin.service.goal_finish(goal.goal_id, "The task was completed.")
         event = EventEnvelope(
             "late-fact-after-complete",

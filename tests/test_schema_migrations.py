@@ -24,6 +24,7 @@ from curatormd_v2.schema_migrations import (
     apply_schema_migrations,
     migrate_codex_session_turns_v48,
     migrate_goal_project_reference_v49,
+    migrate_cleanup_authorization_canonical_state_v50,
     migrate_sde_candidate_withdrawals_v47,
     migrate_consumer_binding_lifecycle_v33,
     migrate_consumer_reenrollment_v34,
@@ -32,6 +33,62 @@ from curatormd_v2.schema_migrations import (
 
 class SchemaMigrationTests(unittest.TestCase):
     """Verify supported SQLite upgrades and refusal of unknown schemas."""
+
+    def test_v50_repairs_missing_cleanup_canonical_fields_idempotently(self) -> None:
+        """Restore only missing v21 fields and keep legacy approvals fail-closed."""
+
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.executescript(
+                """CREATE TABLE cleanup_authorizations (
+                       receipt_id TEXT PRIMARY KEY,
+                       project_id TEXT NOT NULL,
+                       reviewer_id TEXT NOT NULL,
+                       manifest_sha256 TEXT NOT NULL,
+                       approved_at TEXT NOT NULL,
+                       canonical_persisted INTEGER NOT NULL DEFAULT 0,
+                       dependency_map_sha256 TEXT
+                   );
+                   INSERT INTO cleanup_authorizations
+                       (receipt_id, project_id, reviewer_id, manifest_sha256,
+                        approved_at, dependency_map_sha256)
+                   VALUES
+                       ('receipt-a', 'project-a', 'reviewer-a', 'manifest', 'now', 'map');
+                   PRAGMA user_version = 49;"""
+            )
+
+            migrate_cleanup_authorization_canonical_state_v50(connection)
+            migrate_cleanup_authorization_canonical_state_v50(connection)
+
+            columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(cleanup_authorizations)"
+                )
+            }
+            row = connection.execute(
+                "SELECT canonical_persisted, canonical_target, canonical_sha256, "
+                "canonical_persisted_at, dependency_map_sha256 "
+                "FROM cleanup_authorizations WHERE receipt_id = 'receipt-a'"
+            ).fetchone()
+            self.assertTrue(
+                {
+                    "canonical_persisted",
+                    "canonical_target",
+                    "canonical_sha256",
+                    "canonical_persisted_at",
+                }.issubset(columns)
+            )
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 50)
+            self.assertEqual(row, (0, None, None, None, "map"))
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM cleanup_authorizations"
+                ).fetchone()[0],
+                1,
+            )
+        finally:
+            connection.close()
 
     def test_v48_adds_content_free_turn_and_link_receipts(self) -> None:
         """Keep session observations separate from project task lifecycle records."""
