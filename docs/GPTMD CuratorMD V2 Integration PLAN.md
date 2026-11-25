@@ -57,11 +57,20 @@ worktree edits, and V1 data.
   `healthy` with all seven dependencies healthy, empty `gate_codes`, zero
   failed or quarantined events, and zero pending purge or expiry work. The
   review queue still contains one pending item; this does not degrade health.
-  Lifecycle delivery and repeated readiness acceptance checks pass.
-- Remaining integration checks: inspect the event queue snapshot and recheck
-  the V1 binding/data-preservation boundary. The readiness probe reads project
-  activity and a bounded goal-list page, but those results are not returned in
-  its health-only JSON summary.
+- A further profile-bound read at 13:18:19 UTC returned project activity,
+  the sole active goal and its saved acceptance criterion, event queue status,
+  project queue snapshot, and health. It reports 18 processed receipts, zero
+  received, failed, or quarantined events, and all seven dependencies healthy.
+  The queue snapshot is complete, with one pending human-review item and no
+  pending purge or expiry work.
+- The active GPTMD profile has the `curator-v2` hook and configured V2 server;
+  no active V1 Curator hook, script, plugin, or workspace setting was found.
+  Legacy V1 scripts and observer files remain only in the dated retirement
+  backup. The project `.curatormd` directory still contains 10 preserved
+  files, and GPTMD's Git worktree is clean.
+- The integration acceptance checks pass: profile-bound connection and reads,
+  exact lifecycle receipts, repeated healthy gates, retired V1 entrypoints,
+  and preservation of V1 data and unrelated GPTMD files.
 
 ## Assumptions
 
