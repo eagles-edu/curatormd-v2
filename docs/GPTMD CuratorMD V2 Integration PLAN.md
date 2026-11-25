@@ -100,6 +100,11 @@ worktree edits, and V1 data.
   queue item and does not degrade health. The review grant readback confirms
   grant `6ac0b3c0762a4b5a8df5c4f6d4353117` is project-scoped to `gptmd`,
   subject `local-uid:1000`, action `review`.
+- A fresh profile-bound health probe at 2026-11-25 15:07:29 UTC again reports
+  overall `healthy`, with complete database and staging observations, all seven
+  dependencies healthy, empty `gate_codes`, zero failed or quarantined events,
+  and zero pending purge or expiry work. The one pending human-review item
+  remains unchanged.
 - The complete Curator V2 test suite passes: 718 tests and 563 subtests. The
   health-probe fixture grants access to the runtime’s actual local host
   identity. Strict Pyright reports zero errors; blocking Pylint, Bandit, and
