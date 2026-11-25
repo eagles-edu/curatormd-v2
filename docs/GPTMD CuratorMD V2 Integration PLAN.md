@@ -10,9 +10,9 @@ worktree edits, and V1 data.
 ## Implementation Changes
 
 - Reuse GPTMD’s existing `.curatormd-v2.toml`, matching project registration,
-  database binding, and profile mapping. Keep the existing read/write grants
-  and add a project-scoped review grant for `local-uid:1000`; do not
-  re-register the project or grant access to another project.
+  database binding, and profile mapping. Keep the existing project-scoped
+  `read`, `write`, and `review` grants for `local-uid:1000`; do not re-register
+  the project or grant access to another project.
 - Add the `curatormd_v2` local stdio server to the `gptmd-coding` profile,
   bound to the GPTMD root, shared V2 database, and project ID `gptmd`. Enable
   `--allow-write` and `--allow-review` to match the project-scoped grants.
@@ -73,20 +73,37 @@ worktree edits, and V1 data.
   files, and GPTMD's Git worktree is clean.
 - The profile-bound Hermes MCP connection, reads, exact lifecycle receipts,
   repeated healthy gates, retired V1 entrypoints, and preservation checks pass.
-  Normal Codex app-server tool use is still open: a real turn did not invoke
-  `tool_search` or `project_health`, and the shared Codex config has no
-  `curatormd_v2` entry. Its Hermes-managed `hermes-tools` bridge exposes a
-  curated tool list that does not include Curator V2 MCP tools. The successful
-  Hermes probes therefore do not prove that the configured Codex runtime can
-  use Curator V2. Do not mark this integration complete until a normal profile
-  turn calls an authorized Curator tool and the result is verified.
+- 2026-11-25: Hermes Core commit `10495e8a17` adds an explicit, profile-scoped
+  Codex app-server context bridge on top of live Core baseline
+  `79f808a6eac69b2f91ce1bc25493fa9440a241c4`. The GPTMD profile opts in only
+  its local stdio `curatormd_v2` server. Host context is supplied per active
+  profile and session; the model request cannot author that context. Durable
+  Hermes lifecycle dispatch remains denied to app-server calls and continues
+  through the existing Hermes hook.
+- The GPTMD Codex migration generated a Curator server entry with the context
+  marker and `--allow-codex-app-server-context`, preserving the existing
+  `--allow-write` and `--allow-review` flags. Two migration runs produced the
+  same config SHA-256 (`6405f3c6d92389967f6ce9e8f41a231ddbc8c1524fcb93c42ed6cb4436e30dd6`)
+  with no migration errors. Optional Codex `plugin/list` discovery timed out;
+  it did not affect Curator migration or the app-server MCP route.
+- After restarting `hermes-gateway.service`, two real GPTMD Codex app-server
+  turns called `project_health` at 2026-11-25 14:07:35 UTC and 14:08:54 UTC.
+  Both returned overall `healthy`, all seven dependencies healthy, and an
+  empty gate list. These calls were read-only and made no project-state
+  changes. This verifies the normal app-server tool route and repeatable
+  profile/session context after gateway reload.
+- The shared Hermes Core checkout is installed locally at
+  `/usr/local/lib/hermes-agent` on branch `fix/gptmd-curator-readiness`, with
+  `10495e8a17` atop `79f808a6`; the branch is clean. Hermes Core has not been
+  pushed. The original Hermes source checkout’s unrelated dirty files were
+  preserved.
 
 ## Assumptions
 
 - Owner authorization on 2026-11-25: update this plan and grant
   project-scoped review access to `local-uid:1000` so GPTMD’s `human_review`
-  health dependency can pass. Keep the grant bound to project `gptmd`.
-- The existing registration and `gptmd-coding` read/write grants remain
+  health dependency can pass. The grant is active only on project `gptmd`.
+- The existing registration and `gptmd-coding` read/write/review grants remain
   authoritative because their fingerprints match the current GPTMD config.
   Review permission expands this profile’s project access only; it does not
   authorize V1 data deletion.
