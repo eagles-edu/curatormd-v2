@@ -11,7 +11,7 @@ from project_fixtures import bind_test_project, configure_stdio_consumer
 
 from curatormd_v2 import CuratorStore
 from curatormd_v2.hosted_mcp import (
-    _local_account_subject,
+    _local_account_subject,  # pyright: ignore[reportPrivateUsage]
     build_local_profile_mcp,
 )
 from curatormd_v2.mcp_server import (
