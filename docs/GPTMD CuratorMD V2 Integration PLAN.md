@@ -39,22 +39,29 @@ worktree edits, and V1 data.
 
 ## Current Verification
 
-- 2026-11-25: The owner authorized project-scoped review access. The attended
-  access flow granted `review` to `local-uid:1000` on project `gptmd`
-  (grant `6ac0b3c0762a4b5a8df5c4f6d4353117`). The GPTMD profile has the
-  matching `--allow-review` flag; a timestamped copy of its previous config
-  is saved in the GPTMD profile's `backups/config/` directory.
-- The GPTMD profile MCP handshake succeeds and discovers 64 tools. Two
-  repeated readiness probes report six healthy dependencies and a stable
-  `event_router` failure. The backend cursor is already at sequence 2, while
-  the profile outbox has unacknowledged lifecycle events at sequences 1 and 2;
-  sequence 1 is recorded as failed with `EventOrderError`.
-- The stale outbox events have not been retried, disposed, or rewritten in
-  this continuation. Current attended operations cannot resolve this exact
-  cursor mismatch. Keep lifecycle acceptance open until the sequence gap has
-  an audited recovery and repeated profile-bound health checks pass. The Hermes
-  Core source fix is committed locally but is not installed in the active
-  system checkout.
+- 2026-11-25: The attended access flow granted project-scoped `review` to
+  `local-uid:1000` on project `gptmd` (grant
+  `6ac0b3c0762a4b5a8df5c4f6d4353117`). A read-only ledger check confirms the
+  existing exact `read` and `write` grants remain active. The GPTMD profile has
+  matching `--allow-write` and `--allow-review` flags, and its MCP server
+  connects with Hermes profile context.
+- The two previously stuck lifecycle events were retried by the live Hermes
+  profile hook through its managed Curator MCP connection. Both exact event
+  IDs now have acknowledged outbox receipts (start sequence 1 and end sequence
+  2), and read-only backend ledger checks show both inbox rows `processed` with
+  no error. The source cursor remains at sequence 2. The narrow replay rule
+  accepts these newer `GoalActivityObserved` facts without rewinding that
+  cursor; retries reuse the exact event IDs and remain idempotent.
+- Two profile-bound `hermes mcp test --probe-curator-status --json curatormd_v2`
+  probes, at 2026-11-25 13:08:34 UTC and 13:08:44 UTC, both report overall
+  `healthy` with all seven dependencies healthy, empty `gate_codes`, zero
+  failed or quarantined events, and zero pending purge or expiry work. The
+  review queue still contains one pending item; this does not degrade health.
+  Lifecycle delivery and repeated readiness acceptance checks pass.
+- Remaining integration checks: inspect the event queue snapshot and recheck
+  the V1 binding/data-preservation boundary. The readiness probe reads project
+  activity and a bounded goal-list page, but those results are not returned in
+  its health-only JSON summary.
 
 ## Assumptions
 
