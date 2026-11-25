@@ -34,6 +34,8 @@ worktree edits, and V1 data.
   a durable event receipt.
 - Confirm all seven configured health dependencies are healthy across
   repeated profile-bound probes, including `human_review`.
+- Confirm a normal `gptmd-coding` Codex app-server turn can discover and call
+  an authorized Curator V2 tool, then verify the result and health again.
 - Confirm the V1 plugin binding is gone, V2 is active, and no out-of-scope
   GPTMD files or preserved V1 data changed.
 
@@ -52,11 +54,12 @@ worktree edits, and V1 data.
   no error. The source cursor remains at sequence 2. The narrow replay rule
   accepts these newer `GoalActivityObserved` facts without rewinding that
   cursor; retries reuse the exact event IDs and remain idempotent.
-- Two profile-bound `hermes mcp test --probe-curator-status --json curatormd_v2`
-  probes, at 2026-11-25 13:08:34 UTC and 13:08:44 UTC, both report overall
-  `healthy` with all seven dependencies healthy, empty `gate_codes`, zero
-  failed or quarantined events, and zero pending purge or expiry work. The
-  review queue still contains one pending item; this does not degrade health.
+- Repeated profile-bound `hermes mcp test --probe-curator-status --json
+  curatormd_v2` probes at 2026-11-25 13:08:34 UTC, 13:08:44 UTC, 13:35:37
+  UTC, and 13:35:51 UTC all report overall `healthy` with all seven
+  dependencies healthy, empty `gate_codes`, zero failed or quarantined
+  events, and zero pending purge or expiry work. The review queue still
+  contains one pending item; this does not degrade health.
 - A further profile-bound read at 13:18:19 UTC returned project activity,
   the sole active goal and its saved acceptance criterion, event queue status,
   project queue snapshot, and health. It reports 18 processed receipts, zero
@@ -68,9 +71,15 @@ worktree edits, and V1 data.
   Legacy V1 scripts and observer files remain only in the dated retirement
   backup. The project `.curatormd` directory still contains 10 preserved
   files, and GPTMD's Git worktree is clean.
-- The integration acceptance checks pass: profile-bound connection and reads,
-  exact lifecycle receipts, repeated healthy gates, retired V1 entrypoints,
-  and preservation of V1 data and unrelated GPTMD files.
+- The profile-bound Hermes MCP connection, reads, exact lifecycle receipts,
+  repeated healthy gates, retired V1 entrypoints, and preservation checks pass.
+  Normal Codex app-server tool use is still open: a real turn did not invoke
+  `tool_search` or `project_health`, and the shared Codex config has no
+  `curatormd_v2` entry. Its Hermes-managed `hermes-tools` bridge exposes a
+  curated tool list that does not include Curator V2 MCP tools. The successful
+  Hermes probes therefore do not prove that the configured Codex runtime can
+  use Curator V2. Do not mark this integration complete until a normal profile
+  turn calls an authorized Curator tool and the result is verified.
 
 ## Assumptions
 
