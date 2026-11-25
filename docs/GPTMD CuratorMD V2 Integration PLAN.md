@@ -6,8 +6,13 @@ Connect GPTMD’s `gptmd-coding` Hermes profile to its existing CuratorMD V2 pro
 
 ## Implementation Changes
 
-- Reuse GPTMD’s existing `.curatormd-v2.toml`, matching project registration, `gptmd-coding` read/write grants, database binding, and profile mapping. Do not re-register or grant review access.
-- Add the `curatormd_v2` local stdio server to the `gptmd-coding` profile, bound to the GPTMD root, shared V2 database, and project ID `gptmd`. Enable `--allow-write` to match the existing grant; omit review flags.
+- Reuse GPTMD’s existing `.curatormd-v2.toml`, matching project registration,
+  database binding, and profile mapping. Keep the existing read/write grants
+  and add a project-scoped review grant for `local-uid:1000`; do not
+  re-register the project or grant access to another project.
+- Add the `curatormd_v2` local stdio server to the `gptmd-coding` profile,
+  bound to the GPTMD root, shared V2 database, and project ID `gptmd`. Enable
+  `--allow-write` and `--allow-review` to match the project-scoped grants.
 - Install the documented profile-local V2 lifecycle hook and exact MCP allowlist. Make the V2 package importable to Hermes by adding the existing V2 source path in the hook before importing its adapter.
 - After V2 is configured, remove only the V1 skill, wrapper, frozen observer files, and V1-specific VS Code settings/Python path. Preserve `.curatormd` inbox records, plugin data, logs, backups, canonical persistence, and unrelated dirty changes.
 
@@ -16,9 +21,16 @@ Connect GPTMD’s `gptmd-coding` Hermes profile to its existing CuratorMD V2 pro
 - Validate the profile configuration and confirm Hermes lists and handshakes with the V2 server using the GPTMD project context.
 - Read GPTMD project details, goal list, event queue status, and health; report each result with its verification boundary.
 - Exercise lifecycle delivery against the active integration goal and confirm a durable event receipt.
+- Confirm all seven configured health dependencies are healthy across
+  repeated profile-bound probes, including `human_review`.
 - Confirm the V1 plugin binding is gone, V2 is active, and no out-of-scope GPTMD files or preserved V1 data changed.
 
 ## Assumptions
 
-- The existing registration and `gptmd-coding` read/write grants remain authoritative because their fingerprints match the current GPTMD config.
-- V2 lifecycle capture is in scope; review-gated operations and V1 data deletion are not.
+- Owner authorization on 2026-11-25: update this plan and grant
+  project-scoped review access to `local-uid:1000` so GPTMD’s `human_review`
+  health dependency can pass. Keep the grant bound to project `gptmd`.
+- The existing registration and `gptmd-coding` read/write grants remain
+  authoritative because their fingerprints match the current GPTMD config.
+  Review permission expands this profile’s project access only; it does not
+  authorize V1 data deletion.
