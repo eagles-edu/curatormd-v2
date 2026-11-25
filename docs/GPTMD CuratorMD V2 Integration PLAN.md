@@ -121,6 +121,11 @@ worktree edits, and V1 data.
   proposal still describes degraded health and must not be treated as the
   stable-installation SDE. Retry through a supported, owner-authorized Curator
   write route, then verify the goal and pending proposal by readback.
+- A follow-up through the Hermes host profile returned `not_found` for both
+  `goal_status` and `goal_report` on that goal ID, even though a preceding
+  `goal_list_page` response identified it as active. No lifecycle or SDE writes
+  were made. Resolve this Curator read inconsistency before recording the
+  verified installation outcome.
 - The complete Curator V2 test suite passes: 718 tests and 563 subtests. The
   health-probe fixture grants access to the runtime’s actual local host
   identity. Strict Pyright reports zero errors; blocking Pylint, Bandit, and
