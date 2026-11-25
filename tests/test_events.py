@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
 import stat
@@ -296,6 +296,139 @@ class EventInboxTests(_EventInboxTestCase):
             [item.fact_id for item in facts], ["ordered-fact-2", "ordered-fact-3"]
         )
         self.assertEqual(self.service.process_event(delayed).status.value, "processed")
+
+    def test_late_activity_replay_preserves_facts_without_rewinding_cursor(self) -> None:
+        """A restarted outbox can replay later activity using already-consumed sequences."""
+
+        self.service.process_event(self.event)
+        source_id = "hermes-profile-project-epoch-one"
+        for sequence in (1, 2):
+            accepted = EventEnvelope(
+                f"accepted-activity-{sequence}",
+                "project-a",
+                GoalActivityObserved(
+                    "goal-1", f"accepted-fact-{sequence}", FactKind.CHANGE,
+                    f"Previously accepted activity {sequence}.",
+                ),
+                source_id=source_id,
+                source_sequence=sequence,
+            )
+            self.assertEqual(
+                self.service.process_event(accepted).disposition,
+                EventDisposition.APPLIED,
+            )
+
+        cursor_row = self.store._connection.execute(  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
+            "SELECT last_sequence, updated_at FROM event_cursors "
+            "WHERE project_id = ? AND source_id = ?",
+            ("project-a", source_id),
+        ).fetchone()
+        self.assertEqual(cursor_row["last_sequence"], 2)
+        occurred_at = (
+            datetime.fromisoformat(cursor_row["updated_at"].replace("Z", "+00:00"))
+            + timedelta(microseconds=1)
+        )
+        late_events = tuple(
+            EventEnvelope(
+                f"replayed-activity-{sequence}",
+                "project-a",
+                GoalActivityObserved(
+                    "goal-1", f"replayed-fact-{sequence}", FactKind.INTENT,
+                    f"Later replayed activity {sequence}.",
+                ),
+                occurred_at=(occurred_at + timedelta(microseconds=sequence - 1)).isoformat(),
+                source_id=source_id,
+                source_sequence=sequence,
+            )
+            for sequence in (1, 2)
+        )
+
+        stale_receipt, _inserted = self.store.ingest_event(late_events[0])
+        self.assertEqual(stale_receipt.status.value, "received")
+        self.store.mark_event_failed(
+            "project-a", late_events[0].event_id, "EventOrderError"
+        )
+        make_event_retry_due(self.store, late_events[0])
+        receipts = (
+            self.service.process_event(late_events[0]),
+            self.service.process_event(late_events[1]),
+        )
+        self.assertTrue(all(receipt.status.value == "processed" for receipt in receipts))
+        self.assertTrue(
+            all(receipt.disposition is EventDisposition.APPLIED for receipt in receipts)
+        )
+        for event, receipt in zip(late_events, receipts):
+            self.assertEqual(self.service.process_event(event), receipt)
+        facts = {fact.fact_id for fact in self.store.list_facts("goal-1", "project-a")}
+        self.assertEqual(
+            facts,
+            {
+                "accepted-fact-1", "accepted-fact-2",
+                "replayed-fact-1", "replayed-fact-2",
+            },
+        )
+        cursor_after_replay = self.store._connection.execute(  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
+            "SELECT last_sequence FROM event_cursors WHERE project_id = ? AND source_id = ?",
+            ("project-a", source_id),
+        ).fetchone()
+        self.assertEqual(cursor_after_replay[0], 2)
+
+    def test_stale_sequence_replay_rejects_old_activity_and_mutating_events(self) -> None:
+        """Late replay is limited to newer append-only activity events."""
+
+        self.service.process_event(self.event)
+        source_id = "hermes-profile-project-epoch-one"
+        for sequence in (1, 2):
+            self.service.process_event(
+                EventEnvelope(
+                    f"cursor-event-{sequence}",
+                    "project-a",
+                    GoalActivityObserved(
+                        "goal-1", f"cursor-fact-{sequence}", FactKind.CHANGE,
+                        f"Cursor activity {sequence}.",
+                    ),
+                    source_id=source_id,
+                    source_sequence=sequence,
+                )
+            )
+        cursor = self.store._connection.execute(  # pyright: ignore[reportPrivateUsage]  # pylint: disable=protected-access
+            "SELECT updated_at FROM event_cursors WHERE project_id = ? AND source_id = ?",
+            ("project-a", source_id),
+        ).fetchone()[0]
+        cursor_time = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
+        rejected = (
+            EventEnvelope(
+                "old-activity-replay",
+                "project-a",
+                GoalActivityObserved(
+                    "goal-1", "old-activity-fact", FactKind.CHANGE,
+                    "Activity occurred before the cursor advanced.",
+                ),
+                occurred_at=(cursor_time - timedelta(microseconds=1)).isoformat(),
+                source_id=source_id,
+                source_sequence=1,
+            ),
+            EventEnvelope(
+                "stale-fact-replay",
+                "project-a",
+                FactRecorded(
+                    "goal-1", "stale-fact", FactKind.CHANGE,
+                    "A mutating fact cannot bypass source ordering.",
+                ),
+                occurred_at=(cursor_time + timedelta(microseconds=1)).isoformat(),
+                source_id=source_id,
+                source_sequence=1,
+            ),
+        )
+
+        for event in rejected:
+            with self.subTest(event=event.event_id):
+                receipt = self.service.process_event(event)
+                self.assertEqual(receipt.status.value, "failed")
+                self.assertEqual(receipt.last_error_code, EventOrderError.__name__)
+        fact_ids = {fact.fact_id for fact in self.store.list_facts("goal-1", "project-a")}
+        self.assertNotIn("old-activity-fact", fact_ids)
+        self.assertNotIn("stale-fact", fact_ids)
 
     def test_terminal_activity_is_suppressed_once_and_reopen_resumes_source_order(self) -> None:
         """A durable suppressed activity advances ordering and stays suppressed on replay."""
