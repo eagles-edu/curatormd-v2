@@ -105,15 +105,32 @@ worktree edits, and V1 data.
   dependencies healthy, empty `gate_codes`, zero failed or quarantined events,
   and zero pending purge or expiry work. The one pending human-review item
   remains unchanged.
+- Hermes Core commit `3529c6c92d1d3d3adf7d189721385d68ae28e067` was pushed to
+  `origin/fix/gptmd-curator-readiness`, fast-forwarded into the installed
+  `/usr/local/lib/hermes-agent` checkout, and activated by restarting
+  `hermes-gateway.service`. The installed checkout is clean and matches the
+  remote feature branch. Two post-restart profile-bound probes at 2026-11-25
+  15:43:09 UTC and 15:43:58 UTC report overall `healthy`, complete database and
+  staging observations, all seven dependencies healthy, empty `gate_codes`, and
+  zero failed, quarantined, or purge/expiry work. The pending review count
+  remains one. No GitHub Actions runs were listed for the Hermes Core branch at
+  verification time.
+- The GPTMD integration goal remains active. A completion fact write through
+  the configured profile was rejected by the Codex app-server route; no
+  completion fact or replacement SDE proposal was saved. The existing pending
+  proposal still describes degraded health and must not be treated as the
+  stable-installation SDE. Retry through a supported, owner-authorized Curator
+  write route, then verify the goal and pending proposal by readback.
 - The complete Curator V2 test suite passes: 718 tests and 563 subtests. The
   health-probe fixture grants access to the runtime’s actual local host
   identity. Strict Pyright reports zero errors; blocking Pylint, Bandit, and
   the locked dependency audit also pass.
-- The shared Hermes Core checkout is installed locally at
-  `/usr/local/lib/hermes-agent` on branch `fix/gptmd-curator-readiness`, with
-  `10495e8a17` atop `79f808a6`; the branch is clean. Hermes Core has not been
-  pushed. The original Hermes source checkout’s unrelated dirty files were
-  preserved.
+- The Hermes Core readiness branch is pushed and installed at
+  `/usr/local/lib/hermes-agent` on `fix/gptmd-curator-readiness`, at
+  `3529c6c92d1d3d3adf7d189721385d68ae28e067`. Its source checks passed before
+  publication; the installed gateway is active and the repeated GPTMD health
+  probes pass. GitHub Actions listed no runs for this feature branch at the
+  time of verification.
 
 ## Assumptions
 
